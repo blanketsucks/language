@@ -11,7 +11,7 @@ int main() {
 
     std::unique_ptr<ast::Program> program = Parser(tokens).statements();
     
-    Visitor visitor("foo");
+    Visitor visitor("test");
     visitor.visit(std::move(program));
 
     visitor.dump(llvm::errs());

@@ -110,19 +110,21 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
     }
 
     this->next();
-    if (this->current != TokenType::ARROW) {
-        this->error("Expected ->");
+    Type ret;
+
+    if (this->current == TokenType::ARROW) {
+        this->next();
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected type.");
+        }
+
+        ret = this->get_type(this->current.value);
+        this->next();
+    } else {
+        ret = this->types["void"];
     }
 
-    this->next();
-    if (this->current != TokenType::IDENTIFIER) {
-        this->error("Expected type.");
-    }
-
-    Type type = this->get_type(this->current.value);
-    this->next();
-
-    return std::make_unique<ast::PrototypeExpr>(name, type, std::move(args));
+    return std::make_unique<ast::PrototypeExpr>(name, ret, std::move(args));
 }
 
 std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
@@ -189,7 +191,8 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             return this->expr();
     }
 
-    this->error("Unreachable.");
+    this->error("Unreachable code.");
+    return nullptr;
 }
 
 std::unique_ptr<ast::Expr> Parser::expr(bool expect_semicolon) {
@@ -275,5 +278,6 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             this->error("Unimplmented.");
     }
 
+    this->error("Unreachable code.");
     return nullptr;
 }

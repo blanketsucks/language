@@ -7,8 +7,6 @@
 
 #include <map>
 
-#define TODO(x) std::cout << "TODO: " << x << '\n'; exit(1);
-
 struct Context {
     bool is_inside_function = false;
 };

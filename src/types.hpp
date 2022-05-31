@@ -34,7 +34,7 @@ static std::vector<Type> TYPES = {
     {"long", 8},
     {"float", 4},
     {"double", 8},
-    {"string", 1, false, false},
+    {"str", 1, false, false},
     {"void", 0, false, false}
 };
 
