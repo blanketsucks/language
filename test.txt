@@ -1,0 +1,5 @@
+extern foo(a: int, b: int) -> double;
+
+def bar(b: int) -> double {
+    return foo(5, 10) + b;
+}

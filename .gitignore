@@ -1,0 +1,5 @@
+srcp/
+.vscode
+
+*.o
+main
