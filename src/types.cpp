@@ -32,6 +32,8 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
             return llvm::Type::getFloatTy(context);
         case String:
             return llvm::Type::getInt8PtrTy(context);
+        case Boolean:
+            return llvm::Type::getInt1Ty(context);
         default:
             return llvm::Type::getVoidTy(context);
     }
@@ -50,7 +52,9 @@ std::string Type::to_str() {
         case Float:
             return "float";
         case String:
-            return "str";   
+            return "str"; 
+        case Boolean:
+            return "bool";
         case Void:
             return "void";
         default:
