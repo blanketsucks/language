@@ -2,7 +2,7 @@
 #define _PARSER_H
 
 #include "ast.h"
-#include "types.hpp"
+#include "types.h"
 #include "tokens.hpp"
 
 #include <map>
@@ -30,7 +30,7 @@ public:
     std::unique_ptr<ast::Program> statements();
 
     std::unique_ptr<ast::Expr> statement();
-    std::unique_ptr<ast::Expr> expr(bool expect_semicolon = true);
+    std::unique_ptr<ast::Expr> expr(bool semicolon = true);
     std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
     std::unique_ptr<ast::Expr> factor();
 

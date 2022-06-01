@@ -4,7 +4,7 @@
 #include "ast.h"
 #include "parser.h"
 #include "llvm.h"
-#include "types.hpp"
+#include "types.h"
 
 #include <map>
 #include <string>
@@ -36,7 +36,7 @@ public:
 
     llvm::Value* visit_IntegerExpr(ast::IntegerExpr* expr);
     llvm::Value* visit_VariableExpr(ast::VariableExpr* expr);
-    llvm::Value* visit_ListExpr(ast::ListExpr* expr);
+    llvm::Value* visit_ArrayExpr(ast::ArrayExpr* expr);
     llvm::Value* visit_BinaryOpExpr(ast::BinaryOpExpr* expr);
     llvm::Value* visit_CallExpr(ast::CallExpr* expr);
     llvm::Value* visit_ReturnExpr(ast::ReturnExpr* expr);

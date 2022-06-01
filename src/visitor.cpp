@@ -12,18 +12,6 @@ void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
 }
 
-llvm::Type* Visitor::get_type(Type type) {
-    if (type.name == "int") {
-        return llvm::Type::getInt64Ty(this->context);
-    } else if (type.name == "float") {
-        return llvm::Type::getFloatTy(this->context);
-    } else if (type.name == "double") {
-        return llvm::Type::getDoubleTy(this->context);
-    } else {
-        return llvm::Type::getVoidTy(this->context);
-    }
-}
-
 void Visitor::visit(std::unique_ptr<ast::Program> program) {
     for (auto& expr : program->ast) {
         expr->accept(*this);
@@ -31,7 +19,7 @@ void Visitor::visit(std::unique_ptr<ast::Program> program) {
 }
 
 llvm::Value* Visitor::visit_IntegerExpr(ast::IntegerExpr* expr) {
-    return llvm::ConstantFP::get(this->context, llvm::APFloat((double)expr->value));
+    return llvm::ConstantInt::get(this->context, llvm::APInt(32, expr->value, true));
 }
 
 llvm::Value* Visitor::visit_VariableExpr(ast::VariableExpr* expr) {
@@ -44,8 +32,9 @@ llvm::Value* Visitor::visit_VariableExpr(ast::VariableExpr* expr) {
     return value;
 }
 
-llvm::Value* Visitor::visit_ListExpr(ast::ListExpr* expr) {
-    (void)expr;
+llvm::Value* Visitor::visit_ArrayExpr(ast::ArrayExpr* expr) {
+    // TODO: Actually implement this
+    llvm::ConstantArray::get(llvm::ArrayType::get(nullptr, 1), llvm::ArrayRef<llvm::Constant*>());
     return nullptr;
 }
 
@@ -53,37 +42,89 @@ llvm::Value* Visitor::visit_BinaryOpExpr(ast::BinaryOpExpr* expr) {
     llvm::Value* left = expr->left->accept(*this);
     llvm::Value* right = expr->right->accept(*this);
 
+    llvm::Type* ltype = left->getType();
+    llvm::Type* rtype = right->getType();
+
+    if (ltype != rtype) {
+        if (Type::from_llvm_type(ltype).is_compatible(rtype)) {
+            // TODO: Type cast
+        } else {
+            std::cerr << "Incompatible types" << std::endl;
+            exit(1);
+        }
+    }
+
     switch (expr->op) {
         case TokenType::PLUS:
-            return this->builder->CreateFAdd(left, right, "addtmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFAdd(left, right, "fadd");
+            } else {
+                return this->builder->CreateAdd(left, right, "add");
+            }
         case TokenType::MINUS:
-            return this->builder->CreateFSub(left, right, "subtmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFSub(left, right, "fsub");
+            } else {
+                return this->builder->CreateSub(left, right, "sub");
+            }
         case TokenType::MUL:
-            return this->builder->CreateFMul(left, right, "multmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFMul(left, right, "fmul");
+            } else {
+                return this->builder->CreateMul(left, right, "mul");
+            }
         case TokenType::DIV:
-            return this->builder->CreateFDiv(left, right, "divtmp");
-        case TokenType::BINARY_AND:
-            return this->builder->CreateAnd(left, right, "andtmp");
-        case TokenType::BINARY_OR:
-            return this->builder->CreateOr(left, right, "ortmp");
-        case TokenType::XOR:
-            return this->builder->CreateXor(left, right, "xortmp");
-        case TokenType::LSH:
-            return this->builder->CreateShl(left, right, "lshtmp");
-        case TokenType::RSH:
-            return this->builder->CreateLShr(left, right, "rshtmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFDiv(left, right, "fdiv");
+            } else {
+                return this->builder->CreateSDiv(left, right, "div");
+            }
         case TokenType::EQ:
-            return this->builder->CreateFCmpOEQ(left, right, "eqtmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpOEQ(left, right, "feq");
+            } else {
+                return this->builder->CreateICmpEQ(left, right, "eq");
+            }
         case TokenType::NEQ:
-            return this->builder->CreateFCmpUNE(left, right, "neqtmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpONE(left, right, "fneq");
+            } else {
+                return this->builder->CreateICmpNE(left, right, "neq");
+            }
         case TokenType::GT:
-            return this->builder->CreateFCmpOGT(left, right, "gttmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpOGT(left, right, "fgt");
+            } else {
+                return this->builder->CreateICmpSGT(left, right, "gt");
+            }
         case TokenType::LT:
-            return this->builder->CreateFCmpOLT(left, right, "lttmp");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpOLT(left, right, "flt");
+            } else {
+                return this->builder->CreateICmpSLT(left, right, "lt");
+            }
         case TokenType::GTE:
-            return this->builder->CreateFCmpOGE(left, right, "gte");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpOGE(left, right, "fge");
+            } else {
+                return this->builder->CreateICmpSGE(left, right, "ge");
+            }
         case TokenType::LTE:
-            return this->builder->CreateFCmpOLE(left, right, "lte");
+            if (ltype->isFloatingPointTy()) {
+                return this->builder->CreateFCmpOLE(left, right, "fle");
+            } else {
+                return this->builder->CreateICmpSLE(left, right, "le");
+            }
+        case TokenType::BINARY_AND:
+            return this->builder->CreateAnd(left, right, "and");
+        case TokenType::BINARY_OR:
+            return this->builder->CreateOr(left, right, "or");
+        case TokenType::XOR:
+            return this->builder->CreateXor(left, right, "xor");
+        case TokenType::LSH:
+            return this->builder->CreateShl(left, right, "lsh");
+        case TokenType::RSH:
+            return this->builder->CreateLShr(left, right, "rsh");
         default:
             std::cerr << "Unknown binary operator" << std::endl;
             exit(1);
@@ -107,7 +148,7 @@ llvm::Value* Visitor::visit_CallExpr(ast::CallExpr* expr) {
         args.push_back(arg->accept(*this));
     }
 
-    return this->builder->CreateCall(function, args, "calltmp");
+    return this->builder->CreateCall(function, args, "call");
 }
 
 llvm::Value* Visitor::visit_ReturnExpr(ast::ReturnExpr* expr) {
@@ -127,11 +168,11 @@ llvm::Value* Visitor::visit_ReturnExpr(ast::ReturnExpr* expr) {
 llvm::Value* Visitor::visit_PrototypeExpr(ast::PrototypeExpr* prototype) {
     std::string name = prototype->name;
 
-    llvm::Type* return_type = this->get_type(prototype->return_type);
+    llvm::Type* return_type = prototype->return_type.to_llvm_type(this->context);
     std::vector<llvm::Type*> args;
 
     for (auto& arg : prototype->args) {
-        args.push_back(this->get_type(arg.type));
+        args.push_back(arg.type.to_llvm_type(this->context));
     }
 
     llvm::FunctionType* function_t = llvm::FunctionType::get(return_type, args, false);

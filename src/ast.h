@@ -2,7 +2,7 @@
 #define _AST_H
 
 #include "tokens.hpp"
-#include "types.hpp"
+#include "types.h"
 #include "llvm.h"
 
 #include <iostream>
@@ -40,11 +40,11 @@ public:
     llvm::Value* accept(Visitor& visitor) override;
 };
 
-class ListExpr : public Expr {
+class ArrayExpr : public Expr {
 public:
     std::vector<std::unique_ptr<Expr>> elements;
 
-    ListExpr(std::vector<std::unique_ptr<Expr>> elements);
+    ArrayExpr(std::vector<std::unique_ptr<Expr>> elements);
     llvm::Value* accept(Visitor& visitor) override;
 };
 

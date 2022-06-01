@@ -11,9 +11,17 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
         this->precedences[pair.first] = pair.second;
     }
 
-    for (auto type : TYPES) {
-        this->types[type.name] = type;
-    }
+    this->types = {
+        {"void", VoidType},
+        {"short", ShortType},
+        {"int", IntegerType},
+        {"long", LongType},
+        {"double", DoubleType},
+        {"float", FloatType},
+        {"byte", ByteType},
+        {"str", StringType},
+        {"bool", BooleanType}
+    };
 }
 
 void Parser::error(const std::string& message) {
@@ -110,7 +118,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
     }
 
     this->next();
-    Type ret;
+    Type ret; // Can be unclear, but defaults to `void`.
 
     if (this->current == TokenType::ARROW) {
         this->next();
@@ -120,8 +128,6 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
 
         ret = this->get_type(this->current.value);
         this->next();
-    } else {
-        ret = this->types["void"];
     }
 
     return std::make_unique<ast::PrototypeExpr>(name, ret, std::move(args));
@@ -195,11 +201,11 @@ std::unique_ptr<ast::Expr> Parser::statement() {
     return nullptr;
 }
 
-std::unique_ptr<ast::Expr> Parser::expr(bool expect_semicolon) {
+std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
     auto left = this->factor();
     auto expr = this->binary(0, std::move(left));
     
-    if (expect_semicolon) {
+    if (semicolon) {
         this->end();
     }
 
@@ -266,7 +272,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
         }
         case TokenType::LPAREN: {
             this->next();
-            auto result = this->expr();
+            auto result = this->expr(false);
 
             if (this->current != TokenType::RPAREN) {
                 this->error("Expected )");

@@ -16,12 +16,12 @@ llvm::Value* VariableExpr::accept(Visitor& visitor) {
     return visitor.visit_VariableExpr(this);
 }
 
-ListExpr::ListExpr(std::vector<std::unique_ptr<Expr>> elements) {
+ArrayExpr::ArrayExpr(std::vector<std::unique_ptr<Expr>> elements) {
     this->elements = std::move(elements);
 }
 
-llvm::Value* ListExpr::accept(Visitor& visitor) {
-    return visitor.visit_ListExpr(this);
+llvm::Value* ArrayExpr::accept(Visitor& visitor) {
+    return visitor.visit_ArrayExpr(this);
 }
 
 BinaryOpExpr::BinaryOpExpr(TokenType op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right) : op(op) {
