@@ -84,30 +84,36 @@ struct Token {
 static std::vector<std::string> KEYWORDS = {
     "extern",
     "def",
-    "return"
+    "return",
+    "if",
+    "else",
+    "let"
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
-    // Comparison operators - 10 precedence (the lowest).
-    std::pair<TokenType, int>(TokenType::LT, 10),
-    std::pair<TokenType, int>(TokenType::GT, 10),
-    std::pair<TokenType, int>(TokenType::LTE, 10),
-    std::pair<TokenType, int>(TokenType::GTE, 10),
-    std::pair<TokenType, int>(TokenType::EQ, 10),
-    std::pair<TokenType, int>(TokenType::NEQ, 10),
+    // Assignment operator - 5 precedence.
+    std::make_pair(TokenType::ASSIGN, 5),
+
+    // Comparison operators - 10 precedence.
+    std::make_pair(TokenType::LT, 10),
+    std::make_pair(TokenType::GT, 10),
+    std::make_pair(TokenType::LTE, 10),
+    std::make_pair(TokenType::GTE, 10),
+    std::make_pair(TokenType::EQ, 10),
+    std::make_pair(TokenType::NEQ, 10),
 
     // Binary operators - 20 precedence.
-    std::pair<TokenType, int>(TokenType::BINARY_AND, 20),
-    std::pair<TokenType, int>(TokenType::BINARY_OR, 20),
-    std::pair<TokenType, int>(TokenType::XOR, 20),
-    std::pair<TokenType, int>(TokenType::RSH, 20),
-    std::pair<TokenType, int>(TokenType::LSH, 20),
+    std::make_pair(TokenType::BINARY_AND, 20),
+    std::make_pair(TokenType::BINARY_OR, 20),
+    std::make_pair(TokenType::XOR, 20),
+    std::make_pair(TokenType::RSH, 20),
+    std::make_pair(TokenType::LSH, 20),
 
     // Arithmic operators - from 30 to 40.
-    std::pair<TokenType, int>(TokenType::PLUS, 30),
-    std::pair<TokenType, int>(TokenType::MINUS, 30),
-    std::pair<TokenType, int>(TokenType::DIV, 40),
-    std::pair<TokenType, int>(TokenType::MUL, 40)
+    std::make_pair(TokenType::PLUS, 30),
+    std::make_pair(TokenType::MINUS, 30),
+    std::make_pair(TokenType::DIV, 40),
+    std::make_pair(TokenType::MUL, 40)
 };
 
 #endif

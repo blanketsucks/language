@@ -13,15 +13,15 @@ class Visitor;
 
 namespace ast {
 
-struct Argument {
-    std::string name;
-    Type type;
-};
-
 class Expr {
 public:
     virtual ~Expr() = default;
     virtual llvm::Value* accept(Visitor& visitor) = 0;
+};
+
+struct Argument {
+    std::string name;
+    Type type;
 };
 
 class IntegerExpr : public Expr {
@@ -32,6 +32,14 @@ public:
     llvm::Value* accept(Visitor& visitor) override;
 };
 
+class StringExpr : public Expr {
+public:
+    std::string value;
+
+    StringExpr(std::string value);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
 class VariableExpr : public Expr {
 public:
     std::string name;
@@ -39,6 +47,17 @@ public:
     VariableExpr(std::string name);
     llvm::Value* accept(Visitor& visitor) override;
 };
+
+class VariableAssignmentExpr : public Expr {
+public:
+    std::string name;
+    Type type = VoidType;
+    std::unique_ptr<Expr> value;
+
+    VariableAssignmentExpr(std::string name, std::unique_ptr<Expr> value);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
 
 class ArrayExpr : public Expr {
 public:
@@ -90,6 +109,16 @@ public:
     std::vector<std::unique_ptr<Expr>> body;
     
     FunctionExpr(std::unique_ptr<PrototypeExpr> prototype, std::vector<std::unique_ptr<Expr>> body);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class IfExpr : public Expr {
+public:
+    std::unique_ptr<Expr> condition;
+    std::vector<std::unique_ptr<Expr>> body;
+    std::vector<std::unique_ptr<Expr>> ebody; // The else body
+
+    IfExpr(std::unique_ptr<Expr> condition, std::vector<std::unique_ptr<Expr>> body, std::vector<std::unique_ptr<Expr>> ebody);
     llvm::Value* accept(Visitor& visitor) override;
 };
 

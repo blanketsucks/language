@@ -1,5 +1,6 @@
-extern foo(a: int, b: int) -> double;
+extern puts(fmt: str) -> void;
 
-def bar(a: int, b: int) -> double {
-    return foo(a, b) * a + b + 10;
+def bar() -> void {
+    let x = "Hello, World";
+    puts(x);
 }

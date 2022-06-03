@@ -20,7 +20,8 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
         {"float", FloatType},
         {"byte", ByteType},
         {"str", StringType},
-        {"bool", BooleanType}
+        {"bool", BooleanType},
+        {"array", ArrayType},
     };
 }
 
@@ -72,6 +73,13 @@ Type Parser::get_type(std::string name) {
         this->error("Unknown type: " + name);
     }
 
+    if (name == "long") {
+        this->next();
+        if (this->current.value == "long") {
+            return LongLongType;
+        }
+    }
+
     return this->types[name];
 } 
 
@@ -102,23 +110,24 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
         if (this->current != TokenType::IDENTIFIER) {
             this->error("Expected type.");
         }
-
-        args.push_back({name, this->get_type(this->current.value)});
+        std::string type = this->current.value;
         this->next();
+
+        args.push_back({name, this->get_type(type)});
 
         if (this->current != TokenType::COMMA) {
             break;
         }
 
         this->next();
-    } 
+    }
 
     if (this->current != TokenType::RPAREN) {
         this->error("Expected )");
     }
 
     this->next();
-    Type ret; // Can be unclear, but defaults to `void`.
+    Type ret = VoidType;
 
     if (this->current == TokenType::ARROW) {
         this->next();
@@ -156,6 +165,49 @@ std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
     return std::make_unique<ast::FunctionExpr>(std::move(prototype), std::move(body));
 }
 
+std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
+    std::unique_ptr<ast::Expr> condition = this->expr(false);
+    if (this->current != TokenType::LBRACE) {
+        this->error("Expected {");
+    }
+
+    this->next();
+    std::vector<std::unique_ptr<ast::Expr>> body;
+
+    while (this->current != TokenType::RBRACE) {
+        auto expr = this->statement();
+        body.push_back(std::move(expr));
+    }
+
+    if (this->current != TokenType::RBRACE) {
+        this->error("Expected }");
+    }
+    
+    this->next();
+    std::vector<std::unique_ptr<ast::Expr>> else_body;
+
+    if (this->current == TokenType::KEYWORD && this->current.value == "else") {
+        this->next();
+        if (this->current != TokenType::LBRACE) {
+            this->error("Expected {");
+        }
+
+        this->next();
+        while (this->current != TokenType::RBRACE) {
+            auto expr = this->statement();
+            else_body.push_back(std::move(expr));
+        }
+
+        if (this->current != TokenType::RBRACE) {
+            this->error("Expected }");
+        }
+
+        this->next();
+    }
+
+    return std::make_unique<ast::IfExpr>(std::move(condition), std::move(body), std::move(else_body));
+}
+
 std::unique_ptr<ast::Program> Parser::statements() {
     std::vector<std::unique_ptr<ast::Expr>> statements;
 
@@ -191,6 +243,31 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 return std::make_unique<ast::ReturnExpr>(this->expr());
+            } else if (this->current.value == "if") {
+                if (!this->context.is_inside_function) {
+                    this->error("if is only allowed inside functions.");
+                }
+
+                this->next();
+                return this->parse_if_statement();
+            } else if (this->current.value == "let") {
+                this->next();
+                if (this->current != TokenType::IDENTIFIER) {
+                    this->error("Expected identifer.");
+                }
+
+                std::string name = this->current.value;
+                this->next();
+
+                if (this->current != TokenType::ASSIGN) {
+                    this->error("Expected =");
+                }
+
+                this->next();
+                auto expr = this->expr(false);
+
+                this->next();
+                return std::make_unique<ast::VariableAssignmentExpr>(name, std::move(expr));
             }
             break;
         default:
@@ -241,6 +318,12 @@ std::unique_ptr<ast::Expr> Parser::factor() {
 
             return std::make_unique<ast::IntegerExpr>(number);
         }
+        case TokenType::STRING: {
+            std::string value = this->current.value;
+            this->next();
+
+            return std::make_unique<ast::StringExpr>(value);
+        }
         case TokenType::IDENTIFIER: {
             std::string name = this->current.value;
             this->next();
@@ -279,6 +362,28 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             }
             
             return result;
+        }
+        case TokenType::LBRACKET: {
+            this->next();
+
+            std::vector<std::unique_ptr<ast::Expr>> elements;
+            while (this->current != TokenType::RBRACKET) {
+                auto expr = this->expr(false);
+                if (this->current != TokenType::COMMA) {
+                    break;
+                }
+
+                this->next();
+                elements.push_back(std::move(expr));
+            }
+
+            if (this->current != TokenType::RBRACKET) {
+                this->error("Expected ]");
+            }
+
+            this->next();
+            return std::make_unique<ast::ArrayExpr>(std::move(elements));
+
         }
         default:
             this->error("Unimplmented.");

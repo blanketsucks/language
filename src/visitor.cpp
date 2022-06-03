@@ -6,10 +6,39 @@
 Visitor::Visitor(std::string module) {
     this->module = std::make_unique<llvm::Module>(llvm::StringRef(module), this->context);
     this->builder = std::make_unique<llvm::IRBuilder<>>(this->context);
+
+    this->constants = {
+        {"true", llvm::ConstantInt::getTrue(this->context)},
+        {"false", llvm::ConstantInt::getFalse(this->context)},
+    };
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
+}
+
+llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type, std::string name) {
+    llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
+    return tmp.CreateAlloca(type, 0, name);
+}
+
+llvm::Value* Visitor::get_variable(std::string name) {
+    llvm::Value* value;
+    if (this->current_function) {
+        value = this->current_function->locals[name];
+    } else {
+        value = this->globals[name];
+    }
+
+    if (!value) {
+        value = this->constants[name];
+        if (!value) {
+            std::cerr << "Variable " << name << " not found" << std::endl;
+            exit(1);
+        }
+    }
+
+    return value;
 }
 
 void Visitor::visit(std::unique_ptr<ast::Program> program) {
@@ -18,27 +47,64 @@ void Visitor::visit(std::unique_ptr<ast::Program> program) {
     }
 }
 
-llvm::Value* Visitor::visit_IntegerExpr(ast::IntegerExpr* expr) {
+llvm::Value* Visitor::visit(ast::IntegerExpr* expr) {
     return llvm::ConstantInt::get(this->context, llvm::APInt(32, expr->value, true));
 }
 
-llvm::Value* Visitor::visit_VariableExpr(ast::VariableExpr* expr) {
-    llvm::Value* value = this->variables[expr->name];
-    if (!value) {
-        std::cerr << "Variable " << expr->name << " not found" << std::endl;
-        exit(1);
-    }
-
-    return value;
+llvm::Value* Visitor::visit(ast::StringExpr* expr) {
+    return llvm::ConstantDataArray::getString(this->context, expr->value);
 }
 
-llvm::Value* Visitor::visit_ArrayExpr(ast::ArrayExpr* expr) {
-    // TODO: Actually implement this
-    llvm::ConstantArray::get(llvm::ArrayType::get(nullptr, 1), llvm::ArrayRef<llvm::Constant*>());
+llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
+    llvm::Value* value = this->get_variable(expr->name);
+    return this->builder->CreateLoad(value->getType(), value, expr->name);
+}
+
+llvm::Value* visit_VariableAssignmentExpr(ast::VariableAssignmentExpr* expr) {
+    (void)expr;
     return nullptr;
 }
 
-llvm::Value* Visitor::visit_BinaryOpExpr(ast::BinaryOpExpr* expr) {
+llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
+    std::vector<llvm::Constant*> elements;
+    for (auto& element : expr->elements) {
+        auto constant = (llvm::Constant*)element->accept(*this);
+        elements.push_back(constant);
+    }
+
+    if (elements.size() == 0) {
+        return llvm::Constant::getNullValue(llvm::ArrayType::get(llvm::Type::getInt32Ty(this->context), 0));
+    }
+
+    // The type of an array is determined from the first element.
+    auto type = elements[0]->getType();
+    for (int i = 1; i < elements.size(); i++) {
+        if (elements[i]->getType() != type) {
+            std::cerr << "Array elements must be of the same type" << std::endl;
+            exit(1);
+        }
+    }
+
+    return llvm::ConstantArray::get(llvm::ArrayType::get(type, elements.size()), elements);
+}
+
+llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
+    // Assingment is a special case.
+    if (expr->op == TokenType::ASSIGN) {
+        ast::VariableAssignmentExpr* lhs = dynamic_cast<ast::VariableAssignmentExpr*>(expr->left.get());
+        if (!lhs) {
+            std::cerr << "Left hand side of assignment must be a variable" << std::endl;
+            exit(1);
+        }
+
+        llvm::Value* variable = this->get_variable(lhs->name);
+        llvm::Value* value = expr->right->accept(*this);
+
+        this->builder->CreateStore(value, variable);
+        return value;
+    }
+
+
     llvm::Value* left = expr->left->accept(*this);
     llvm::Value* right = expr->right->accept(*this);
 
@@ -47,7 +113,7 @@ llvm::Value* Visitor::visit_BinaryOpExpr(ast::BinaryOpExpr* expr) {
 
     if (ltype != rtype) {
         if (Type::from_llvm_type(ltype).is_compatible(rtype)) {
-            // TODO: Type cast
+            // TODO: Type cast or something idk
         } else {
             std::cerr << "Incompatible types" << std::endl;
             exit(1);
@@ -131,7 +197,7 @@ llvm::Value* Visitor::visit_BinaryOpExpr(ast::BinaryOpExpr* expr) {
     }
 }
 
-llvm::Value* Visitor::visit_CallExpr(ast::CallExpr* expr) {
+llvm::Value* Visitor::visit(ast::CallExpr* expr) {
     llvm::Function* function = this->module->getFunction(expr->callee);
     if (!function) {
         std::cerr << "Function " << expr->callee << " not found" << std::endl;
@@ -151,13 +217,26 @@ llvm::Value* Visitor::visit_CallExpr(ast::CallExpr* expr) {
     return this->builder->CreateCall(function, args, "call");
 }
 
-llvm::Value* Visitor::visit_ReturnExpr(ast::ReturnExpr* expr) {
+llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
+    if (!this->current_function) {
+        std::cerr << "Return outside of function" << std::endl;
+        exit(1);
+    }
+
+    Function* func = this->current_function;
     if (expr->value) {
         llvm::Value* value = expr->value->accept(*this);
-        return this->builder->CreateRet(value);
+        if (
+            Type::from_llvm_type(func->ret).is_compatible(value->getType())
+        ) {
+            return this->builder->CreateRet(value);
+        } else {
+            std::cerr << "Incompatible return type" << std::endl;
+            exit(1);
+        }
     } else {
-        if (!this->current_function.return_type->isVoidTy()) {
-            std::cerr << "Function " << this->current_function.name << " expects a return value" << std::endl;
+        if (!func->ret->isVoidTy()) {
+            std::cerr << "Function " << func->name << " expects a return value" << std::endl;
             exit(1);
         }
 
@@ -165,29 +244,29 @@ llvm::Value* Visitor::visit_ReturnExpr(ast::ReturnExpr* expr) {
     }
 }
 
-llvm::Value* Visitor::visit_PrototypeExpr(ast::PrototypeExpr* prototype) {
-    std::string name = prototype->name;
+llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
+    std::string name = expr->name;
 
-    llvm::Type* return_type = prototype->return_type.to_llvm_type(this->context);
+    llvm::Type* ret = expr->return_type.to_llvm_type(this->context);
     std::vector<llvm::Type*> args;
 
-    for (auto& arg : prototype->args) {
+    for (auto& arg : expr->args) {
         args.push_back(arg.type.to_llvm_type(this->context));
     }
 
-    llvm::FunctionType* function_t = llvm::FunctionType::get(return_type, args, false);
+    llvm::FunctionType* function_t = llvm::FunctionType::get(ret, args, false);
     llvm::Function* function = llvm::Function::Create(function_t, llvm::Function::ExternalLinkage, name, this->module.get());
 
     unsigned i = 0;
     for (auto& arg : function->args()) {
-        arg.setName(prototype->args[i++].name);
+        arg.setName(expr->args[i++].name);
     }
     
-    this->functions[name] = {name, args, return_type};
+    this->functions[name] = new Function(name, args, ret);
     return function;
 }
 
-llvm::Value* Visitor::visit_FunctionExpr(ast::FunctionExpr* expr) {
+llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
     std::string name = expr->prototype->name;
     llvm::Function* function = this->module->getFunction(name);
     if (!function) {
@@ -202,17 +281,66 @@ llvm::Value* Visitor::visit_FunctionExpr(ast::FunctionExpr* expr) {
     llvm::BasicBlock* block = llvm::BasicBlock::Create(this->context, "entry", function);
     this->builder->SetInsertPoint(block);
 
-    this->variables.clear();
+    Function* func = this->functions[name];
+    func->locals = std::map<std::string, llvm::AllocaInst*>(this->globals);
+
     for (auto& arg : function->args()) {
         std::string name = arg.getName().str();
-        this->variables[name] = &arg;
-    }
 
-    this->current_function = this->functions[name];
+        llvm::AllocaInst* alloca_inst = this->create_alloca(function, arg.getType(), name);
+        this->builder->CreateStore(&arg, alloca_inst);
+
+        func->locals[name] = alloca_inst;
+    }
+    
+    this->current_function = func;
+    for (auto& expr : expr->body) {
+        expr->accept(*this);
+    }
+    
+    this->current_function = nullptr;
+    llvm::verifyFunction(*function);
+
+    return function;
+}
+
+llvm::Value* Visitor::visit(ast::IfExpr* expr) {
+    llvm::Value* condition = expr->condition->accept(*this);
+    llvm::Function* function = this->builder->GetInsertBlock()->getParent();
+
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(this->context, "then", function);
+    llvm::BasicBlock* else_ = llvm::BasicBlock::Create(this->context, "else");
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(this->context, "merge");
+
+    this->builder->CreateCondBr(condition, then, else_);
+    this->builder->SetInsertPoint(then);
+
     for (auto& expr : expr->body) {
         expr->accept(*this);
     }
 
-    llvm::verifyFunction(*function);
-    return function;
+    this->builder->CreateBr(merge);
+    then = this->builder->GetInsertBlock();
+
+    function->getBasicBlockList().push_back(else_);
+    this->builder->SetInsertPoint(else_);
+
+    if (expr->ebody.size() > 0) {
+        for (auto& expr : expr->ebody) {
+            expr->accept(*this);
+        }
+    }
+
+    this->builder->CreateBr(merge);
+    else_ = this->builder->GetInsertBlock();
+
+    function->getBasicBlockList().push_back(merge);
+    this->builder->SetInsertPoint(merge);
+
+    llvm::PHINode* phi = this->builder->CreatePHI(llvm::Type::getInt1Ty(this->context), 2, "if");
+
+    phi->addIncoming(llvm::ConstantInt::getTrue(this->context), then);
+    phi->addIncoming(llvm::ConstantInt::getFalse(this->context), else_);
+
+    return phi;
 }

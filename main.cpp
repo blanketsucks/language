@@ -1,6 +1,6 @@
 #include "src/lexer.h"
 #include "src/parser.h"
-#include "src/llvm.h"
+#include "src/types.h"
 #include "src/visitor.h"
 
 int main() {
@@ -15,4 +15,7 @@ int main() {
     visitor.visit(std::move(program));
 
     visitor.dump(llvm::errs());
+
+    Type type = Type::LongLong;
+    std::cout << type.is_numeric() << std::endl;
 }

@@ -9,8 +9,10 @@ Type Type::from_llvm_type(llvm::Type* type) {
         return ShortType;
     } else if (type->isIntegerTy(32)) {
         return IntegerType;
-    } else if (type->isIntegerTy(64)) {
+    } else if (type->isIntegerTy(LONG_SIZE)) {
         return LongType;
+    } else if (type->isIntegerTy(64)) {
+        return LongLongType;
     } else if (type->isDoubleTy()) {
         return DoubleType;
     } else if (type->isFloatTy()) {
@@ -22,44 +24,61 @@ Type Type::from_llvm_type(llvm::Type* type) {
 
 llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
     switch (this->value) {
-        case Short:
+        case Type::Short:
             return llvm::Type::getInt16Ty(context);
-        case Integer:
+        case Type::Integer:
             return llvm::Type::getInt32Ty(context);
-        case Double:
+        case Type::Long:
+            if (LONG_SIZE == 32) {
+                return llvm::Type::getInt32Ty(context);
+            } else {
+                return llvm::Type::getInt64Ty(context);
+            }
+        case Type::LongLong:
+            return llvm::Type::getInt64Ty(context);
+        case Type::Double:
             return llvm::Type::getDoubleTy(context);
-        case Float:
+        case Type::Float:
             return llvm::Type::getFloatTy(context);
-        case String:
+        case Type::Byte:
+            return llvm::Type::getInt8Ty(context);
+        case Type::String:
             return llvm::Type::getInt8PtrTy(context);
-        case Boolean:
+        case Type::Boolean:
             return llvm::Type::getInt1Ty(context);
+        case Type::Array:
+            // Place-holder for now
+            return llvm::ArrayType::get(llvm::Type::getInt8Ty(context), 0);
         default:
             return llvm::Type::getVoidTy(context);
     }
 }
 
+Type Type::copy() {
+    return Type(this->value, this->size);
+}
+
 std::string Type::to_str() {
     switch (this->value) {
-        case Short:
+        case Type::Short:
             return "short";
-        case Integer:
+        case Type::Integer:
             return "int";
-        case Long:
+        case Type::Long:
             return "long";
-        case Double:
+        case Type::Double:
             return "double";
-        case Float:
+        case Type::Float:
             return "float";
-        case String:
+        case Type::String:
             return "str"; 
-        case Boolean:
+        case Type::Boolean:
             return "bool";
-        case Void:
+        case Type::Void:
             return "void";
-        default:
-            return "";
     }
+
+    return "";
 }
 
 bool Type::is_compatible(Type other) {
@@ -72,7 +91,9 @@ bool Type::is_compatible(Type other) {
         
         // TODO: Check signedness and possibly the size
         return true;
-    } else if (this->is_string() && other.is_string() || this->is_void() && other.is_void()) {
+    } else if (
+        this->is_string() && other.is_string() || this->is_void() && other.is_void() || this->is_array() && other.is_array()
+    ) {
         return true;
     } else {
         return false;

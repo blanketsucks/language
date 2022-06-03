@@ -7,13 +7,27 @@ using namespace ast;
 IntegerExpr::IntegerExpr(int value) : value(value) {}
 
 llvm::Value* IntegerExpr::accept(Visitor& visitor) {
-    return visitor.visit_IntegerExpr(this);
+    return visitor.visit(this);
+}
+
+StringExpr::StringExpr(std::string value) : value(value) {}
+
+llvm::Value* StringExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
 }
 
 VariableExpr::VariableExpr(std::string name) : name(name) {}
 
 llvm::Value* VariableExpr::accept(Visitor& visitor) {
-    return visitor.visit_VariableExpr(this);
+    return visitor.visit(this);
+}
+
+VariableAssignmentExpr::VariableAssignmentExpr(std::string name, std::unique_ptr<Expr> value) : name(name) {
+    this->value = std::move(value);
+}
+
+llvm::Value* VariableAssignmentExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
 }
 
 ArrayExpr::ArrayExpr(std::vector<std::unique_ptr<Expr>> elements) {
@@ -21,7 +35,7 @@ ArrayExpr::ArrayExpr(std::vector<std::unique_ptr<Expr>> elements) {
 }
 
 llvm::Value* ArrayExpr::accept(Visitor& visitor) {
-    return visitor.visit_ArrayExpr(this);
+    return visitor.visit(this);
 }
 
 BinaryOpExpr::BinaryOpExpr(TokenType op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right) : op(op) {
@@ -30,7 +44,7 @@ BinaryOpExpr::BinaryOpExpr(TokenType op, std::unique_ptr<Expr> left, std::unique
 }
 
 llvm::Value* BinaryOpExpr::accept(Visitor& visitor) {
-    return visitor.visit_BinaryOpExpr(this);
+    return visitor.visit(this);
 }
 
 CallExpr::CallExpr(std::string callee, std::vector<std::unique_ptr<Expr>> args) : callee(callee) {
@@ -38,7 +52,7 @@ CallExpr::CallExpr(std::string callee, std::vector<std::unique_ptr<Expr>> args) 
 }
 
 llvm::Value* CallExpr::accept(Visitor& visitor) {
-    return visitor.visit_CallExpr(this);
+    return visitor.visit(this);
 }
 
 ReturnExpr::ReturnExpr(std::unique_ptr<Expr> value) {
@@ -46,7 +60,7 @@ ReturnExpr::ReturnExpr(std::unique_ptr<Expr> value) {
 }
 
 llvm::Value* ReturnExpr::accept(Visitor& visitor) {
-    return visitor.visit_ReturnExpr(this);
+    return visitor.visit(this);
 }
 
 PrototypeExpr::PrototypeExpr(std::string name, Type return_type, std::vector<Argument> args) : name(name), return_type(return_type) {
@@ -54,7 +68,7 @@ PrototypeExpr::PrototypeExpr(std::string name, Type return_type, std::vector<Arg
 }
 
 llvm::Value* PrototypeExpr::accept(Visitor& visitor) {
-    return visitor.visit_PrototypeExpr(this);
+    return visitor.visit(this);
 }
 
 FunctionExpr::FunctionExpr(std::unique_ptr<PrototypeExpr> prototype, std::vector<std::unique_ptr<Expr>> body) {
@@ -63,7 +77,17 @@ FunctionExpr::FunctionExpr(std::unique_ptr<PrototypeExpr> prototype, std::vector
 }
 
 llvm::Value* FunctionExpr::accept(Visitor& visitor) {
-    return visitor.visit_FunctionExpr(this);
+    return visitor.visit(this);
+}
+
+IfExpr::IfExpr(std::unique_ptr<Expr> condition, std::vector<std::unique_ptr<Expr>> body, std::vector<std::unique_ptr<Expr>> ebody) {
+    this->condition = std::move(condition);
+    this->body = std::move(body);
+    this->ebody = std::move(ebody);
+}
+
+llvm::Value* IfExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
 }
 
 Program::Program(std::vector<std::unique_ptr<Expr>> ast) {

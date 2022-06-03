@@ -26,9 +26,9 @@ public:
 
     std::unique_ptr<ast::PrototypeExpr> parse_prototype();
     std::unique_ptr<ast::FunctionExpr> parse_function();
+    std::unique_ptr<ast::IfExpr> parse_if_statement();
 
     std::unique_ptr<ast::Program> statements();
-
     std::unique_ptr<ast::Expr> statement();
     std::unique_ptr<ast::Expr> expr(bool semicolon = true);
     std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
