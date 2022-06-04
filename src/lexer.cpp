@@ -30,17 +30,19 @@ Lexer::Lexer(FILE* file, std::string filename) {
     this->next();
 }
 
-char Lexer::next() {
+char Lexer::next(bool check_newline) {
     this->current = this->source[this->index];
     this->index++;
 
-    while (this->current == '\n' || this->current == '\r') {
-        if (this->current == '\n') {
-            this->line++;
-            this->column = 0;
-        }
+    if (check_newline) {
+        while (this->current == '\n' || this->current == '\r') {
+            if (this->current == '\n') {
+                this->line++;
+                this->column = 0;
+            }
 
-        this->next();
+            this->next();
+        }
     }
 
     if (this->current == 0) {
@@ -81,6 +83,14 @@ Token Lexer::create_token(TokenType type, Location start, std::string value) {
 
 Location Lexer::loc() {
     return {this->line, this->column, this->index, this->filename};
+}
+
+void Lexer::skip_comment() {
+    while (this->current != '\n' && this->current != 0) {
+        this->next(false);
+    }
+
+    this->next();
 }
 
 Token Lexer::parse_identifier() {
@@ -153,6 +163,8 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->parse_identifier());
         } else if (std::isdigit(this->current)) {
             tokens.push_back(this->parse_number());
+        } else if (this->current == '#') {
+            this->skip_comment();
         } else if (this->current == '+') {
             tokens.push_back(this->create_token(TokenType::PLUS, "+"));    
             this->next();

@@ -264,9 +264,8 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 this->next();
-                auto expr = this->expr(false);
-
-                this->next();
+                
+                auto expr = this->expr();
                 return std::make_unique<ast::VariableAssignmentExpr>(name, std::move(expr));
             }
             break;

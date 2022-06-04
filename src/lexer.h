@@ -16,7 +16,7 @@ public:
     Lexer(std::ifstream& file, std::string filename);
     Lexer(FILE* file, std::string filename);
 
-    char next();
+    char next(bool check_newline = true);
     char peek();
     char prev();
 
@@ -29,6 +29,7 @@ public:
 
     Location loc();
 
+    void skip_comment();
     Token parse_identifier();
     Token parse_string();
     Token parse_number();

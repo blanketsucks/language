@@ -1,6 +1,9 @@
-extern puts(fmt: str) -> void;
+def fib(x: int) -> int {
+    if x < 3 {
+        return 1;
+    } else {
+        return fib(x - 1) + fib(x - 2);
+    }
 
-def bar() -> void {
-    let x = "Hello, World";
-    puts(x);
+    return 0; # Required for now but will fix later
 }

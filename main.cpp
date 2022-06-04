@@ -4,6 +4,12 @@
 #include "src/visitor.h"
 
 int main() {
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
     std::ifstream file("test.txt");
 
     Lexer lexer(file, "test.txt");
@@ -14,8 +20,44 @@ int main() {
     Visitor visitor("test");
     visitor.visit(std::move(program));
 
-    visitor.dump(llvm::errs());
+    // Compile to object code
 
-    Type type = Type::LongLong;
-    std::cout << type.is_numeric() << std::endl;
-}
+    std::string target_triple = llvm::sys::getDefaultTargetTriple();
+    std::string error;
+
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+    if (!target) {
+        std::cerr << "Failed to create target: " << error << std::endl;
+        return 1;
+    }
+
+    std::string cpu = "generic";
+    std::string features = "";
+
+    llvm::TargetOptions options;
+    auto reloc = llvm::Optional<llvm::Reloc::Model>();
+
+    llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, cpu, features, options, reloc);
+    visitor.module->setDataLayout(target_machine->createDataLayout());
+    visitor.module->setTargetTriple(target_triple);
+
+    std::string filename = "output.o";
+    std::error_code ec;
+
+    llvm::raw_fd_ostream dest(filename, ec, llvm::sys::fs::OF_None);
+    if (ec) {
+        std::cerr << "Could not open file. " << ec.message() << std::endl;
+        return 1;
+    }
+
+    llvm::legacy::PassManager pass;
+    if (target_machine->addPassesToEmitFile(pass, dest, nullptr, llvm::CGFT_ObjectFile)) {
+        std::cerr << "Target machine can't emit a file of this type" << std::endl;
+        return 1;
+    }
+
+    visitor.dump(llvm::outs());
+
+    pass.run(*visitor.module);
+    dest.flush();
+} 

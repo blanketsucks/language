@@ -39,8 +39,8 @@ public:
 
     void dump(llvm::raw_ostream& stream);
     llvm::Type* get_type(Type type);
-    llvm::Value* get_variable(std::string name);
-    llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type, std::string name);
+    llvm::AllocaInst* get_variable(std::string name);
+    llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name);
 
     void visit(std::unique_ptr<ast::Program> program);
     llvm::Value* visit(ast::IntegerExpr* expr);

@@ -17,25 +17,17 @@ void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
 }
 
-llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type, std::string name) {
+llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name) {
     llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
-    return tmp.CreateAlloca(type, 0, name);
+    return tmp.CreateAlloca(type, nullptr, name);
 }
 
-llvm::Value* Visitor::get_variable(std::string name) {
-    llvm::Value* value;
+llvm::AllocaInst* Visitor::get_variable(std::string name) {
+    llvm::AllocaInst* value;
     if (this->current_function) {
         value = this->current_function->locals[name];
     } else {
         value = this->globals[name];
-    }
-
-    if (!value) {
-        value = this->constants[name];
-        if (!value) {
-            std::cerr << "Variable " << name << " not found" << std::endl;
-            exit(1);
-        }
     }
 
     return value;
@@ -56,13 +48,24 @@ llvm::Value* Visitor::visit(ast::StringExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
-    llvm::Value* value = this->get_variable(expr->name);
-    return this->builder->CreateLoad(value->getType(), value, expr->name);
+    llvm::AllocaInst* value = this->get_variable(expr->name);
+    return this->builder->CreateLoad(value->getAllocatedType(), value, expr->name);
 }
 
-llvm::Value* visit_VariableAssignmentExpr(ast::VariableAssignmentExpr* expr) {
-    (void)expr;
-    return nullptr;
+llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this);
+    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
+
+    llvm::AllocaInst* alloca_inst = this->create_alloca(func, value->getType(), expr->name);
+    this->builder->CreateStore(value, alloca_inst);
+
+    if (this->current_function) {
+        this->current_function->locals[expr->name] = alloca_inst;
+    } else {
+        this->globals[expr->name] = alloca_inst;
+    }
+
+    return value;
 }
 
 llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
@@ -337,7 +340,7 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(merge);
     this->builder->SetInsertPoint(merge);
 
-    llvm::PHINode* phi = this->builder->CreatePHI(llvm::Type::getInt1Ty(this->context), 2, "if");
+    llvm::PHINode* phi = this->builder->CreatePHI(BooleanType.to_llvm_type(this->context), 2, "if");
 
     phi->addIncoming(llvm::ConstantInt::getTrue(this->context), then);
     phi->addIncoming(llvm::ConstantInt::getFalse(this->context), else_);
