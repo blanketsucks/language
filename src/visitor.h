@@ -28,10 +28,10 @@ public:
     llvm::LLVMContext context;
     std::unique_ptr<llvm::Module> module;
     std::unique_ptr<llvm::IRBuilder<>> builder;
+    std::unique_ptr<llvm::legacy::FunctionPassManager> fpm;
 
     std::map<std::string, Function*> functions;
     std::map<std::string, llvm::Constant*> constants;
-    std::map<std::string, llvm::AllocaInst*> globals;
 
     Function* current_function = nullptr;
 
@@ -39,8 +39,9 @@ public:
 
     void dump(llvm::raw_ostream& stream);
     llvm::Type* get_type(Type type);
-    llvm::AllocaInst* get_variable(std::string name);
+    llvm::Value* get_variable(std::string name);
     llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name);
+    llvm::Value* cast(llvm::Value* value, Type type);
 
     void visit(std::unique_ptr<ast::Program> program);
     llvm::Value* visit(ast::IntegerExpr* expr);
@@ -48,12 +49,14 @@ public:
     llvm::Value* visit(ast::VariableExpr* expr);
     llvm::Value* visit(ast::VariableAssignmentExpr* expr);
     llvm::Value* visit(ast::ArrayExpr* expr);
+    llvm::Value* visit(ast::UnaryOpExpr* expr);
     llvm::Value* visit(ast::BinaryOpExpr* expr);
     llvm::Value* visit(ast::CallExpr* expr);
     llvm::Value* visit(ast::ReturnExpr* expr);
     llvm::Value* visit(ast::PrototypeExpr* expr);
     llvm::Value* visit(ast::FunctionExpr* expr);
     llvm::Value* visit(ast::IfExpr* expr);
+    llvm::Value* visit(ast::StructExpr* expr);
 };
 
 

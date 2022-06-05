@@ -261,6 +261,9 @@ std::vector<Token> Lexer::lex() {
             }
 
             tokens.push_back(token);
+        } else if (this->current == '~') {
+            tokens.push_back(this->create_token(TokenType::BINARY_NOT, "~"));
+            this->next();
         } else if (this->current == '^') {
             tokens.push_back(this->create_token(TokenType::XOR, "^"));
             this->next();

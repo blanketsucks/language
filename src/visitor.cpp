@@ -6,11 +6,24 @@
 Visitor::Visitor(std::string module) {
     this->module = std::make_unique<llvm::Module>(llvm::StringRef(module), this->context);
     this->builder = std::make_unique<llvm::IRBuilder<>>(this->context);
+    this->fpm = std::make_unique<llvm::legacy::FunctionPassManager>(this->module.get());
 
-    this->constants = {
-        {"true", llvm::ConstantInt::getTrue(this->context)},
-        {"false", llvm::ConstantInt::getFalse(this->context)},
-    };
+    // Promote allocas to registers.
+    this->fpm->add(llvm::createPromoteMemoryToRegisterPass());
+
+    // Do simple "peephole" optimizations
+    this->fpm->add(llvm::createInstructionCombiningPass());
+
+    // Reassociate expressions.
+    this->fpm->add(llvm::createReassociatePass());
+
+    // Eliminate Common SubExpressions.
+    this->fpm->add(llvm::createGVNPass());
+
+    // Simplify the control flow graph (deleting unreachable blocks etc).
+    this->fpm->add(llvm::createCFGSimplificationPass());
+
+    this->fpm->doInitialization();
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -22,15 +35,24 @@ llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* t
     return tmp.CreateAlloca(type, nullptr, name);
 }
 
-llvm::AllocaInst* Visitor::get_variable(std::string name) {
-    llvm::AllocaInst* value;
+llvm::Value* Visitor::get_variable(std::string name) {
     if (this->current_function) {
-        value = this->current_function->locals[name];
-    } else {
-        value = this->globals[name];
+        llvm::Value* value = this->current_function->locals[name];
+        if (value) {
+            return value;
+        }
     }
 
-    return value;
+    return this->module->getGlobalVariable(name);
+}
+
+llvm::Value* Visitor::cast(llvm::Value* value, Type type) {
+    llvm::Type* target = type.to_llvm_type(this->context);
+    if (value->getType() == target) {
+        return value;
+    }
+
+    return this->builder->CreateBitCast(value, target);
 }
 
 void Visitor::visit(std::unique_ptr<ast::Program> program) {
@@ -48,23 +70,49 @@ llvm::Value* Visitor::visit(ast::StringExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
-    llvm::AllocaInst* value = this->get_variable(expr->name);
-    return this->builder->CreateLoad(value->getAllocatedType(), value, expr->name);
+    if (this->current_function) {
+        llvm::AllocaInst* variable = this->current_function->locals[expr->name];
+        if (variable) {
+            return this->builder->CreateLoad(variable->getAllocatedType(), variable, expr->name);;
+        }
+    }
+    
+    llvm::GlobalVariable* global = this->module->getGlobalVariable(expr->name);
+    if (global) {
+        return this->builder->CreateLoad(global->getValueType(), global, expr->name);
+    }
+
+    std::cout << "Variable " << expr->name << " is not defined" << std::endl;
+    exit(1);
 }
 
 llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
     llvm::Value* value = expr->value->accept(*this);
-    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
+    llvm::Type* type;
 
-    llvm::AllocaInst* alloca_inst = this->create_alloca(func, value->getType(), expr->name);
-    this->builder->CreateStore(value, alloca_inst);
-
-    if (this->current_function) {
-        this->current_function->locals[expr->name] = alloca_inst;
+    if (expr->type.is_unknown()) {
+        type = value->getType();
     } else {
-        this->globals[expr->name] = alloca_inst;
+        type = expr->type.to_llvm_type(this->context);
     }
 
+    if (!this->current_function) {
+        this->module->getOrInsertGlobal(expr->name, type);
+        llvm::GlobalVariable* variable = this->module->getNamedGlobal(expr->name);
+
+        // TODO: let users specify other options somehow and this applies to other stuff too, not just this
+        variable->setLinkage(llvm::GlobalValue::ExternalLinkage);
+        variable->setInitializer((llvm::Constant*)value);
+
+        return value;
+    }
+
+    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
+
+    llvm::AllocaInst* alloca_inst = this->create_alloca(func, type, expr->name);
+    this->builder->CreateStore(value, alloca_inst);
+
+    this->current_function->locals[expr->name] = alloca_inst;
     return value;
 }
 
@@ -91,6 +139,33 @@ llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
     return llvm::ConstantArray::get(llvm::ArrayType::get(type, elements.size()), elements);
 }
 
+llvm::Value* Visitor::visit(ast::UnaryOpExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this);
+
+    bool is_floating_point = value->getType()->isFloatingPointTy();
+    if (!(value->getType()->isIntegerTy() || is_floating_point)) {
+        std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
+        exit(1);
+    }
+    switch (expr->op) {
+        case TokenType::PLUS:
+            return value;
+        case TokenType::MINUS:
+            if (is_floating_point) {
+                return this->builder->CreateFNeg(value, "fneg");
+            } else {
+                return this->builder->CreateNeg(value, "neg");
+            }
+        case TokenType::NOT:
+            return this->builder->CreateNot(this->cast(value, BooleanType), "not");
+        case TokenType::BINARY_NOT:
+            return this->builder->CreateNot(value, "not");
+        default:
+            std::cerr << "Unary operator not supported" << std::endl;
+            exit(1);
+    }
+}
+
 llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenType::ASSIGN) {
@@ -101,6 +176,11 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
         }
 
         llvm::Value* variable = this->get_variable(lhs->name);
+        if (!variable) {
+            std::cerr << "Variable " << lhs->name << " is not defined" << std::endl;
+            exit(1);
+        }
+
         llvm::Value* value = expr->right->accept(*this);
 
         this->builder->CreateStore(value, variable);
@@ -123,67 +203,72 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
         }
     }
 
+    bool is_floating_point = ltype->isFloatingPointTy();
     switch (expr->op) {
         case TokenType::PLUS:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFAdd(left, right, "fadd");
             } else {
                 return this->builder->CreateAdd(left, right, "add");
             }
         case TokenType::MINUS:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFSub(left, right, "fsub");
             } else {
                 return this->builder->CreateSub(left, right, "sub");
             }
         case TokenType::MUL:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFMul(left, right, "fmul");
             } else {
                 return this->builder->CreateMul(left, right, "mul");
             }
         case TokenType::DIV:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFDiv(left, right, "fdiv");
             } else {
                 return this->builder->CreateSDiv(left, right, "div");
             }
         case TokenType::EQ:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpOEQ(left, right, "feq");
             } else {
                 return this->builder->CreateICmpEQ(left, right, "eq");
             }
         case TokenType::NEQ:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpONE(left, right, "fneq");
             } else {
                 return this->builder->CreateICmpNE(left, right, "neq");
             }
         case TokenType::GT:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpOGT(left, right, "fgt");
             } else {
                 return this->builder->CreateICmpSGT(left, right, "gt");
             }
         case TokenType::LT:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpOLT(left, right, "flt");
             } else {
                 return this->builder->CreateICmpSLT(left, right, "lt");
             }
         case TokenType::GTE:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpOGE(left, right, "fge");
             } else {
                 return this->builder->CreateICmpSGE(left, right, "ge");
             }
         case TokenType::LTE:
-            if (ltype->isFloatingPointTy()) {
+            if (is_floating_point) {
                 return this->builder->CreateFCmpOLE(left, right, "fle");
             } else {
                 return this->builder->CreateICmpSLE(left, right, "le");
             }
+        case TokenType::AND:
+            return this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType), "and");
+        case TokenType::OR:
+            return this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType), "or");
         case TokenType::BINARY_AND:
             return this->builder->CreateAnd(left, right, "and");
         case TokenType::BINARY_OR:
@@ -285,8 +370,6 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
     this->builder->SetInsertPoint(block);
 
     Function* func = this->functions[name];
-    func->locals = std::map<std::string, llvm::AllocaInst*>(this->globals);
-
     for (auto& arg : function->args()) {
         std::string name = arg.getName().str();
 
@@ -297,13 +380,26 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
     }
     
     this->current_function = func;
-    for (auto& expr : expr->body) {
-        expr->accept(*this);
+    if (expr->body.size() == 0) {
+        if (!func->ret->isVoidTy()) {
+            std::cerr << "Function " << name << " expects a return value" << std::endl;
+            exit(1);
+        }
+
+        this->builder->CreateRetVoid();
+    } else {
+        for (auto& expr : expr->body) {
+            expr->accept(*this);
+        }
     }
     
     this->current_function = nullptr;
-    llvm::verifyFunction(*function);
+    bool error = llvm::verifyFunction(*function, &llvm::errs());
+    if (error) {
+        exit(1); // To avoid a segfault when calling `fpm->run(*function)`
+    }
 
+    this->fpm->run(*function);
     return function;
 }
 
@@ -328,10 +424,8 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(else_);
     this->builder->SetInsertPoint(else_);
 
-    if (expr->ebody.size() > 0) {
-        for (auto& expr : expr->ebody) {
-            expr->accept(*this);
-        }
+    for (auto& expr : expr->ebody) {
+        expr->accept(*this);
     }
 
     this->builder->CreateBr(merge);
@@ -346,4 +440,14 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     phi->addIncoming(llvm::ConstantInt::getFalse(this->context), else_);
 
     return phi;
+}
+
+llvm::Value* Visitor::visit(ast::StructExpr* expr) {
+    std::vector<llvm::Type*> fields;
+    for (auto& field : expr->fields) {
+        fields.push_back(field.type.to_llvm_type(this->context));
+    }
+
+    auto type = llvm::StructType::create(this->context, fields, expr->name, expr->packed);
+    return this->module->getOrInsertGlobal(expr->name, type);
 }

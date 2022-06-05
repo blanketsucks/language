@@ -103,3 +103,44 @@ bool Type::is_compatible(Type other) {
 bool Type::is_compatible(llvm::Type* type) {
     return this->is_compatible(Type::from_llvm_type(type));
 }
+
+// Structure Type
+
+Struct::Struct(std::string name, std::vector<Type> fields) : name(name), fields(fields) {}
+
+Struct Struct::from_llvm_type(llvm::StructType* type) {
+    std::vector<Type> fields;
+    for (auto field : type->elements()) {
+        fields.push_back(Type::from_llvm_type(field));
+    }
+
+    return Struct(type->getName().str(), fields);
+}
+
+llvm::StructType* Struct::to_llvm_type(llvm::LLVMContext& context) {
+    std::vector<llvm::Type*> types;
+    for (auto& field : this->fields) {
+        types.push_back(field.to_llvm_type(context));
+    }
+
+    return llvm::StructType::create(context, types);
+}
+
+bool Struct::is_compatible(Struct other) {
+    if (this->fields.size() != other.fields.size()) {
+        return false;
+    }
+
+    for (int i = 0; i < this->fields.size(); i++) {
+        if (!this->fields[i].is_compatible(other.fields[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool Struct::is_compatible(llvm::StructType* type) {
+    return this->is_compatible(Struct::from_llvm_type(type));
+}
+

@@ -1,9 +1,16 @@
-def fib(x: int) -> int {
-    if x < 3 {
-        return 1;
-    } else {
-        return fib(x - 1) + fib(x - 2);
-    }
+let x = 10;
 
-    return 0; # Required for now but will fix later
+struct Point {
+    x: int;
+    y: int;
+}
+
+struct packed PackedPoint {
+    x: int;
+    y: int;
+}
+
+def foo() -> array<byte, 10> {
+    let x = "hello";
+    return x;
 }

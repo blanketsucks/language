@@ -51,10 +51,10 @@ public:
 class VariableAssignmentExpr : public Expr {
 public:
     std::string name;
-    Type type = VoidType;
+    Type type;
     std::unique_ptr<Expr> value;
 
-    VariableAssignmentExpr(std::string name, std::unique_ptr<Expr> value);
+    VariableAssignmentExpr(std::string name, Type type, std::unique_ptr<Expr> value);
     llvm::Value* accept(Visitor& visitor) override;
 };
 
@@ -64,6 +64,15 @@ public:
     std::vector<std::unique_ptr<Expr>> elements;
 
     ArrayExpr(std::vector<std::unique_ptr<Expr>> elements);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class UnaryOpExpr : public Expr {
+public:
+    std::unique_ptr<Expr> value;
+    TokenType op;
+
+    UnaryOpExpr(TokenType op, std::unique_ptr<Expr> value);
     llvm::Value* accept(Visitor& visitor) override;
 };
 
@@ -119,6 +128,16 @@ public:
     std::vector<std::unique_ptr<Expr>> ebody; // The else body
 
     IfExpr(std::unique_ptr<Expr> condition, std::vector<std::unique_ptr<Expr>> body, std::vector<std::unique_ptr<Expr>> ebody);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class StructExpr : public Expr {
+public:
+    std::string name;
+    bool packed;
+    std::vector<Argument> fields;
+
+    StructExpr(std::string name, bool packed, std::vector<Argument> fields);
     llvm::Value* accept(Visitor& visitor) override;
 };
 

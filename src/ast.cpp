@@ -22,7 +22,7 @@ llvm::Value* VariableExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-VariableAssignmentExpr::VariableAssignmentExpr(std::string name, std::unique_ptr<Expr> value) : name(name) {
+VariableAssignmentExpr::VariableAssignmentExpr(std::string name, Type type, std::unique_ptr<Expr> value) : name(name), type(type) {
     this->value = std::move(value);
 }
 
@@ -35,6 +35,14 @@ ArrayExpr::ArrayExpr(std::vector<std::unique_ptr<Expr>> elements) {
 }
 
 llvm::Value* ArrayExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+UnaryOpExpr::UnaryOpExpr(TokenType op, std::unique_ptr<Expr> value) : op(op) {
+    this->value = std::move(value);
+}
+
+llvm::Value* UnaryOpExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -87,6 +95,14 @@ IfExpr::IfExpr(std::unique_ptr<Expr> condition, std::vector<std::unique_ptr<Expr
 }
 
 llvm::Value* IfExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+StructExpr::StructExpr(std::string name, bool packed, std::vector<Argument> fields) : name(name), packed(packed) {
+    this->fields = std::move(fields);
+}
+
+llvm::Value* StructExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 

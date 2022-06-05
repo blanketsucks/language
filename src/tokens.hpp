@@ -25,6 +25,7 @@ enum class TokenType {
     // Binary Operators
     BINARY_OR,
     BINARY_AND,
+    BINARY_NOT,
     XOR,
     RSH,
     LSH,
@@ -87,7 +88,9 @@ static std::vector<std::string> KEYWORDS = {
     "return",
     "if",
     "else",
-    "let"
+    "let",
+    "struct",
+    "packed"
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
@@ -115,5 +118,13 @@ static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
     std::make_pair(TokenType::DIV, 40),
     std::make_pair(TokenType::MUL, 40)
 };
+
+static std::vector<TokenType> UNARY_OPERATORS = {
+    TokenType::NOT,
+    TokenType::PLUS,
+    TokenType::MINUS,
+    TokenType::BINARY_NOT
+};
+
 
 #endif

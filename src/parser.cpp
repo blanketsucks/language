@@ -80,7 +80,62 @@ Type Parser::get_type(std::string name) {
         }
     }
 
-    return this->types[name];
+    Type type = this->types[name];
+
+    // Untested piece of garbage. There probably is a better to do this.
+    if (type.is_generic()) {
+        this->next();
+        type = type.copy();
+
+        if (this->current.type != TokenType::LT) {
+            this->error("Missing generic type arguments for " + name);
+        }
+
+        this->next();
+        std::vector<llvm::Any> values;
+
+        std::vector<TypeVar> vars = type.get_type_vars();
+        int count = 0;
+        while (this->current.type != TokenType::GT) {
+            if (count >= vars.size()) {
+                this->error("Too many generic type arguments passed in for " + name);
+            }
+
+            if (vars[count].type == TypeVarType::Typename) {
+                this->next();
+                if (this->current.type != TokenType::IDENTIFIER) {
+                    this->error("Expected type name for generic type argument");
+                }
+
+                values.push_back(this->get_type(this->current.value));
+            } else {
+                this->next();
+                values.push_back(this->current.value);
+            } 
+
+            this->next();
+            if (this->current.type != TokenType::COMMA) {
+                break;
+            }
+
+            this->next();
+        }
+
+        if (count < vars.size()) {
+            this->error("Too few generic type arguments passed in for " + name);
+        }
+
+        if (this->current.type != TokenType::GT) {
+            this->error("Expected >");
+        }
+
+        this->next();
+        type.set_type_var_values(values);
+
+        return type;
+    }
+
+    return type;
 } 
 
 std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
@@ -208,6 +263,63 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
     return std::make_unique<ast::IfExpr>(std::move(condition), std::move(body), std::move(else_body));
 }
 
+std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
+    bool packed = false;
+    if (this->current == TokenType::KEYWORD && this->current.value == "packed") {
+        packed = true;
+        this->next();
+    }
+    
+    if (this->current != TokenType::IDENTIFIER) {
+        this->error("Expected identifer or `packed` keyword.");
+    }
+
+    std::string name = this->current.value;
+    this->next();
+
+    if (this->current != TokenType::LBRACE) {
+        this->error("Expected {");
+    }
+
+    this->next();
+    std::vector<ast::Argument> fields;
+
+    while (this->current != TokenType::RBRACE) {
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected identifer.");
+        }
+
+        std::string name = this->current.value;
+        this->next();
+
+        if (this->current != TokenType::COLON) {
+            this->error("Expected :");
+        }
+
+        this->next();
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected type.");
+        }
+        std::string type = this->current.value;
+        this->next();
+
+        fields.push_back({name, this->get_type(type)});
+
+        if (this->current != TokenType::SEMICOLON) {
+            break;
+        }
+
+        this->next();
+    }
+
+    if (this->current != TokenType::RBRACE) {
+        this->error("Expected }");
+    }
+
+    this->next();
+    return std::make_unique<ast::StructExpr>(name, packed, std::move(fields));    
+}
+
 std::unique_ptr<ast::Program> Parser::statements() {
     std::vector<std::unique_ptr<ast::Expr>> statements;
 
@@ -256,8 +368,19 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                     this->error("Expected identifer.");
                 }
 
+                Type type;
                 std::string name = this->current.value;
                 this->next();
+
+                if (this->current == TokenType::COLON) {
+                    this->next();
+                    if (this->current != TokenType::IDENTIFIER) {
+                        this->error("Expected type.");
+                    }
+
+                    type = this->get_type(this->current.value);
+                    this->next();
+                }
 
                 if (this->current != TokenType::ASSIGN) {
                     this->error("Expected =");
@@ -266,7 +389,14 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 this->next();
                 
                 auto expr = this->expr();
-                return std::make_unique<ast::VariableAssignmentExpr>(name, std::move(expr));
+                return std::make_unique<ast::VariableAssignmentExpr>(name, type, std::move(expr));
+            } else if (this->current.value == "struct") {
+                if (this->context.is_inside_function) {
+                    this->error("struct is only allowed outside functions.");
+                }
+
+                this->next();
+                return this->parse_struct();
             }
             break;
         default:
@@ -278,7 +408,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
 }
 
 std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
-    auto left = this->factor();
+    auto left = this->unary();
     auto expr = this->binary(0, std::move(left));
     
     if (semicolon) {
@@ -298,7 +428,7 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
         TokenType op = this->current.type;
         this->next();
 
-        auto right = this->factor();
+        auto right = this->unary();
 
         int next = this->get_token_precendence();
         if (precedence < next) {
@@ -307,6 +437,18 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
 
         left = std::make_unique<ast::BinaryOpExpr>(op, std::move(left), std::move(right));
     }
+}
+
+std::unique_ptr<ast::Expr> Parser::unary() {
+    if (std::find(UNARY_OPERATORS.begin(), UNARY_OPERATORS.end(), this->current.type) == UNARY_OPERATORS.end()) {
+        return this->factor();
+    }
+
+    TokenType op = this->current.type;
+    this->next();
+
+    auto value = this->factor();
+    return std::make_unique<ast::UnaryOpExpr>(op, std::move(value));
 }
 
 std::unique_ptr<ast::Expr> Parser::factor() {
