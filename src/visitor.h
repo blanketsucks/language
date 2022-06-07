@@ -10,6 +10,11 @@
 #include <string>
 #include <memory>
 
+enum class ModuleState {
+    Initialized,
+    Compiled
+};
+
 struct Function {
     std::string name;
     std::vector<llvm::Type*> args;
@@ -23,6 +28,19 @@ struct Function {
     }
 };
 
+struct Struct {
+    std::string name;
+    llvm::StructType* type;
+    std::map<std::string, llvm::Type*> fields;
+};
+
+struct Module {
+    std::string path;
+    ModuleState state;
+
+    bool is_ready() { return this->state == ModuleState::Compiled; }
+};
+
 class Visitor {
 public:
     llvm::LLVMContext context;
@@ -32,18 +50,22 @@ public:
 
     std::map<std::string, Function*> functions;
     std::map<std::string, llvm::Constant*> constants;
+    std::map<std::string, Struct> structs;
+    std::map<std::string, Module> includes;
 
     Function* current_function = nullptr;
 
     Visitor(std::string name);
 
     void dump(llvm::raw_ostream& stream);
-    llvm::Type* get_type(Type type);
     llvm::Value* get_variable(std::string name);
+    llvm::Type* get_llvm_type(Type* name);
     llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name);
-    llvm::Value* cast(llvm::Value* value, Type type);
+    llvm::Value* cast(llvm::Value* value, Type* type);
 
     void visit(std::unique_ptr<ast::Program> program);
+    llvm::Value* visit(ast::IncludeExpr* expr);
+
     llvm::Value* visit(ast::IntegerExpr* expr);
     llvm::Value* visit(ast::StringExpr* expr);
     llvm::Value* visit(ast::VariableExpr* expr);
@@ -57,6 +79,8 @@ public:
     llvm::Value* visit(ast::FunctionExpr* expr);
     llvm::Value* visit(ast::IfExpr* expr);
     llvm::Value* visit(ast::StructExpr* expr);
+    llvm::Value* visit(ast::ConstructorExpr* expr);
+    llvm::Value* visit(ast::AttributeExpr* expr);
 };
 
 

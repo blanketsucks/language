@@ -22,7 +22,7 @@ public:
     Token peek();
 
     int get_token_precendence();
-    Type get_type(std::string name);
+    Type* get_type(std::string name);
 
     std::unique_ptr<ast::PrototypeExpr> parse_prototype();
     std::unique_ptr<ast::FunctionExpr> parse_function();
@@ -42,7 +42,7 @@ private:
     Context context;
     std::vector<Token> tokens;
     std::map<TokenType, int> precedences;
-    std::map<std::string, Type> types;
+    std::map<std::string, Type*> types;
 };
 
 #endif

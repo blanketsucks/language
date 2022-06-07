@@ -288,6 +288,9 @@ std::vector<Token> Lexer::lex() {
         } else if (this->current == ',') {
             tokens.push_back(this->create_token(TokenType::COMMA, ","));
             this->next();
+        } else if (this->current == '.') {
+            tokens.push_back(this->create_token(TokenType::DOT, "."));
+            this->next();
         } else if (this->current == ';') {
             tokens.push_back(this->create_token(TokenType::SEMICOLON, ";"));
             this->next();

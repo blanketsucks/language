@@ -68,7 +68,7 @@ int Parser::get_token_precendence() {
     return precedence;
 }
 
-Type Parser::get_type(std::string name) {
+Type* Parser::get_type(std::string name) {
     if (!this->types.count(name)) {
         this->error("Unknown type: " + name);
     }
@@ -80,37 +80,39 @@ Type Parser::get_type(std::string name) {
         }
     }
 
-    Type type = this->types[name];
+    Type* type = this->types[name];
 
     // Untested piece of garbage. There probably is a better to do this.
-    if (type.is_generic()) {
+    if (type->is_generic()) {
         this->next();
-        type = type.copy();
+        type = type->copy();
 
-        if (this->current.type != TokenType::LT) {
+        if (this->current != TokenType::LT) {
             this->error("Missing generic type arguments for " + name);
         }
 
         this->next();
         std::vector<llvm::Any> values;
 
-        std::vector<TypeVar> vars = type.get_type_vars();
+        std::vector<TypeVar> vars = type->get_type_vars();
         int count = 0;
-        while (this->current.type != TokenType::GT) {
-            if (count >= vars.size()) {
+        while (this->current != TokenType::GT) {
+            if (count > vars.size()) {
                 this->error("Too many generic type arguments passed in for " + name);
             }
 
             if (vars[count].type == TypeVarType::Typename) {
-                this->next();
-                if (this->current.type != TokenType::IDENTIFIER) {
+                if (this->current != TokenType::IDENTIFIER) {
                     this->error("Expected type name for generic type argument");
                 }
 
                 values.push_back(this->get_type(this->current.value));
-            } else {
-                this->next();
-                values.push_back(this->current.value);
+            } else if (vars[count].type == TypeVarType::Integer) {
+                if (this->current != TokenType::INTEGER) {
+                    this->error("Expected integer for generic type argument");
+                }
+
+                values.push_back(std::stoi(this->current.value));
             } 
 
             this->next();
@@ -119,9 +121,10 @@ Type Parser::get_type(std::string name) {
             }
 
             this->next();
+            count++;
         }
 
-        if (count < vars.size()) {
+        if (values.size() != vars.size()) {
             this->error("Too few generic type arguments passed in for " + name);
         }
 
@@ -129,9 +132,7 @@ Type Parser::get_type(std::string name) {
             this->error("Expected >");
         }
 
-        this->next();
-        type.set_type_var_values(values);
-
+        type->set_type_var_values(values);
         return type;
     }
 
@@ -139,6 +140,8 @@ Type Parser::get_type(std::string name) {
 } 
 
 std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
+    Location start = this->current.start;
+
     if (this->current != TokenType::IDENTIFIER) {
         this->error("Expected identifer.");
     }
@@ -180,10 +183,11 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
     if (this->current != TokenType::RPAREN) {
         this->error("Expected )");
     }
-
+    
+    Location end = this->current.end;
     this->next();
-    Type ret = VoidType;
 
+    Type* ret = VoidType;
     if (this->current == TokenType::ARROW) {
         this->next();
         if (this->current != TokenType::IDENTIFIER) {
@@ -191,14 +195,18 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
         }
 
         ret = this->get_type(this->current.value);
+        end = this->current.end;
+
         this->next();
     }
 
-    return std::make_unique<ast::PrototypeExpr>(name, ret, std::move(args));
+    return std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args));
 }
 
 std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
+    Location start = this->current.start;
     auto prototype = this->parse_prototype();
+
     if (this->current != TokenType::LBRACE) {
         this->error("Expected {");
     }
@@ -216,12 +224,15 @@ std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
         this->error("Expected }");
     }
     
+    Location end = this->current.end;
     this->next();
-    return std::make_unique<ast::FunctionExpr>(std::move(prototype), std::move(body));
+    return std::make_unique<ast::FunctionExpr>(start, end, std::move(prototype), std::move(body));
 }
 
 std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
+    Location start = this->current.start;
     std::unique_ptr<ast::Expr> condition = this->expr(false);
+
     if (this->current != TokenType::LBRACE) {
         this->error("Expected {");
     }
@@ -238,9 +249,10 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
         this->error("Expected }");
     }
     
+    Location end = this->current.end;
     this->next();
-    std::vector<std::unique_ptr<ast::Expr>> else_body;
 
+    std::vector<std::unique_ptr<ast::Expr>> else_body;
     if (this->current == TokenType::KEYWORD && this->current.value == "else") {
         this->next();
         if (this->current != TokenType::LBRACE) {
@@ -257,13 +269,15 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
             this->error("Expected }");
         }
 
+        end = this->current.end;
         this->next();
     }
 
-    return std::make_unique<ast::IfExpr>(std::move(condition), std::move(body), std::move(else_body));
+    return std::make_unique<ast::IfExpr>(start, end, std::move(condition), std::move(body), std::move(else_body));
 }
 
 std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
+    Location start = this->current.start;
     bool packed = false;
     if (this->current == TokenType::KEYWORD && this->current.value == "packed") {
         packed = true;
@@ -282,7 +296,8 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     }
 
     this->next();
-    std::vector<ast::Argument> fields;
+    std::map<std::string, ast::Argument> fields;
+    std::vector<Type*> types;
 
     while (this->current != TokenType::RBRACE) {
         if (this->current != TokenType::IDENTIFIER) {
@@ -303,7 +318,8 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         std::string type = this->current.value;
         this->next();
 
-        fields.push_back({name, this->get_type(type)});
+        types.push_back(this->get_type(type));
+        fields[name] = {name, types.back()};
 
         if (this->current != TokenType::SEMICOLON) {
             break;
@@ -316,8 +332,11 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         this->error("Expected }");
     }
 
+    Location end = this->current.end;
+    this->types[name] = StructType::create(name, types);
+
     this->next();
-    return std::make_unique<ast::StructExpr>(name, packed, std::move(fields));    
+    return std::make_unique<ast::StructExpr>(start, end, name, packed, std::move(fields));    
 }
 
 std::unique_ptr<ast::Program> Parser::statements() {
@@ -349,12 +368,20 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 this->next();
+                Location start = this->current.start;
                 if (this->current == TokenType::SEMICOLON) {
                     this->next();
-                    return std::make_unique<ast::ReturnExpr>(nullptr);
+                    return std::make_unique<ast::ReturnExpr>(start, this->current.end, nullptr);
                 }
 
-                return std::make_unique<ast::ReturnExpr>(this->expr());
+                auto expr = this->expr(false);
+                Location end = this->current.end;
+
+                if (this->current != TokenType::SEMICOLON) {
+                    this->error("Expected ;");
+                }
+
+                return std::make_unique<ast::ReturnExpr>(start, end, std::move(expr));
             } else if (this->current.value == "if") {
                 if (!this->context.is_inside_function) {
                     this->error("if is only allowed inside functions.");
@@ -364,11 +391,13 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 return this->parse_if_statement();
             } else if (this->current.value == "let") {
                 this->next();
+                Location start = this->current.start;
+
                 if (this->current != TokenType::IDENTIFIER) {
                     this->error("Expected identifer.");
                 }
 
-                Type type;
+                Type* type = nullptr;
                 std::string name = this->current.value;
                 this->next();
 
@@ -387,9 +416,15 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 this->next();
-                
-                auto expr = this->expr();
-                return std::make_unique<ast::VariableAssignmentExpr>(name, type, std::move(expr));
+                    
+                auto expr = this->expr(false);
+                Location end = this->current.end;
+
+                if (this->current != TokenType::SEMICOLON) {
+                    this->error("Expected ;");
+                }
+
+                return std::make_unique<ast::VariableAssignmentExpr>(start, end, name, type, std::move(expr));
             } else if (this->current.value == "struct") {
                 if (this->context.is_inside_function) {
                     this->error("struct is only allowed outside functions.");
@@ -397,6 +432,19 @@ std::unique_ptr<ast::Expr> Parser::statement() {
 
                 this->next();
                 return this->parse_struct();
+            } else if (this->current.value == "include") {
+                Location start = this->current.start;
+                this->next();
+
+                if (this->current != TokenType::STRING) {
+                    this->error("Expected file path string.");
+                }
+
+                std::string path = this->current.value;
+                Location end = this->current.end;
+
+                this->next();
+                return std::make_unique<ast::IncludeExpr>(start, end, path);
             }
             break;
         default:
@@ -420,7 +468,9 @@ std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
 
 std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> left) {
     while (true) {
+        Location start = this->current.start;
         int precedence = this->get_token_precendence();
+
         if (precedence < prec) {
             return left;
         }
@@ -435,7 +485,7 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
             right = this->binary(precedence + 1, std::move(right));
         }
 
-        left = std::make_unique<ast::BinaryOpExpr>(op, std::move(left), std::move(right));
+        left = std::make_unique<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
     }
 }
 
@@ -444,92 +494,121 @@ std::unique_ptr<ast::Expr> Parser::unary() {
         return this->factor();
     }
 
+    Location start = this->current.start;
+
     TokenType op = this->current.type;
     this->next();
 
     auto value = this->factor();
-    return std::make_unique<ast::UnaryOpExpr>(op, std::move(value));
+    return std::make_unique<ast::UnaryOpExpr>(start, this->current.end, op, std::move(value));
 }
 
+
 std::unique_ptr<ast::Expr> Parser::factor() {
+    std::unique_ptr<ast::Expr> expr;
+
+    Location start = this->current.start;
     switch (this->current.type) {
         case TokenType::INTEGER: {
             int number = std::stoi(this->current.value);
             this->next();
 
-            return std::make_unique<ast::IntegerExpr>(number);
+            expr = std::make_unique<ast::IntegerExpr>(start, this->current.start, number);
+            break;
         }
         case TokenType::STRING: {
             std::string value = this->current.value;
             this->next();
 
-            return std::make_unique<ast::StringExpr>(value);
+            expr = std::make_unique<ast::StringExpr>(start, this->current.start, value);
+            break;
         }
         case TokenType::IDENTIFIER: {
+            bool is_constructor = false;
             std::string name = this->current.value;
+            if (this->types.count(name)) {
+                is_constructor = true;
+            }
+
             this->next();
 
             if (this->current != TokenType::LPAREN) {
-                return std::make_unique<ast::VariableExpr>(name);
-            }
+                expr = std::make_unique<ast::VariableExpr>(start, this->current.start, name);
+            } else {
+                this->next();
+                std::vector<std::unique_ptr<ast::Expr>> args;
 
-            this->next();
-            std::vector<std::unique_ptr<ast::Expr>> args;
+                if (this->current != TokenType::RPAREN) {
+                    while (true) {
+                        args.push_back(this->expr(false));
+                        if (this->current != TokenType::COMMA) {
+                            break;
+                        }
 
-            if (this->current != TokenType::RPAREN) {
-                while (true) {
-                    args.push_back(this->expr(false));
-                    if (this->current != TokenType::COMMA) {
-                        break;
+                        this->next();
                     }
+                }
 
-                    this->next();
+                if (this->current != TokenType::RPAREN) {
+                    this->error("Expected )");
+                }
+
+                this->next();
+                if (is_constructor) {
+                    expr = std::make_unique<ast::ConstructorExpr>(start, this->current.start, name, std::move(args));
+                } else {
+                    expr = std::make_unique<ast::CallExpr>(start, this->current.start, name, std::move(args));
                 }
             }
 
-            if (this->current != TokenType::RPAREN) {
-                this->error("Expected )");
-            }
-
-            this->next();
-            return std::make_unique<ast::CallExpr>(name, std::move(args));
+            break;
         }
         case TokenType::LPAREN: {
             this->next();
-            auto result = this->expr(false);
+            expr = this->expr(false);
 
             if (this->current != TokenType::RPAREN) {
                 this->error("Expected )");
             }
-            
-            return result;
+
+            this->next();
+            break;
         }
         case TokenType::LBRACKET: {
             this->next();
 
             std::vector<std::unique_ptr<ast::Expr>> elements;
             while (this->current != TokenType::RBRACKET) {
-                auto expr = this->expr(false);
+                auto element = this->expr(false);
                 if (this->current != TokenType::COMMA) {
                     break;
                 }
 
                 this->next();
-                elements.push_back(std::move(expr));
+                elements.push_back(std::move(element));
             }
 
             if (this->current != TokenType::RBRACKET) {
                 this->error("Expected ]");
             }
 
+            Location end = this->current.end;
             this->next();
-            return std::make_unique<ast::ArrayExpr>(std::move(elements));
 
+            expr = std::make_unique<ast::ArrayExpr>(start, end, std::move(elements));
+            break;
         }
-        default:
-            this->error("Unimplmented.");
     }
 
-    this->error("Unreachable code.");
-    return nullptr;
+    while (this->current == TokenType::DOT) {
+        this->next();
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected identifier.");
+        }
+
+        expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, this->current.value, std::move(expr));
+        this->next();
+    }
+
+    return expr;
 }

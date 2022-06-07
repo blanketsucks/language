@@ -90,7 +90,8 @@ static std::vector<std::string> KEYWORDS = {
     "else",
     "let",
     "struct",
-    "packed"
+    "packed",
+    "include"
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {

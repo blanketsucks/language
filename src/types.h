@@ -18,11 +18,12 @@
     #endif
 #endif
 
+#include <map>
 #include "llvm.h"
 
 enum class TypeVarType {
     Typename,
-    Value
+    Integer
 };
 
 struct TypeVar {
@@ -48,16 +49,22 @@ public:
         String,
         Boolean,
         Array,
+        Struct
     };
 
     Type(TypeValue value = Unknown, int size = 0);
     Type(TypeValue value, int size, std::vector<TypeVar> vars);
 
-    static Type from_llvm_type(llvm::Type* type);
-    llvm::Type* to_llvm_type(llvm::LLVMContext& context);
-    Type copy();
+    static Type* create(TypeValue value, int size);
+    static Type* create(TypeValue value, int size, std::vector<TypeVar> vars);
+    static Type* from_llvm_type(llvm::Type* type);
+
+    virtual llvm::Type* to_llvm_type(llvm::LLVMContext& context);
+    Type* copy();
 
     std::string to_str();
+    virtual std::string get_name() { return this->to_str(); }
+
 
     std::vector<TypeVar> get_type_vars() { return this->vars; }
     void set_type_var_value(int index, llvm::Any value) { vars[index].value = value; }
@@ -79,6 +86,7 @@ public:
     bool is_string() { return this->value == String; }
     bool is_boolean() { return this->value == Boolean; }
     bool is_array() { return this->value == Array; }
+    bool is_struct() { return this->value == Struct; }
     bool is_void() { return this->value == Void; }
     bool is_floating_point() { return this->is_float() || this->is_double(); }
     bool is_numeric() { 
@@ -86,8 +94,8 @@ public:
             || this->is_long_long() || this->is_byte() || this->is_floating_point();
     }
 
-    bool is_compatible(Type other);
-    bool is_compatible(llvm::Type* type);
+    virtual bool is_compatible(Type* other);
+    virtual bool is_compatible(llvm::Type* type);
 
 private:
     std::vector<TypeVar> vars;
@@ -95,33 +103,34 @@ private:
     int size;
 };
 
-class Struct : public Type {
+class StructType : public Type {
 public:
-    Struct(std::string name, std::vector<Type> fields);
+    StructType(std::string name, std::vector<Type*> fields);
 
-    static Struct from_llvm_type(llvm::StructType* type);
-    llvm::StructType* to_llvm_type(llvm::LLVMContext& context);
+    static StructType* create(std::string name, std::vector<Type*> fields);
+    static StructType* from_llvm_type(llvm::StructType* type);
 
-    bool is_compatible(Type other) { return false; }
-    bool is_compatible(llvm::Type* type) { return false; }
+    llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
 
-    bool is_compatible(Struct other);
-    bool is_compatible(llvm::StructType* type);
+    std::string get_name() override { return this->name; }
+
+    bool is_compatible(Type* other) override;
+    bool is_compatible(llvm::Type* type) override;
 private:
     std::string name;
-    std::vector<Type> fields;
+    std::vector<Type*> fields;
 };
 
-static Type VoidType = Type(Type::Void, 0);
-static Type ShortType = Type(Type::Short, 16);
-static Type ByteType = Type(Type::Byte, 8);
-static Type IntegerType = Type(Type::Integer, 32);
-static Type LongType = Type(Type::Long, LONG_SIZE);
-static Type LongLongType = Type(Type::LongLong, 64);
-static Type DoubleType = Type(Type::Double, 64);
-static Type FloatType = Type(Type::Float, 32);
-static Type StringType = Type(Type::String, 32);
-static Type BooleanType = Type(Type::Boolean, 8);
-static Type ArrayType = Type(Type::Array, 0, {TypeVar("T", TypeVarType::Typename), TypeVar("size", TypeVarType::Value)});
+static Type* VoidType = Type::create(Type::Void, 0);
+static Type* ShortType = Type::create(Type::Short, 16);
+static Type* ByteType = Type::create(Type::Byte, 8);
+static Type* IntegerType = Type::create(Type::Integer, 32);
+static Type* LongType = Type::create(Type::Long, LONG_SIZE);
+static Type* LongLongType = Type::create(Type::LongLong, 64);
+static Type* DoubleType = Type::create(Type::Double, 64);
+static Type* FloatType = Type::create(Type::Float, 32);
+static Type* StringType = Type::create(Type::String, 32);
+static Type* BooleanType = Type::create(Type::Boolean, 8);
+static Type* ArrayType = Type::create(Type::Array, 0, {TypeVar("T", TypeVarType::Typename), TypeVar("size", TypeVarType::Integer)});
 
 #endif

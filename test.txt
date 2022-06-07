@@ -1,16 +1,5 @@
-let x = 10;
+include "foo.txt"
 
-struct Point {
-    x: int;
-    y: int;
-}
-
-struct packed PackedPoint {
-    x: int;
-    y: int;
-}
-
-def foo() -> array<byte, 10> {
-    let x = "hello";
-    return x;
+def bar() -> int {
+    return foo(10, 20);
 }

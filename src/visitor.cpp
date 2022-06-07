@@ -1,7 +1,14 @@
 #include "visitor.h"
 
+#include <sys/stat.h>
 #include "utils.hpp"
+#include "lexer.h"
 #include "llvm.h"
+
+bool file_exists(const std::string& name) {
+    struct stat buffer;
+    return (stat(name.c_str(), &buffer) == 0);
+}
 
 Visitor::Visitor(std::string module) {
     this->module = std::make_unique<llvm::Module>(llvm::StringRef(module), this->context);
@@ -35,6 +42,15 @@ llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* t
     return tmp.CreateAlloca(type, nullptr, name);
 }
 
+llvm::Type* Visitor::get_llvm_type(Type* type) {
+    std::string name = type->get_name();
+    if (this->structs.find(name) != this->structs.end()) {
+        return this->structs[name].type;
+    }
+
+    return type->to_llvm_type(this->context);
+}
+
 llvm::Value* Visitor::get_variable(std::string name) {
     if (this->current_function) {
         llvm::Value* value = this->current_function->locals[name];
@@ -46,8 +62,8 @@ llvm::Value* Visitor::get_variable(std::string name) {
     return this->module->getGlobalVariable(name);
 }
 
-llvm::Value* Visitor::cast(llvm::Value* value, Type type) {
-    llvm::Type* target = type.to_llvm_type(this->context);
+llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {
+    llvm::Type* target = type->to_llvm_type(this->context);
     if (value->getType() == target) {
         return value;
     }
@@ -90,10 +106,10 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
     llvm::Value* value = expr->value->accept(*this);
     llvm::Type* type;
 
-    if (expr->type.is_unknown()) {
+    if (!expr->type) {
         type = value->getType();
     } else {
-        type = expr->type.to_llvm_type(this->context);
+        type = expr->type->to_llvm_type(this->context);
     }
 
     if (!this->current_function) {
@@ -108,11 +124,11 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     llvm::Function* func = this->builder->GetInsertBlock()->getParent();
-
     llvm::AllocaInst* alloca_inst = this->create_alloca(func, type, expr->name);
-    this->builder->CreateStore(value, alloca_inst);
 
+    this->builder->CreateStore(value, alloca_inst);
     this->current_function->locals[expr->name] = alloca_inst;
+
     return value;
 }
 
@@ -171,7 +187,7 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
     if (expr->op == TokenType::ASSIGN) {
         ast::VariableAssignmentExpr* lhs = dynamic_cast<ast::VariableAssignmentExpr*>(expr->left.get());
         if (!lhs) {
-            std::cerr << "Left hand side of assignment must be a variable" << std::endl;
+            std::cerr << "Left side of assignment must be a variable" << std::endl;
             exit(1);
         }
 
@@ -187,7 +203,6 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
         return value;
     }
 
-
     llvm::Value* left = expr->left->accept(*this);
     llvm::Value* right = expr->right->accept(*this);
 
@@ -195,7 +210,7 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
     llvm::Type* rtype = right->getType();
 
     if (ltype != rtype) {
-        if (Type::from_llvm_type(ltype).is_compatible(rtype)) {
+        if (Type::from_llvm_type(ltype)->is_compatible(rtype)) {
             // TODO: Type cast or something idk
         } else {
             std::cerr << "Incompatible types" << std::endl;
@@ -315,7 +330,7 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
     if (expr->value) {
         llvm::Value* value = expr->value->accept(*this);
         if (
-            Type::from_llvm_type(func->ret).is_compatible(value->getType())
+            Type::from_llvm_type(func->ret)->is_compatible(value->getType())
         ) {
             return this->builder->CreateRet(value);
         } else {
@@ -334,12 +349,11 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
 
 llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
     std::string name = expr->name;
+    llvm::Type* ret = this->get_llvm_type(expr->return_type);
 
-    llvm::Type* ret = expr->return_type.to_llvm_type(this->context);
     std::vector<llvm::Type*> args;
-
     for (auto& arg : expr->args) {
-        args.push_back(arg.type.to_llvm_type(this->context));
+        args.push_back(this->get_llvm_type(arg.type));
     }
 
     llvm::FunctionType* function_t = llvm::FunctionType::get(ret, args, false);
@@ -434,7 +448,7 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(merge);
     this->builder->SetInsertPoint(merge);
 
-    llvm::PHINode* phi = this->builder->CreatePHI(BooleanType.to_llvm_type(this->context), 2, "if");
+    llvm::PHINode* phi = this->builder->CreatePHI(BooleanType->to_llvm_type(this->context), 2, "if");
 
     phi->addIncoming(llvm::ConstantInt::getTrue(this->context), then);
     phi->addIncoming(llvm::ConstantInt::getFalse(this->context), else_);
@@ -443,11 +457,85 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::StructExpr* expr) {
-    std::vector<llvm::Type*> fields;
-    for (auto& field : expr->fields) {
-        fields.push_back(field.type.to_llvm_type(this->context));
+    std::vector<llvm::Type*> types;
+    std::map<std::string, llvm::Type*> fields;
+    
+    for (auto& pair : expr->fields) {
+        types.push_back(pair.second.type->to_llvm_type(this->context));
+        fields[pair.first] = types.back();
     }
 
-    auto type = llvm::StructType::create(this->context, fields, expr->name, expr->packed);
-    return this->module->getOrInsertGlobal(expr->name, type);
+    auto type = llvm::StructType::create(this->context, types, expr->name, expr->packed);
+    type->setName(expr->name);
+
+    this->structs[expr->name] = {expr->name, type, fields};
+    return llvm::ConstantInt::getNullValue(llvm::IntegerType::getInt1Ty(this->context));;
+}
+
+llvm::Value* Visitor::visit(ast::ConstructorExpr* expr) {
+    std::string name = expr->name;
+    Struct structure = this->structs[name];
+
+    std::vector<llvm::Value*> args;
+    for (auto& arg : expr->args) {
+        args.push_back(arg->accept(*this));
+    }
+
+    llvm::AllocaInst* alloca_inst = this->builder->CreateAlloca(structure.type, nullptr);
+    int index = 0;
+    for (auto& arg : args) {
+        std::vector<llvm::Value*> indices = {
+            llvm::ConstantInt::get(this->context, llvm::APInt(32, 0)),
+            llvm::ConstantInt::get(this->context, llvm::APInt(32, index))
+        };
+
+        auto ptr = llvm::GetElementPtrInst::Create(structure.type, alloca_inst, indices, "", this->builder->GetInsertBlock());
+        auto store = this->builder->CreateStore(arg, ptr);
+
+        index++;
+    }
+
+    return alloca_inst;
+}
+
+llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
+    TODO("AttributeExpr");
+    return nullptr;
+}
+
+llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
+    std::string path = expr->path;
+    if (!file_exists(path)) {
+        if (!file_exists("std/" + path)) {
+            std::cerr << "File " << path << " not found" << std::endl;
+            exit(1);
+        } else {
+            path = "std/" + path;
+        }
+    }
+    
+    auto placeholder = llvm::ConstantInt::getNullValue(llvm::IntegerType::getInt1Ty(this->context));
+    Module module = {path, ModuleState::Initialized};
+
+    if (this->includes.find(path) != this->includes.end()) {
+        module = this->includes[path];
+        if (!module.is_ready()) {
+            std::cerr << "Circular dependency detected" << std::endl;
+            exit(1);
+        }
+
+        return placeholder;
+    }
+
+    this->includes[path] = module;
+
+    std::ifstream file(path);
+    Lexer lexer(file, path);
+
+    auto program = Parser(lexer.lex()).statements();
+    
+    this->visit(std::move(program)); // segfaults here for some reason
+    module.state = ModuleState::Compiled;
+
+    return placeholder;
 }
