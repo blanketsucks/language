@@ -402,7 +402,7 @@ llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
     llvm::FunctionType* function_t = llvm::FunctionType::get(ret, args, false);
     llvm::Function* function = llvm::Function::Create(function_t, llvm::Function::ExternalLinkage, name, this->module.get());
 
-    unsigned i = 0;
+    int i = 0;
     for (auto& arg : function->args()) {
         arg.setName(expr->args[i++].name);
     }
