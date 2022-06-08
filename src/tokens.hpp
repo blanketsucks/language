@@ -61,6 +61,15 @@ struct Location {
     int line;
     int index;
     std::string filename;
+    std::string source;
+
+    Location(int column, int line, int index, std::string filename, std::string source) :
+        column(column),
+        line(line),
+        index(index),
+        filename(filename),
+        source(source)
+    {}
 
     std::string format() {
         return filename + ":" + std::to_string(line) + ":" + std::to_string(column);
@@ -69,8 +78,8 @@ struct Location {
 
 struct Token {
     TokenType type;
-    Location start;
-    Location end;
+    Location* start;
+    Location* end;
     std::string value;
 
     bool operator==(TokenType type) {
@@ -105,6 +114,8 @@ static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
     std::make_pair(TokenType::GTE, 10),
     std::make_pair(TokenType::EQ, 10),
     std::make_pair(TokenType::NEQ, 10),
+    std::make_pair(TokenType::AND, 10),
+    std::make_pair(TokenType::OR, 10),
 
     // Binary operators - 20 precedence.
     std::make_pair(TokenType::BINARY_AND, 20),

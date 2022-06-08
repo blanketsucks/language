@@ -77,12 +77,12 @@ Token Lexer::create_token(TokenType type, std::string value) {
     return {type, this->loc(), this->loc(), value};
 }
 
-Token Lexer::create_token(TokenType type, Location start, std::string value) {
+Token Lexer::create_token(TokenType type, Location* start, std::string value) {
     return {type, start, this->loc(), value};
 }
 
-Location Lexer::loc() {
-    return {this->line, this->column, this->index, this->filename};
+Location* Lexer::loc() {
+    return new Location(this->line, this->column, this->index, this->filename, this->source);
 }
 
 void Lexer::skip_comment() {
@@ -95,7 +95,7 @@ void Lexer::skip_comment() {
 
 Token Lexer::parse_identifier() {
     std::string value;
-    Location start = this->loc();
+    Location* start = this->loc();
 
     value += this->current;
 
@@ -114,7 +114,7 @@ Token Lexer::parse_identifier() {
 
 Token Lexer::parse_string() {
     std::string value;
-    Location start = this->loc();
+    Location* start = this->loc();
 
     char opening = this->current;
 
@@ -137,7 +137,7 @@ Token Lexer::parse_string() {
 
 Token Lexer::parse_number() {
     std::string value;
-    Location start = this->loc();
+    Location* start = this->loc();
 
     value += this->current;
 
@@ -159,7 +159,7 @@ std::vector<Token> Lexer::lex() {
         if (std::isspace(this->current)) {
             this->next();
             continue;
-        } else if (std::isalpha(this->current)) {
+        } else if (std::isalpha(this->current) || this->current == '_') {
             tokens.push_back(this->parse_identifier());
         } else if (std::isdigit(this->current)) {
             tokens.push_back(this->parse_number());
@@ -169,7 +169,7 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->create_token(TokenType::PLUS, "+"));    
             this->next();
         } else if (this->current == '-') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();
@@ -191,7 +191,7 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->create_token(TokenType::ASSIGN, "="));
             this->next();
         } else if (this->current == '>') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();
@@ -207,7 +207,7 @@ std::vector<Token> Lexer::lex() {
 
             tokens.push_back(token);
         } else if (this->current == '<') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();
@@ -223,7 +223,7 @@ std::vector<Token> Lexer::lex() {
 
             tokens.push_back(token);
         } else if (this->current == '!') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();
@@ -236,7 +236,7 @@ std::vector<Token> Lexer::lex() {
 
             tokens.push_back(token);
         } else if (this->current == '|') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();
@@ -249,7 +249,7 @@ std::vector<Token> Lexer::lex() {
             
             tokens.push_back(token);
         } else if (this->current == '&') {
-            Location start = this->loc();
+            Location* start = this->loc();
             Token token;
 
             char next = this->next();

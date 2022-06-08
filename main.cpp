@@ -1,8 +1,20 @@
+#define _DEBUG_MODULE 1
+
 #include "src/lexer.h"
 #include "src/parser.h"
 #include "src/types.h"
 #include "src/visitor.h"
 
+template<typename T> void error(T& message) {
+    std::cerr << message << std::endl;
+}
+
+template<typename T, typename... Args> void error(
+    Location* start, Location* end, T& message, Args... args
+) {
+    std::cerr << message << " ";
+    error(args...);
+} 
 
 int main() {
     llvm::InitializeAllTargetInfos();
@@ -57,7 +69,9 @@ int main() {
         return 1;
     }
 
+#if _DEBUG_MODULE
     visitor.dump(llvm::outs());
+#endif
 
     pass.run(*visitor.module);
     dest.flush();

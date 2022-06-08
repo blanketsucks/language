@@ -82,7 +82,7 @@ Type* Parser::get_type(std::string name) {
 
     Type* type = this->types[name];
 
-    // Untested piece of garbage. There probably is a better to do this.
+    // tested piece of garbage. There probably is a better to do this.
     if (type->is_generic()) {
         this->next();
         type = type->copy();
@@ -139,8 +139,27 @@ Type* Parser::get_type(std::string name) {
     return type;
 } 
 
+std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
+    std::vector<std::unique_ptr<ast::Expr>> body;
+    Location* start = this->current.start;
+
+    while (this->current != TokenType::RBRACE) {
+        auto expr = this->statement();
+        body.push_back(std::move(expr));
+    }
+
+    if (this->current != TokenType::RBRACE) {
+        this->error("Expected }");
+    }
+
+    Location* end = this->current.end;
+    this->next();
+
+    return std::make_unique<ast::BlockExpr>(start, end, std::move(body));
+}
+
 std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
-    Location start = this->current.start;
+    Location* start = this->current.start;
 
     if (this->current != TokenType::IDENTIFIER) {
         this->error("Expected identifer.");
@@ -184,7 +203,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
         this->error("Expected )");
     }
     
-    Location end = this->current.end;
+    Location* end = this->current.end;
     this->next();
 
     Type* ret = VoidType;
@@ -204,7 +223,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
 }
 
 std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
-    Location start = this->current.start;
+    Location* start = this->current.start;
     auto prototype = this->parse_prototype();
 
     if (this->current != TokenType::LBRACE) {
@@ -214,23 +233,14 @@ std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
     this->next();
     this->context.is_inside_function = true;
 
-    std::vector<std::unique_ptr<ast::Expr>> body;
-    while (this->current != TokenType::RBRACE) {
-        auto expr = this->statement();
-        body.push_back(std::move(expr));
-    }
+    auto body = this->parse_block();
+    Location* end = this->current.end;
 
-    if (this->current != TokenType::RBRACE) {
-        this->error("Expected }");
-    }
-    
-    Location end = this->current.end;
-    this->next();
     return std::make_unique<ast::FunctionExpr>(start, end, std::move(prototype), std::move(body));
 }
 
 std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
-    Location start = this->current.start;
+    Location* start = this->current.start;
     std::unique_ptr<ast::Expr> condition = this->expr(false);
 
     if (this->current != TokenType::LBRACE) {
@@ -238,21 +248,12 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
     }
 
     this->next();
-    std::vector<std::unique_ptr<ast::Expr>> body;
-
-    while (this->current != TokenType::RBRACE) {
-        auto expr = this->statement();
-        body.push_back(std::move(expr));
-    }
-
-    if (this->current != TokenType::RBRACE) {
-        this->error("Expected }");
-    }
+    auto body = this->parse_block();
     
-    Location end = this->current.end;
+    Location* end = this->current.end;
     this->next();
 
-    std::vector<std::unique_ptr<ast::Expr>> else_body;
+    std::unique_ptr<ast::BlockExpr> else_body = nullptr;
     if (this->current == TokenType::KEYWORD && this->current.value == "else") {
         this->next();
         if (this->current != TokenType::LBRACE) {
@@ -260,24 +261,16 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
         }
 
         this->next();
-        while (this->current != TokenType::RBRACE) {
-            auto expr = this->statement();
-            else_body.push_back(std::move(expr));
-        }
 
-        if (this->current != TokenType::RBRACE) {
-            this->error("Expected }");
-        }
-
+        else_body = this->parse_block();
         end = this->current.end;
-        this->next();
     }
 
     return std::make_unique<ast::IfExpr>(start, end, std::move(condition), std::move(body), std::move(else_body));
 }
 
 std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
-    Location start = this->current.start;
+    Location* start = this->current.start;
     bool packed = false;
     if (this->current == TokenType::KEYWORD && this->current.value == "packed") {
         packed = true;
@@ -332,7 +325,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         this->error("Expected }");
     }
 
-    Location end = this->current.end;
+    Location* end = this->current.end;
     this->types[name] = StructType::create(name, types);
 
     this->next();
@@ -368,14 +361,14 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 this->next();
-                Location start = this->current.start;
+                Location* start = this->current.start;
                 if (this->current == TokenType::SEMICOLON) {
                     this->next();
                     return std::make_unique<ast::ReturnExpr>(start, this->current.end, nullptr);
                 }
 
                 auto expr = this->expr(false);
-                Location end = this->current.end;
+                Location* end = this->current.end;
 
                 if (this->current != TokenType::SEMICOLON) {
                     this->error("Expected ;");
@@ -391,7 +384,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 return this->parse_if_statement();
             } else if (this->current.value == "let") {
                 this->next();
-                Location start = this->current.start;
+                Location* start = this->current.start;
 
                 if (this->current != TokenType::IDENTIFIER) {
                     this->error("Expected identifer.");
@@ -418,7 +411,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 this->next();
                     
                 auto expr = this->expr(false);
-                Location end = this->current.end;
+                Location* end = this->current.end;
 
                 if (this->current != TokenType::SEMICOLON) {
                     this->error("Expected ;");
@@ -433,7 +426,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 this->next();
                 return this->parse_struct();
             } else if (this->current.value == "include") {
-                Location start = this->current.start;
+                Location* start = this->current.start;
                 this->next();
 
                 if (this->current != TokenType::STRING) {
@@ -441,7 +434,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 std::string path = this->current.value;
-                Location end = this->current.end;
+                Location* end = this->current.end;
 
                 this->next();
                 return std::make_unique<ast::IncludeExpr>(start, end, path);
@@ -468,7 +461,7 @@ std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
 
 std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> left) {
     while (true) {
-        Location start = this->current.start;
+        Location* start = this->current.start;
         int precedence = this->get_token_precendence();
 
         if (precedence < prec) {
@@ -494,7 +487,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
         return this->factor();
     }
 
-    Location start = this->current.start;
+    Location* start = this->current.start;
 
     TokenType op = this->current.type;
     this->next();
@@ -507,7 +500,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
 std::unique_ptr<ast::Expr> Parser::factor() {
     std::unique_ptr<ast::Expr> expr;
 
-    Location start = this->current.start;
+    Location* start = this->current.start;
     switch (this->current.type) {
         case TokenType::INTEGER: {
             int number = std::stoi(this->current.value);
@@ -580,23 +573,28 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             std::vector<std::unique_ptr<ast::Expr>> elements;
             while (this->current != TokenType::RBRACKET) {
                 auto element = this->expr(false);
+                elements.push_back(std::move(element));
+
                 if (this->current != TokenType::COMMA) {
                     break;
                 }
 
                 this->next();
-                elements.push_back(std::move(element));
             }
 
             if (this->current != TokenType::RBRACKET) {
                 this->error("Expected ]");
             }
 
-            Location end = this->current.end;
+            Location* end = this->current.end;
             this->next();
 
             expr = std::make_unique<ast::ArrayExpr>(start, end, std::move(elements));
             break;
+        }
+        case TokenType::LBRACE: {
+            this->next();
+            expr = this->parse_block();
         }
     }
 
@@ -608,6 +606,17 @@ std::unique_ptr<ast::Expr> Parser::factor() {
 
         expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, this->current.value, std::move(expr));
         this->next();
+    }
+
+    if (this->current == TokenType::LBRACKET) {
+        this->next();
+        auto index = this->expr(false);
+        if (this->current != TokenType::RBRACKET) {
+            this->error("Expected ]");
+        }
+
+        this->next();
+        expr = std::make_unique<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
     }
 
     return expr;

@@ -20,11 +20,15 @@ struct Function {
     std::vector<llvm::Type*> args;
     llvm::Type* ret;
     std::map<std::string, llvm::AllocaInst*> locals;
+    bool has_return;
+    bool is_internal;
 
-    Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret) {
+    Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_internal) {
         this->name = name;
         this->args = args;
         this->ret = ret;
+        this->has_return = false;
+        this->is_internal = is_internal;
     }
 };
 
@@ -60,12 +64,13 @@ public:
     void dump(llvm::raw_ostream& stream);
     llvm::Value* get_variable(std::string name);
     llvm::Type* get_llvm_type(Type* name);
-    llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name);
+    llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type);
     llvm::Value* cast(llvm::Value* value, Type* type);
 
     void visit(std::unique_ptr<ast::Program> program);
     llvm::Value* visit(ast::IncludeExpr* expr);
 
+    llvm::Value* visit(ast::BlockExpr* expr);
     llvm::Value* visit(ast::IntegerExpr* expr);
     llvm::Value* visit(ast::StringExpr* expr);
     llvm::Value* visit(ast::VariableExpr* expr);
@@ -81,6 +86,7 @@ public:
     llvm::Value* visit(ast::StructExpr* expr);
     llvm::Value* visit(ast::ConstructorExpr* expr);
     llvm::Value* visit(ast::AttributeExpr* expr);
+    llvm::Value* visit(ast::ElementExpr* expr);
 };
 
 

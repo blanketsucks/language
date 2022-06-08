@@ -1,5 +1,5 @@
-include "foo.txt"
+extern __internal_llvm_sin_f32(value: float) -> float;
 
-def bar() -> int {
-    return foo(10, 20);
+def sin(value: float) -> float {
+    return __internal_llvm_sin_f32(value);
 }

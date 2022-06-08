@@ -61,10 +61,10 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
         case Type::Boolean:
             return llvm::Type::getInt1Ty(context);
         case Type::Array: {
-            Type element = llvm::any_cast<Type>(this->vars[0].value);
+            Type* element = llvm::any_cast<Type*>(this->vars[0].value);
             int size = llvm::any_cast<int>(this->vars[1].value);
-
-            return llvm::ArrayType::get(element.to_llvm_type(context), size);
+            
+            return llvm::ArrayType::get(element->to_llvm_type(context), size)->getPointerTo();
         }
         default:
             return llvm::Type::getVoidTy(context);

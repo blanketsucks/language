@@ -25,9 +25,9 @@ public:
     bool is_keyword(std::string word);
 
     Token create_token(TokenType type, std::string value);
-    Token create_token(TokenType type, Location start, std::string value);
+    Token create_token(TokenType type, Location* start, std::string value);
 
-    Location loc();
+    Location* loc();
 
     void skip_comment();
     Token parse_identifier();

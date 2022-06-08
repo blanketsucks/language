@@ -10,6 +10,21 @@ bool file_exists(const std::string& name) {
     return (stat(name.c_str(), &buffer) == 0);
 }
 
+std::pair<std::string, bool> function_is_internal(std::string name) {
+    bool is_internal = false;
+    if (name.substr(0, 11) == "__internal_") {
+        is_internal = true;
+        name = name.substr(11);
+        for (int i = 0; i < name.size(); i++) {
+            if (name[i] == '_') {
+                name[i] = '.';
+            }
+        }
+    }
+
+    return std::make_pair(name, is_internal);
+}
+
 Visitor::Visitor(std::string module) {
     this->module = std::make_unique<llvm::Module>(llvm::StringRef(module), this->context);
     this->builder = std::make_unique<llvm::IRBuilder<>>(this->context);
@@ -37,9 +52,9 @@ void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
 }
 
-llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type, llvm::StringRef name) {
+llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type) {
     llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
-    return tmp.CreateAlloca(type, nullptr, name);
+    return tmp.CreateAlloca(type, nullptr);
 }
 
 llvm::Type* Visitor::get_llvm_type(Type* type) {
@@ -85,20 +100,31 @@ llvm::Value* Visitor::visit(ast::StringExpr* expr) {
     return llvm::ConstantDataArray::getString(this->context, expr->value);
 }
 
+llvm::Value* Visitor::visit(ast::BlockExpr* expr) {
+    llvm::Value* last = nullptr;
+    for (auto& stmt : expr->block) {
+        if (stmt) {
+            last = stmt->accept(*this);
+        }
+    }
+
+    return last;
+}
+
 llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
     if (this->current_function) {
         llvm::AllocaInst* variable = this->current_function->locals[expr->name];
         if (variable) {
-            return this->builder->CreateLoad(variable->getAllocatedType(), variable, expr->name);;
+            return this->builder->CreateLoad(variable->getAllocatedType(), variable);;
         }
     }
     
     llvm::GlobalVariable* global = this->module->getGlobalVariable(expr->name);
     if (global) {
-        return this->builder->CreateLoad(global->getValueType(), global, expr->name);
+        return this->builder->CreateLoad(global->getValueType(), global);
     }
 
-    std::cout << "Variable " << expr->name << " is not defined" << std::endl;
+    std::cerr << "Symbol " << expr->name << " is not defined" << std::endl;
     exit(1);
 }
 
@@ -124,7 +150,7 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     llvm::Function* func = this->builder->GetInsertBlock()->getParent();
-    llvm::AllocaInst* alloca_inst = this->create_alloca(func, type, expr->name);
+    llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
 
     this->builder->CreateStore(value, alloca_inst);
     this->current_function->locals[expr->name] = alloca_inst;
@@ -133,9 +159,9 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
-    std::vector<llvm::Constant*> elements;
+    std::vector<llvm::Value*> elements;
     for (auto& element : expr->elements) {
-        auto constant = (llvm::Constant*)element->accept(*this);
+        auto constant = element->accept(*this);
         elements.push_back(constant);
     }
 
@@ -144,15 +170,30 @@ llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
     }
 
     // The type of an array is determined from the first element.
-    auto type = elements[0]->getType();
+    llvm::Type* etype = elements[0]->getType();
     for (int i = 1; i < elements.size(); i++) {
-        if (elements[i]->getType() != type) {
+        if (elements[i]->getType() != etype) {
             std::cerr << "Array elements must be of the same type" << std::endl;
             exit(1);
         }
     }
 
-    return llvm::ConstantArray::get(llvm::ArrayType::get(type, elements.size()), elements);
+    llvm::Function* parent = this->builder->GetInsertBlock()->getParent();
+
+    llvm::ArrayType* type = llvm::ArrayType::get(etype, elements.size());
+    llvm::AllocaInst* array = this->create_alloca(parent, type);
+
+    for (int i = 0; i < elements.size(); i++) {
+        std::vector<llvm::Value*> indices = {
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, 0, true)),
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, i))
+        };
+
+        auto ptr = this->builder->CreateGEP(type, array, indices);
+        this->builder->CreateStore(elements[i], ptr);
+    }
+
+    return array;
 }
 
 llvm::Value* Visitor::visit(ast::UnaryOpExpr* expr) {
@@ -168,14 +209,14 @@ llvm::Value* Visitor::visit(ast::UnaryOpExpr* expr) {
             return value;
         case TokenType::MINUS:
             if (is_floating_point) {
-                return this->builder->CreateFNeg(value, "fneg");
+                return this->builder->CreateFNeg(value);
             } else {
-                return this->builder->CreateNeg(value, "neg");
+                return this->builder->CreateNeg(value);
             }
         case TokenType::NOT:
-            return this->builder->CreateNot(this->cast(value, BooleanType), "not");
+            return this->builder->CreateNot(this->cast(value, BooleanType));
         case TokenType::BINARY_NOT:
-            return this->builder->CreateNot(value, "not");
+            return this->builder->CreateNot(value);
         default:
             std::cerr << "Unary operator not supported" << std::endl;
             exit(1);
@@ -193,7 +234,7 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
 
         llvm::Value* variable = this->get_variable(lhs->name);
         if (!variable) {
-            std::cerr << "Variable " << lhs->name << " is not defined" << std::endl;
+            std::cerr << "Symbol " << lhs->name << " is not defined" << std::endl;
             exit(1);
         }
 
@@ -222,78 +263,78 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
     switch (expr->op) {
         case TokenType::PLUS:
             if (is_floating_point) {
-                return this->builder->CreateFAdd(left, right, "fadd");
+                return this->builder->CreateFAdd(left, right);
             } else {
-                return this->builder->CreateAdd(left, right, "add");
+                return this->builder->CreateAdd(left, right);
             }
         case TokenType::MINUS:
             if (is_floating_point) {
-                return this->builder->CreateFSub(left, right, "fsub");
+                return this->builder->CreateFSub(left, right);
             } else {
-                return this->builder->CreateSub(left, right, "sub");
+                return this->builder->CreateSub(left, right);
             }
         case TokenType::MUL:
             if (is_floating_point) {
-                return this->builder->CreateFMul(left, right, "fmul");
+                return this->builder->CreateFMul(left, right);
             } else {
-                return this->builder->CreateMul(left, right, "mul");
+                return this->builder->CreateMul(left, right);
             }
         case TokenType::DIV:
             if (is_floating_point) {
-                return this->builder->CreateFDiv(left, right, "fdiv");
+                return this->builder->CreateFDiv(left, right);
             } else {
-                return this->builder->CreateSDiv(left, right, "div");
+                return this->builder->CreateSDiv(left, right);
             }
         case TokenType::EQ:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOEQ(left, right, "feq");
+                return this->builder->CreateFCmpOEQ(left, right);
             } else {
-                return this->builder->CreateICmpEQ(left, right, "eq");
+                return this->builder->CreateICmpEQ(left, right);
             }
         case TokenType::NEQ:
             if (is_floating_point) {
-                return this->builder->CreateFCmpONE(left, right, "fneq");
+                return this->builder->CreateFCmpONE(left, right);
             } else {
-                return this->builder->CreateICmpNE(left, right, "neq");
+                return this->builder->CreateICmpNE(left, right);
             }
         case TokenType::GT:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOGT(left, right, "fgt");
+                return this->builder->CreateFCmpOGT(left, right);
             } else {
-                return this->builder->CreateICmpSGT(left, right, "gt");
+                return this->builder->CreateICmpSGT(left, right);
             }
         case TokenType::LT:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOLT(left, right, "flt");
+                return this->builder->CreateFCmpOLT(left, right);
             } else {
-                return this->builder->CreateICmpSLT(left, right, "lt");
+                return this->builder->CreateICmpSLT(left, right);
             }
         case TokenType::GTE:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOGE(left, right, "fge");
+                return this->builder->CreateFCmpOGE(left, right);
             } else {
-                return this->builder->CreateICmpSGE(left, right, "ge");
+                return this->builder->CreateICmpSGE(left, right);
             }
         case TokenType::LTE:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOLE(left, right, "fle");
+                return this->builder->CreateFCmpOLE(left, right);
             } else {
-                return this->builder->CreateICmpSLE(left, right, "le");
+                return this->builder->CreateICmpSLE(left, right);
             }
         case TokenType::AND:
-            return this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType), "and");
+            return this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType));
         case TokenType::OR:
-            return this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType), "or");
+            return this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType));
         case TokenType::BINARY_AND:
-            return this->builder->CreateAnd(left, right, "and");
+            return this->builder->CreateAnd(left, right);
         case TokenType::BINARY_OR:
-            return this->builder->CreateOr(left, right, "or");
+            return this->builder->CreateOr(left, right);
         case TokenType::XOR:
-            return this->builder->CreateXor(left, right, "xor");
+            return this->builder->CreateXor(left, right);
         case TokenType::LSH:
-            return this->builder->CreateShl(left, right, "lsh");
+            return this->builder->CreateShl(left, right);
         case TokenType::RSH:
-            return this->builder->CreateLShr(left, right, "rsh");
+            return this->builder->CreateLShr(left, right);
         default:
             std::cerr << "Unknown binary operator" << std::endl;
             exit(1);
@@ -301,11 +342,11 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::CallExpr* expr) {
-    llvm::Function* function = this->module->getFunction(expr->callee);
+    llvm::Function* function = this->module->getFunction(function_is_internal(expr->callee).first);
     if (!function) {
-        std::cerr << "Function " << expr->callee << " not found" << std::endl;
+        std::cerr << "Function " << expr->callee << " is not defined" << std::endl;
         exit(1);
-    } 
+    }
 
     if (function->arg_size() != expr->args.size()) {
         std::cerr << "Function " << expr->callee << " expects " << function->arg_size() << " arguments" << std::endl;
@@ -317,7 +358,7 @@ llvm::Value* Visitor::visit(ast::CallExpr* expr) {
         args.push_back(arg->accept(*this));
     }
 
-    return this->builder->CreateCall(function, args, "call");
+    return this->builder->CreateCall(function, args);
 }
 
 llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
@@ -329,26 +370,28 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
     Function* func = this->current_function;
     if (expr->value) {
         llvm::Value* value = expr->value->accept(*this);
-        if (
-            Type::from_llvm_type(func->ret)->is_compatible(value->getType())
-        ) {
-            return this->builder->CreateRet(value);
-        } else {
-            std::cerr << "Incompatible return type" << std::endl;
-            exit(1);
-        }
+        func->has_return = true;
+
+        // Got rid of the typechecking for now.
+        return this->builder->CreateRet(value);
     } else {
         if (!func->ret->isVoidTy()) {
             std::cerr << "Function " << func->name << " expects a return value" << std::endl;
             exit(1);
         }
 
+        func->has_return = true;
         return this->builder->CreateRetVoid();
     }
 }
 
 llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
-    std::string name = expr->name;
+    std::string original = expr->name;
+    auto pair = function_is_internal(expr->name);
+
+    std::string name = pair.first;
+    bool is_internal = pair.second;
+
     llvm::Type* ret = this->get_llvm_type(expr->return_type);
 
     std::vector<llvm::Type*> args;
@@ -364,7 +407,7 @@ llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
         arg.setName(expr->args[i++].name);
     }
     
-    this->functions[name] = new Function(name, args, ret);
+    this->functions[original] = new Function(name, args, ret, false);
     return function;
 }
 
@@ -375,26 +418,31 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
         function = (llvm::Function*)expr->prototype->accept(*this);
     }
 
-    if (!function->empty()) {
+    if (!function->empty()) { 
         std::cerr << "Function " << name << " already defined" << std::endl;
+        exit(1);
+    }
+
+    Function* func = this->functions[name];
+    if (func->is_internal) {
+        std::cerr << "Function " << name << " is internal" << std::endl;
         exit(1);
     }
 
     llvm::BasicBlock* block = llvm::BasicBlock::Create(this->context, "entry", function);
     this->builder->SetInsertPoint(block);
 
-    Function* func = this->functions[name];
     for (auto& arg : function->args()) {
         std::string name = arg.getName().str();
 
-        llvm::AllocaInst* alloca_inst = this->create_alloca(function, arg.getType(), name);
+        llvm::AllocaInst* alloca_inst = this->create_alloca(function, arg.getType());
         this->builder->CreateStore(&arg, alloca_inst);
 
         func->locals[name] = alloca_inst;
     }
     
     this->current_function = func;
-    if (expr->body.size() == 0) {
+    if (!expr->body) {
         if (!func->ret->isVoidTy()) {
             std::cerr << "Function " << name << " expects a return value" << std::endl;
             exit(1);
@@ -402,8 +450,14 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
 
         this->builder->CreateRetVoid();
     } else {
-        for (auto& expr : expr->body) {
-            expr->accept(*this);
+        llvm::Value* value = expr->body->accept(*this);
+        if (!func->has_return && value) {          
+            if (value->getType() != func->ret) {
+                std::cerr << "Incompatible return type" << std::endl;
+                exit(1);
+            }
+
+            this->builder->CreateRet(value);
         }
     }
     
@@ -428,9 +482,7 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateCondBr(condition, then, else_);
     this->builder->SetInsertPoint(then);
 
-    for (auto& expr : expr->body) {
-        expr->accept(*this);
-    }
+    expr->body->accept(*this);
 
     this->builder->CreateBr(merge);
     then = this->builder->GetInsertBlock();
@@ -438,8 +490,8 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(else_);
     this->builder->SetInsertPoint(else_);
 
-    for (auto& expr : expr->ebody) {
-        expr->accept(*this);
+    if (expr->ebody) {
+        expr->ebody->accept(*this);
     }
 
     this->builder->CreateBr(merge);
@@ -481,7 +533,8 @@ llvm::Value* Visitor::visit(ast::ConstructorExpr* expr) {
         args.push_back(arg->accept(*this));
     }
 
-    llvm::AllocaInst* alloca_inst = this->builder->CreateAlloca(structure.type, nullptr);
+    llvm::Function* parent = this->builder->GetInsertBlock()->getParent();
+    llvm::AllocaInst* alloca_inst = this->create_alloca(parent, structure.type);
     int index = 0;
     for (auto& arg : args) {
         std::vector<llvm::Value*> indices = {
@@ -489,8 +542,8 @@ llvm::Value* Visitor::visit(ast::ConstructorExpr* expr) {
             llvm::ConstantInt::get(this->context, llvm::APInt(32, index))
         };
 
-        auto ptr = llvm::GetElementPtrInst::Create(structure.type, alloca_inst, indices, "", this->builder->GetInsertBlock());
-        auto store = this->builder->CreateStore(arg, ptr);
+        auto ptr = this->builder->CreateGEP(structure.type, alloca_inst, indices);
+        this->builder->CreateStore(arg, ptr);
 
         index++;
     }
@@ -501,6 +554,27 @@ llvm::Value* Visitor::visit(ast::ConstructorExpr* expr) {
 llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
     TODO("AttributeExpr");
     return nullptr;
+}
+
+llvm::Value* Visitor::visit(ast::ElementExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this);
+    // TODO: Check the type of the value
+
+    ast::IntegerExpr* index = dynamic_cast<ast::IntegerExpr*>(expr->index.get());
+    if (!index) {
+        std::cerr << "Expected an integer" << std::endl;
+        exit(1);
+    }
+
+    if (value->getType()->isPointerTy()) {
+        llvm::Type* type = value->getType()->getPointerElementType();
+        llvm::Value* idx = llvm::ConstantInt::get(this->context, llvm::APInt(32, index->value));
+
+        auto ptr = this->builder->CreateGEP(type, value, idx);
+        return this->builder->CreateLoad(type->getArrayElementType(), ptr);
+    }
+
+    return this->builder->CreateExtractValue(value, index->value);
 }
 
 llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
@@ -534,7 +608,7 @@ llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
 
     auto program = Parser(lexer.lex()).statements();
     
-    this->visit(std::move(program)); // segfaults here for some reason
+    this->visit(std::move(program));
     module.state = ModuleState::Compiled;
 
     return placeholder;

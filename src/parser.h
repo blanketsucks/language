@@ -24,6 +24,7 @@ public:
     int get_token_precendence();
     Type* get_type(std::string name);
 
+    std::unique_ptr<ast::BlockExpr> parse_block();
     std::unique_ptr<ast::PrototypeExpr> parse_prototype();
     std::unique_ptr<ast::FunctionExpr> parse_function();
     std::unique_ptr<ast::IfExpr> parse_if_statement();
