@@ -18,6 +18,12 @@ llvm::Value* IntegerExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+FloatExpr::FloatExpr(Location* start, Location* end, float value) : Expr(start, end), value(value) {}
+
+llvm::Value* FloatExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 StringExpr::StringExpr(Location* start, Location* end, std::string value) : Expr(start, end), value(value) {}
 
 llvm::Value* StringExpr::accept(Visitor& visitor) {
@@ -70,22 +76,13 @@ llvm::Value* BinaryOpExpr::accept(Visitor& visitor) {
 }
 
 CallExpr::CallExpr(
-    Location* start, Location* end, std::string callee, std::vector<std::unique_ptr<Expr>> args
-) : Expr(start, end), callee(callee) {
+    Location* start, Location* end, std::unique_ptr<ast::Expr> callee, std::vector<std::unique_ptr<Expr>> args
+) : Expr(start, end) {
+    this->callee = std::move(callee);
     this->args = std::move(args);
 }
 
 llvm::Value* CallExpr::accept(Visitor& visitor) {
-    return visitor.visit(this);
-}
-
-ConstructorExpr::ConstructorExpr(
-    Location* start, Location* end, std::string name, std::vector<std::unique_ptr<Expr>> args
-) : Expr(start, end), name(name) {
-    this->args = std::move(args);
-}
-
-llvm::Value* ConstructorExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -131,9 +128,10 @@ llvm::Value* IfExpr::accept(Visitor& visitor) {
 }
 
 StructExpr::StructExpr(
-    Location* start, Location* end, std::string name, bool packed, std::map<std::string, Argument> fields
+    Location* start, Location* end, std::string name, bool packed, std::map<std::string, Argument> fields, std::vector<std::unique_ptr<FunctionExpr>> methods
 ) : Expr(start, end), name(name), packed(packed) {
     this->fields = std::move(fields);
+    this->methods = std::move(methods);
 }
 
 llvm::Value* StructExpr::accept(Visitor& visitor) {

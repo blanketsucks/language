@@ -142,12 +142,25 @@ Token Lexer::parse_number() {
     value += this->current;
 
     char next = this->next();
+    bool dot = false;
     while (std::isdigit(next) || next == '.') {
+        if (next == '.') {
+            if (dot) {
+                break;
+            }
+
+            dot = true;
+        }
+
         value += this->current;
         next = this->next();
     }
 
-    return this->create_token(TokenType::INTEGER, start, value);
+    if (dot) {
+        return this->create_token(TokenType::FLOAT, start, value);
+    } else {
+        return this->create_token(TokenType::INTEGER, start, value);
+    }
 }
 
 std::vector<Token> Lexer::lex() {

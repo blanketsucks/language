@@ -10,11 +10,11 @@ bool file_exists(const std::string& name) {
     return (stat(name.c_str(), &buffer) == 0);
 }
 
-std::pair<std::string, bool> function_is_internal(std::string name) {
+std::pair<std::string, bool> function_is_intrinsic(std::string name) {
     bool is_internal = false;
-    if (name.substr(0, 11) == "__internal_") {
+    if (name.substr(0, 12) == "__intrinsic_") {
         is_internal = true;
-        name = name.substr(11);
+        name = name.substr(12);
         for (int i = 0; i < name.size(); i++) {
             if (name[i] == '_') {
                 name[i] = '.';
@@ -26,6 +26,8 @@ std::pair<std::string, bool> function_is_internal(std::string name) {
 }
 
 Visitor::Visitor(std::string module) {
+    this->includes[module] = {module, ModuleState::Initialized};
+
     this->module = std::make_unique<llvm::Module>(llvm::StringRef(module), this->context);
     this->builder = std::make_unique<llvm::IRBuilder<>>(this->context);
     this->fpm = std::make_unique<llvm::legacy::FunctionPassManager>(this->module.get());
@@ -60,7 +62,7 @@ llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* t
 llvm::Type* Visitor::get_llvm_type(Type* type) {
     std::string name = type->get_name();
     if (this->structs.find(name) != this->structs.end()) {
-        return this->structs[name].type;
+        return this->structs[name]->type;
     }
 
     return type->to_llvm_type(this->context);
@@ -78,12 +80,44 @@ llvm::Value* Visitor::get_variable(std::string name) {
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {
-    llvm::Type* target = type->to_llvm_type(this->context);
-    if (value->getType() == target) {
+    return this->cast(value, type->to_llvm_type(this->context));
+}
+
+llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
+    if (value->getType() == type) {
         return value;
     }
 
-    return this->builder->CreateBitCast(value, target);
+    return this->builder->CreateBitCast(value, type);
+}
+
+llvm::Function* Visitor::create_struct_constructor(Struct* structure, std::vector<llvm::Type*> types) {
+    std::string name = structure->name + "__constructor_";
+
+    llvm::FunctionType* function_type = llvm::FunctionType::get(structure->type, types, false);
+    llvm::Function* constructor = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, name, this->module.get());
+
+    int i = 0;
+    for (auto field : structure->fields) {
+        llvm::Argument* arg = constructor->getArg(i++);
+        arg->setName(field.first);
+    }
+
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(this->context, "entry", constructor);
+    this->builder->SetInsertPoint(entry);
+
+    llvm::AllocaInst* alloca_inst = this->create_alloca(constructor, structure->type);
+    for (int i = 0; i < structure->fields.size(); i++) {
+        auto ptr = this->builder->CreateStructGEP(structure->type, alloca_inst, i);
+        llvm::Argument* arg = constructor->getArg(i);
+
+        this->builder->CreateStore(arg, ptr);
+    }
+
+    llvm::Value* val = this->builder->CreateLoad(structure->type, alloca_inst);
+    this->builder->CreateRet(val);
+
+    return constructor;
 }
 
 void Visitor::visit(std::unique_ptr<ast::Program> program) {
@@ -94,6 +128,10 @@ void Visitor::visit(std::unique_ptr<ast::Program> program) {
 
 llvm::Value* Visitor::visit(ast::IntegerExpr* expr) {
     return llvm::ConstantInt::get(this->context, llvm::APInt(32, expr->value, true));
+}
+
+llvm::Value* Visitor::visit(ast::FloatExpr* expr) {
+    return llvm::ConstantFP::get(this->context, llvm::APFloat(expr->value));
 }
 
 llvm::Value* Visitor::visit(ast::StringExpr* expr) {
@@ -112,6 +150,12 @@ llvm::Value* Visitor::visit(ast::BlockExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
+    if (this->functions.find(expr->name) != this->functions.end()) {
+        return this->module->getFunction(function_is_intrinsic(expr->name).first);
+    } else if (this->structs.find(expr->name) != this->structs.end()) {
+        return this->structs[expr->name]->constructor;
+    }
+
     if (this->current_function) {
         llvm::AllocaInst* variable = this->current_function->locals[expr->name];
         if (variable) {
@@ -342,20 +386,39 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
 }
 
 llvm::Value* Visitor::visit(ast::CallExpr* expr) {
-    llvm::Function* function = this->module->getFunction(function_is_internal(expr->callee).first);
-    if (!function) {
-        std::cerr << "Function " << expr->callee << " is not defined" << std::endl;
+    llvm::Value* callable = expr->callee->accept(*this);
+    
+    if (callable->getType()->isPointerTy()) {
+        llvm::Type* type = callable->getType()->getPointerElementType();
+        if (!type->isFunctionTy()) {
+            std::cerr << "Callee must be a function" << std::endl;
+            exit(1);
+        }
+    } else if (!callable->getType()->isFunctionTy()) {
+        std::cerr << "Callee must be a function" << std::endl;
         exit(1);
     }
 
+    llvm::Function* function = this->module->getFunction(callable->getName());
     if (function->arg_size() != expr->args.size()) {
-        std::cerr << "Function " << expr->callee << " expects " << function->arg_size() << " arguments" << std::endl;
+        std::cerr << "Function " << function->getName().str() << " expects " << function->arg_size() << " arguments" << std::endl;
         exit(1);
     }
 
     std::vector<llvm::Value*> args;
+    int i = 0;
     for (auto& arg : expr->args) {
-        args.push_back(arg->accept(*this));
+        llvm::Value* value = arg->accept(*this);
+        llvm::Type* type = function->getArg(i++)->getType();
+
+        if (Type::from_llvm_type(type)->is_compatible(value->getType())) {
+            value = this->cast(value, type);
+        } else {
+            std::cerr << "Incompatible argument type" << std::endl;
+            exit(1);
+        }
+
+        args.push_back(value);
     }
 
     return this->builder->CreateCall(function, args);
@@ -387,10 +450,10 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
 
 llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
     std::string original = expr->name;
-    auto pair = function_is_internal(expr->name);
+    auto pair = function_is_intrinsic(expr->name);
 
     std::string name = pair.first;
-    bool is_internal = pair.second;
+    bool is_intrinsic = pair.second;
 
     llvm::Type* ret = this->get_llvm_type(expr->return_type);
 
@@ -407,7 +470,7 @@ llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
         arg.setName(expr->args[i++].name);
     }
     
-    this->functions[original] = new Function(name, args, ret, false);
+    this->functions[original] = new Function(name, args, ret, is_intrinsic);
     return function;
 }
 
@@ -424,8 +487,8 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
     }
 
     Function* func = this->functions[name];
-    if (func->is_internal) {
-        std::cerr << "Function " << name << " is internal" << std::endl;
+    if (func->is_intrinsic) {
+        std::cerr << "Function " << name << " is an LLVM intrinsic" << std::endl;
         exit(1);
     }
 
@@ -517,38 +580,17 @@ llvm::Value* Visitor::visit(ast::StructExpr* expr) {
         fields[pair.first] = types.back();
     }
 
+    std::cout << "Creating struct " << expr->name << std::endl;
+    std::cout << "Number of methods: " << expr->methods.size() << std::endl;
+
     auto type = llvm::StructType::create(this->context, types, expr->name, expr->packed);
     type->setName(expr->name);
 
-    this->structs[expr->name] = {expr->name, type, fields};
+    Struct* structure = new Struct(expr->name, type, fields);
+    structure->constructor = this->create_struct_constructor(structure, types);
+
+    this->structs[expr->name] = structure;
     return llvm::ConstantInt::getNullValue(llvm::IntegerType::getInt1Ty(this->context));;
-}
-
-llvm::Value* Visitor::visit(ast::ConstructorExpr* expr) {
-    std::string name = expr->name;
-    Struct structure = this->structs[name];
-
-    std::vector<llvm::Value*> args;
-    for (auto& arg : expr->args) {
-        args.push_back(arg->accept(*this));
-    }
-
-    llvm::Function* parent = this->builder->GetInsertBlock()->getParent();
-    llvm::AllocaInst* alloca_inst = this->create_alloca(parent, structure.type);
-    int index = 0;
-    for (auto& arg : args) {
-        std::vector<llvm::Value*> indices = {
-            llvm::ConstantInt::get(this->context, llvm::APInt(32, 0)),
-            llvm::ConstantInt::get(this->context, llvm::APInt(32, index))
-        };
-
-        auto ptr = this->builder->CreateGEP(structure.type, alloca_inst, indices);
-        this->builder->CreateStore(arg, ptr);
-
-        index++;
-    }
-
-    return alloca_inst;
 }
 
 llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
@@ -561,17 +603,19 @@ llvm::Value* Visitor::visit(ast::ElementExpr* expr) {
     // TODO: Check the type of the value
 
     ast::IntegerExpr* index = dynamic_cast<ast::IntegerExpr*>(expr->index.get());
-    if (!index) {
-        std::cerr << "Expected an integer" << std::endl;
-        exit(1);
-    }
-
     if (value->getType()->isPointerTy()) {
         llvm::Type* type = value->getType()->getPointerElementType();
+        llvm::Type* element;
+        if (type->isArrayTy()) {
+            element = type->getArrayElementType();
+        } else {
+            element = type->getStructElementType(index->value);
+        }
+
         llvm::Value* idx = llvm::ConstantInt::get(this->context, llvm::APInt(32, index->value));
 
         auto ptr = this->builder->CreateGEP(type, value, idx);
-        return this->builder->CreateLoad(type->getArrayElementType(), ptr);
+        return this->builder->CreateLoad(element, ptr);
     }
 
     return this->builder->CreateExtractValue(value, index->value);

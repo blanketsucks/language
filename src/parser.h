@@ -35,6 +35,7 @@ public:
     std::unique_ptr<ast::Expr> expr(bool semicolon = true);
     std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
     std::unique_ptr<ast::Expr> unary();
+    std::unique_ptr<ast::Expr> call();
     std::unique_ptr<ast::Expr> factor();
 
 private:

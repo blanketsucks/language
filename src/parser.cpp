@@ -290,35 +290,43 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 
     this->next();
     std::map<std::string, ast::Argument> fields;
+    std::vector<std::unique_ptr<ast::FunctionExpr>> methods;
     std::vector<Type*> types;
 
     while (this->current != TokenType::RBRACE) {
-        if (this->current != TokenType::IDENTIFIER) {
-            this->error("Expected identifer.");
+        if (this->current != TokenType::IDENTIFIER && this->current.value != "def") {
+            this->error("Expected identifer or function definition.");
         }
 
-        std::string name = this->current.value;
-        this->next();
+        if (this->current.value == "def") {
+            this->next();
 
-        if (this->current != TokenType::COLON) {
-            this->error("Expected :");
+            auto function = this->parse_function();
+            methods.push_back(std::move(function));
+        } else {
+            std::string name = this->current.value;
+            this->next();
+
+            if (this->current != TokenType::COLON) {
+                this->error("Expected :");
+            }
+
+            this->next();
+            if (this->current != TokenType::IDENTIFIER) {
+                this->error("Expected type.");
+            }
+            std::string type = this->current.value;
+            this->next();
+
+            types.push_back(this->get_type(type));
+            fields[name] = {name, types.back()};
+
+            if (this->current != TokenType::SEMICOLON) {
+                this->error("Expected ;");
+            }
+
+            this->next();
         }
-
-        this->next();
-        if (this->current != TokenType::IDENTIFIER) {
-            this->error("Expected type.");
-        }
-        std::string type = this->current.value;
-        this->next();
-
-        types.push_back(this->get_type(type));
-        fields[name] = {name, types.back()};
-
-        if (this->current != TokenType::SEMICOLON) {
-            break;
-        }
-
-        this->next();
     }
 
     if (this->current != TokenType::RBRACE) {
@@ -329,7 +337,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     this->types[name] = StructType::create(name, types);
 
     this->next();
-    return std::make_unique<ast::StructExpr>(start, end, name, packed, std::move(fields));    
+    return std::make_unique<ast::StructExpr>(start, end, name, packed, std::move(fields), std::move(methods));    
 }
 
 std::unique_ptr<ast::Program> Parser::statements() {
@@ -484,7 +492,7 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
 
 std::unique_ptr<ast::Expr> Parser::unary() {
     if (std::find(UNARY_OPERATORS.begin(), UNARY_OPERATORS.end(), this->current.type) == UNARY_OPERATORS.end()) {
-        return this->factor();
+        return this->call();
     }
 
     Location* start = this->current.start;
@@ -492,10 +500,42 @@ std::unique_ptr<ast::Expr> Parser::unary() {
     TokenType op = this->current.type;
     this->next();
 
-    auto value = this->factor();
+    auto value = this->call();
     return std::make_unique<ast::UnaryOpExpr>(start, this->current.end, op, std::move(value));
 }
 
+std::unique_ptr<ast::Expr> Parser::call() {
+    Location* start = this->current.start;
+    auto expr = this->factor();
+
+    if (this->current == TokenType::LPAREN) {
+        this->next();
+        std::vector<std::unique_ptr<ast::Expr>> args;
+
+        if (this->current != TokenType::RPAREN) {
+            while (true) {
+                auto arg = this->expr(false);
+                args.push_back(std::move(arg));
+
+                if (this->current != TokenType::COMMA) {
+                    break;
+                }
+
+                this->next();
+            }
+
+            if (this->current != TokenType::RPAREN) {
+                this->error("Expected )");
+            }
+
+            this->next();
+        }
+
+        return std::make_unique<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
+    }
+
+    return expr;
+}
 
 std::unique_ptr<ast::Expr> Parser::factor() {
     std::unique_ptr<ast::Expr> expr;
@@ -509,6 +549,13 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             expr = std::make_unique<ast::IntegerExpr>(start, this->current.start, number);
             break;
         }
+        case TokenType::FLOAT: {
+            float number = std::stof(this->current.value);
+            this->next();
+
+            expr = std::make_unique<ast::FloatExpr>(start, this->current.start, number);
+            break;
+        }
         case TokenType::STRING: {
             std::string value = this->current.value;
             this->next();
@@ -517,43 +564,10 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             break;
         }
         case TokenType::IDENTIFIER: {
-            bool is_constructor = false;
             std::string name = this->current.value;
-            if (this->types.count(name)) {
-                is_constructor = true;
-            }
-
             this->next();
 
-            if (this->current != TokenType::LPAREN) {
-                expr = std::make_unique<ast::VariableExpr>(start, this->current.start, name);
-            } else {
-                this->next();
-                std::vector<std::unique_ptr<ast::Expr>> args;
-
-                if (this->current != TokenType::RPAREN) {
-                    while (true) {
-                        args.push_back(this->expr(false));
-                        if (this->current != TokenType::COMMA) {
-                            break;
-                        }
-
-                        this->next();
-                    }
-                }
-
-                if (this->current != TokenType::RPAREN) {
-                    this->error("Expected )");
-                }
-
-                this->next();
-                if (is_constructor) {
-                    expr = std::make_unique<ast::ConstructorExpr>(start, this->current.start, name, std::move(args));
-                } else {
-                    expr = std::make_unique<ast::CallExpr>(start, this->current.start, name, std::move(args));
-                }
-            }
-
+            expr = std::make_unique<ast::VariableExpr>(start, this->current.start, name);
             break;
         }
         case TokenType::LPAREN: {

@@ -46,6 +46,14 @@ public:
     llvm::Value* accept(Visitor& visitor) override;
 };
 
+class FloatExpr : public Expr {
+public:
+    float value;
+
+    FloatExpr(Location* start, Location* end, float value);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
 class StringExpr : public Expr {
 public:
     std::string value;
@@ -100,19 +108,10 @@ public:
 
 class CallExpr : public Expr {
 public:
-    std::string callee;
+    std::unique_ptr<ast::Expr> callee;
     std::vector<std::unique_ptr<Expr>> args;
 
-    CallExpr(Location* start, Location* end, std::string callee, std::vector<std::unique_ptr<Expr>> args);
-    llvm::Value* accept(Visitor& visitor) override;
-};
-
-class ConstructorExpr : public Expr {
-public:
-    std::string name;
-    std::vector<std::unique_ptr<Expr>> args;
-
-    ConstructorExpr(Location* start, Location* end, std::string name, std::vector<std::unique_ptr<Expr>> args);
+    CallExpr(Location* start, Location* end, std::unique_ptr<ast::Expr> callee, std::vector<std::unique_ptr<Expr>> args);
     llvm::Value* accept(Visitor& visitor) override;
 };
 
@@ -158,8 +157,9 @@ public:
     std::string name;
     bool packed;
     std::map<std::string, Argument> fields;
+    std::vector<std::unique_ptr<FunctionExpr>> methods;
 
-    StructExpr(Location* start, Location* end, std::string name, bool packed, std::map<std::string, Argument> fields);
+    StructExpr(Location* start, Location* end, std::string name, bool packed, std::map<std::string, Argument> fields, std::vector<std::unique_ptr<FunctionExpr>> methods);
     llvm::Value* accept(Visitor& visitor) override;
 };
 

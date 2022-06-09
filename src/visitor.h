@@ -21,14 +21,14 @@ struct Function {
     llvm::Type* ret;
     std::map<std::string, llvm::AllocaInst*> locals;
     bool has_return;
-    bool is_internal;
+    bool is_intrinsic;
 
-    Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_internal) {
+    Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic) {
         this->name = name;
         this->args = args;
         this->ret = ret;
         this->has_return = false;
-        this->is_internal = is_internal;
+        this->is_intrinsic = is_intrinsic;
     }
 };
 
@@ -36,6 +36,14 @@ struct Struct {
     std::string name;
     llvm::StructType* type;
     std::map<std::string, llvm::Type*> fields;
+    std::map<std::string, llvm::Function*> methods;
+    llvm::Function* constructor;
+
+    Struct(std::string name, llvm::StructType* type, std::map<std::string, llvm::Type*> fields) {
+        this->name = name;
+        this->type = type;
+        this->fields = fields;
+    }
 };
 
 struct Module {
@@ -54,11 +62,12 @@ public:
 
     std::map<std::string, Function*> functions;
     std::map<std::string, llvm::Constant*> constants;
-    std::map<std::string, Struct> structs;
+    std::map<std::string, Struct*> structs;
     std::map<std::string, Module> includes;
 
     Function* current_function = nullptr;
-
+    Struct* current_struct = nullptr;
+    
     Visitor(std::string name);
 
     void dump(llvm::raw_ostream& stream);
@@ -66,12 +75,15 @@ public:
     llvm::Type* get_llvm_type(Type* name);
     llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type);
     llvm::Value* cast(llvm::Value* value, Type* type);
+    llvm::Value* cast(llvm::Value* value, llvm::Type* type);
+    llvm::Function* create_struct_constructor(Struct* structure, std::vector<llvm::Type*> types);
 
     void visit(std::unique_ptr<ast::Program> program);
     llvm::Value* visit(ast::IncludeExpr* expr);
 
     llvm::Value* visit(ast::BlockExpr* expr);
     llvm::Value* visit(ast::IntegerExpr* expr);
+    llvm::Value* visit(ast::FloatExpr* expr);
     llvm::Value* visit(ast::StringExpr* expr);
     llvm::Value* visit(ast::VariableExpr* expr);
     llvm::Value* visit(ast::VariableAssignmentExpr* expr);
@@ -84,7 +96,6 @@ public:
     llvm::Value* visit(ast::FunctionExpr* expr);
     llvm::Value* visit(ast::IfExpr* expr);
     llvm::Value* visit(ast::StructExpr* expr);
-    llvm::Value* visit(ast::ConstructorExpr* expr);
     llvm::Value* visit(ast::AttributeExpr* expr);
     llvm::Value* visit(ast::ElementExpr* expr);
 };
