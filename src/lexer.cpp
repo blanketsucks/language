@@ -55,7 +55,7 @@ char Lexer::next(bool check_newline) {
 }
 
 char Lexer::peek() { 
-    return this->source[this->index + 1]; 
+    return this->source[this->index]; 
 }
 
 char Lexer::prev() { 
@@ -142,6 +142,37 @@ Token Lexer::parse_number() {
     value += this->current;
 
     char next = this->next();
+    if (value == "0") {
+        if (next == 'x' || next == 'b') {
+            value += this->current;
+            if (next == 'x') {
+                while (std::isxdigit(this->current)) {
+                    value += this->current;
+                    this->next();
+                }
+
+                // Kind of funky, but eh
+                long val = std::stol(value, nullptr, 16);
+                value = std::to_string(val);
+            } else {
+                while (this->current == '0' || this->current == '1') {
+                    value += this->current;
+                    this->next();
+                }
+
+                long val = std::stol(value, nullptr, 2);
+                value = std::to_string(val);
+            }
+
+            return this->create_token(TokenType::INTEGER, start, value);
+        }
+
+        if (std::isdigit(this->peek())) {
+            std::cerr << "Leading zeros in integer constants are not allowed" << std::endl;
+            exit(1);
+        }
+    }
+
     bool dot = false;
     while (std::isdigit(next) || next == '.') {
         if (next == '.') {
@@ -302,14 +333,34 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->create_token(TokenType::COMMA, ","));
             this->next();
         } else if (this->current == '.') {
-            tokens.push_back(this->create_token(TokenType::DOT, "."));
-            this->next();
+            Location* start = this->loc();
+            Token token;
+
+            char next = this->next();
+            if (next == '.' && this->peek() == '.') {
+                this->next(); this->next();
+                token = this->create_token(TokenType::ELLIPSIS, start, "...");
+            } else {
+                token = this->create_token(TokenType::DOT, ".");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == ';') {
             tokens.push_back(this->create_token(TokenType::SEMICOLON, ";"));
             this->next();
         } else if (this->current == ':') {
-            tokens.push_back(this->create_token(TokenType::COLON, ":"));
-            this->next();
+            Location* start = this->loc();
+            Token token;
+
+            char next = this->next();
+            if (next == ':') {
+                this->next();
+                token = this->create_token(TokenType::DOUBLECOLON, start, "::");
+            } else {
+                token = this->create_token(TokenType::COLON, ":");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == '"' || this->current == '\'') {
             tokens.push_back(this->parse_string());
         } else {

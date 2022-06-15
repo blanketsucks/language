@@ -4,3 +4,4 @@ srcp/
 
 *.o
 main
+test.*

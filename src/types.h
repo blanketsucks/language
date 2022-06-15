@@ -49,10 +49,10 @@ public:
         String,
         Boolean,
         Array,
-        Struct
+        Struct,
     };
 
-    Type(TypeValue value = Unknown, int size = 0);
+    Type(TypeValue value = Void, int size = 0);
     Type(TypeValue value, int size, std::vector<TypeVar> vars);
 
     static Type* create(TypeValue value, int size);
@@ -97,6 +97,7 @@ public:
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);
 
+    bool is_pointer;
 private:
     std::vector<TypeVar> vars;
     TypeValue value;
@@ -110,9 +111,10 @@ public:
     static StructType* create(std::string name, std::vector<Type*> fields);
     static StructType* from_llvm_type(llvm::StructType* type);
 
-    llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
 
     std::string get_name() override { return this->name; }
+    void set_fields(std::vector<Type*> fields) { this->fields = fields; }
 
     bool is_compatible(Type* other) override;
     bool is_compatible(llvm::Type* type) override;

@@ -9,6 +9,7 @@
 
 struct Context {
     bool is_inside_function = false;
+    StructType* current_struct = nullptr;
 };
 
 class Parser {
@@ -29,6 +30,8 @@ public:
     std::unique_ptr<ast::FunctionExpr> parse_function();
     std::unique_ptr<ast::IfExpr> parse_if_statement();
     std::unique_ptr<ast::StructExpr> parse_struct();
+    std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);
+    std::unique_ptr<ast::NamespaceExpr> parse_namespace();
 
     std::unique_ptr<ast::Program> statements();
     std::unique_ptr<ast::Expr> statement();

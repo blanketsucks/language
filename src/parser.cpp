@@ -73,19 +73,11 @@ Type* Parser::get_type(std::string name) {
         this->error("Unknown type: " + name);
     }
 
-    if (name == "long") {
-        this->next();
-        if (this->current.value == "long") {
-            return LongLongType;
-        }
-    }
-
-    Type* type = this->types[name];
+    Type* type = this->types[name]->copy();
 
     // tested piece of garbage. There probably is a better to do this.
     if (type->is_generic()) {
         this->next();
-        type = type->copy();
 
         if (this->current != TokenType::LT) {
             this->error("Missing generic type arguments for " + name);
@@ -113,9 +105,9 @@ Type* Parser::get_type(std::string name) {
                 }
 
                 values.push_back(std::stoi(this->current.value));
+                this->next();
             } 
 
-            this->next();
             if (this->current.type != TokenType::COMMA) {
                 break;
             }
@@ -133,7 +125,12 @@ Type* Parser::get_type(std::string name) {
         }
 
         type->set_type_var_values(values);
-        return type;
+    }
+
+    this->next();
+    if (this->current == TokenType::MUL) {
+        type->is_pointer = true;
+        this->next();
     }
 
     return type;
@@ -174,9 +171,36 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
 
     this->next();
     std::vector<ast::Argument> args;
+    bool has_varargs = false;
 
-    while (this->current == TokenType::IDENTIFIER) {
+    while (this->current == TokenType::IDENTIFIER || this->current == TokenType::ELLIPSIS) {
         std::string name = this->current.value;
+        if (this->current == TokenType::ELLIPSIS) {
+            has_varargs = true;
+            this->next();
+
+            if (this->current != TokenType::RPAREN) {
+                this->error("Expected ) after varargs");
+            }
+
+            break;
+        }
+
+        // Special case for self if inside a structure. Type of the parameter doesn't need to be specified.
+        if (this->context.current_struct) {
+            if (name == "self") {
+                args.push_back({name, this->context.current_struct});
+                this->next();
+                
+                if (this->current != TokenType::COMMA) {
+                    break;
+                }
+
+                this->next();
+                continue;
+            }
+        }
+
         this->next();
 
         if (this->current != TokenType::COLON) {
@@ -187,15 +211,12 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
         if (this->current != TokenType::IDENTIFIER) {
             this->error("Expected type.");
         }
-        std::string type = this->current.value;
-        this->next();
 
-        args.push_back({name, this->get_type(type)});
-
+        args.push_back({name, this->get_type(this->current.value)});
         if (this->current != TokenType::COMMA) {
             break;
         }
-
+    
         this->next();
     }
 
@@ -215,11 +236,9 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
 
         ret = this->get_type(this->current.value);
         end = this->current.end;
-
-        this->next();
     }
 
-    return std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args));
+    return std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args), has_varargs);
 }
 
 std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
@@ -293,9 +312,13 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     std::vector<std::unique_ptr<ast::FunctionExpr>> methods;
     std::vector<Type*> types;
 
+    StructType* structure = StructType::create(name, {});
+    this->context.current_struct = structure;
+
+    this->types[name] = structure;
     while (this->current != TokenType::RBRACE) {
         if (this->current != TokenType::IDENTIFIER && this->current.value != "def") {
-            this->error("Expected identifer or function definition.");
+            this->error("Expected identifier or function definition.");
         }
 
         if (this->current.value == "def") {
@@ -315,10 +338,8 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
             if (this->current != TokenType::IDENTIFIER) {
                 this->error("Expected type.");
             }
-            std::string type = this->current.value;
-            this->next();
 
-            types.push_back(this->get_type(type));
+            types.push_back(this->get_type(this->current.value));
             fields[name] = {name, types.back()};
 
             if (this->current != TokenType::SEMICOLON) {
@@ -334,10 +355,95 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     }
 
     Location* end = this->current.end;
-    this->types[name] = StructType::create(name, types);
+    structure->set_fields(types);
 
     this->next();
     return std::make_unique<ast::StructExpr>(start, end, name, packed, std::move(fields), std::move(methods));    
+}
+
+std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
+    Location* start = this->current.start;
+
+    if (this->current != TokenType::IDENTIFIER) {
+        this->error("Expected identifer.");
+    }
+
+    Type* type = nullptr;
+    std::string name = this->current.value;
+    this->next();
+
+    if (this->current == TokenType::COLON) {
+        this->next();
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected type.");
+        }
+
+        type = this->get_type(this->current.value);
+    }
+
+    if (this->current != TokenType::ASSIGN) {
+        this->error("Expected =");
+    }
+
+    this->next();
+        
+    auto expr = this->expr(false);
+    Location* end = this->current.end;
+    
+    if (this->current != TokenType::SEMICOLON) {
+        this->error("Expected ;");
+    }
+
+    if (is_const) {
+        return std::make_unique<ast::ConstExpr>(start, end, name, type, std::move(expr));
+    } else {
+        return std::make_unique<ast::VariableAssignmentExpr>(start, end, name, type, std::move(expr));
+    }
+}
+
+std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
+    Location* start = this->current.start;
+    std::string name = this->current.value;
+
+    this->next();
+    if (this->current != TokenType::LBRACE) {
+        this->error("Expected {");
+    }
+
+    this->next();
+
+    std::vector<std::unique_ptr<ast::FunctionExpr>> functions;
+    std::vector<std::unique_ptr<ast::StructExpr>> structs;
+    std::vector<std::unique_ptr<ast::ConstExpr>> constants;
+    std::vector<std::unique_ptr<ast::NamespaceExpr>> namespaces;
+
+    while (this->current != TokenType::RBRACE) {
+        if (
+            this->current != TokenType::KEYWORD || (this->current.value != "def" && this->current.value != "struct" && this->current.value != "const" && this->current.value != "namespace")
+        ) {
+            this->error("Expected function, struct, const or namespace definition.");
+        }
+
+        if (this->current.value == "def") {
+            this->next();
+            functions.push_back(std::move(this->parse_function()));
+        } else if (this->current.value == "struct") {
+            this->next();
+            structs.push_back(std::move(this->parse_struct()));
+        } else if (this->current.value == "namespace") {
+            this->next();
+            namespaces.push_back(std::move(this->parse_namespace()));
+        }
+    }
+
+    if (this->current != TokenType::RBRACE) {
+        this->error("Expected }");
+    }
+
+    Location* end = this->current.end;
+    this->next();
+
+    return std::make_unique<ast::NamespaceExpr>(start, end, name, std::move(functions), std::move(structs), std::move(constants), std::move(namespaces));
 }
 
 std::unique_ptr<ast::Program> Parser::statements() {
@@ -345,6 +451,10 @@ std::unique_ptr<ast::Program> Parser::statements() {
 
     while (this->current != TokenType::EOS) {
         auto expr = this->statement();
+        if (!expr) {
+            continue;
+        }
+
         statements.push_back(std::move(expr));
     }
 
@@ -356,6 +466,17 @@ std::unique_ptr<ast::Expr> Parser::statement() {
         case TokenType::KEYWORD:
             if (this->current.value == "extern") {
                 this->next();
+                if (this->current == TokenType::STRING) {
+                    if (this->current.value != "C") {
+                        this->error("Unknown extern linkage specification");
+                    }
+
+                    // For now just ignore if "C" is used because from what I know if it's used like 
+                    // `extern "C" void foo();` in C++, the name of the function doesn't get mangled unlike if used without the "C".
+                    // Right now, I don't do name mangling so I'll just ignore it.
+                    this->next();
+                }
+
                 auto expr = this->parse_prototype();
 
                 this->end();
@@ -392,40 +513,10 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 return this->parse_if_statement();
             } else if (this->current.value == "let") {
                 this->next();
-                Location* start = this->current.start;
-
-                if (this->current != TokenType::IDENTIFIER) {
-                    this->error("Expected identifer.");
-                }
-
-                Type* type = nullptr;
-                std::string name = this->current.value;
+                return this->parse_variable_definition(false);
+            }  else if (this->current.value == "const") {
                 this->next();
-
-                if (this->current == TokenType::COLON) {
-                    this->next();
-                    if (this->current != TokenType::IDENTIFIER) {
-                        this->error("Expected type.");
-                    }
-
-                    type = this->get_type(this->current.value);
-                    this->next();
-                }
-
-                if (this->current != TokenType::ASSIGN) {
-                    this->error("Expected =");
-                }
-
-                this->next();
-                    
-                auto expr = this->expr(false);
-                Location* end = this->current.end;
-
-                if (this->current != TokenType::SEMICOLON) {
-                    this->error("Expected ;");
-                }
-
-                return std::make_unique<ast::VariableAssignmentExpr>(start, end, name, type, std::move(expr));
+                return this->parse_variable_definition(true);
             } else if (this->current.value == "struct") {
                 if (this->context.is_inside_function) {
                     this->error("struct is only allowed outside functions.");
@@ -446,13 +537,54 @@ std::unique_ptr<ast::Expr> Parser::statement() {
 
                 this->next();
                 return std::make_unique<ast::IncludeExpr>(start, end, path);
+            } else if (this->current.value == "namespace") {
+                this->next();
+                return this->parse_namespace();
+            } else if (this->current.value == "type") {
+                this->next();
+                std::string name = this->current.value;
+
+                this->next();
+                if (this->current != TokenType::ASSIGN) {
+                    this->error("Expected =");
+                }
+
+                this->next();
+                if (this->current != TokenType::IDENTIFIER) {
+                    this->error("Expected type name.");
+                }
+
+                Type* type = this->get_type(this->current.value);
+                if (this->current != TokenType::SEMICOLON) {
+                    this->error("Expected ;");
+                }
+
+                this->next();
+                this->types[name] = type;
+
+                return nullptr;
+            } else if (this->current.value == "while") {
+                this->next();
+                auto condition = this->expr(false);
+
+                if (this->current != TokenType::LBRACE) {
+                    this->error("Expected {");
+                }
+
+                this->next();
+                auto body = this->parse_block();
+
+                return std::make_unique<ast::WhileExpr>(this->current.start, this->current.end, std::move(condition), std::move(body));
+            } else {
+                this->error("Unimplemented keyword.");
             }
+
             break;
         default:
             return this->expr();
     }
 
-    this->error("Unreachable code.");
+    this->error("Unexpected token.");
     return nullptr;
 }
 
@@ -523,14 +655,13 @@ std::unique_ptr<ast::Expr> Parser::call() {
 
                 this->next();
             }
-
-            if (this->current != TokenType::RPAREN) {
-                this->error("Expected )");
-            }
-
-            this->next();
         }
 
+        if (this->current != TokenType::RPAREN) {
+            this->error("Expected )");
+        }
+
+        this->next();
         return std::make_unique<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
     }
 
@@ -543,7 +674,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
     Location* start = this->current.start;
     switch (this->current.type) {
         case TokenType::INTEGER: {
-            int number = std::stoi(this->current.value);
+            int number = std::stol(this->current.value);
             this->next();
 
             expr = std::make_unique<ast::IntegerExpr>(start, this->current.start, number);
@@ -612,13 +743,13 @@ std::unique_ptr<ast::Expr> Parser::factor() {
         }
     }
 
-    while (this->current == TokenType::DOT) {
+    while (this->current == TokenType::DOUBLECOLON) {
         this->next();
         if (this->current != TokenType::IDENTIFIER) {
             this->error("Expected identifier.");
         }
 
-        expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, this->current.value, std::move(expr));
+        expr = std::make_unique<ast::NamespaceAttributeExpr>(start, this->current.end, this->current.value, std::move(expr));
         this->next();
     }
 
@@ -631,6 +762,16 @@ std::unique_ptr<ast::Expr> Parser::factor() {
 
         this->next();
         expr = std::make_unique<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
+    }
+
+    while (this->current == TokenType::DOT) {
+        this->next();
+        if (this->current != TokenType::IDENTIFIER) {
+            this->error("Expected identifier.");
+        }
+
+        expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, this->current.value, std::move(expr));
+        this->next();
     }
 
     return expr;

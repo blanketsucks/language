@@ -1,5 +1,0 @@
-extern __intrinsic_llvm_sin_f64(v: double) -> double;
-
-def sin(v: double) -> double {
-    return __intrinsic_llvm_sin_f64(v);
-}

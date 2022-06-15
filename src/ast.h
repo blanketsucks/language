@@ -80,6 +80,12 @@ public:
     llvm::Value* accept(Visitor& visitor) override;
 };
 
+class ConstExpr : public VariableAssignmentExpr {
+public:
+    ConstExpr(Location* start, Location* end, std::string name, Type* type, std::unique_ptr<Expr> value);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
 class ArrayExpr : public Expr {
 public:
     std::vector<std::unique_ptr<Expr>> elements;
@@ -127,9 +133,10 @@ class PrototypeExpr : public Expr {
 public:
     std::string name;
     std::vector<Argument> args;
+    bool has_varargs;
     Type* return_type;
 
-    PrototypeExpr(Location* start, Location* end, std::string name, Type* return_type, std::vector<Argument> args);
+    PrototypeExpr(Location* start, Location* end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs);
     llvm::Value* accept(Visitor& visitor) override;
 };
 
@@ -149,6 +156,15 @@ public:
     std::unique_ptr<BlockExpr> ebody;
 
     IfExpr(Location* start, Location* end, std::unique_ptr<Expr> condition, std::unique_ptr<BlockExpr> body, std::unique_ptr<BlockExpr> ebody);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class WhileExpr : public Expr {
+public:
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<BlockExpr> body;
+
+    WhileExpr(Location* start, Location* end, std::unique_ptr<Expr> condition, std::unique_ptr<BlockExpr> body);
     llvm::Value* accept(Visitor& visitor) override;
 };
 
@@ -186,6 +202,28 @@ public:
     std::string path;
 
     IncludeExpr(Location* start, Location* end, std::string path);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class NamespaceExpr : public Expr {
+public:
+    std::string name;
+    
+    std::vector<std::unique_ptr<FunctionExpr>> functions;
+    std::vector<std::unique_ptr<StructExpr>> structs;
+    std::vector<std::unique_ptr<ConstExpr>> consts;
+    std::vector<std::unique_ptr<NamespaceExpr>> namespaces;
+
+    NamespaceExpr(Location* start, Location* end, std::string name, std::vector<std::unique_ptr<FunctionExpr>> functions, std::vector<std::unique_ptr<StructExpr>> structs, std::vector<std::unique_ptr<ConstExpr>> consts, std::vector<std::unique_ptr<NamespaceExpr>> namespaces);
+    llvm::Value* accept(Visitor& visitor) override;
+};
+
+class NamespaceAttributeExpr : public Expr {
+public:
+    std::unique_ptr<Expr> parent;
+    std::string attribute;
+
+    NamespaceAttributeExpr(Location* start, Location* end, std::string attribute, std::unique_ptr<Expr> parent);
     llvm::Value* accept(Visitor& visitor) override;
 };
 

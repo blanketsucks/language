@@ -4,18 +4,7 @@
 #include "src/parser.h"
 #include "src/types.h"
 #include "src/visitor.h"
-
-template<typename T> void error(T& message) {
-    std::cerr << message << std::endl;
-}
-
-template<typename T, typename... Args> void error(
-    Location* start, Location* end, T& message, Args... args
-) {
-    std::cerr << message << " ";
-    error(args...);
-} 
-
+ 
 int main() {
     llvm::InitializeAllTargetInfos();
     llvm::InitializeAllTargets();
@@ -23,18 +12,30 @@ int main() {
     llvm::InitializeAllAsmParsers();
     llvm::InitializeAllAsmPrinters();
 
-    std::ifstream file("test.txt");
+    std::ifstream file("test.pr");
 
-    Lexer lexer(file, "test.txt");
+    Lexer lexer(file, "test.pr");
     std::vector<Token> tokens = lexer.lex();
 
     std::unique_ptr<ast::Program> program = Parser(tokens).statements();
     
-    Visitor visitor("test");
+    Visitor visitor("test.pr");
     visitor.visit(std::move(program));
 
-    // Compile to object code
+    for (auto& pair : visitor.functions) {
+        if (!pair.second) continue;
+        if (!pair.second->used) {
+            if (pair.first == "main") {
+                continue;
+            }
 
+            std::string name = visitor.is_intrinsic(pair.first).first;
+            llvm::Function* function = visitor.module->getFunction(name);
+
+            function->eraseFromParent();
+        }
+    }
+    
     std::string target_triple = llvm::sys::getDefaultTargetTriple();
     std::string error;
 
@@ -48,11 +49,17 @@ int main() {
     std::string features = "";
 
     llvm::TargetOptions options;
+
+
     auto reloc = llvm::Optional<llvm::Reloc::Model>();
 
     llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, cpu, features, options, reloc);
     visitor.module->setDataLayout(target_machine->createDataLayout());
     visitor.module->setTargetTriple(target_triple);
+
+    visitor.module->setPICLevel(llvm::PICLevel::BigPIC);
+    visitor.module->setPIELevel(llvm::PIELevel::Large);
+
 
     std::string filename = "output.o";
     std::error_code ec;

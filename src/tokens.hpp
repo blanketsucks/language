@@ -52,7 +52,9 @@ enum class TokenType {
     SEMICOLON,
     COLON,
     DOT,
+    DOUBLECOLON,
     ARROW,
+    ELLIPSIS,
     EOS
 };
 
@@ -97,10 +99,14 @@ static std::vector<std::string> KEYWORDS = {
     "return",
     "if",
     "else",
+    "while",
     "let",
+    "const",
     "struct",
     "packed",
-    "include"
+    "include",
+    "namespace",
+    "type"
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
@@ -135,7 +141,9 @@ static std::vector<TokenType> UNARY_OPERATORS = {
     TokenType::NOT,
     TokenType::PLUS,
     TokenType::MINUS,
-    TokenType::BINARY_NOT
+    TokenType::BINARY_NOT,
+    TokenType::BINARY_AND,
+    TokenType::MUL,
 };
 
 

@@ -46,6 +46,14 @@ llvm::Value* VariableAssignmentExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+ConstExpr::ConstExpr(
+    Location* start, Location* end, std::string name, Type* type, std::unique_ptr<Expr> value
+) : VariableAssignmentExpr(start, end, name, type, std::move(value)) {}
+
+llvm::Value* ConstExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 ArrayExpr::ArrayExpr(Location* start, Location* end, std::vector<std::unique_ptr<Expr>> elements) : Expr(start, end) {
     this->elements = std::move(elements);
 }
@@ -95,8 +103,8 @@ llvm::Value* ReturnExpr::accept(Visitor& visitor) {
 }
 
 PrototypeExpr::PrototypeExpr(
-    Location* start, Location* end, std::string name, Type* return_type, std::vector<Argument> args
-) : Expr(start, end), name(name), return_type(return_type) {
+    Location* start, Location* end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs
+) : Expr(start, end), name(name), return_type(return_type), has_varargs(has_varargs) {
     this->args = std::move(args);
 }
 
@@ -124,6 +132,15 @@ IfExpr::IfExpr(
 }
 
 llvm::Value* IfExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+WhileExpr::WhileExpr(Location* start, Location* end, std::unique_ptr<Expr> condition, std::unique_ptr<BlockExpr> body) : Expr(start, end) {
+    this->condition = std::move(condition);
+    this->body = std::move(body);
+}
+
+llvm::Value* WhileExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -162,6 +179,29 @@ llvm::Value* ElementExpr::accept(Visitor& visitor) {
 IncludeExpr::IncludeExpr(Location* start, Location* end, std::string path) : Expr(start, end), path(path) {}
 
 llvm::Value* IncludeExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+NamespaceExpr::NamespaceExpr(
+    Location* start, Location* end, std::string name, std::vector<std::unique_ptr<FunctionExpr>> functions, std::vector<std::unique_ptr<StructExpr>> structs, std::vector<std::unique_ptr<ConstExpr>> consts, std::vector<std::unique_ptr<NamespaceExpr>> namespaces
+) : Expr(start, end), name(name) {
+    this->functions = std::move(functions);
+    this->structs = std::move(structs);
+    this->consts = std::move(consts);
+    this->namespaces = std::move(namespaces);
+}
+
+llvm::Value* NamespaceExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+NamespaceAttributeExpr::NamespaceAttributeExpr(
+    Location* start, Location* end, std::string attribute, std::unique_ptr<Expr> parent
+) : Expr(start, end), attribute(attribute) {
+    this->parent = std::move(parent);
+}
+
+llvm::Value* NamespaceAttributeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
