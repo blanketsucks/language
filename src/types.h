@@ -50,9 +50,10 @@ public:
         Boolean,
         Array,
         Struct,
+        Pointer
     };
 
-    Type(TypeValue value = Void, int size = 0);
+    Type(TypeValue value, int size);
     Type(TypeValue value, int size, std::vector<TypeVar> vars);
 
     static Type* create(TypeValue value, int size);
@@ -60,11 +61,11 @@ public:
     static Type* from_llvm_type(llvm::Type* type);
 
     virtual llvm::Type* to_llvm_type(llvm::LLVMContext& context);
-    Type* copy();
-
-    std::string to_str();
     virtual std::string get_name() { return this->to_str(); }
+    virtual Type* copy();
 
+    Type* to_pointer_type();
+    std::string to_str();
 
     std::vector<TypeVar> get_type_vars() { return this->vars; }
     void set_type_var_value(int index, llvm::Any value) { vars[index].value = value; }
@@ -73,6 +74,8 @@ public:
             vars[i].value = values[i];
         }
     }
+
+    Type* get_element_pointer_type();
 
     bool is_generic() { return !vars.empty(); }
     bool is_unknown() { return this->value == Unknown; }
@@ -88,39 +91,84 @@ public:
     bool is_array() { return this->value == Array; }
     bool is_struct() { return this->value == Struct; }
     bool is_void() { return this->value == Void; }
+    bool is_pointer() { return this->value == Pointer; }
     bool is_floating_point() { return this->is_float() || this->is_double(); }
-    bool is_numeric() { 
-        return this->is_boolean() || this->is_short() || this->is_int() || this->is_long() 
-            || this->is_long_long() || this->is_byte() || this->is_floating_point();
-    }
+    bool is_numeric() { return this->is_boolean() || this->is_short() || this->is_int() || this->is_long() || this->is_long_long() || this->is_byte() || this->is_floating_point(); }
 
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);
 
-    bool is_pointer;
 private:
     std::vector<TypeVar> vars;
     TypeValue value;
     int size;
 };
 
+class PointerType : public Type {
+public:
+    static PointerType* create(Type* type);
+
+    static PointerType* from_llvm_type(llvm::Type* type);
+    llvm::PointerType* to_llvm_type(llvm::LLVMContext& context) override;
+    
+    PointerType* copy() override;
+
+    std::string get_name() override { return this->element->get_name() + "*"; }
+    Type* get_element_type() { return this->element; }
+
+    bool is_compatible(Type* other) override;
+    bool is_compatible(llvm::Type* type) override;
+
+private:
+    PointerType(Type* type);
+
+    Type* element;
+};
+
 class StructType : public Type {
 public:
-    StructType(std::string name, std::vector<Type*> fields);
-
     static StructType* create(std::string name, std::vector<Type*> fields);
-    static StructType* from_llvm_type(llvm::StructType* type);
 
-    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
+    static StructType* from_llvm_type(llvm::StructType* type);
+    llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
+
+    StructType* copy() override;
 
     std::string get_name() override { return this->name; }
     void set_fields(std::vector<Type*> fields) { this->fields = fields; }
 
     bool is_compatible(Type* other) override;
     bool is_compatible(llvm::Type* type) override;
+
 private:
+    StructType(std::string name, std::vector<Type*> fields);
+
     std::string name;
     std::vector<Type*> fields;
+};
+
+class FunctionType : public Type {
+public:
+    static FunctionType* create(std::vector<Type*> args, Type* return_type, bool has_varargs);
+
+    static FunctionType* from_llvm_type(llvm::FunctionType* type);
+    llvm::FunctionType* to_llvm_type(llvm::LLVMContext& context) override;
+
+    FunctionType* copy() override;
+
+    std::vector<Type*> arguments() { return this->args; }
+    Type* get_return_type() { return this->return_type; }
+    bool is_varargs() { return this->has_varargs; }
+
+    bool is_compatible(Type* other) override;
+    bool is_compatible(llvm::Type* type) override;
+
+private:
+    FunctionType(std::vector<Type*> args, Type* return_type, bool has_varargs);
+
+    std::vector<Type*> args;
+    Type* return_type;
+    bool has_varargs;
 };
 
 static Type* VoidType = Type::create(Type::Void, 0);

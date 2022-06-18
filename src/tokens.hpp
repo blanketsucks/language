@@ -84,6 +84,50 @@ struct Token {
     Location* end;
     std::string value;
 
+    std::string to_string() {
+        switch (this->type) {
+            case TokenType::IDENTIFIER: return "IDENT";
+            case TokenType::KEYWORD: return "KEYWORD";
+            case TokenType::INTEGER: return "INTEGER";
+            case TokenType::FLOAT: return "FLOAT";
+            case TokenType::STRING: return "STRING";
+            case TokenType::CHARACTER: return "CHARACTER";
+            case TokenType::PLUS: return "PLUS";
+            case TokenType::MINUS: return "MINUS";
+            case TokenType::MUL: return "MUL";
+            case TokenType::DIV: return "DIV";
+            case TokenType::NOT: return "NOT";
+            case TokenType::OR: return "OR";
+            case TokenType::AND: return "AND";
+            case TokenType::BINARY_OR: return "BINARY_OR";
+            case TokenType::BINARY_AND: return "BINARY_AND";
+            case TokenType::BINARY_NOT: return "BINARY_NOT";
+            case TokenType::XOR: return "XOR";
+            case TokenType::RSH: return "RSH";
+            case TokenType::LSH: return "LSH";
+            case TokenType::EQ: return "EQ";
+            case TokenType::NEQ: return "NEQ";
+            case TokenType::GT: return "GT";
+            case TokenType::LT: return "LT";
+            case TokenType::GTE: return "GTE";
+            case TokenType::LTE: return "LTE";
+            case TokenType::ASSIGN: return "ASSIGN";
+            case TokenType::LPAREN: return "LPAREN";
+            case TokenType::RPAREN: return "RPAREN";
+            case TokenType::LBRACE: return "LBRACE";
+            case TokenType::RBRACE: return "RBRACE";
+            case TokenType::LBRACKET: return "LBRACKET";
+            case TokenType::RBRACKET: return "RBRACKET";
+            case TokenType::COMMA: return "COMMA";
+            case TokenType::SEMICOLON: return "SEMICOLON";
+            case TokenType::COLON: return "COLON";
+            case TokenType::DOT: return "DOT";
+            case TokenType::DOUBLECOLON: return "DOUBLECOLON";
+            case TokenType::ELLIPSIS: return "ELLIPSIS";
+            case TokenType::EOS: return "EOS";
+        }
+    }
+
     bool operator==(TokenType type) {
         return this->type == type;
     }

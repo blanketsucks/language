@@ -8,31 +8,31 @@ BlockExpr::BlockExpr(Location* start, Location* end, std::vector<std::unique_ptr
     this->block = std::move(block);
 }
 
-llvm::Value* BlockExpr::accept(Visitor& visitor) {
+Value BlockExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
 IntegerExpr::IntegerExpr(Location* start, Location* end, int value) : Expr(start, end), value(value) {}
 
-llvm::Value* IntegerExpr::accept(Visitor& visitor) {
+Value IntegerExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
 FloatExpr::FloatExpr(Location* start, Location* end, float value) : Expr(start, end), value(value) {}
 
-llvm::Value* FloatExpr::accept(Visitor& visitor) {
+Value FloatExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
 StringExpr::StringExpr(Location* start, Location* end, std::string value) : Expr(start, end), value(value) {}
 
-llvm::Value* StringExpr::accept(Visitor& visitor) {
+Value StringExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
 VariableExpr::VariableExpr(Location* start, Location* end, std::string name) : Expr(start, end), name(name) {}
 
-llvm::Value* VariableExpr::accept(Visitor& visitor) {
+Value VariableExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -42,7 +42,7 @@ VariableAssignmentExpr::VariableAssignmentExpr(
     this->value = std::move(value);
 }
 
-llvm::Value* VariableAssignmentExpr::accept(Visitor& visitor) {
+Value VariableAssignmentExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -50,7 +50,7 @@ ConstExpr::ConstExpr(
     Location* start, Location* end, std::string name, Type* type, std::unique_ptr<Expr> value
 ) : VariableAssignmentExpr(start, end, name, type, std::move(value)) {}
 
-llvm::Value* ConstExpr::accept(Visitor& visitor) {
+Value ConstExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -58,7 +58,7 @@ ArrayExpr::ArrayExpr(Location* start, Location* end, std::vector<std::unique_ptr
     this->elements = std::move(elements);
 }
 
-llvm::Value* ArrayExpr::accept(Visitor& visitor) {
+Value ArrayExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -68,7 +68,7 @@ UnaryOpExpr::UnaryOpExpr(
     this->value = std::move(value);
 }
 
-llvm::Value* UnaryOpExpr::accept(Visitor& visitor) {
+Value UnaryOpExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -79,7 +79,7 @@ BinaryOpExpr::BinaryOpExpr(
     this->right = std::move(right);
 }
 
-llvm::Value* BinaryOpExpr::accept(Visitor& visitor) {
+Value BinaryOpExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -90,7 +90,7 @@ CallExpr::CallExpr(
     this->args = std::move(args);
 }
 
-llvm::Value* CallExpr::accept(Visitor& visitor) {
+Value CallExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -98,7 +98,7 @@ ReturnExpr::ReturnExpr(Location* start, Location* end, std::unique_ptr<Expr> val
     this->value = std::move(value);
 }
 
-llvm::Value* ReturnExpr::accept(Visitor& visitor) {
+Value ReturnExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -108,7 +108,7 @@ PrototypeExpr::PrototypeExpr(
     this->args = std::move(args);
 }
 
-llvm::Value* PrototypeExpr::accept(Visitor& visitor) {
+Value PrototypeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -119,7 +119,7 @@ FunctionExpr::FunctionExpr(
     this->body = std::move(body);
 }
 
-llvm::Value* FunctionExpr::accept(Visitor& visitor) {
+Value FunctionExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -131,7 +131,7 @@ IfExpr::IfExpr(
     this->ebody = std::move(ebody);
 }
 
-llvm::Value* IfExpr::accept(Visitor& visitor) {
+Value IfExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -140,7 +140,7 @@ WhileExpr::WhileExpr(Location* start, Location* end, std::unique_ptr<Expr> condi
     this->body = std::move(body);
 }
 
-llvm::Value* WhileExpr::accept(Visitor& visitor) {
+Value WhileExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -151,7 +151,7 @@ StructExpr::StructExpr(
     this->methods = std::move(methods);
 }
 
-llvm::Value* StructExpr::accept(Visitor& visitor) {
+Value StructExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -161,7 +161,7 @@ AttributeExpr::AttributeExpr(
     this->parent = std::move(parent);
 }
 
-llvm::Value* AttributeExpr::accept(Visitor& visitor) {
+Value AttributeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -172,13 +172,13 @@ ElementExpr::ElementExpr(
     this->index = std::move(index);
 }
 
-llvm::Value* ElementExpr::accept(Visitor& visitor) {
+Value ElementExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
 IncludeExpr::IncludeExpr(Location* start, Location* end, std::string path) : Expr(start, end), path(path) {}
 
-llvm::Value* IncludeExpr::accept(Visitor& visitor) {
+Value IncludeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -191,7 +191,7 @@ NamespaceExpr::NamespaceExpr(
     this->namespaces = std::move(namespaces);
 }
 
-llvm::Value* NamespaceExpr::accept(Visitor& visitor) {
+Value NamespaceExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -201,7 +201,7 @@ NamespaceAttributeExpr::NamespaceAttributeExpr(
     this->parent = std::move(parent);
 }
 
-llvm::Value* NamespaceAttributeExpr::accept(Visitor& visitor) {
+Value NamespaceAttributeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 

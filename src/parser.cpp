@@ -128,8 +128,8 @@ Type* Parser::get_type(std::string name) {
     }
 
     this->next();
-    if (this->current == TokenType::MUL) {
-        type->is_pointer = true;
+    while (this->current == TokenType::MUL) {
+        type = type->to_pointer_type();
         this->next();
     }
 

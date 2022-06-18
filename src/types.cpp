@@ -31,63 +31,56 @@ Type* Type::from_llvm_type(llvm::Type* type) {
         return FloatType;
     } else if (type->isStructTy()) {
         return StructType::from_llvm_type(llvm::cast<llvm::StructType>(type));
+    } else if (type->isPointerTy()) {
+        return PointerType::from_llvm_type(type);
     } else {
         return VoidType;
     }
 }
 
 llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
-    llvm::Type* type;
-
     switch (this->value) {
         case Type::Short:
-            type = llvm::Type::getInt16Ty(context);
-            break;
+            return llvm::Type::getInt16Ty(context);
         case Type::Integer:
-            type = llvm::Type::getInt32Ty(context);
-            break;
+            return llvm::Type::getInt32Ty(context);
         case Type::Long:
             if (LONG_SIZE == 32) {
-                type = llvm::Type::getInt32Ty(context);
+                return llvm::Type::getInt32Ty(context);
             } else {
-                type = llvm::Type::getInt64Ty(context);
+                return llvm::Type::getInt64Ty(context);
             }
-
-            break;
         case Type::LongLong:
-            type = llvm::Type::getInt64Ty(context);
-            break;
+            return llvm::Type::getInt64Ty(context);
         case Type::Double:
-            type = llvm::Type::getDoubleTy(context);
-            break;
+            return llvm::Type::getDoubleTy(context);
         case Type::Float:
-            type = llvm::Type::getFloatTy(context);
-            break;
+            return llvm::Type::getFloatTy(context);
         case Type::Byte:
-            type = llvm::Type::getInt8Ty(context);
-            break;
+            return llvm::Type::getInt8Ty(context);
         case Type::String:
-            type = llvm::Type::getInt8PtrTy(context);
-            break;
+            return llvm::Type::getInt8PtrTy(context);
         case Type::Boolean:
-            type = llvm::Type::getInt1Ty(context);
-            break;
+            return llvm::Type::getInt1Ty(context);
         case Type::Array: {
             Type* element = llvm::any_cast<Type*>(this->vars[0].value);
             int size = llvm::any_cast<int>(this->vars[1].value);
             
-            type = llvm::ArrayType::get(element->to_llvm_type(context), size);
-            break;
+            return llvm::ArrayType::get(element->to_llvm_type(context), size);
         }
         default:
-            type = llvm::Type::getVoidTy(context);
+            return llvm::Type::getVoidTy(context);
     }
 
-    if (this->is_pointer) {
-        type = type->getPointerTo();
-    }
+}
 
-    return type;
+Type* Type::to_pointer_type() {
+    return PointerType::create(this);
+}
+
+Type* Type::get_element_pointer_type() {
+    PointerType* pointer = (PointerType*)this;
+    return pointer->get_element_type();
 }
 
 Type* Type::copy() {
@@ -144,6 +137,46 @@ bool Type::is_compatible(llvm::Type* type) {
     return this->is_compatible(Type::from_llvm_type(type));
 }
 
+// Pointer Type
+
+PointerType::PointerType(Type* type) : Type(Type::Pointer, LONG_SIZE), element(type) {}
+
+PointerType* PointerType::create(Type* type) {
+    return new PointerType(type);
+}
+
+PointerType* PointerType::from_llvm_type(llvm::Type* type) {
+    return PointerType::create(Type::from_llvm_type(type->getPointerElementType()));
+}
+
+llvm::PointerType* PointerType::to_llvm_type(llvm::LLVMContext& context) {
+    return llvm::PointerType::get(this->element->to_llvm_type(context), 0);
+}
+
+PointerType* PointerType::copy() {
+    return PointerType::create(this->element->copy());
+}
+
+bool PointerType::is_compatible(Type* other) {
+    if (!other->is_pointer()) {
+        return false;
+    }
+
+    if (this->element->is_compatible(other->get_element_pointer_type())) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool PointerType::is_compatible(llvm::Type* type) {
+    if (!type->isPointerTy()) {
+        return false;
+    }
+    
+    return this->is_compatible(Type::from_llvm_type(type));
+}
+
 // Structure Type
 
 StructType::StructType(std::string name, std::vector<Type*> fields) : Type(Type::Struct, 0), name(name), fields(fields) {}
@@ -161,13 +194,17 @@ StructType* StructType::from_llvm_type(llvm::StructType* type) {
     return StructType::create(type->getName().str(), fields);
 }
 
-llvm::Type* StructType::to_llvm_type(llvm::LLVMContext& context) {
+llvm::StructType* StructType::to_llvm_type(llvm::LLVMContext& context) {
     std::vector<llvm::Type*> types;
     for (auto& field : this->fields) {
         types.push_back(field->to_llvm_type(context));
     }
 
     return llvm::StructType::get(context, types);
+}
+
+StructType* StructType::copy() {
+    return StructType::create(this->name, this->fields);
 }
 
 bool StructType::is_compatible(Type* other) {

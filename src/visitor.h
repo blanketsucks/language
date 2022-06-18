@@ -73,6 +73,19 @@ struct Namespace {
     }
 };
 
+struct Value {
+    llvm::Value* value;
+    llvm::Value* parent;
+
+    Value(llvm::Value* value, llvm::Value* parent = nullptr) {
+        this->value = value;
+        this->parent = parent;
+    }
+
+    llvm::Type* type() { return this->value->getType(); }
+    std::string name() { return this->value->getName().str(); }
+};
+
 class Visitor {
 public:
     llvm::LLVMContext context;
@@ -91,8 +104,9 @@ public:
     Namespace* current_namespace = nullptr;
     
     Visitor(std::string name);
-
+    
     void dump(llvm::raw_ostream& stream);
+
     std::string format_name(std::string name);
     std::pair<std::string, bool> is_intrinsic(std::string name);
     std::pair<llvm::Value*, bool> get_variable(std::string name);
@@ -105,28 +119,28 @@ public:
 
     void visit(std::unique_ptr<ast::Program> program);
 
-    llvm::Value* visit(ast::BlockExpr* expr);
-    llvm::Value* visit(ast::IntegerExpr* expr);
-    llvm::Value* visit(ast::FloatExpr* expr);
-    llvm::Value* visit(ast::StringExpr* expr);
-    llvm::Value* visit(ast::VariableExpr* expr);
-    llvm::Value* visit(ast::VariableAssignmentExpr* expr);
-    llvm::Value* visit(ast::ConstExpr* expr);
-    llvm::Value* visit(ast::ArrayExpr* expr);
-    llvm::Value* visit(ast::UnaryOpExpr* expr);
-    llvm::Value* visit(ast::BinaryOpExpr* expr);
-    llvm::Value* visit(ast::CallExpr* expr);
-    llvm::Value* visit(ast::ReturnExpr* expr);
-    llvm::Value* visit(ast::PrototypeExpr* expr);
-    llvm::Value* visit(ast::FunctionExpr* expr);
-    llvm::Value* visit(ast::IfExpr* expr);
-    llvm::Value* visit(ast::WhileExpr* expr);
-    llvm::Value* visit(ast::StructExpr* expr);
-    llvm::Value* visit(ast::AttributeExpr* expr);
-    llvm::Value* visit(ast::ElementExpr* expr);
-    llvm::Value* visit(ast::IncludeExpr* expr);
-    llvm::Value* visit(ast::NamespaceExpr* expr);
-    llvm::Value* visit(ast::NamespaceAttributeExpr* expr);
+    Value visit(ast::BlockExpr* expr);
+    Value visit(ast::IntegerExpr* expr);
+    Value visit(ast::FloatExpr* expr);
+    Value visit(ast::StringExpr* expr);
+    Value visit(ast::VariableExpr* expr);
+    Value visit(ast::VariableAssignmentExpr* expr);
+    Value visit(ast::ConstExpr* expr);
+    Value visit(ast::ArrayExpr* expr);
+    Value visit(ast::UnaryOpExpr* expr);
+    Value visit(ast::BinaryOpExpr* expr);
+    Value visit(ast::CallExpr* expr);
+    Value visit(ast::ReturnExpr* expr);
+    Value visit(ast::PrototypeExpr* expr);
+    Value visit(ast::FunctionExpr* expr);
+    Value visit(ast::IfExpr* expr);
+    Value visit(ast::WhileExpr* expr);
+    Value visit(ast::StructExpr* expr);
+    Value visit(ast::AttributeExpr* expr);
+    Value visit(ast::ElementExpr* expr);
+    Value visit(ast::IncludeExpr* expr);
+    Value visit(ast::NamespaceExpr* expr);
+    Value visit(ast::NamespaceAttributeExpr* expr);
 
 };
 

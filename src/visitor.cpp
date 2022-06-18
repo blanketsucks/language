@@ -100,7 +100,7 @@ std::pair<llvm::Value*, bool> Visitor::get_variable(std::string name) {
         }
     }
 
-    auto variable = this->module->getGlobalVariable(name);
+    llvm::GlobalVariable* variable = this->module->getGlobalVariable(name);
     return std::make_pair(variable, variable->isConstant());
 }
 
@@ -162,7 +162,7 @@ llvm::Function* Visitor::create_struct_constructor(Struct* structure, std::vecto
 
     llvm::AllocaInst* alloca_inst = this->create_alloca(constructor, structure->type);
     for (int i = 0; i < structure->fields.size(); i++) {
-        auto ptr = this->builder->CreateStructGEP(structure->type, alloca_inst, i);
+        llvm::Value* ptr = this->builder->CreateStructGEP(structure->type, alloca_inst, i);
         llvm::Argument* arg = constructor->getArg(i);
 
         this->builder->CreateStore(arg, ptr);
@@ -170,7 +170,6 @@ llvm::Function* Visitor::create_struct_constructor(Struct* structure, std::vecto
     }
 
     this->builder->CreateRet(alloca_inst);
-    structure->locals["this"] = alloca_inst;
 
     this->functions[name] = new Function(name, types, structure->type, false);
     return constructor;
@@ -186,20 +185,20 @@ void Visitor::visit(std::unique_ptr<ast::Program> program) {
     }
 }
 
-llvm::Value* Visitor::visit(ast::IntegerExpr* expr) {
-    return llvm::ConstantInt::get(this->context, llvm::APInt(LONG_SIZE, expr->value, true));
+Value Visitor::visit(ast::IntegerExpr* expr) {
+    return llvm::ConstantInt::get(this->context, llvm::APInt(32, expr->value, true));
 }
 
-llvm::Value* Visitor::visit(ast::FloatExpr* expr) {
+Value Visitor::visit(ast::FloatExpr* expr) {
     return llvm::ConstantFP::get(this->context, llvm::APFloat(expr->value));
 }
 
-llvm::Value* Visitor::visit(ast::StringExpr* expr) {
+Value Visitor::visit(ast::StringExpr* expr) {
     return this->builder->CreateGlobalString(expr->value, ".str");
 }
 
-llvm::Value* Visitor::visit(ast::BlockExpr* expr) {
-    llvm::Value* last = nullptr;
+Value Visitor::visit(ast::BlockExpr* expr) {
+    Value last = NULL;
     for (auto& stmt : expr->block) {
         if (!stmt) {
             continue;
@@ -211,7 +210,7 @@ llvm::Value* Visitor::visit(ast::BlockExpr* expr) {
     return last;
 }
 
-llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
+Value Visitor::visit(ast::VariableExpr* expr) {
     if (this->structs.count(expr->name)) {
         return this->structs[expr->name]->constructor;
     } else if (this->namespaces.count(expr->name)) {
@@ -225,7 +224,14 @@ llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
         }
     }
 
-    auto function = this->get_function(expr->name);
+    if (this->current_struct) {
+        llvm::Value* variable = this->current_struct->locals[expr->name];
+        if (variable) {
+            return variable;
+        }
+    }
+
+    llvm::Function* function = this->get_function(expr->name);
     if (function) {
         return function;
     }
@@ -239,12 +245,12 @@ llvm::Value* Visitor::visit(ast::VariableExpr* expr) {
     exit(1);
 }
 
-llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this);
+Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
+    Value value = expr->value->accept(*this);
     llvm::Type* type;
 
     if (!expr->type) {
-        type = value->getType();
+        type = value.type();
     } else {
         type = expr->type->to_llvm_type(this->context);
     }
@@ -255,7 +261,7 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
         // TODO: let users specify other options somehow and this applies to other stuff too, not just this
         variable->setLinkage(llvm::GlobalValue::ExternalLinkage);
-        variable->setInitializer((llvm::Constant*)value);
+        variable->setInitializer((llvm::Constant*)value.value);
 
         return value;
     }
@@ -263,18 +269,18 @@ llvm::Value* Visitor::visit(ast::VariableAssignmentExpr* expr) {
     llvm::Function* func = this->builder->GetInsertBlock()->getParent();
     llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
 
-    this->builder->CreateStore(value, alloca_inst);
+    this->builder->CreateStore(value.value, alloca_inst);
     this->current_function->locals[expr->name] = alloca_inst;
 
     return value;
 }
 
-llvm::Value* Visitor::visit(ast::ConstExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this);
+Value Visitor::visit(ast::ConstExpr* expr) {
+    Value value = expr->value->accept(*this);
     llvm::Type* type;
 
     if (!expr->type) {
-        type = value->getType();
+        type = value.type();
     } else {
         type = expr->type->to_llvm_type(this->context);
     }
@@ -284,7 +290,7 @@ llvm::Value* Visitor::visit(ast::ConstExpr* expr) {
         llvm::GlobalVariable* variable = this->module->getNamedGlobal(expr->name);
 
         variable->setConstant(true);
-        variable->setInitializer((llvm::Constant*)value);
+        variable->setInitializer((llvm::Constant*)value.value);
 
         this->constants[expr->name] = variable;
         return variable;
@@ -292,17 +298,17 @@ llvm::Value* Visitor::visit(ast::ConstExpr* expr) {
         llvm::Function* func = this->builder->GetInsertBlock()->getParent();
         llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
 
-        this->builder->CreateStore(value, alloca_inst);
+        this->builder->CreateStore(value.value, alloca_inst);
         this->current_function->constants[expr->name] = alloca_inst;
 
         return alloca_inst;
     }
 }
 
-llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
-    std::vector<llvm::Value*> elements;
+Value Visitor::visit(ast::ArrayExpr* expr) {
+    std::vector<Value> elements;
     for (auto& element : expr->elements) {
-        auto value = element->accept(*this);
+        Value value = element->accept(*this);
         elements.push_back(value);
     }
 
@@ -311,9 +317,9 @@ llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
     }
 
     // The type of an array is determined from the first element.
-    llvm::Type* etype = elements[0]->getType();
+    llvm::Type* etype = elements[0].type();
     for (int i = 1; i < elements.size(); i++) {
-        if (elements[i]->getType() != etype) {
+        if (elements[i].type() != etype) {
             std::cerr << "Array elements must be of the same type" << std::endl;
             exit(1);
         }
@@ -330,25 +336,32 @@ llvm::Value* Visitor::visit(ast::ArrayExpr* expr) {
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, i))
         };
 
-        auto ptr = this->builder->CreateGEP(type, array, indices);
-        this->builder->CreateStore(elements[i], ptr);
+        llvm::Value* ptr = this->builder->CreateGEP(type, array, indices);
+        this->builder->CreateStore(elements[i].value, ptr);
     }
 
     return array;
 }
 
-llvm::Value* Visitor::visit(ast::UnaryOpExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this);
-
+Value Visitor::visit(ast::UnaryOpExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this).value;
     bool is_floating_point = value->getType()->isFloatingPointTy();
-    if (!(value->getType()->isIntegerTy() || is_floating_point)) {
-        std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
-        exit(1);
-    }
+    bool is_numeric = value->getType()->isIntegerTy() || is_floating_point;
+
     switch (expr->op) {
         case TokenType::PLUS:
+            if (!is_numeric) {
+                std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
+                exit(1);
+            }
+
             return value;
         case TokenType::MINUS:
+            if (!is_numeric) {
+                std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
+                exit(1);
+            }
+
             if (is_floating_point) {
                 return this->builder->CreateFNeg(value);
             } else {
@@ -380,18 +393,18 @@ llvm::Value* Visitor::visit(ast::UnaryOpExpr* expr) {
     }
 }
 
-llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
+Value Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenType::ASSIGN) {
-        llvm::Value* variable = expr->left->accept(*this);
-        llvm::Value* value = expr->right->accept(*this);
+        llvm::Value* variable = expr->left->accept(*this).value;
+        llvm::Value* value = expr->right->accept(*this).value;
 
         this->builder->CreateStore(value, variable);
         return value;
     }
 
-    llvm::Value* left = expr->left->accept(*this);
-    llvm::Value* right = expr->right->accept(*this);
+    llvm::Value* left = expr->left->accept(*this).value;
+    llvm::Value* right = expr->right->accept(*this).value;
 
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
@@ -487,42 +500,50 @@ llvm::Value* Visitor::visit(ast::BinaryOpExpr* expr) {
     }
 }
 
-llvm::Value* Visitor::visit(ast::CallExpr* expr) {
-    llvm::Value* callable = expr->callee->accept(*this);
-    if (callable->getType()->isPointerTy()) {
-        llvm::Type* type = callable->getType()->getPointerElementType();
+Value Visitor::visit(ast::CallExpr* expr) {
+    Value callable = expr->callee->accept(*this);
+    if (callable.type()->isPointerTy()) {
+        llvm::Type* type = callable.type()->getPointerElementType();
         if (!type->isFunctionTy()) {
             std::cerr << "Callee must be a function" << std::endl;
             exit(1);
         }
-    } else if (!callable->getType()->isFunctionTy()) {
+    } else if (!callable.type()->isFunctionTy()) {
         std::cerr << "Callee must be a function" << std::endl;
         exit(1);
     }
 
-    Function* func = this->functions[callable->getName().str()];
-    // The function is not guaranteed to be defined because of llvm intrinsics.
+    Function* func = this->functions[callable.name()];
     if (func) {
         func->used = true;
     }
 
-    llvm::Function* function = this->module->getFunction(callable->getName());
-    if (function->arg_size() != expr->args.size()) {
+    size_t argc = expr->args.size();
+    if (callable.parent) {
+        argc++;
+    }
+
+    llvm::Function* function = this->module->getFunction(callable.name());
+    if (function->arg_size() != argc) {
         if (function->isVarArg()) {
-            if (expr->args.size() < 1) {
-                std::cerr << "Function " << callable->getName().str() << " expects at least 1 argument" << std::endl;
+            if (argc < 1) {
+                std::cerr << "Function " << callable.name() << " expects at least 1 argument" << std::endl;
                 exit(1);
             }
         } else {
-            std::cerr << "Function " << callable->getName().str() << " expects " << function->arg_size() << " arguments" << std::endl;
+            std::cerr << "Function " << callable.name() << " expects " << function->arg_size() << " arguments" << std::endl;
             exit(1);
         }
     }
 
     std::vector<llvm::Value*> args;
+    if (callable.parent) {
+        args.push_back(callable.parent);
+    }
+
     int i = 0;
     for (auto& arg : expr->args) {
-        llvm::Value* value = arg->accept(*this);
+        llvm::Value* value = arg->accept(*this).value;
         if ((function->isVarArg() && i == 0) || !function->isVarArg()) {
             llvm::Type* type = function->getArg(i++)->getType();
 
@@ -540,7 +561,7 @@ llvm::Value* Visitor::visit(ast::CallExpr* expr) {
     return this->builder->CreateCall(function, args);
 }
 
-llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
+Value Visitor::visit(ast::ReturnExpr* expr) {
     if (!this->current_function) {
         std::cerr << "Return outside of function" << std::endl;
         exit(1);
@@ -548,7 +569,7 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
 
     Function* func = this->current_function;
     if (expr->value) {
-        llvm::Value* value = expr->value->accept(*this);
+        llvm::Value* value = expr->value->accept(*this).value;
         func->has_return = true;
 
         // Got rid of the typechecking for now.
@@ -564,7 +585,7 @@ llvm::Value* Visitor::visit(ast::ReturnExpr* expr) {
     }
 }
 
-llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
+Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::string original = this->format_name(expr->name);
     auto pair = this->is_intrinsic(original);
 
@@ -587,11 +608,11 @@ llvm::Value* Visitor::visit(ast::PrototypeExpr* expr) {
     return function;
 }
 
-llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
+Value Visitor::visit(ast::FunctionExpr* expr) {
     std::string name = this->format_name(expr->prototype->name);
     llvm::Function* function = this->module->getFunction(name);
     if (!function) {
-        function = (llvm::Function*)expr->prototype->accept(*this);
+        function = (llvm::Function*)(expr->prototype->accept(*this).value);
     }
 
     if (!function->empty()) { 
@@ -626,7 +647,7 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
 
         this->builder->CreateRetVoid();
     } else {
-        llvm::Value* value = expr->body->accept(*this);
+        llvm::Value* value = expr->body->accept(*this).value;
         if (!func->has_return && value) {          
             if (value->getType() == func->ret) {
                 this->builder->CreateRet(value);
@@ -651,8 +672,8 @@ llvm::Value* Visitor::visit(ast::FunctionExpr* expr) {
     return function;
 }
 
-llvm::Value* Visitor::visit(ast::IfExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this);
+Value Visitor::visit(ast::IfExpr* expr) {
+    llvm::Value* condition = expr->condition->accept(*this).value;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(this->context, "then", function);
@@ -688,8 +709,8 @@ llvm::Value* Visitor::visit(ast::IfExpr* expr) {
     return phi;
 }
 
-llvm::Value* Visitor::visit(ast::WhileExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this);
+Value Visitor::visit(ast::WhileExpr* expr) {
+    llvm::Value* condition = expr->condition->accept(*this).value;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(this->context, "loop", function);
@@ -702,7 +723,7 @@ llvm::Value* Visitor::visit(ast::WhileExpr* expr) {
 
     expr->body->accept(*this);
 
-    condition = expr->condition->accept(*this);
+    loop = this->builder->GetInsertBlock();
     this->builder->CreateCondBr(condition, loop, end);
 
     function->getBasicBlockList().push_back(end);
@@ -711,7 +732,7 @@ llvm::Value* Visitor::visit(ast::WhileExpr* expr) {
     return this->constants["null"];
 }
 
-llvm::Value* Visitor::visit(ast::StructExpr* expr) {
+Value Visitor::visit(ast::StructExpr* expr) {
     std::vector<llvm::Type*> types;
     std::map<std::string, llvm::Type*> fields;
     
@@ -720,7 +741,7 @@ llvm::Value* Visitor::visit(ast::StructExpr* expr) {
         fields[pair.first] = types.back();
     }
 
-    auto type = llvm::StructType::create(this->context, types, expr->name, expr->packed);
+    llvm::StructType* type = llvm::StructType::create(this->context, types, expr->name, expr->packed);
     type->setName(expr->name);
 
     Struct* structure = new Struct(expr->name, type, fields);
@@ -730,7 +751,7 @@ llvm::Value* Visitor::visit(ast::StructExpr* expr) {
     this->current_struct = structure;
 
     for (auto& method : expr->methods) {
-        llvm::Value* value = method->accept(*this);
+        llvm::Value* value = method->accept(*this).value;
         std::string name = this->format_name(method->prototype->name);
 
         structure->methods[method->prototype->name] = this->functions[name];
@@ -740,8 +761,8 @@ llvm::Value* Visitor::visit(ast::StructExpr* expr) {
     return llvm::ConstantInt::getNullValue(llvm::IntegerType::getInt1Ty(this->context));;
 }
 
-llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
-    llvm::Value* value = expr->parent->accept(*this);
+Value Visitor::visit(ast::AttributeExpr* expr) {
+    llvm::Value* value = expr->parent->accept(*this).value;
     llvm::Type* type = value->getType();
 
     bool is_pointer = false;
@@ -760,9 +781,9 @@ llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
     
     if (structure->methods.find(expr->attribute) != structure->methods.end()) {
         Function* function = structure->methods[expr->attribute];
-        // TODO: inject the current struct to the function's first argument
+        llvm::Function* func = this->module->getFunction(function->name);
         
-        return this->module->getFunction(function->name);
+        return Value(func, value);
     }
 
     auto iter = structure->fields.find(expr->attribute);
@@ -775,15 +796,15 @@ llvm::Value* Visitor::visit(ast::AttributeExpr* expr) {
     if (is_pointer) {
         llvm::Type* element = type->getStructElementType(index);
 
-        auto ptr = this->builder->CreateStructGEP(type, value, index);
+        llvm::Value* ptr = this->builder->CreateStructGEP(type, value, index);
         return this->builder->CreateLoad(element, ptr);
     } else {
         return this->builder->CreateExtractValue(value, index);
     }
 }
 
-llvm::Value* Visitor::visit(ast::ElementExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this);
+Value Visitor::visit(ast::ElementExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this).value;
     llvm::Type* type = value->getType();
 
     bool is_pointer = false;
@@ -797,7 +818,7 @@ llvm::Value* Visitor::visit(ast::ElementExpr* expr) {
         is_pointer = true;
     }
 
-    llvm::Value* index = expr->index->accept(*this);
+    llvm::Value* index = expr->index->accept(*this).value;
     if (is_pointer) {
         llvm::Type* element = type;
         if (type->isArrayTy()) {
@@ -811,7 +832,7 @@ llvm::Value* Visitor::visit(ast::ElementExpr* expr) {
     TODO("Implement element indexing for non-pointer types");
 }
 
-llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
+Value Visitor::visit(ast::IncludeExpr* expr) {
     std::string path = expr->path;
     if (!file_exists(path)) {
         if (!file_exists("std/" + path)) {
@@ -822,7 +843,6 @@ llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
         }
     }
     
-
     Module module = {path, ModuleState::Initialized};
     if (this->includes.find(path) != this->includes.end()) {
         module = this->includes[path];
@@ -847,7 +867,7 @@ llvm::Value* Visitor::visit(ast::IncludeExpr* expr) {
     return this->constants["null"];
 }
 
-llvm::Value* Visitor::visit(ast::NamespaceExpr* expr) {
+Value Visitor::visit(ast::NamespaceExpr* expr) {
     std::string name = this->format_name(expr->name);
     Namespace* ns = new Namespace(name);
 
@@ -855,21 +875,21 @@ llvm::Value* Visitor::visit(ast::NamespaceExpr* expr) {
     this->current_namespace = ns;
 
     for (auto& function : expr->functions) {
-        llvm::Value* value = function->accept(*this);
+        llvm::Value* value = function->accept(*this).value;
         std::string name = this->format_name(function->prototype->name);
 
         ns->functions[function->prototype->name] = this->functions[name];
     }
 
     for (auto& structure : expr->structs) {
-        llvm::Value* value = structure->accept(*this);
+        llvm::Value* value = structure->accept(*this).value;
         std::string name = this->format_name(structure->name);
 
         ns->structs[structure->name] = this->structs[name];
     }
 
     for (auto& namespace_ : expr->namespaces) {
-        llvm::Value* value = namespace_->accept(*this);
+        llvm::Value* value = namespace_->accept(*this).value;
         std::string name = this->format_name(namespace_->name);
 
         ns->namespaces[namespace_->name] = this->namespaces[name];
@@ -879,7 +899,7 @@ llvm::Value* Visitor::visit(ast::NamespaceExpr* expr) {
     return this->constants["null"];
 }
 
-llvm::Value* Visitor::visit(ast::NamespaceAttributeExpr* expr) {
+Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     // TODO: do this in a better way
     ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->parent.get());
     if (!variable) {
@@ -899,11 +919,10 @@ llvm::Value* Visitor::visit(ast::NamespaceAttributeExpr* expr) {
         Function* func = ns->functions[expr->attribute];
         return this->module->getFunction(func->name);
     } else if (ns->namespaces.count(expr->attribute)) {
-        Namespace* ns = ns->namespaces[expr->attribute];
+        return nullptr;
 
     } else {
         std::cerr << "Attribute " << expr->attribute << " does not exist" << std::endl;
         exit(1);
     }
-
 }
