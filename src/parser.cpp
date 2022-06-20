@@ -27,7 +27,7 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
 
 void Parser::error(const std::string& message) {
     // TODO: More descriptive errors.
-    std::cerr << message << '\n';
+    std::cerr << this->current.start->format() << " \u001b[1;31m" << "error: " "\u001b[0m" << message << std::endl;
     exit(1);
 }
 
@@ -155,7 +155,7 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
     return std::make_unique<ast::BlockExpr>(start, end, std::move(body));
 }
 
-std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
+std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSpecifier linkage) {
     Location* start = this->current.start;
 
     if (this->current != TokenType::IDENTIFIER) {
@@ -238,12 +238,20 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype() {
         end = this->current.end;
     }
 
-    return std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args), has_varargs);
+    auto expr = std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args), has_varargs);
+    expr->linkage_specifier = linkage;
+
+    return expr;
 }
 
-std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
+std::unique_ptr<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecifier linkage) {
     Location* start = this->current.start;
-    auto prototype = this->parse_prototype();
+    auto prototype = this->parse_prototype(linkage);
+
+    if (this->current == TokenType::SEMICOLON) {
+        this->next();
+        return prototype;
+    }
 
     if (this->current != TokenType::LBRACE) {
         this->error("Expected {");
@@ -257,6 +265,8 @@ std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
 
     return std::make_unique<ast::FunctionExpr>(start, end, std::move(prototype), std::move(body));
 }
+
+
 
 std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
     Location* start = this->current.start;
@@ -324,8 +334,13 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         if (this->current.value == "def") {
             this->next();
 
-            auto function = this->parse_function();
-            methods.push_back(std::move(function));
+            auto function = dynamic_cast<ast::FunctionExpr*>(this->parse_function_definition().get());
+            if (!function) {
+                this->error("Expected function definition.");
+            }
+            
+
+            methods.push_back(std::move(std::unique_ptr<ast::FunctionExpr>(function)));
         } else {
             std::string name = this->current.value;
             this->next();
@@ -426,7 +441,13 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
 
         if (this->current.value == "def") {
             this->next();
-            functions.push_back(std::move(this->parse_function()));
+            auto function = dynamic_cast<ast::FunctionExpr*>(this->parse_function_definition().get());
+            if (!function) {
+                this->error("Expected function definition.");
+            }
+            
+
+            functions.push_back(std::move(std::unique_ptr<ast::FunctionExpr>(function)));
         } else if (this->current.value == "struct") {
             this->next();
             structs.push_back(std::move(this->parse_struct()));
@@ -466,24 +487,31 @@ std::unique_ptr<ast::Expr> Parser::statement() {
         case TokenType::KEYWORD:
             if (this->current.value == "extern") {
                 this->next();
+                ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None;
+
                 if (this->current == TokenType::STRING) {
                     if (this->current.value != "C") {
                         this->error("Unknown extern linkage specification");
                     }
 
+                    // TODO: Name mangling.
+
                     // For now just ignore if "C" is used because from what I know if it's used like 
                     // `extern "C" void foo();` in C++, the name of the function doesn't get mangled unlike if used without the "C".
                     // Right now, I don't do name mangling so I'll just ignore it.
                     this->next();
+                    linkage = ast::ExternLinkageSpecifier::C;
                 }
 
-                auto expr = this->parse_prototype();
+                if (this->current.value != "def") {
+                    this->error("Expected function or prototype definition.");
+                }
 
-                this->end();
-                return expr;
+                this->next();
+                return this->parse_function_definition(linkage);
             } else if (this->current.value == "def") {
                 this->next();
-                return this->parse_function();
+                return this->parse_function_definition();
             } else if (this->current.value == "return") {
                 if (!this->context.is_inside_function) {
                     this->error("return outside of function.");
@@ -662,7 +690,14 @@ std::unique_ptr<ast::Expr> Parser::call() {
         }
 
         this->next();
-        return std::make_unique<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
+        expr = std::make_unique<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
+    }
+
+    if (this->current == TokenType::INC || this->current == TokenType::DEC) {
+        TokenType op = this->current.type;
+        expr = std::make_unique<ast::UnaryOpExpr>(start, this->current.end, op, std::move(expr));
+
+        this->next();
     }
 
     return expr;

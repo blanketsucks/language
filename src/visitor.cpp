@@ -1,9 +1,18 @@
 #include "visitor.h"
 
 #include <sys/stat.h>
+
 #include "utils.hpp"
 #include "lexer.h"
 #include "llvm.h"
+
+#ifdef __GNUC__
+    #define _UNREACHABLE __builtin_unreachable();
+#elif _MSC_VER
+    #define _UNREACHABLE __assume(false);
+#else
+    #define _UNREACHABLE
+#endif
 
 bool file_exists(const std::string& name) {
     struct stat buffer;
@@ -40,6 +49,12 @@ Visitor::Visitor(std::string module) {
         {"null", llvm::ConstantInt::getNullValue(llvm::Type::getInt1PtrTy(this->context))},
         {"nullptr", llvm::ConstantPointerNull::get(llvm::Type::getInt1PtrTy(this->context))}
     };
+}
+
+void Visitor::error(const std::string& message, Location* location) {
+    // TODO: More descriptive errors.
+    std::cerr << location->format() << " \u001b[1;31m" << "error: " "\u001b[0m" << message << std::endl;
+    exit(1);
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -241,8 +256,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return this->builder->CreateLoad(global->getValueType(), global);
     }
 
-    std::cerr << "Symbol " << expr->name << " is not defined" << std::endl;
-    exit(1);
+    this->error("Symbol " + expr->name + " is not defined", expr->start);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
@@ -272,7 +286,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     this->builder->CreateStore(value.value, alloca_inst);
     this->current_function->locals[expr->name] = alloca_inst;
 
-    return value;
+    return alloca_inst;
 }
 
 Value Visitor::visit(ast::ConstExpr* expr) {
@@ -320,8 +334,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     llvm::Type* etype = elements[0].type();
     for (int i = 1; i < elements.size(); i++) {
         if (elements[i].type() != etype) {
-            std::cerr << "Array elements must be of the same type" << std::endl;
-            exit(1);
+            this->error("Array elements must be of the same type", expr->start);
         }
     }
 
@@ -351,15 +364,13 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
     switch (expr->op) {
         case TokenType::PLUS:
             if (!is_numeric) {
-                std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
-                exit(1);
+                this->error("Unary operator + only be applied to numeric types", expr->start);
             }
 
             return value;
         case TokenType::MINUS:
             if (!is_numeric) {
-                std::cerr << "Unary operators can only be applied to numeric types" << std::endl;
-                exit(1);
+                this->error("Unary operator - only be applied to numeric types", expr->start);
             }
 
             if (is_floating_point) {
@@ -373,8 +384,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             return this->builder->CreateNot(value);
         case TokenType::MUL: {
             if (!value->getType()->isPointerTy()) {
-                std::cerr << "value is not a pointer" << std::endl;
-                exit(1);
+                this->error("Unary operator * only be applied to pointer types", expr->start);
             }
 
             llvm::Type* type = value->getType()->getPointerElementType();
@@ -386,10 +396,27 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
 
             return alloca_inst;
         }
+        case TokenType::INC: {
+            if (!is_numeric) {
+                this->error("Unary operator ++ only be applied to numeric types", expr->start);
+            }
 
+            llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
+            llvm::Value* result = this->builder->CreateAdd(value, one);
+
+            this->builder->CreateStore(result, value);
+            return result;
+        }
+        case TokenType::DEC: {
+            if (!is_numeric) {
+                this->error("Unary operator -- only be applied to numeric types", expr->start);
+            }
+
+            llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
+            return this->builder->CreateSub(value, one);
+        }
         default:
-            std::cerr << "Unary operator not supported" << std::endl;
-            exit(1);
+            _UNREACHABLE
     }
 }
 
@@ -413,8 +440,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         if (Type::from_llvm_type(ltype)->is_compatible(rtype)) {
             right = this->cast(right, ltype);
         } else {
-            std::cerr << "Incompatible types" << std::endl;
-            exit(1);
+            this->error("Incompatible types", expr->start);
         }
     }
 
@@ -495,8 +521,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         case TokenType::RSH:
             return this->builder->CreateLShr(left, right);
         default:
-            std::cerr << "Unknown binary operator" << std::endl;
-            exit(1);
+            _UNREACHABLE
     }
 }
 
@@ -505,12 +530,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
     if (callable.type()->isPointerTy()) {
         llvm::Type* type = callable.type()->getPointerElementType();
         if (!type->isFunctionTy()) {
-            std::cerr << "Callee must be a function" << std::endl;
-            exit(1);
+            this->error("Cannot call non-function type", expr->start);
         }
+
     } else if (!callable.type()->isFunctionTy()) {
-        std::cerr << "Callee must be a function" << std::endl;
-        exit(1);
+        this->error("Cannot call non-function type", expr->start);
     }
 
     Function* func = this->functions[callable.name()];
@@ -527,11 +551,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
     if (function->arg_size() != argc) {
         if (function->isVarArg()) {
             if (argc < 1) {
-                std::cerr << "Function " << callable.name() << " expects at least 1 argument" << std::endl;
+                this->error("Function " + callable.name() + " expects atleast 1 argument", expr->start);
                 exit(1);
             }
         } else {
-            std::cerr << "Function " << callable.name() << " expects " << function->arg_size() << " arguments" << std::endl;
+            this->error("Function " + callable.name() + " expects " + std::to_string(function->arg_size()) + " arguments", expr->start);
             exit(1);
         }
     }
@@ -550,8 +574,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
             if (Type::from_llvm_type(type)->is_compatible(value->getType())) {
                 value = this->cast(value, type);
             } else {
-                std::cerr << "Incompatible argument type" << std::endl;
-                exit(1);
+                this->error("Incompatible types", arg->start);
             }
         }
 
@@ -563,8 +586,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
 Value Visitor::visit(ast::ReturnExpr* expr) {
     if (!this->current_function) {
-        std::cerr << "Return outside of function" << std::endl;
-        exit(1);
+        this->error("Return outside function", expr->start);
     }
 
     Function* func = this->current_function;
@@ -576,8 +598,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         return this->builder->CreateRet(value);
     } else {
         if (!func->ret->isVoidTy()) {
-            std::cerr << "Function " << func->name << " expects a return value" << std::endl;
-            exit(1);
+            this->error("Function " + func->name + " expects a return value", expr->start);
         }
 
         func->has_return = true;
@@ -616,14 +637,12 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     }
 
     if (!function->empty()) { 
-        std::cerr << "Function " << name << " already defined" << std::endl;
-        exit(1);
+        this->error("Function " + name + " is already defined", expr->prototype->start);
     }
 
     Function* func = this->functions[name];
     if (func->is_intrinsic) {
-        std::cerr << "Function " << name << " is an LLVM intrinsic" << std::endl;
-        exit(1);
+        this->error("Function " + name + " is an LLVM intrinsic", expr->prototype->start);
     }
 
     llvm::BasicBlock* block = llvm::BasicBlock::Create(this->context, "entry", function);
@@ -641,8 +660,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     this->current_function = func;
     if (!expr->body) {
         if (!func->ret->isVoidTy()) {
-            std::cerr << "Function " << name << " expects a return value" << std::endl;
-            exit(1);
+            this->error("Function " + name + " expects a return value", expr->end);
         }
 
         this->builder->CreateRetVoid();
@@ -656,7 +674,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             if (func->ret->isVoidTy()) {
                 this->builder->CreateRetVoid();
             } else {
-                std::cerr << "Function " << name << " expects a return value" << std::endl;
+                this->error("Function " + name + " expects a return value", expr->end);
                 exit(1);
             }
         }
@@ -835,11 +853,11 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 Value Visitor::visit(ast::IncludeExpr* expr) {
     std::string path = expr->path;
     if (!file_exists(path)) {
-        if (!file_exists("std/" + path)) {
+        if (!file_exists("library/std/" + path)) {
             std::cerr << "File " << path << " not found" << std::endl;
             exit(1);
         } else {
-            path = "std/" + path;
+            path = "library/std/" + path;
         }
     }
     

@@ -21,6 +21,8 @@ enum class TokenType {
     NOT,
     OR,
     AND,
+    INC,
+    DEC,
 
     // Binary Operators
     BINARY_OR,
@@ -73,9 +75,7 @@ struct Location {
         source(source)
     {}
 
-    std::string format() {
-        return filename + ":" + std::to_string(line) + ":" + std::to_string(column);
-    }
+    std::string format() { return this->filename + ":" + std::to_string(this->line); }
 };
 
 struct Token {
@@ -150,7 +150,8 @@ static std::vector<std::string> KEYWORDS = {
     "packed",
     "include",
     "namespace",
-    "type"
+    "type",
+    "in",
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
@@ -188,6 +189,8 @@ static std::vector<TokenType> UNARY_OPERATORS = {
     TokenType::BINARY_NOT,
     TokenType::BINARY_AND,
     TokenType::MUL,
+    TokenType::INC,
+    TokenType::DEC,
 };
 
 

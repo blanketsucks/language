@@ -50,6 +50,8 @@ struct Struct {
         this->methods = {};
         this->locals = {};
     }
+
+    bool has_method(const std::string& name) { return this->methods.find(name) != this->methods.end(); }
 };
 
 struct Module {
@@ -105,6 +107,7 @@ public:
     
     Visitor(std::string name);
     
+    [[noreturn]] void error(const std::string& message, Location* location);
     void dump(llvm::raw_ostream& stream);
 
     std::string format_name(std::string name);

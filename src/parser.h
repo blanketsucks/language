@@ -16,7 +16,7 @@ class Parser {
 public:
     Parser(std::vector<Token> tokens);
 
-    void error(const std::string& message);
+    [[noreturn]] void error(const std::string& message);
     void end();
 
     Token next();
@@ -26,8 +26,8 @@ public:
     Type* get_type(std::string name);
 
     std::unique_ptr<ast::BlockExpr> parse_block();
-    std::unique_ptr<ast::PrototypeExpr> parse_prototype();
-    std::unique_ptr<ast::FunctionExpr> parse_function();
+    std::unique_ptr<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage);
+    std::unique_ptr<ast::Expr> parse_function_definition(ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None);
     std::unique_ptr<ast::IfExpr> parse_if_statement();
     std::unique_ptr<ast::StructExpr> parse_struct();
     std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);

@@ -19,6 +19,10 @@ struct Argument {
     Type* type;
 };
 
+enum class ExternLinkageSpecifier {
+    None,
+    C,
+};
 
 class Expr {
 public:
@@ -136,6 +140,7 @@ public:
     std::vector<Argument> args;
     bool has_varargs;
     Type* return_type;
+    ExternLinkageSpecifier linkage_specifier = ExternLinkageSpecifier::None;
 
     PrototypeExpr(Location* start, Location* end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs);
     Value accept(Visitor& visitor) override;

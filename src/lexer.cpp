@@ -210,8 +210,19 @@ std::vector<Token> Lexer::lex() {
         } else if (this->current == '#') {
             this->skip_comment();
         } else if (this->current == '+') {
-            tokens.push_back(this->create_token(TokenType::PLUS, "+"));    
-            this->next();
+            Location* start = this->loc();
+            Token token;
+
+            char next = this->next();
+            std::cout << next << std::endl;
+            if (next == '+') {
+                this->next();
+                token = this->create_token(TokenType::INC, start, "++");
+            } else {
+                token = this->create_token(TokenType::PLUS, start, "+");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == '-') {
             Location* start = this->loc();
             Token token;
@@ -220,6 +231,9 @@ std::vector<Token> Lexer::lex() {
             if (next == '>') {
                 this->next();
                 token = this->create_token(TokenType::ARROW, start, "->");
+            } else if (next == '-') {
+                this->next();
+                token = this->create_token(TokenType::DEC, start, "--");
             } else {
                 token = this->create_token(TokenType::MINUS, "-");
             }
