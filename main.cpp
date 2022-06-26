@@ -8,16 +8,18 @@
 struct Arguments {
     std::string filename;
     std::string output;
+    std::string entry;
 
-    bool emit_llvm;
-    bool emit_assembly;
+    bool emit_llvm = false;
+    bool emit_assembly = false;
 
     void dump() {
         std::cout << "Filename: " << this->filename << '\n';
         std::cout << "Output: " << this->output << '\n';
+        std::cout << "Entry: " << this->entry << '\n';
         std::cout << "Emit LLVM: " << this->emit_llvm << '\n';
         std::cout << "Emit Assembly: " << this->emit_assembly << '\n';
-        std::cout << '\n';
+        std::cout << std::endl;
     }
 };
 
@@ -25,16 +27,22 @@ std::string replace_extension(std::string filename, std::string extension) {
     return filename.substr(0, filename.find_last_of('.')) + "." + extension;
 }
 
+[[noreturn]] void error(const std::string& message) {
+    std::cerr << "\u001b[1;31m" << "error: " << "\u001b[0m" << message << std::endl;
+    exit(1);
+}
+
 #ifdef __GNUC__
 
 #include <getopt.h>
 
 struct option* get_options() {
-    struct option* options = new option[3];
+    struct option* options = new option[4];
 
     options[0] = {"output", required_argument, NULL, 'o'};
-    options[1] = {"emit-llvm", no_argument, NULL, 'l'};
-    options[2] = {"emit-assembly", no_argument, NULL, 'S'};
+    options[1] = {"entry", required_argument, NULL, 'e'};
+    options[2] = {"emit-llvm", no_argument, NULL, 'l'};
+    options[3] = {"emit-assembly", no_argument, NULL, 'S'};
 
     return options;
 }
@@ -55,6 +63,9 @@ Arguments parse_arguments(int argc, char** argv) {
             case 'o':
                 args.output = optarg;
                 break;
+            case 'e':
+                args.entry = optarg;
+                break;
             case 'l':
                 args.emit_llvm = true;
                 break;
@@ -71,23 +82,25 @@ Arguments parse_arguments(int argc, char** argv) {
     if (optind < argc) {
         args.filename = argv[optind];
     } else {
-        std::cerr << "\u001b[1;31m" << "error: " "\u001b[0m" << "No input file specified." << std::endl;
-        exit(1);
+        error("No input file specified.");
     }
 
     if (args.output.empty()) {
         args.output = replace_extension(args.filename, "o");
     }
 
+    if (args.entry.empty()) {
+        args.entry = "main";
+    }
+
     if (args.emit_llvm && args.emit_assembly) {
-        std::cerr << "\u001b[1;31m" << "error: " "\u001b[0m" << "Cannot emit both LLVM and assembly." << std::endl;
-        exit(1);
+        error("Cannot emit both Assembly and LLVM IR.");
     }
 
     if (args.emit_llvm) {
         args.output = replace_extension(args.output, "ll");
     } else if (args.emit_assembly) {
-        args.output = replace_extension(args.output, "s");
+        args.output = replace_extension(args.output, "S");
     }
     
     delete[] options;
@@ -98,6 +111,7 @@ Arguments parse_arguments(int argc, char** argv) {
     Arguments parse_arguments(int argc, char** argv);
     #error "Unsupported compiler"
 #endif
+
 
 int main(int argc, char** argv) {
     Arguments args = parse_arguments(argc, argv);
@@ -113,17 +127,17 @@ int main(int argc, char** argv) {
     Lexer lexer(file, args.filename);
     std::vector<Token> tokens = lexer.lex();
 
-    std::unique_ptr<ast::Program> program = Parser(tokens).statements();
-    
+    Parser parser(tokens);
+    std::unique_ptr<ast::Program> program = parser.statements();
+
     Visitor visitor(args.filename);
     visitor.visit(std::move(program));
 
-    llvm::Function* main_function = visitor.module->getFunction("main");
-    if (main_function == nullptr) {
-        std::cerr << "\u001b[1;31m" << "error: " "\u001b[0m" << "No main function found." << std::endl;
-        exit(1);
+    llvm::Function* entry = visitor.module->getFunction(args.entry);
+    if (!entry) {
+        error("Entry point '" + args.entry + "' not found.");
     }
-    
+
     // TODO: Improve this.
     // Let's take the following example: 
     //
@@ -134,6 +148,7 @@ int main(int argc, char** argv) {
     //
     // Code for `Foo.foo` would be generated since it's technically used by `Foo.bar` but since
     // `Foo.bar` is never used anywhere that technically means that code for `Foo.foo` shouldn't be generated.
+
     for (auto& pair : visitor.functions) {
         if (!pair.second) continue;
         if (!pair.second->used) {
@@ -146,6 +161,8 @@ int main(int argc, char** argv) {
 
             function->eraseFromParent();
         }
+
+        delete pair.second;
     }
 
     std::string target_triple = llvm::sys::getDefaultTargetTriple();

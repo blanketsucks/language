@@ -93,7 +93,8 @@ public:
     bool is_void() { return this->value == Void; }
     bool is_pointer() { return this->value == Pointer; }
     bool is_floating_point() { return this->is_float() || this->is_double(); }
-    bool is_numeric() { return this->is_boolean() || this->is_short() || this->is_int() || this->is_long() || this->is_long_long() || this->is_byte() || this->is_floating_point(); }
+    bool is_integer() { return this->is_boolean() || this->is_short() || this->is_int() || this->is_long() || this->is_long_long() || this->is_byte();  }
+    bool is_numeric() { return this->is_integer() || this->is_floating_point(); }
 
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);

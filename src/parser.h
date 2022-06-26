@@ -24,6 +24,7 @@ public:
 
     int get_token_precendence();
     Type* get_type(std::string name);
+    std::map<std::string, Type*> get_types() { return this->types; }
 
     std::unique_ptr<ast::BlockExpr> parse_block();
     std::unique_ptr<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage);

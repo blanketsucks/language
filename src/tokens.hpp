@@ -11,7 +11,6 @@ enum class TokenType {
     INTEGER,
     FLOAT,
     STRING,
-    CHARACTER,
 
     // Operators
     PLUS,
@@ -65,14 +64,12 @@ struct Location {
     int line;
     int index;
     std::string filename;
-    std::string source;
 
-    Location(int column, int line, int index, std::string filename, std::string source) :
+    Location(int column = 0, int line = 0, int index = 0, std::string filename = "") :
         column(column),
         line(line),
         index(index),
-        filename(filename),
-        source(source)
+        filename(filename)
     {}
 
     std::string format() { return this->filename + ":" + std::to_string(this->line); }
@@ -80,8 +77,8 @@ struct Location {
 
 struct Token {
     TokenType type;
-    Location* start;
-    Location* end;
+    Location start;
+    Location end;
     std::string value;
 
     std::string to_string() {
@@ -91,7 +88,6 @@ struct Token {
             case TokenType::INTEGER: return "INTEGER";
             case TokenType::FLOAT: return "FLOAT";
             case TokenType::STRING: return "STRING";
-            case TokenType::CHARACTER: return "CHARACTER";
             case TokenType::PLUS: return "PLUS";
             case TokenType::MINUS: return "MINUS";
             case TokenType::MUL: return "MUL";
@@ -152,6 +148,7 @@ static std::vector<std::string> KEYWORDS = {
     "namespace",
     "type",
     "in",
+    "as",
 };
 
 static std::vector<std::pair<TokenType, int>> PRECEDENCES = {

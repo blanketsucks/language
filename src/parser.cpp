@@ -27,7 +27,7 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
 
 void Parser::error(const std::string& message) {
     // TODO: More descriptive errors.
-    std::cerr << this->current.start->format() << " \u001b[1;31m" << "error: " "\u001b[0m" << message << std::endl;
+    std::cerr << this->current.start.format() << " \u001b[1;31m" << "error: " "\u001b[0m" << message << std::endl;
     exit(1);
 }
 
@@ -73,10 +73,11 @@ Type* Parser::get_type(std::string name) {
         this->error("Unknown type: " + name);
     }
 
-    Type* type = this->types[name]->copy();
+    Type* type = this->types[name];
 
     // tested piece of garbage. There probably is a better to do this.
     if (type->is_generic()) {
+        type = type->copy();
         this->next();
 
         if (this->current != TokenType::LT) {
@@ -138,7 +139,7 @@ Type* Parser::get_type(std::string name) {
 
 std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
     std::vector<std::unique_ptr<ast::Expr>> body;
-    Location* start = this->current.start;
+    Location start = this->current.start;
 
     while (this->current != TokenType::RBRACE) {
         auto expr = this->statement();
@@ -149,14 +150,14 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
         this->error("Expected }");
     }
 
-    Location* end = this->current.end;
+    Location end = this->current.end;
     this->next();
 
     return std::make_unique<ast::BlockExpr>(start, end, std::move(body));
 }
 
 std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSpecifier linkage) {
-    Location* start = this->current.start;
+    Location start = this->current.start;
 
     if (this->current != TokenType::IDENTIFIER) {
         this->error("Expected identifer.");
@@ -224,7 +225,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
         this->error("Expected )");
     }
     
-    Location* end = this->current.end;
+    Location end = this->current.end;
     this->next();
 
     Type* ret = VoidType;
@@ -245,7 +246,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
 }
 
 std::unique_ptr<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecifier linkage) {
-    Location* start = this->current.start;
+    Location start = this->current.start;
     auto prototype = this->parse_prototype(linkage);
 
     if (this->current == TokenType::SEMICOLON) {
@@ -261,15 +262,13 @@ std::unique_ptr<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageS
     this->context.is_inside_function = true;
 
     auto body = this->parse_block();
-    Location* end = this->current.end;
+    Location end = this->current.end;
 
     return std::make_unique<ast::FunctionExpr>(start, end, std::move(prototype), std::move(body));
 }
 
-
-
 std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
-    Location* start = this->current.start;
+    Location start = this->current.start;
     std::unique_ptr<ast::Expr> condition = this->expr(false);
 
     if (this->current != TokenType::LBRACE) {
@@ -279,7 +278,7 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
     this->next();
     auto body = this->parse_block();
     
-    Location* end = this->current.end;
+    Location end = this->current.end;
     this->next();
 
     std::unique_ptr<ast::BlockExpr> else_body = nullptr;
@@ -299,7 +298,7 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
 }
 
 std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
-    Location* start = this->current.start;
+    Location start = this->current.start;
     bool packed = false;
     if (this->current == TokenType::KEYWORD && this->current.value == "packed") {
         packed = true;
@@ -369,7 +368,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         this->error("Expected }");
     }
 
-    Location* end = this->current.end;
+    Location end = this->current.end;
     structure->set_fields(types);
 
     this->next();
@@ -377,7 +376,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 }
 
 std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
-    Location* start = this->current.start;
+    Location start = this->current.start;
 
     if (this->current != TokenType::IDENTIFIER) {
         this->error("Expected identifer.");
@@ -403,7 +402,7 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     this->next();
         
     auto expr = this->expr(false);
-    Location* end = this->current.end;
+    Location end = this->current.end;
     
     if (this->current != TokenType::SEMICOLON) {
         this->error("Expected ;");
@@ -417,7 +416,7 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
 }
 
 std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
-    Location* start = this->current.start;
+    Location start = this->current.start;
     std::string name = this->current.value;
 
     this->next();
@@ -427,7 +426,7 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
 
     this->next();
 
-    std::vector<std::unique_ptr<ast::FunctionExpr>> functions;
+    std::vector<std::unique_ptr<ast::Expr>> functions;
     std::vector<std::unique_ptr<ast::StructExpr>> structs;
     std::vector<std::unique_ptr<ast::ConstExpr>> constants;
     std::vector<std::unique_ptr<ast::NamespaceExpr>> namespaces;
@@ -441,13 +440,13 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
 
         if (this->current.value == "def") {
             this->next();
-            auto function = dynamic_cast<ast::FunctionExpr*>(this->parse_function_definition().get());
+            auto function = this->parse_function_definition();
             if (!function) {
                 this->error("Expected function definition.");
             }
             
 
-            functions.push_back(std::move(std::unique_ptr<ast::FunctionExpr>(function)));
+            functions.push_back(std::move(function));
         } else if (this->current.value == "struct") {
             this->next();
             structs.push_back(std::move(this->parse_struct()));
@@ -461,7 +460,7 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
         this->error("Expected }");
     }
 
-    Location* end = this->current.end;
+    Location end = this->current.end;
     this->next();
 
     return std::make_unique<ast::NamespaceExpr>(start, end, name, std::move(functions), std::move(structs), std::move(constants), std::move(namespaces));
@@ -486,9 +485,10 @@ std::unique_ptr<ast::Expr> Parser::statement() {
     switch (this->current.type) {
         case TokenType::KEYWORD:
             if (this->current.value == "extern") {
+                Location start = this->current.start;
                 this->next();
-                ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None;
 
+                ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None;
                 if (this->current == TokenType::STRING) {
                     if (this->current.value != "C") {
                         this->error("Unknown extern linkage specification");
@@ -503,12 +503,37 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                     linkage = ast::ExternLinkageSpecifier::C;
                 }
 
+                if (this->current == TokenType::LBRACE) {
+                    this->next();
+
+                    std::vector<std::unique_ptr<ast::Expr>> definitions;
+                    while (this->current != TokenType::RBRACE) {
+                        if (this->current.value != "def") {
+                            this->error("Expected function definition");
+                        }
+
+                        this->next();
+                        auto definition = this->parse_function_definition(linkage);
+                        
+                        definitions.push_back(std::move(definition));
+                    }
+
+                    Location end = this->current.end;
+                    this->next();
+
+                    return std::make_unique<ast::BlockExpr>(start, end, std::move(definitions));
+                }
+
                 if (this->current.value != "def") {
                     this->error("Expected function or prototype definition.");
                 }
 
                 this->next();
-                return this->parse_function_definition(linkage);
+
+                auto definition = this->parse_function_definition(linkage);
+                definition->start = start;
+
+                return definition;
             } else if (this->current.value == "def") {
                 this->next();
                 return this->parse_function_definition();
@@ -518,14 +543,14 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 this->next();
-                Location* start = this->current.start;
+                Location start = this->current.start;
                 if (this->current == TokenType::SEMICOLON) {
                     this->next();
                     return std::make_unique<ast::ReturnExpr>(start, this->current.end, nullptr);
                 }
 
                 auto expr = this->expr(false);
-                Location* end = this->current.end;
+                Location end = this->current.end;
 
                 if (this->current != TokenType::SEMICOLON) {
                     this->error("Expected ;");
@@ -534,7 +559,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 return std::make_unique<ast::ReturnExpr>(start, end, std::move(expr));
             } else if (this->current.value == "if") {
                 if (!this->context.is_inside_function) {
-                    this->error("if is only allowed inside functions.");
+                    this->error("if statements are only allowed inside functions.");
                 }
 
                 this->next();
@@ -547,13 +572,13 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 return this->parse_variable_definition(true);
             } else if (this->current.value == "struct") {
                 if (this->context.is_inside_function) {
-                    this->error("struct is only allowed outside functions.");
+                    this->error("struct definitions are only allowed outside functions.");
                 }
 
                 this->next();
                 return this->parse_struct();
             } else if (this->current.value == "include") {
-                Location* start = this->current.start;
+                Location start = this->current.start;
                 this->next();
 
                 if (this->current != TokenType::STRING) {
@@ -561,7 +586,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 }
 
                 std::string path = this->current.value;
-                Location* end = this->current.end;
+                Location end = this->current.end;
 
                 this->next();
                 return std::make_unique<ast::IncludeExpr>(start, end, path);
@@ -629,7 +654,7 @@ std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
 
 std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> left) {
     while (true) {
-        Location* start = this->current.start;
+        Location start = this->current.start;
         int precedence = this->get_token_precendence();
 
         if (precedence < prec) {
@@ -655,7 +680,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
         return this->call();
     }
 
-    Location* start = this->current.start;
+    Location start = this->current.start;
 
     TokenType op = this->current.type;
     this->next();
@@ -665,7 +690,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
 }
 
 std::unique_ptr<ast::Expr> Parser::call() {
-    Location* start = this->current.start;
+    Location start = this->current.start;
     auto expr = this->factor();
 
     if (this->current == TokenType::LPAREN) {
@@ -706,7 +731,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
 std::unique_ptr<ast::Expr> Parser::factor() {
     std::unique_ptr<ast::Expr> expr;
 
-    Location* start = this->current.start;
+    Location start = this->current.start;
     switch (this->current.type) {
         case TokenType::INTEGER: {
             int number = std::stol(this->current.value);
@@ -766,7 +791,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                 this->error("Expected ]");
             }
 
-            Location* end = this->current.end;
+            Location end = this->current.end;
             this->next();
 
             expr = std::make_unique<ast::ArrayExpr>(start, end, std::move(elements));
