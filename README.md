@@ -60,11 +60,11 @@ $ make
 
 ## Goals
 
-    - [ ] For/while loops. The parsing for while loops is done, but something goes wrong in the code generation.
-    - [ ] return inside if statements. Already works if we make LLVM shut up.
-    - [ ] More preprocessor directives.
-    - [ ] Better errors.
-    - [ ] Fix memory leaks.
-    - [ ] Name mangling.
-    - [ ] Self-hosted.
-    - [ ] Generics.
+- [ ] For/while loops. The parsing for while loops is done, but something goes wrong in the code generation.
+- [ ] return inside if statements. Already works if we make LLVM shut up.
+- [ ] More preprocessor directives.
+- [ ] Better errors.
+- [ ] Fix memory leaks.
+- [ ] Name mangling.
+- [ ] Self-hosted.
+- [ ] Generics.
