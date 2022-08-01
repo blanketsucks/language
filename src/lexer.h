@@ -1,7 +1,7 @@
 #ifndef _LEXER_H
 #define _LEXER_H
 
-#include "tokens.hpp"
+#include "tokens.h"
 
 #include <cstdint>
 #include <iostream>
@@ -16,7 +16,7 @@ public:
     Lexer(std::ifstream& file, std::string filename);
     Lexer(FILE* file, std::string filename);
 
-    char next(bool check_newline = true);
+    char next();
     char peek();
     char prev();
 
@@ -29,6 +29,8 @@ public:
 
     Location loc();
 
+    char escape(char current);
+
     void skip_comment();
     Token parse_identifier();
     Token parse_string();
@@ -37,11 +39,13 @@ public:
     std::vector<Token> lex();
 
 private:
-    int line;
-    int column;
-    int index;
+    uint32_t line;
+    uint32_t column;
+    uint32_t index;
+    
     bool eof;
     char current;
+
     std::string filename;
     std::string source;
 };

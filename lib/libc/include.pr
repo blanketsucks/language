@@ -1,0 +1,126 @@
+$define __BEGIN_EXTERN_BLOCK extern "C" {
+$define __END_EXTERN_BLOCK }
+
+struct FILE;
+
+namespace libc {
+    
+    __BEGIN_EXTERN_BLOCK
+
+    func fopen(path: str, mode: str) -> FILE*;
+    func fdopen(fd: int, mode: str) -> FILE*;
+    func freopen(path: str, mode: str, stream: FILE*) -> FILE*;
+    func fclose(stream: FILE*) -> int;
+    func fflush(stream: FILE*) -> int;
+
+
+    func fgetc(stream: FILE*) -> int;
+    func fgets(buf: str, n: int, stream: FILE*) -> str;
+    func getc(stream: FILE*) -> int;
+    func getchar() -> int;
+    func ungetc(c: int, stream: FILE*) -> int;
+
+
+    func fputc(c: int, stream: FILE*) -> int;
+    func fputs(s: str, stream: FILE*) -> int;
+    func putc(c: int, stream: FILE*) -> int;
+    [[allow_dead_code]] func puts(s: str) -> int;
+
+    func fread(buf: str, size: int, n: int, stream: FILE*) -> int;
+    func fwrite(buf: str, size: int, n: int, stream: FILE*) -> int;
+
+
+    func fseek(stream: FILE*, offset: int, whence: int) -> int;
+    func ftell(stream: FILE*) -> int;
+    func rewind(stream: FILE*);
+    func fgetpos(stream: FILE*, pos: int*) -> int;
+    func fsetpos(stream: FILE*, pos: int*) -> int;
+
+
+    func clearerr(stream: FILE*);
+    func feof(stream: FILE*) -> int;
+    func ferror(stream: FILE*) -> int;
+    func fileno(stream: FILE*) -> int;
+
+
+    func printf(fmt: str, ...) -> int;
+    func fprintf(stream: FILE*, fmt: str, ...) -> int;
+    func dprintf(fd: int, fmt: str, ...) -> int;
+    func sprintf(buf: str, fmt: str, ...) -> int;
+    func snprintf(buf: str, n: int, fmt: str, ...) -> int;
+
+
+    func malloc(size: int) -> void*;
+    func calloc(nmemb: int, size: int) -> void*;
+    func realloc(ptr: void*, size: int) -> void*;
+    func reallocarray(ptr: void*, nmemb: int, size: int) -> void*;
+    func free(ptr: void*);
+
+
+    func memcpy(dest: str, src: str, size: int) -> str;
+    func memset(dest: str, c: int, size: int) -> str;
+    func memmove(dest: str, src: str, size: int) -> str;
+    func memcmp(s1: str, s2: str, size: int) -> int;
+    func memchr(s: str, c: int, size: int) -> void*;
+    func memrchr(s: str, c: int, size: int) -> void*;
+    func memmem(s: str, n: int, needle: str, m: int) -> void*;
+
+
+    func strlen(s: str) -> int;
+    func strcmp(s1: str, s2: str) -> int;
+    func strncmp(s1: str, s2: str, n: int) -> int;
+    func strcasecmp(s1: str, s2: str) -> int;
+    func strncasecmp(s1: str, s2: str, n: int) -> int;
+    func strchr(s: str, c: int) -> str;
+    func strrchr(s: str, c: int) -> str;
+    func strstr(haystack: str, needle: str) -> str;
+    func strcasestr(haystack: str, needle: str) -> str;
+    func strtok(s: str, delim: str) -> str;
+    func strtok_r(s: str, delim: str, save_ptr: str*) -> str;
+    func strdup(s: str) -> str;
+    func strndup(s: str, n: int) -> str;
+    func strnlen(s: str, n: int) -> int;
+    func strspn(s: str, accept: str) -> int;
+    func strcspn(s: str, reject: str) -> int;
+    func strpbrk(s: str, accept: str) -> str;
+    func strsep(s: str, delim: str) -> str;
+    func strcoll(s1: str, s2: str) -> int;
+
+
+    func isalnum(c: int) -> int;
+    func isalpha(c: int) -> int;
+    func isblank(c: int) -> int;
+    func iscntrl(c: int) -> int;
+    func isdigit(c: int) -> int;
+    func isgraph(c: int) -> int;
+    func islower(c: int) -> int;
+    func isprint(c: int) -> int;
+    func ispunct(c: int) -> int;
+    func isspace(c: int) -> int;
+    func isupper(c: int) -> int;
+    func isxdigit(c: int) -> int;
+
+
+    func tolower(c: int) -> int;
+    func toupper(c: int) -> int;
+    func toascii(c: int) -> int;
+
+
+    func atoi(s: str) -> int;
+    func atol(s: str) -> long;
+    func atoll(s: str) -> long;
+
+
+    func atof(s: str) -> double;
+
+
+    func sleep(seconds: int) -> int;
+
+
+    func exit(code: int) -> void;
+
+
+    func atexit(f: ());
+
+    __END_EXTERN_BLOCK
+}

@@ -1,38 +1,103 @@
 #ifndef _AST_H
 #define _AST_H
 
-#include "tokens.hpp"
-#include "types.h"
+#include "types/include.h"
+#include "tokens.h"
 #include "llvm.h"
-#include "values.h"
 
 #include <iostream>
 #include <memory>
 #include <vector>
+#include <cstdarg>
 
 class Visitor;
+class Value;
 
 namespace ast {
-
-struct Argument {
-    std::string name;
-    Type* type;
-};
 
 enum class ExternLinkageSpecifier {
     None,
     C,
 };
 
+class ExprKind {
+public:
+    enum Value {
+        Unknown = -1,
+
+        Block,
+        Integer,
+        Float,
+        String,
+        Variable,
+        VariableAssignment,
+        Const,
+        Array,
+        UnaryOp,
+        BinaryOp,
+        Call,
+        Return,
+        Prototype,
+        Function,
+        If,
+        While,
+        Struct,
+        Constructor,
+        Attribute,
+        Element,
+        Cast,
+        Sizeof,
+        Assembly,
+        Namespace,
+        NamespaceAttribute
+    };
+
+    Value value;
+
+    ExprKind(Value value);
+
+    bool operator==(Value other);
+    bool operator==(ExprKind other);
+    bool operator!=(Value other);
+
+    bool in(ExprKind other, ...);
+    bool in(std::vector<ExprKind> others);
+};
+
+struct Attributes {
+    std::vector<std::string> names;
+
+    Attributes() { this->names = {}; }
+    Attributes(std::vector<std::string> names) : names(names) {}
+
+    void add(std::string name) { this->names.push_back(name); }
+    bool has(std::string name) { return std::find(this->names.begin(), this->names.end(), name) != this->names.end(); }
+};
+
 class Expr {
 public:
     Location start;
     Location end;
+    ExprKind kind;
+    Attributes attributes;
 
-    Expr(Location start, Location end) : start(start), end(end) {}
+    Expr(Location start, Location end, ExprKind kind) : start(start), end(end), kind(kind) {}
+
+    template<class T> T* cast() {
+        T* value = dynamic_cast<T*>(this);
+        assert(value != nullptr && "Invalid cast.");
+
+        return value; 
+    }
 
     virtual ~Expr() = default;
     virtual Value accept(Visitor& visitor) = 0;
+};
+
+struct Argument {
+    std::string name;
+    Type* type;
+    std::unique_ptr<Expr> default_value = nullptr;
 };
 
 class BlockExpr : public Expr {
@@ -46,8 +111,9 @@ public:
 class IntegerExpr : public Expr {
 public:
     int value;
+    int bits;
 
-    IntegerExpr(Location start, Location end, int value);
+    IntegerExpr(Location start, Location end, int value, int bits = 32);
     Value accept(Visitor& visitor) override;
 };
 
@@ -80,8 +146,9 @@ public:
     std::string name;
     Type* type;
     std::unique_ptr<Expr> value;
+    bool external;
 
-    VariableAssignmentExpr(Location start, Location end, std::string name, Type* type, std::unique_ptr<Expr> value);
+    VariableAssignmentExpr(Location start, Location end, std::string name, Type* type, std::unique_ptr<Expr> value, bool external = false);
     Value accept(Visitor& visitor) override;
 };
 
@@ -178,10 +245,20 @@ class StructExpr : public Expr {
 public:
     std::string name;
     bool packed;
+    bool opaque;
     std::map<std::string, Argument> fields;
-    std::vector<std::unique_ptr<FunctionExpr>> methods;
+    std::vector<std::unique_ptr<Expr>> methods;
 
-    StructExpr(Location start, Location end, std::string name, bool packed, std::map<std::string, Argument> fields, std::vector<std::unique_ptr<FunctionExpr>> methods);
+    StructExpr(Location start, Location end, std::string name, bool packed, bool opaque, std::map<std::string, Argument> fields = {}, std::vector<std::unique_ptr<Expr>> methods = {});
+    Value accept(Visitor& visitor) override;
+};
+
+class ConstructorExpr : public Expr {
+public:
+    std::unique_ptr<Expr> parent;
+    std::map<std::string, std::unique_ptr<Expr>> fields;
+
+    ConstructorExpr(Location start, Location end, std::unique_ptr<Expr> parent, std::map<std::string, std::unique_ptr<Expr>> fields);
     Value accept(Visitor& visitor) override;
 };
 
@@ -212,11 +289,31 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-class IncludeExpr : public Expr {
+class SizeofExpr : public Expr {
 public:
-    std::string path;
+    Type* type;
 
-    IncludeExpr(Location start, Location end, std::string path);
+    SizeofExpr(Location start, Location end, Type* type);
+    Value accept(Visitor& visitor) override;
+};
+
+typedef std::vector<std::pair<std::string, Expr*>> InlineAssemblyConstraint;
+
+class InlineAssemblyExpr : public Expr {
+public:
+    std::string assembly;
+    InlineAssemblyConstraint inputs;
+    InlineAssemblyConstraint outputs;
+    std::vector<std::string> clobbers;
+
+    InlineAssemblyExpr(
+        Location start,
+        Location end, 
+        std::string assembly, 
+        InlineAssemblyConstraint inputs, 
+        InlineAssemblyConstraint outputs, 
+        std::vector<std::string> clobbers
+    );
     Value accept(Visitor& visitor) override;
 };
 
@@ -224,12 +321,9 @@ class NamespaceExpr : public Expr {
 public:
     std::string name;
     
-    std::vector<std::unique_ptr<Expr>> functions;
-    std::vector<std::unique_ptr<StructExpr>> structs;
-    std::vector<std::unique_ptr<ConstExpr>> consts;
-    std::vector<std::unique_ptr<NamespaceExpr>> namespaces;
+    std::vector<std::unique_ptr<Expr>> members;
 
-    NamespaceExpr(Location start, Location end, std::string name, std::vector<std::unique_ptr<Expr>> functions, std::vector<std::unique_ptr<StructExpr>> structs, std::vector<std::unique_ptr<ConstExpr>> consts, std::vector<std::unique_ptr<NamespaceExpr>> namespaces);
+    NamespaceExpr(Location start, Location end, std::string name, std::vector<std::unique_ptr<Expr>> members);
     Value accept(Visitor& visitor) override;
 };
 

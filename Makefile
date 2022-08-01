@@ -1,20 +1,32 @@
-SOURCES = $(wildcard src/*.cpp)
-HEADERS = $(wildcard src/*.h)
+SOURCES = $(wildcard src/*.cpp src/types/*.cpp)
+HEADERS = $(wildcard src/*.h src/types/*.h)
 OBJS = $(SOURCES:.cpp=.o)
 
-CC = g++
+FLAGS = -O3
+LLVM-CONFIG = llvm-config-14
 
-CFLAGS = -O3 -g `llvm-config-14 --cxxflags` -c
-LDFLAGS = -O3 -g `llvm-config-14 --ldflags --libs --system-libs`
+ifeq ($(DEBUG),true)
+	FLAGS += -g
+endif
+
+CXXFLAGS = $(FLAGS) -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -c -std=c++14
+CXXFLAGS += $(shell $(LLVM-CONFIG) --cflags)
+
+LDFLAGS = $(FLAGS) -Wno-non-pod-varargs
+LDFLAGS += $(shell $(LLVM-CONFIG) --ldflags --libs --system-libs core)
 
 build: main.o $(OBJS)
-	$(CC) main.o $(OBJS) $(LDFLAGS) -o main
+	$(CXX) main.o $(OBJS) $(LDFLAGS) -o proton
 
-%.o: %.cpp $(HEADERS)
-	$(CC) $(CFLAGS) -o $@ $<
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $<
 
 run: build
 	./main
 
 clean:
-	rm main.o src/*.o
+ifeq ($(OS),Windows_NT)
+	del /f /q /s *.o
+else
+	rm -fr main.o src/*.o src/types/*.o
+endif

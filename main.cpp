@@ -1,214 +1,207 @@
-#define _DEBUG_MODULE 0
+#include "src/include.h"
+#include "argparse.hpp"
 
-#include "src/lexer.h"
-#include "src/parser.h"
-#include "src/types.h"
-#include "src/visitor.h"
+#ifdef __clang__
+    #define SOURCE_COMPILER "clang"
+#elif __GNUC__
+    #define SOURCE_COMPILER "gcc"
+#else
+    #define SOURCE_COMPILER "mscv"
+#endif
+
+enum class OutputFormat {
+    Object,
+    LLVM,
+    Assembly,
+    Executable
+};
 
 struct Arguments {
     std::string filename;
     std::string output;
     std::string entry;
 
-    bool emit_llvm = false;
-    bool emit_assembly = false;
-
-    void dump() {
-        std::cout << "Filename: " << this->filename << '\n';
-        std::cout << "Output: " << this->output << '\n';
-        std::cout << "Entry: " << this->entry << '\n';
-        std::cout << "Emit LLVM: " << this->emit_llvm << '\n';
-        std::cout << "Emit Assembly: " << this->emit_assembly << '\n';
-        std::cout << std::endl;
-    }
+    OutputFormat format;
+    bool libc = true;
+    bool lex = false;
 };
 
-std::string replace_extension(std::string filename, std::string extension) {
-    return filename.substr(0, filename.find_last_of('.')) + "." + extension;
-}
+argparse::ArgumentParser create_argument_parser() {
+    argparse::ArgumentParser parser = argparse::ArgumentParser(
+        "proton", 
+        "Compiler for the Proton programming language.",
+        "proton [options] ...files"
+    );
 
-[[noreturn]] void error(const std::string& message) {
-    std::cerr << "\u001b[1;31m" << "error: " << "\u001b[0m" << message << std::endl;
-    exit(1);
-}
+    parser.add_argument("--output", argparse::Required, "-o", "The output file.", "file");
+    parser.add_argument("--entry", argparse::Required, "-e", "The main entry point for the program.", "function");
+    parser.add_argument("-emit-llvm", argparse::NoArguments, EMPTY, "Emit LLVM IR.");
+    parser.add_argument("-emit-assembly", argparse::NoArguments, "-S", "Emit assembly code.");
+    parser.add_argument("-c", argparse::NoArguments, EMPTY, "Emit object code.");
+    parser.add_argument("-nolibc", argparse::NoArguments, EMPTY, "Disable the use of the libc library.");
+    parser.add_argument("-lex", argparse::NoArguments, EMPTY, "Print the lexer output. Note the tokens are after the preprocessor.");
 
-#ifdef __GNUC__
-
-#include <getopt.h>
-
-struct option* get_options() {
-    struct option* options = new option[4];
-
-    options[0] = {"output", required_argument, NULL, 'o'};
-    options[1] = {"entry", required_argument, NULL, 'e'};
-    options[2] = {"emit-llvm", no_argument, NULL, 'l'};
-    options[3] = {"emit-assembly", no_argument, NULL, 'S'};
-
-    return options;
+    return parser;
 }
 
 Arguments parse_arguments(int argc, char** argv) {
     Arguments args;
+    argparse::ArgumentParser parser = create_argument_parser();
 
-    option* options = get_options();
-    while (true) {
-        int index = 0;
-        int c = getopt_long(argc, argv, "olS::", options, &index);
-
-        if (c == -1) {
-            break;
-        }
-
-        switch (c) {
-            case 'o':
-                args.output = optarg;
-                break;
-            case 'e':
-                args.entry = optarg;
-                break;
-            case 'l':
-                args.emit_llvm = true;
-                break;
-            case 'S':
-                args.emit_assembly = true;
-                break;
-            case '?':
-                break;
-            default:
-                exit(1);
-        }
+    if (argc < 2) {
+        parser.display_help();
+        exit(0);
     }
 
-    if (optind < argc) {
-        args.filename = argv[optind];
+    std::vector<std::string> filenames = parser.parse(argc, argv);
+    std::string filename = filenames.back();
+
+    args.entry = parser.get("entry", "main");
+
+    if (parser.get("c", false)) {
+        args.format = OutputFormat::Object;
+    } else if (parser.get("emit-llvm", false)) {
+        args.format = OutputFormat::LLVM;
+    } else if (parser.get("emit-assembly", false)) {
+        args.format = OutputFormat::Assembly;
     } else {
-        error("No input file specified.");
+        args.format = OutputFormat::Executable;
     }
 
-    if (args.output.empty()) {
-        args.output = replace_extension(args.filename, "o");
+    args.libc = !parser.get("nolibc", false);
+    args.lex = parser.get("lex", false);
+    args.filename = filename;
+
+    if (!parser.has_value("output")) {
+        args.output = utils::replace_extension(filename, "o");
+        switch (args.format) {
+            case OutputFormat::LLVM:
+                args.output = utils::replace_extension(args.output, "ll"); break;
+            case OutputFormat::Assembly:
+                args.output = utils::replace_extension(args.output, "s"); break;
+            case OutputFormat::Executable:
+            #if _WIN32 || _WIN64
+                args.output = utils::replace_extension(args.output, "exe"); break;
+            #else
+                args.output = utils::remove_extension(args.output); break;
+            #endif
+            default:
+                args.output = utils::replace_extension(args.output, "o"); break;
+        }
+    } else {
+        args.output = parser.get<std::string>("output");
     }
 
-    if (args.entry.empty()) {
-        args.entry = "main";
-    }
-
-    if (args.emit_llvm && args.emit_assembly) {
-        error("Cannot emit both Assembly and LLVM IR.");
-    }
-
-    if (args.emit_llvm) {
-        args.output = replace_extension(args.output, "ll");
-    } else if (args.emit_assembly) {
-        args.output = replace_extension(args.output, "S");
-    }
-    
-    delete[] options;
     return args;
 }
 
-#else
-    Arguments parse_arguments(int argc, char** argv);
-    #error "Unsupported compiler"
-#endif
-
-
-int main(int argc, char** argv) {
-    Arguments args = parse_arguments(argc, argv);
-
+void init() {
     llvm::InitializeAllTargetInfos();
     llvm::InitializeAllTargets();
     llvm::InitializeAllTargetMCs();
     llvm::InitializeAllAsmParsers();
     llvm::InitializeAllAsmPrinters();
+}
+
+int main(int argc, char** argv) {
+    Arguments args = parse_arguments(argc, argv);
+    init();
 
     std::ifstream file(args.filename);
 
     Lexer lexer(file, args.filename);
-    std::vector<Token> tokens = lexer.lex();
+    Preprocessor preprocessor(lexer.lex(), {"lib/"});
 
+#if _WIN64
+    preprocessor.define("__WIN64__");
+#elif _WIN32
+    preprocessor.define("__WIN32__");
+#elif __linux__
+    preprocessor.define("__LINUX__");
+#endif
+
+    if (args.libc) {
+        preprocessor.define("__LIBC__");
+    }
+
+    std::vector<Token> tokens = preprocessor.process();
+    if (args.lex) {
+        for (auto token : tokens) {
+            std::string repr = utils::fmt::format("Token(type={i}, value='{s}')", (int)token.type, token.value);
+            std::string location = utils::fmt::format("{bold|white}", token.start.format().c_str());
+
+            std::cout << location << ": " << repr << std::endl;
+        }
+
+        return 0;
+    }
+    
     Parser parser(tokens);
     std::unique_ptr<ast::Program> program = parser.statements();
 
     Visitor visitor(args.filename);
     visitor.visit(std::move(program));
 
-    llvm::Function* entry = visitor.module->getFunction(args.entry);
-    if (!entry) {
-        error("Entry point '" + args.entry + "' not found.");
-    }
+    visitor.cleanup();
 
-    // TODO: Improve this.
-    // Let's take the following example: 
-    //
-    // struct Foo {
-    //    def foo(self) {}
-    //    def bar(self) { self.foo() }
-    // }
-    //
-    // Code for `Foo.foo` would be generated since it's technically used by `Foo.bar` but since
-    // `Foo.bar` is never used anywhere that technically means that code for `Foo.foo` shouldn't be generated.
+    parser.free();
+    visitor.free();
 
-    for (auto& pair : visitor.functions) {
-        if (!pair.second) continue;
-        if (!pair.second->used) {
-            if (pair.first == "main") {
-                continue;
-            }
-
-            std::string name = visitor.is_intrinsic(pair.first).first;
-            llvm::Function* function = visitor.module->getFunction(name);
-
-            function->eraseFromParent();
+    if (args.format == OutputFormat::Executable) {
+        llvm::Function* entry = visitor.module->getFunction(args.entry);
+        if (!entry) {
+            std::cerr << utils::fmt::format("{bold|red}: Entry point '{s}' not found.", "error", args.entry) << std::endl;
+            return 1;
         }
-
-        delete pair.second;
     }
 
     std::string target_triple = llvm::sys::getDefaultTargetTriple();
-    std::string error;
+    std::string err;
 
-    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(target_triple, error);
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(target_triple, err);
     if (!target) {
-        std::cerr << "Failed to create target: " << error << std::endl;
+        std::cerr << utils::fmt::format("{bold|red}: Could not create target '{s}'. {s}", "error", target_triple, err) << std::endl;
         return 1;
     }
 
-    std::string cpu = "generic";
-    std::string features = "";
-
     llvm::TargetOptions options;
-    auto reloc = llvm::Optional<llvm::Reloc::Model>();
+    auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
-    llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, cpu, features, options, reloc);
+    llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, "generic", "", options, reloc);
+    
     visitor.module->setDataLayout(target_machine->createDataLayout());
     visitor.module->setTargetTriple(target_triple);
 
     visitor.module->setPICLevel(llvm::PICLevel::BigPIC);
     visitor.module->setPIELevel(llvm::PIELevel::Large);
 
-    std::error_code ec;
+    std::error_code error;
 
-    llvm::raw_fd_ostream dest(args.output, ec, llvm::sys::fs::OF_None);
-    if (ec) {
-        std::cerr << "Could not open file. " << ec.message() << std::endl;
+    std::string object = args.output;
+    if (!utils::has_extension(object)) {
+        object = object + ".o";
+    }
+
+    llvm::raw_fd_ostream dest(object, error, llvm::sys::fs::OF_None);
+    if (error) {
+        std::cerr << utils::fmt::format("{bold|red}: Could not open file '{s}'. {s}", "error", object, error.message()) << std::endl;
         return 1;
     }
 
-    if (args.emit_llvm) {
+    if (args.format == OutputFormat::LLVM) {
         visitor.module->print(dest, nullptr);
-        exit(0);   
+        return 0;
     }
 
     llvm::legacy::PassManager pass;
 
-    llvm::CodeGenFileType file_type = llvm::CodeGenFileType::CGFT_ObjectFile;
-    if (args.emit_assembly) {
-        file_type = llvm::CodeGenFileType::CGFT_AssemblyFile;
+    llvm::CodeGenFileType type = llvm::CodeGenFileType::CGFT_ObjectFile;
+    if (args.format == OutputFormat::Assembly) {
+        type = llvm::CodeGenFileType::CGFT_AssemblyFile;
     }
 
-    if (target_machine->addPassesToEmitFile(pass, dest, nullptr, file_type)) {
-        std::cerr << "Target machine can't emit a file of this type" << std::endl;
+    if (target_machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
+        std::cerr << utils::fmt::format("{bold|red}: Target machine can't emit a file of this type", "error") << std::endl;
         return 1;
     }
 
@@ -218,4 +211,19 @@ int main(int argc, char** argv) {
 
     pass.run(*visitor.module);
     dest.flush();
-} 
+
+    delete target_machine;
+    if (args.format != OutputFormat::Executable) {
+        return 0;
+    }
+
+    std::string compiler = args.libc ? SOURCE_COMPILER : "ld";
+    std::vector<std::string> arguments = {
+        "-e", args.entry,
+        "-o", args.output,
+        object
+    };
+
+    std::string command = utils::fmt::format("{s} {s}", compiler, utils::fmt::join(" ", arguments));
+    return std::system(command.c_str());
+}

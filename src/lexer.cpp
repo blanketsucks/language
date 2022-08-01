@@ -1,5 +1,24 @@
 #include "lexer.h"
 
+#include "utils.h"
+
+std::string escape_str(std::string str) {
+    std::string result;
+    for (char c : str) {
+        if (!isprint((unsigned char)c)) {
+            std::stringstream stream;
+            stream << std::hex << (unsigned int)(unsigned char)c;
+            
+            std::string code = stream.str();
+            result += std::string("\\x") + (code.size() < 2 ? "0" : "") + code;
+        } else {
+            result += c;
+        }
+    }
+
+    return result;
+}
+
 Lexer::Lexer(std::string source, std::string filename) {
     this->source = source;
     this->filename = filename;
@@ -30,20 +49,9 @@ Lexer::Lexer(FILE* file, std::string filename) {
     this->next();
 }
 
-char Lexer::next(bool check_newline) {
+char Lexer::next() {
     this->current = this->source[this->index];
     this->index++;
-
-    if (check_newline) {
-        while (this->current == '\n' || this->current == '\r') {
-            if (this->current == '\n') {
-                this->line++;
-                this->column = 0;
-            }
-
-            this->next();
-        }
-    }
 
     if (this->current == 0) {
         this->eof = true;
@@ -82,12 +90,66 @@ Token Lexer::create_token(TokenType type, Location start, std::string value) {
 }
 
 Location Lexer::loc() {
-    return Location(this->line, this->column, this->index, this->filename);
+    return Location {
+        this->line,
+        this->column,
+        this->index,
+        this->filename,
+    };
+}
+
+char Lexer::escape(char current) {
+    if (current != '\\') {
+        return current;
+    }
+
+    char next = this->next();
+    if (next == 'n') {
+        return '\n';
+    } else if (next == 't') {
+        return '\t';
+    } else if (next == 'r') {
+        return '\r';
+    } else if (next == '\\') {
+        return '\\';
+    } else if (next == '\'') {
+        return '\'';
+    } else if (next == '0') {
+        return '\0';
+    } else if (next == '"') {
+        return '"';
+    } else if (next == 'x') {
+        char hex[3];
+        hex[0] = this->next();
+        hex[1] = this->next();
+        hex[2] = 0;
+
+        int i = 0;
+        while (hex[i] != 0) {
+            if (hex[i] >= '0' && hex[i] <= '9') {
+                hex[i] -= '0';
+            } else if (hex[i] >= 'a' && hex[i] <= 'f') {
+                hex[i] -= 'a' - 10;
+            } else if (hex[i] >= 'A' && hex[i] <= 'F') {
+                hex[i] -= 'A' - 10;
+            } else {
+                std::cerr << "Invalid hexadecimal character '" << hex[i] << "'." << std::endl;
+                exit(1);
+            }
+
+            i++;
+        }
+
+        return (char)(hex[0] * 16 + hex[1]);
+    } else {
+        utils::error(this->loc(), "Invalid escape sequence");
+        return '\0';
+    }
 }
 
 void Lexer::skip_comment() {
     while (this->current != '\n' && this->current != 0) {
-        this->next(false);
+        this->next();
     }
 
     this->next();
@@ -106,9 +168,13 @@ Token Lexer::parse_identifier() {
     }
 
     if (this->is_keyword(value)) {
-        return this->create_token(TokenType::KEYWORD, start, value);
+        return this->create_token(TokenType::Keyword, start, value);
     } else {
-        return this->create_token(TokenType::IDENTIFIER, start, value);
+        if (value[0] == '$') {
+            utils::error(start, "Identifiers starting with '$' are reserved for keywords.");
+        }
+
+        return this->create_token(TokenType::Identifier, start, value);
     }
 }
 
@@ -116,20 +182,24 @@ Token Lexer::parse_string() {
     std::string value;
     Location start = this->loc();
 
-    char opening = this->current;
+    if (this->current == '\'') {
+        char character = this->escape(this->next());
+
+        this->next();
+        return this->create_token(TokenType::Char, start, std::to_string(character));
+    }
 
     char next = this->next();
-    while (next && next != opening) {
-        value += this->current;
+    while (next && next != '"') {
+        value += this->escape(this->current);
         next = this->next();
     }
 
-    if (this->current != opening) {
-        std::cerr << "[ERROR] Expected " << opening << " but got " << this->current << std::endl;
-        exit(1);
+    if (this->current != '"') {
+        utils::error(this->loc(), "Expected end of string.");
     }
     
-    Token token = this->create_token(TokenType::STRING, start, value);
+    Token token = this->create_token(TokenType::String, start, value);
     this->next();
 
     return token;
@@ -138,16 +208,6 @@ Token Lexer::parse_string() {
 Token Lexer::parse_number() {
     std::string value;
     Location start = this->loc();
-
-    if (this->current == '\'') {
-        char character = this->next();
-        if (this->next() != '\'') {
-            std::cerr << "C" << std::endl;
-            exit(1);
-        }
-
-        return this->create_token(TokenType::INTEGER, start, std::to_string(character));
-    }
 
     value += this->current;
 
@@ -174,12 +234,11 @@ Token Lexer::parse_number() {
                 value = std::to_string(val);
             }
 
-            return this->create_token(TokenType::INTEGER, start, value);
+            return this->create_token(TokenType::Integer, start, value);
         }
     
         if (std::isdigit(this->peek()) ) {
-            std::cerr << "Leading zeros in integer constants are not allowed" << std::endl;
-            exit(1);
+            utils::error(start, "Leading zeros on integer constants are not allowed");
         }
     }
 
@@ -198,9 +257,9 @@ Token Lexer::parse_number() {
     }
 
     if (dot) {
-        return this->create_token(TokenType::FLOAT, start, value);
+        return this->create_token(TokenType::Float, start, value);
     } else {
-        return this->create_token(TokenType::INTEGER, start, value);
+        return this->create_token(TokenType::Integer, start, value);
     }
 }
 
@@ -210,10 +269,20 @@ std::vector<Token> Lexer::lex() {
     while (true) {
         if (this->eof) break;
 
+        if (this->current == '\n') {
+            this->line++;
+            this->column = 0;
+
+            tokens.push_back(this->create_token(TokenType::Newline, "\n"));
+            this->next();
+
+            continue;
+        }
+
         if (std::isspace(this->current)) {
             this->next();
             continue;
-        } else if (std::isalpha(this->current) || this->current == '_') {
+        } else if (std::isalpha(this->current) || this->current == '_' || this->current == '$') {
             tokens.push_back(this->parse_identifier());
         } else if (std::isdigit(this->current)) {
             tokens.push_back(this->parse_number());
@@ -224,12 +293,11 @@ std::vector<Token> Lexer::lex() {
             Token token;
 
             char next = this->next();
-            std::cout << next << std::endl;
             if (next == '+') {
                 this->next();
-                token = this->create_token(TokenType::INC, start, "++");
+                token = this->create_token(TokenType::Inc, start, "++");
             } else {
-                token = this->create_token(TokenType::PLUS, start, "+");
+                token = this->create_token(TokenType::Add, start, "+");
             }
 
             tokens.push_back(token);
@@ -240,23 +308,23 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '>') {
                 this->next();
-                token = this->create_token(TokenType::ARROW, start, "->");
+                token = this->create_token(TokenType::Arrow, start, "->");
             } else if (next == '-') {
                 this->next();
-                token = this->create_token(TokenType::DEC, start, "--");
+                token = this->create_token(TokenType::Dec, start, "--");
             } else {
-                token = this->create_token(TokenType::MINUS, "-");
+                token = this->create_token(TokenType::Minus, "-");
             }
 
             tokens.push_back(token);
         } else if (this->current == '*') {
-            tokens.push_back(this->create_token(TokenType::MUL, "*"));
+            tokens.push_back(this->create_token(TokenType::Mul, "*"));
             this->next();
         } else if (this->current == '/') {
-            tokens.push_back(this->create_token(TokenType::DIV, "/"));
+            tokens.push_back(this->create_token(TokenType::Div, "/"));
             this->next();
         } else if (this->current == '=') {
-            tokens.push_back(this->create_token(TokenType::ASSIGN, "="));
+            tokens.push_back(this->create_token(TokenType::Assign, "="));
             this->next();
         } else if (this->current == '>') {
             Location start = this->loc();
@@ -265,12 +333,12 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '=') {
                 this->next();
-                token = this->create_token(TokenType::GTE, start, ">=");
+                token = this->create_token(TokenType::Gte, start, ">=");
             } else if (next == '>') {
                 this->next();
-                token = this->create_token(TokenType::GT, start, ">>");
+                token = this->create_token(TokenType::Rsh, start, ">>");
             } else {
-                token = this->create_token(TokenType::GT, start, ">");
+                token = this->create_token(TokenType::Gt, start, ">");
             }
 
             tokens.push_back(token);
@@ -281,12 +349,12 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '=') {
                 this->next();
-                token = this->create_token(TokenType::LTE, start, "<=");
+                token = this->create_token(TokenType::Lte, start, "<=");
             } else if (next == '<') {
                 this->next();
-                token = this->create_token(TokenType::LT, start, "<<");
+                token = this->create_token(TokenType::Lsh, start, "<<");
             } else {
-                token = this->create_token(TokenType::LT, start, "<");
+                token = this->create_token(TokenType::Lt, start, "<");
             }
 
             tokens.push_back(token);
@@ -297,9 +365,9 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '=') {
                 this->next();
-                token = this->create_token(TokenType::NEQ, start, "!=");
+                token = this->create_token(TokenType::Neq, start, "!=");
             } else {
-                token = this->create_token(TokenType::NOT, start, "!");
+                token = this->create_token(TokenType::Not, start, "!");
             }
 
             tokens.push_back(token);
@@ -310,9 +378,9 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '|') {
                 this->next();
-                token = this->create_token(TokenType::OR, start, "||");
+                token = this->create_token(TokenType::Or, start, "||");
             } else {
-                token = this->create_token(TokenType::BINARY_OR, start, "|");
+                token = this->create_token(TokenType::BinaryOr, start, "|");
             }
             
             tokens.push_back(token);
@@ -323,38 +391,38 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '&') {
                 this->next();
-                token = this->create_token(TokenType::AND, start, "&&");
+                token = this->create_token(TokenType::And, start, "&&");
             } else {
-                token = this->create_token(TokenType::BINARY_AND, start, "&");
+                token = this->create_token(TokenType::BinaryAnd, start, "&");
             }
 
             tokens.push_back(token);
         } else if (this->current == '~') {
-            tokens.push_back(this->create_token(TokenType::BINARY_NOT, "~"));
+            tokens.push_back(this->create_token(TokenType::BinaryNot, "~"));
             this->next();
         } else if (this->current == '^') {
-            tokens.push_back(this->create_token(TokenType::XOR, "^"));
+            tokens.push_back(this->create_token(TokenType::Xor, "^"));
             this->next();
         } else if (this->current == '(') {
-            tokens.push_back(this->create_token(TokenType::LPAREN, "("));
+            tokens.push_back(this->create_token(TokenType::LParen, "("));
             this->next();
         } else if (this->current == ')') {
-            tokens.push_back(this->create_token(TokenType::RPAREN, ")"));
+            tokens.push_back(this->create_token(TokenType::RParen, ")"));
             this->next();
         } else if (this->current == '{') {
-            tokens.push_back(this->create_token(TokenType::LBRACE, "{"));
+            tokens.push_back(this->create_token(TokenType::LBrace, "{"));
             this->next();
         } else if (this->current == '}') {
-            tokens.push_back(this->create_token(TokenType::RBRACE, "}"));
+            tokens.push_back(this->create_token(TokenType::RBrace, "}"));
             this->next();
         } else if (this->current == '[') {
-            tokens.push_back(this->create_token(TokenType::LBRACKET, "["));
+            tokens.push_back(this->create_token(TokenType::LBracket, "["));
             this->next();
         } else if (this->current == ']') {
-            tokens.push_back(this->create_token(TokenType::RBRACKET, "]"));
+            tokens.push_back(this->create_token(TokenType::RBracket, "]"));
             this->next();
         } else if (this->current == ',') {
-            tokens.push_back(this->create_token(TokenType::COMMA, ","));
+            tokens.push_back(this->create_token(TokenType::Comma, ","));
             this->next();
         } else if (this->current == '.') {
             Location start = this->loc();
@@ -363,14 +431,14 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == '.' && this->peek() == '.') {
                 this->next(); this->next();
-                token = this->create_token(TokenType::ELLIPSIS, start, "...");
+                token = this->create_token(TokenType::Ellipsis, start, "...");
             } else {
-                token = this->create_token(TokenType::DOT, ".");
+                token = this->create_token(TokenType::Dot, ".");
             }
 
             tokens.push_back(token);
         } else if (this->current == ';') {
-            tokens.push_back(this->create_token(TokenType::SEMICOLON, ";"));
+            tokens.push_back(this->create_token(TokenType::SemiColon, ";"));
             this->next();
         } else if (this->current == ':') {
             Location start = this->loc();
@@ -379,17 +447,17 @@ std::vector<Token> Lexer::lex() {
             char next = this->next();
             if (next == ':') {
                 this->next();
-                token = this->create_token(TokenType::DOUBLECOLON, start, "::");
+                token = this->create_token(TokenType::DoubleColon, start, "::");
             } else {
-                token = this->create_token(TokenType::COLON, ":");
+                token = this->create_token(TokenType::Colon, ":");
             }
 
             tokens.push_back(token);
         } else if (this->current == '"' || this->current == '\'') {
             tokens.push_back(this->parse_string());
         } else {
-            std::cerr << "[ERROR] Unknown character: " << this->current << std::endl;
-            exit(1);
+            std::string msg = "Unrecognized character '";
+            utils::error(this->loc(), msg + this->current + "'");
         }
     }
 

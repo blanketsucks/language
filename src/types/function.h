@@ -1,0 +1,35 @@
+#ifndef _TYPES_FUNCTION_H
+#define _TYPES_FUNCTION_H
+
+#include "type.h"
+
+#include <vector>
+
+class FunctionType : public Type {
+public:
+    static FunctionType* create(std::vector<Type*> args, Type* return_type, bool has_varargs);
+    ~FunctionType() override;
+
+    static FunctionType* fromLLVMType(llvm::FunctionType* type);
+    llvm::Type* toLLVMType(llvm::LLVMContext& context) override;
+
+    FunctionType* copy() override;
+
+    std::string str() override;
+
+    std::vector<Type*> arguments() { return this->args; }
+    Type* getReturnType() { return this->return_type; }
+    bool isVarargs() { return this->has_varargs; }
+
+    bool is_compatible(Type* other) override;
+    bool is_compatible(llvm::Type* type) override;
+
+private:
+    FunctionType(std::vector<Type*> args, Type* return_type, bool has_varargs);
+
+    std::vector<Type*> args;
+    Type* return_type;
+    bool has_varargs;
+};
+
+#endif
