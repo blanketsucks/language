@@ -159,12 +159,10 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
         ast::Attributes attrs = this->parse_attributes();
         auto expr = this->statement();
 
-        if (!expr) {
-            continue;
+        if (expr) {
+            expr->attributes = attrs;
+            body.push_back(std::move(expr));
         }
-
-        expr->attributes = attrs;
-        body.push_back(std::move(expr));
     }
 
     Location end = this->expect(TokenType::RBrace, "}").end;
@@ -197,15 +195,31 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
             break;
         }
 
-        Type* type = this->parse_type(value, false);
+
+        Type* type;
         std::string argument;
+        if (value == "self") {
+            if (this->context.current_struct) {
+                argument = "self";
+                type = this->context.current_struct;
 
-        if (!type) {
-            this->next();
-            this->expect(TokenType::Colon, ":");
+                this->next();
+            } else {
+                this->next();
+                this->expect(TokenType::Colon, ":");
 
-            type = this->parse_type(this->current.value);
-            argument = value;
+                type = this->parse_type(this->current.value);
+                argument = value;
+            }
+        } else {
+            type = this->parse_type(value, false);
+            if (!type) {
+                this->next();
+                this->expect(TokenType::Colon, ":");
+
+                type = this->parse_type(this->current.value);
+                argument = value;
+            }
         }
 
         args.push_back({argument, type});
@@ -402,7 +416,6 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
     }
 
     std::string name = this->current.value;
-    std::cout << "Parsing namespace " << name << std::endl;
 
     this->next();
     if (this->current != TokenType::LBrace) {
@@ -422,7 +435,6 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
         }
 
         std::unique_ptr<ast::Expr> member;
-        std::cout << "Parsing member " << this->current.value << std::endl;
         if (this->current.value == "func") {
             this->next();
             member = this->parse_function_definition();
@@ -437,8 +449,6 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
             member = this->parse_namespace();
         }
 
-        std::cout << "Parsed member fiwifew" << std::endl;
-
         member->attributes = attrs;
         members.push_back(std::move(member));
     }
@@ -450,7 +460,6 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
     Location end = this->current.end;
     this->next();
 
-    std::cout << "Parsed namespace " << name << std::endl;
     return std::make_unique<ast::NamespaceExpr>(start, end, name, std::move(members));
 }
 
@@ -626,7 +635,6 @@ std::unique_ptr<ast::InlineAssemblyExpr> Parser::parse_inline_assembly() {
     this->expect(TokenType::SemiColon, ";");
 
     return std::make_unique<ast::InlineAssemblyExpr>(start, this->current.end, assembly, std::move(inputs), std::move(outputs), clobbers);
-
 }
 
 std::unique_ptr<ast::Program> Parser::statements() {
@@ -636,12 +644,10 @@ std::unique_ptr<ast::Program> Parser::statements() {
         ast::Attributes attrs = this->parse_attributes();
         auto expr = this->statement();
 
-        if (!expr) {
-            continue;
+        if (expr) {
+            expr->attributes = attrs;
+            statements.push_back(std::move(expr));
         }
-
-        expr->attributes = attrs;
-        statements.push_back(std::move(expr));
     }
 
     return std::make_unique<ast::Program>(std::move(statements));
@@ -701,7 +707,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 std::string name = this->current.value;
 
                 this->next();
-                this->expect(TokenType::LParen, ")");
+                this->expect(TokenType::Assign, "=");
     
                 Type* type = this->parse_type(this->current.value);
                 this->expect(TokenType::SemiColon, ";");
@@ -738,7 +744,6 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 std::string message;
                 if (this->current == TokenType::Comma) {
                     this->next();
-                    std::cout << this->current.value << '\n';
                     message = this->expect(TokenType::String, "string").value;
                 }
 

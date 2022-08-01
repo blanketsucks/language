@@ -1,8 +1,8 @@
 srcp/
-v/
 .vscode
 
 proton
 *.o
 main
 test.*
+test

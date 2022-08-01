@@ -12,17 +12,12 @@ namespace io {
 
         func from_fd(fd: int) -> WriteStream {
             return WriteStream {
-                stream: libc::fdopen(fd, "w"),
-            }
+                stream: libc::fdopen(fd, "w")
+            };
         }
 
         func write(self, buffer: str) -> int {
             return libc::fprintf(self.stream, buffer);
-        }
-
-        func writeln(self, buffer: str) {
-            libc::fprintf(self.stream, buffer);
-            # libc::fprintf(self.stream, "\n");
         }
     }
 

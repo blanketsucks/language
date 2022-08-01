@@ -1,7 +1,7 @@
 $define __BEGIN_EXTERN_BLOCK extern "C" {
 $define __END_EXTERN_BLOCK }
 
-struct FILE;
+type FILE = int;
 
 namespace libc {
     

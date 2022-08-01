@@ -143,8 +143,6 @@ int main(int argc, char** argv) {
     visitor.visit(std::move(program));
 
     visitor.cleanup();
-
-    parser.free();
     visitor.free();
 
     if (args.format == OutputFormat::Executable) {

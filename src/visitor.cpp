@@ -80,12 +80,20 @@ void Visitor::free() {
     };
 
     free(this->functions);
-    free(this->structs);
-    free(this->namespaces);
 
-    for (auto type : this->allocated_types) {
-        delete type;
+    for (auto pair : this->structs) { 
+        free(pair.second->methods); 
+        delete pair.second;
     }
+
+    // TODO: free nested namespaces and structures.
+    for (auto pair : this->namespaces) { 
+        free(pair.second->functions); 
+        delete pair.second;
+    }
+
+    this->structs.clear();
+    this->namespaces.clear();
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -132,7 +140,7 @@ llvm::Type* Visitor::get_llvm_type(Type* type) {
 
         while (type->isPointer()) {
             ty = ty->getPointerTo();
-            type = type->getPointerTo();
+            type = type->getPointerElementType();
         }
 
         return ty;
@@ -760,14 +768,13 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     llvm::Type* ret = this->get_llvm_type(expr->return_type);
-    std::vector<llvm::Type*> args;
 
+    std::vector<llvm::Type*> args;
     for (auto& arg : expr->args) {
         args.push_back(this->get_llvm_type(arg.type));
     }
 
     llvm::Function* function = this->create_function(pair.first, ret, args, expr->has_varargs, llvm::Function::ExternalLinkage);
-
     int i = 0;
     for (auto& arg : function->args()) {
         arg.setName(expr->args[i++].name);

@@ -195,7 +195,7 @@ void Preprocessor::parse_include(std::string path) {
     Include inc = {path, IncludeState::Initialized};
     this->includes[path] = inc;
 
-    Preprocessor preprocessor(lexer.lex());
+    Preprocessor preprocessor(lexer.lex(), this->include_paths);
     preprocessor.includes = this->includes;
 
     std::vector<Token> tokens = preprocessor.process();
