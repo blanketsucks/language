@@ -188,6 +188,8 @@ int main(int argc, char** argv) {
 
     if (args.format == OutputFormat::LLVM) {
         visitor.module->print(dest, nullptr);
+
+        delete target_machine;
         return 0;
     }
 

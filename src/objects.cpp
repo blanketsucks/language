@@ -12,44 +12,28 @@ Function::Function(
     bool is_intrinsic,
     ast::Attributes attrs
 ) : name(name), args(args), ret(ret), is_intrinsic(is_intrinsic) {
-    this->has_return = false;
     this->used = false;
     this->calls = {};
     this->attrs = attrs;
     this->locals = {};
 }
 
-StructMethod::StructMethod(
-    std::string name, 
-    std::vector<llvm::Type*> args, 
-    llvm::Type* ret, 
-    bool is_intrinsic, 
-    ast::Attributes attrs
-) : Function(name, args, ret, is_intrinsic, attrs) {
-    this->parent = nullptr;
-    this->is_inherited = false;
+Branch* Function::create_branch(std::string name) {
+    Branch* branch = new Branch(name, false);
+    this->branches.push_back(branch);
+
+    return branch;
 }
 
-StructMethod* StructMethod::from_function(Function* func) {
-    return new StructMethod(
-        func->name,
-        func->args,
-        func->ret,
-        func->is_intrinsic,
-        func->attrs
-    );
-}
+bool Function::has_return() {
+    for (Branch* branch : this->branches) {
+        if (branch->has_return) {
+            return true;
+        }
+    }
 
-StructMethod* StructMethod::copy() {
-    return new StructMethod(
-        this->name,
-        this->args,
-        this->ret,
-        this->is_intrinsic,
-        this->attrs
-    );
+    return false;
 }
-
 
 // Structures
 

@@ -89,8 +89,12 @@ void Visitor::cleanup() {
 }
 
 void Visitor::free() {
-    auto free = [](auto& map) {
+    auto free = [](std::map<std::string, Function*> map) {
         for (auto& pair : map) {
+            for (auto branch : pair.second->branches) {
+                delete branch;
+            }
+
             delete pair.second;
         }
 
@@ -104,9 +108,8 @@ void Visitor::free() {
         delete pair.second;
     }
 
-    // TODO: free nested namespaces and structures.
-    for (auto pair : this->namespaces) { 
-        free(pair.second->functions); 
+    for (auto pair : this->namespaces) {
+        // free(pair.second->functions);
         delete pair.second;
     }
 
@@ -747,6 +750,8 @@ Value Visitor::visit(ast::CallExpr* expr) {
             if (!expected->is_compatible(type)) {
                 std::string name = argument->getName().str();
                 ERROR(expr->start, "Argument '{s}' of type '{t}' does not match expected type '{t}'", name, type, expected);
+            } else {
+                value = this->cast(value, expected);
             }
         }
 
@@ -769,7 +774,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
     Function* func = this->current_function;
     if (expr->value) {
         llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
-        func->has_return = true;
+        func->branch->has_return = true;
 
         // Got rid of the typechecking for now.
         this->builder->CreateStore(value, func->return_value);
@@ -781,8 +786,10 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             ERROR(expr->start, "Function '{s}' expects a return value", func->name);
         }
 
-        func->has_return = true;
-        return this->builder->CreateRetVoid();
+        func->branch->has_return = true;
+        
+        this->builder->CreateBr(func->return_block);
+        return this->constants["null"];
     }
 }
 
@@ -811,10 +818,8 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 
     Function* func = new Function(pair.first, args, ret, pair.second, expr->attributes);
     if (this->current_struct) {
-        StructMethod* method = StructMethod::from_function(func);
-        method->parent = this->current_struct;
-
-        this->current_struct->methods[expr->name] = method;
+        func->parent = this->current_struct;
+        this->current_struct->methods[expr->name] = func;
     } else if (this->current_namespace) {
         this->current_namespace->functions[expr->name] = func;
     } else {
@@ -852,6 +857,9 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     llvm::BasicBlock* block = llvm::BasicBlock::Create(this->context, "", function);
     this->builder->SetInsertPoint(block);
 
+    Branch* branch = func->create_branch(name);
+    func->branch = branch;
+
     func->return_value = this->builder->CreateAlloca(function->getReturnType());
     func->return_block = llvm::BasicBlock::Create(this->context);
 
@@ -874,7 +882,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     } else {
         expr->body->accept(*this);
 
-        if (!func->has_return) {     
+        if (!func->has_return()) {
             if (func->ret->isVoidTy()) {
                 this->builder->CreateRetVoid();
             } else {
@@ -904,6 +912,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
 Value Visitor::visit(ast::IfExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(this, expr->condition->start);
+
+    Function* func = this->current_function;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(this->context, "", function);
@@ -913,6 +923,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateCondBr(condition, then, else_);
     this->builder->SetInsertPoint(then);
 
+    func->branch = func->create_branch("if.then");
     expr->body->accept(*this);
 
     /*
@@ -936,26 +947,30 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     */
     if (!expr->ebody) {
-        if (!this->current_function->has_return) {
+        if (!func->branch->has_return) {
             this->builder->CreateBr(else_);
 
             function->getBasicBlockList().push_back(else_);
             this->builder->SetInsertPoint(else_);
 
+            delete merge; // Delete the merge block since it is unused.
             return this->constants["null"];
         } else {
             function->getBasicBlockList().push_back(else_);
             this->builder->SetInsertPoint(else_);
-
+        
+            delete merge;
             return this->constants["null"];
         }
     }
 
-    if (this->current_function->has_return) {
+    if (func->branch->has_return) {
         function->getBasicBlockList().push_back(else_);
         this->builder->SetInsertPoint(else_);
 
         expr->ebody->accept(*this);
+        delete merge;
+
         return this->constants["null"];
     }
 
@@ -963,10 +978,11 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     function->getBasicBlockList().push_back(else_);
     this->builder->SetInsertPoint(else_);
-
+    
+    func->branch = func->create_branch("if.else");
     expr->ebody->accept(*this);
 
-    if (this->current_function->has_return) {
+    if (func->branch->has_return) {
         function->getBasicBlockList().push_back(merge);
         this->builder->SetInsertPoint(merge);
 
@@ -978,6 +994,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(merge);
     this->builder->SetInsertPoint(merge);
 
+    func->branch = func->branches.front();
     return this->constants["null"];
 }
 
@@ -1048,10 +1065,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
         }
 
         for (auto& pair : parent->methods) {
-            StructMethod* method = pair.second->copy();
-            method->is_inherited = true;
-
-            structure->methods[pair.first] = method;
+            structure->methods[pair.first] = pair.second;
         }
 
         parent->children.push_back(structure);
@@ -1134,8 +1148,8 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     Struct* structure = this->structs[name];
 
     if (structure->has_method(expr->attribute)) {
-        StructMethod* function = structure->methods[expr->attribute];
-        if (function->is_inherited) {
+        Function* function = structure->methods[expr->attribute];
+        if (function->parent != structure) {
             Struct* parent = function->parent;
             value = this->builder->CreateBitCast(value, parent->type->getPointerTo());
         }
@@ -1340,5 +1354,23 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {
-    ERROR(expr->start, "Not implemented"); exit(1);
+   Value parent = expr->parent->accept(*this);
+   if (!parent.ns) {
+        ERROR(expr->start, "Expected a namespace");
+    }
+
+    Namespace* ns = parent.ns;
+    for (auto member : expr->members) {
+        if (ns->structs.find(member) != ns->structs.end()) {
+            this->structs[member] = ns->structs[member];
+        } else if (ns->functions.find(member) != ns->functions.end()) {
+            this->functions[member] = ns->functions[member];
+        } else if (ns->namespaces.find(member) != ns->namespaces.end()) {
+            this->namespaces[member] = ns->namespaces[member];
+        } else {
+            ERROR(expr->start, "Member '{s}' does not exist in namespace '{s}'", member, ns->name);
+        }
+    }
+
+    return this->constants["null"];
 }

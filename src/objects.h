@@ -12,6 +12,13 @@
 class Visitor;
 struct Struct;
 
+struct Branch {
+    std::string name;
+    bool has_return;
+
+    Branch(std::string name, bool has_return) : name(name), has_return(has_return) {}
+};
+
 struct Function {
     std::string name;
     llvm::Type* ret;
@@ -22,30 +29,26 @@ struct Function {
     std::map<std::string, llvm::AllocaInst*> locals;
     std::map<std::string, llvm::GlobalVariable*> constants;
 
+    std::vector<Branch*> branches;
+    Branch* branch;
+
     llvm::AllocaInst* return_value;
     llvm::BasicBlock* return_block;
 
     // Keep track of the function calls inside this function so we can eliminate them if this function is unused.
     std::vector<Function*> calls;
 
+    Struct* parent;
+
     ast::Attributes attrs;
 
-    bool has_return;
     bool is_intrinsic;
     bool used;
 
     Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
-};
 
-struct StructMethod : public Function {
-    Struct* parent;
-    bool is_inherited;
-
-    StructMethod(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
-
-    StructMethod* copy();
-
-    static StructMethod* from_function(Function* func);
+    Branch* create_branch(std::string name);
+    bool has_return();
 };
 
 struct Struct {
@@ -53,7 +56,7 @@ struct Struct {
     llvm::StructType* type;
 
     std::map<std::string, llvm::Type*> fields;
-    std::map<std::string, StructMethod*> methods;
+    std::map<std::string, Function*> methods;
     std::map<std::string, llvm::Value*> locals;
 
     std::vector<Struct*> parents;

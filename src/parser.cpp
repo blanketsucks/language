@@ -783,6 +783,34 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             } else if (this->current.value == "asm") {
                 this->next();
                 return this->parse_inline_assembly();
+            } else if (this->current.value == "using") {
+                Location start = this->current.start;
+                this->next();
+
+                std::vector<std::string> members;
+                if (this->current != TokenType::LParen) {
+                    members.push_back(this->expect(TokenType::Identifier, "identifier").value);
+                } else {
+                    this->next();
+                    while (this->current != TokenType::RParen) {
+                        members.push_back(this->expect(TokenType::Identifier, "identifier").value);
+                        if (this->current != TokenType::Comma) {
+                            break;
+                        }
+                        this->next();
+                    }
+
+                    this->expect(TokenType::RParen, ")");
+                }
+
+                if (this->current != TokenType::Keyword && this->current.value != "from") {
+                    ERROR(this->current.start, "Expected 'from' keyword."); exit(1);
+                }
+
+                this->next();
+                auto parent = this->expr();
+
+                return std::make_unique<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
             } else {
                 ERROR(this->current.start, "Unknown keyword '{s}'", this->current.value); exit(1);
             }
