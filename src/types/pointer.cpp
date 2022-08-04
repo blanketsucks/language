@@ -34,28 +34,23 @@ std::string PointerType::str() {
 }
 
 bool PointerType::is_compatible(Type* other) {
-    if (!other->isPointer()) {
-        // This is case of when you have a `char*` and a `[char; 69]`
-        if (other->isArray()) {
-            Type* ty = other->getArrayElementType();
-            if (ty->isChar() && this->type->isChar()) {
-                return true;
-            }
+    // This is case of when you have a `char*` and a `[char; 69]`
+    if (other->isArray()) {
+        Type* ty = other->getArrayElementType();
+        if (ty->isChar() && this->type->isChar()) {
+            return true;
         }
-
-        return false;
     }
 
-    if (this->type->isVoid()) {
+    if (this->type->isVoid() && other->isPointer()) {
         return true; // `void*` acts like an any type.
     }
 
-    Type* element = other->getPointerElementType();
-    if (this->type->is_compatible(element)) {
-        return true;
-    } else {
+    if (!other->isPointer()) {
         return false;
     }
+
+    return this->type->is_compatible(other->getPointerElementType());
 }
 
 bool PointerType::is_compatible(llvm::Type* type) {

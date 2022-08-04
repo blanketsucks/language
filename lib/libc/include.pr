@@ -1,6 +1,11 @@
 $define __BEGIN_EXTERN_BLOCK extern "C" {
 $define __END_EXTERN_BLOCK }
 
+$define NULL 0
+
+$define SEEK_END 2
+$define SEEK_SET 0
+
 type FILE = int;
 
 namespace libc {

@@ -216,11 +216,15 @@ int main(int argc, char** argv) {
     }
 
     std::string compiler = args.libc ? SOURCE_COMPILER : "ld";
+    std::cout << compiler << '\n';
     std::vector<std::string> arguments = {
-        "-e", args.entry,
         "-o", args.output,
         object
     };
+
+    if (!args.libc || (args.entry != "main")) {
+        arguments.push_back("-e"); arguments.push_back(args.entry);
+    }
 
     std::string command = utils::fmt::format("{s} {s}", compiler, utils::fmt::join(" ", arguments));
     return std::system(command.c_str());

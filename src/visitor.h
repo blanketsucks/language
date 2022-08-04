@@ -92,6 +92,7 @@ public:
     Value visit(ast::InlineAssemblyExpr* expr);
     Value visit(ast::NamespaceExpr* expr);
     Value visit(ast::NamespaceAttributeExpr* expr);
+    Value visit(ast::UsingExpr* expr);
 
 };
 

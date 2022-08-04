@@ -201,10 +201,18 @@ Value WhileExpr::accept(Visitor& visitor) {
 }
 
 StructExpr::StructExpr(
-    Location start, Location end, std::string name, bool packed, bool opaque, std::map<std::string, Argument> fields, std::vector<std::unique_ptr<Expr>> methods
+    Location start, 
+    Location end, 
+    std::string name,
+    bool packed, 
+    bool opaque, 
+    std::vector<std::unique_ptr<Expr>> parents,
+    std::map<std::string, Argument> fields, 
+    std::vector<std::unique_ptr<Expr>> methods
 ) : Expr(start, end, ExprKind::Struct), name(name), packed(packed), opaque(opaque) {
     this->fields = std::move(fields);
     this->methods = std::move(methods);
+    this->parents = std::move(parents);
 }
 
 Value StructExpr::accept(Visitor& visitor) {
@@ -290,6 +298,16 @@ NamespaceAttributeExpr::NamespaceAttributeExpr(
     Location start, Location end, std::string attribute, std::unique_ptr<Expr> parent
 ) : Expr(start, end, ExprKind::NamespaceAttribute), attribute(attribute) {
     this->parent = std::move(parent);
+}
+
+UsingExpr::UsingExpr(
+    Location start, Location end, std::vector<std::string> members, std::unique_ptr<Expr> parent
+) : Expr(start, end, ExprKind::Using), members(members) {
+    this->parent = std::move(parent);
+}
+
+Value UsingExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
 }
 
 Value NamespaceAttributeExpr::accept(Visitor& visitor) {

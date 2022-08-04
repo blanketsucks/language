@@ -7,23 +7,24 @@ _NAMESPACE_STD
 
 namespace io {
 
-    struct WriteStream {
-        stream: FILE*;
+struct WriteStream {
+    stream: FILE*;
 
-        func from_fd(fd: int) -> WriteStream {
-            return WriteStream {
-                stream: libc::fdopen(fd, "w")
-            };
-        }
-
-        func write(self, buffer: str) -> int {
-            return libc::fprintf(self.stream, buffer);
-        }
+    func from_fd(fd: int) -> WriteStream {
+        return WriteStream {
+            stream: libc::fdopen(fd, "w")
+        };
     }
 
-    func stdout() -> WriteStream {
-        return WriteStream::from_fd(1);
+    func write(self, buffer: str) -> int {
+        return libc::fprintf(self.stream, buffer);
     }
+}
+
+func stdout() -> WriteStream {
+    return WriteStream::from_fd(1);
+}
+
 
 }
 

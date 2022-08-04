@@ -100,6 +100,9 @@ static std::vector<std::string> KEYWORDS = {
     "sizeof",
     "asm",
     "static_assert",
+    "using",
+    "from",
+    
     "$define",
     "$undef",
     "$error",

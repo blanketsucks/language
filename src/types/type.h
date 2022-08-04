@@ -39,12 +39,12 @@ public:
         Pointer
     };
 
-    Type(Value value, int size);
+    Type(Value value, size_t size);
     virtual ~Type() = default;
 
     bool operator==(Value other);
 
-    static Type* create(Value value, int size);
+    static Type* create(Value value, size_t size);
     static Type* fromLLVMType(llvm::Type* type);
     virtual llvm::Type* toLLVMType(llvm::LLVMContext& context);
 

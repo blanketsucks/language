@@ -16,7 +16,41 @@ Function::Function(
     this->used = false;
     this->calls = {};
     this->attrs = attrs;
+    this->locals = {};
 }
+
+StructMethod::StructMethod(
+    std::string name, 
+    std::vector<llvm::Type*> args, 
+    llvm::Type* ret, 
+    bool is_intrinsic, 
+    ast::Attributes attrs
+) : Function(name, args, ret, is_intrinsic, attrs) {
+    this->parent = nullptr;
+    this->is_inherited = false;
+}
+
+StructMethod* StructMethod::from_function(Function* func) {
+    return new StructMethod(
+        func->name,
+        func->args,
+        func->ret,
+        func->is_intrinsic,
+        func->attrs
+    );
+}
+
+StructMethod* StructMethod::copy() {
+    return new StructMethod(
+        this->name,
+        this->args,
+        this->ret,
+        this->is_intrinsic,
+        this->attrs
+    );
+}
+
+
 // Structures
 
 Struct::Struct(

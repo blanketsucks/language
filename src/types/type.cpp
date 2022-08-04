@@ -7,14 +7,14 @@
 #include "pointer.h"
 #include "array.h"
 
-Type::Type(Type::Value value, int size) : value(value), size(size) {}
+Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
 
 
 bool Type::operator==(Type::Value other) {
     return this->value == other;
 } 
 
-Type* Type::create(Type::Value value, int size) {
+Type* Type::create(Type::Value value, size_t size) {
     return new Type(value, size);
 }
 

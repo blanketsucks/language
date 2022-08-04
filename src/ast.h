@@ -49,7 +49,8 @@ public:
         Sizeof,
         Assembly,
         Namespace,
-        NamespaceAttribute
+        NamespaceAttribute,
+        Using
     };
 
     Value value;
@@ -246,10 +247,20 @@ public:
     std::string name;
     bool packed;
     bool opaque;
+    std::vector<std::unique_ptr<Expr>> parents;
     std::map<std::string, Argument> fields;
     std::vector<std::unique_ptr<Expr>> methods;
 
-    StructExpr(Location start, Location end, std::string name, bool packed, bool opaque, std::map<std::string, Argument> fields = {}, std::vector<std::unique_ptr<Expr>> methods = {});
+    StructExpr(
+        Location start, 
+        Location end, 
+        std::string name, 
+        bool packed, 
+        bool opaque, 
+        std::vector<std::unique_ptr<Expr>> parents = {}, 
+        std::map<std::string, Argument> fields = {}, 
+        std::vector<std::unique_ptr<Expr>> methods = {}
+    );
     Value accept(Visitor& visitor) override;
 };
 
@@ -333,6 +344,15 @@ public:
     std::string attribute;
 
     NamespaceAttributeExpr(Location start, Location end, std::string attribute, std::unique_ptr<Expr> parent);
+    Value accept(Visitor& visitor) override;
+};
+
+class UsingExpr : public Expr {
+public:
+    std::vector<std::string> members;
+    std::unique_ptr<Expr> parent;
+
+    UsingExpr(Location start, Location end, std::vector<std::string> members, std::unique_ptr<Expr> parent);
     Value accept(Visitor& visitor) override;
 };
 

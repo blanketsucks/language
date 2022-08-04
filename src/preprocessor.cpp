@@ -180,10 +180,10 @@ std::ifstream Preprocessor::search_include_paths(std::string path) {
 void Preprocessor::parse_include(std::string path) {
     std::ifstream file = this->search_include_paths(path);
     if (this->includes.find(path) != this->includes.end()) {
-        // Include inc = this->includes[path];
-        // if (inc.state != IncludeState::Processed) {
-        //     utils::error(this->current.start, "Circluar dependency detected in include path: " + path);
-        // }
+        Include inc = this->includes[path];
+        if (inc.state != IncludeState::Processed) {
+            ERROR(this->current.start, "Circluar dependency detected in include path '{s}'", path);
+        }
 
         this->next();
         return;
@@ -192,8 +192,8 @@ void Preprocessor::parse_include(std::string path) {
     this->next();
     Lexer lexer(file, path);
 
-    Include inc = {path, IncludeState::Initialized};
-    this->includes[path] = inc;
+    Include include = {path, IncludeState::Initialized};
+    this->includes[path] = include;
 
     Preprocessor preprocessor(lexer.lex(), this->include_paths);
     preprocessor.includes = this->includes;
@@ -203,8 +203,10 @@ void Preprocessor::parse_include(std::string path) {
         tokens.pop_back();
     }
 
-    inc.state = IncludeState::Processed;
+    include.state = IncludeState::Processed;
+
     this->update(tokens);
+    this->update(preprocessor.macros);
 
     if (file.is_open()) {
         file.close();

@@ -324,8 +324,18 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->create_token(TokenType::Div, "/"));
             this->next();
         } else if (this->current == '=') {
-            tokens.push_back(this->create_token(TokenType::Assign, "="));
-            this->next();
+            Location start = this->loc();
+            Token token;
+
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                token = this->create_token(TokenType::Eq, start, "==");
+            } else {
+                token = this->create_token(TokenType::Assign, "=");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == '>') {
             Location start = this->loc();
             Token token;

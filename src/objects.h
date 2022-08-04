@@ -16,15 +16,17 @@ struct Function {
     std::string name;
     llvm::Type* ret;
 
+    llvm::Function* value;
     std::vector<llvm::Type*> args;
     std::map<int, llvm::Value*> defaults;
     std::map<std::string, llvm::AllocaInst*> locals;
-    std::map<std::string, llvm::Value*> constants;
+    std::map<std::string, llvm::GlobalVariable*> constants;
+
+    llvm::AllocaInst* return_value;
+    llvm::BasicBlock* return_block;
 
     // Keep track of the function calls inside this function so we can eliminate them if this function is unused.
     std::vector<Function*> calls;
-    
-
 
     ast::Attributes attrs;
 
@@ -35,15 +37,26 @@ struct Function {
     Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
 };
 
+struct StructMethod : public Function {
+    Struct* parent;
+    bool is_inherited;
+
+    StructMethod(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
+
+    StructMethod* copy();
+
+    static StructMethod* from_function(Function* func);
+};
+
 struct Struct {
     std::string name;
     llvm::StructType* type;
 
     std::map<std::string, llvm::Type*> fields;
-    std::map<std::string, Function*> methods;
+    std::map<std::string, StructMethod*> methods;
     std::map<std::string, llvm::Value*> locals;
 
-    Struct* parent;
+    std::vector<Struct*> parents;
     std::vector<Struct*> children;
 
     bool opaque;

@@ -265,14 +265,15 @@ std::unique_ptr<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageS
 
 std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
     Location start = this->current.start;
-    std::unique_ptr<ast::Expr> condition = this->expr(false);
+    this->expect(TokenType::LParen, "(");
+
+    auto condition = this->expr(false);
+    this->expect(TokenType::RParen, ")");
 
     this->expect(TokenType::LBrace, "{");
     auto body = this->parse_block();
     
     Location end = body->end;
-    this->next();
-
     std::unique_ptr<ast::BlockExpr> else_body = nullptr;
     if (this->current == TokenType::Keyword && this->current.value == "else") {
         this->next();
@@ -307,11 +308,24 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         return std::make_unique<ast::StructExpr>(start, this->current.end, name, packed, true);
     }
 
-    if (this->current != TokenType::LBrace) {
-        ERROR(this->current.start, "Expected {"); exit(1);
+    std::vector<std::unique_ptr<ast::Expr>> parents;
+
+    if (this->current == TokenType::LParen) {
+        this->next();
+        while (this->current != TokenType::RParen) {
+            parents.push_back(this->expr(false));
+            if (this->current != TokenType::Comma) {
+                break;
+            }
+
+            this->next();
+        }
+
+        this->expect(TokenType::RParen, ")");
     }
 
-    this->next();
+    this->expect(TokenType::LBrace, "{");
+
     std::map<std::string, ast::Argument> fields;
     std::vector<std::unique_ptr<ast::Expr>> methods;
     std::vector<Type*> types;
@@ -358,7 +372,9 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     structure->setFields(types);
 
     this->next();
-    return std::make_unique<ast::StructExpr>(start, end, name, packed, false, std::move(fields), std::move(methods));    
+    return std::make_unique<ast::StructExpr>(
+        start, end, name, packed, false, std::move(parents), std::move(fields), std::move(methods)
+    );    
 }
 
 std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
@@ -1130,7 +1146,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                 this->expect(TokenType::LParen, "(");
                 Type* type = this->parse_type(this->current.value);
 
-                Location end = this->expect(TokenType::LParen, ")").end;
+                Location end = this->expect(TokenType::RParen, ")").end;
                 return std::make_unique<ast::SizeofExpr>(start, end, type);
             } else {
                 ERROR(this->current.start, "Unexpected keyword."); exit(1);
