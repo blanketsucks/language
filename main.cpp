@@ -216,7 +216,6 @@ int main(int argc, char** argv) {
     }
 
     std::string compiler = args.libc ? SOURCE_COMPILER : "ld";
-    std::cout << compiler << '\n';
     std::vector<std::string> arguments = {
         "-o", args.output,
         object
