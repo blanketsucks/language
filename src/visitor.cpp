@@ -470,7 +470,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 return this->builder->CreateNeg(value);
             }
         case TokenType::Not:
-            return this->builder->CreateICmpEQ(this->cast(value, BooleanType), this->constants["true"]);
+            return this->builder->CreateNot(this->cast(value, BooleanType));
         case TokenType::BinaryNot:
             return this->builder->CreateNot(value);
         case TokenType::Mul: {

@@ -14,7 +14,7 @@ func main(argc: int, argv: char**) -> int {
     }
 
     let file = fopen(argv[1], "r");
-    if (!file) {
+    if (file == 0) {
         # We don't have access to `errno` so we use this instead
         # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
         let errno = *__errno_location();
