@@ -1,0 +1,51 @@
+$include "libc/include.pr"
+
+using (
+    printf,
+    fopen, fseek, ftell, fread, ferror, fclose, ferror, feof,
+    malloc, free, 
+    strerror, __errno_location
+) from libc;
+
+func main(argc: int, argv: char**) -> int {
+    if (argc != 2) {
+        printf("Usage: %s <filename>\n", argv[0]);
+        return 1;
+    }
+
+    let file = fopen(argv[1], "r");
+    if (!file) {
+        # We don't have access to `errno` so we use this instead
+        # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
+        let errno = *__errno_location();
+
+        printf("Could not open file '%s': %s\n", argv[1], strerror(errno));
+        return 1;
+    }
+
+    fseek(file, 0, SEEK_END);
+    let size = ftell(file);
+
+    fseek(file, 0, SEEK_SET);
+    let buffer = malloc(size) as char*;
+
+    let n = fread(buffer, 1, size, file);
+    if (n != size) {
+        if (ferror(file)) {
+            let errno = *__errno_location();
+            printf("Could not read file '%s': %s\n", argv[1], strerror(errno));
+
+            return 1;
+        } if (feof(file)) {
+            printf("Could not read file '%s': Reached EOF.", argv[1]);
+            return 1;
+        }
+    }
+
+    printf("%s\n", buffer);
+
+    free(buffer);
+    fclose(file);
+
+    return 0;
+}

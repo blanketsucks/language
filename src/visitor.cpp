@@ -223,7 +223,7 @@ Value Visitor::get_function(std::string name) {
         return Value::with_function(this->module->getFunction(this->is_intrinsic(name).first), func);
     }
 
-    return NULL;
+    return nullptr;
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {
@@ -278,7 +278,7 @@ Value Visitor::visit(ast::StringExpr* expr) {
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
-    Value last = NULL;
+    Value last = nullptr;
     for (auto& stmt : expr->block) {
         if (!stmt) {
             continue;
@@ -470,7 +470,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 return this->builder->CreateNeg(value);
             }
         case TokenType::Not:
-            return this->builder->CreateNot(this->cast(value, BooleanType));
+            return this->builder->CreateICmpEQ(this->cast(value, BooleanType), this->constants["true"]);
         case TokenType::BinaryNot:
             return this->builder->CreateNot(value);
         case TokenType::Mul: {
@@ -509,6 +509,8 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
         default:
             _UNREACHABLE
     }
+
+    return nullptr;
 }
 
 Value Visitor::visit(ast::BinaryOpExpr* expr) {
@@ -670,6 +672,8 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         default:
             _UNREACHABLE
     }
+
+    return nullptr;
 }
 
 Value Visitor::visit(ast::CallExpr* expr) {
@@ -677,6 +681,8 @@ Value Visitor::visit(ast::CallExpr* expr) {
     Function* func = callable.function;
 
     size_t argc = expr->args.size();
+    bool is_constructor = false;
+
     if (callable.structure) {
         Struct* structure = callable.structure;
         llvm::AllocaInst* instance = this->builder->CreateAlloca(structure->type);
@@ -704,6 +710,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         func = structure->methods["constructor"];
 
         callable.value = this->module->getFunction(func->name);
+        is_constructor = true;
     } else {
         if (callable.type()->isPointerTy()) {
             llvm::Type* type = callable.type()->getPointerElementType();
@@ -763,7 +770,12 @@ Value Visitor::visit(ast::CallExpr* expr) {
         this->current_function->calls.push_back(func);
     }
 
-    return this->builder->CreateCall(function, args);
+    llvm::Value* ret = this->builder->CreateCall(function, args);
+    if (is_constructor) {
+        return callable.parent;
+    }
+
+    return ret;
 }
 
 Value Visitor::visit(ast::ReturnExpr* expr) {
@@ -780,7 +792,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         this->builder->CreateStore(value, func->return_value);
         this->builder->CreateBr(func->return_block);
 
-        return value;
+        return nullptr;
     } else {
         if (!func->ret->isVoidTy()) {
             ERROR(expr->start, "Function '{s}' expects a return value", func->name);
@@ -789,7 +801,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         func->branch->has_return = true;
         
         this->builder->CreateBr(func->return_block);
-        return this->constants["null"];
+        return nullptr;
     }
 }
 
@@ -918,12 +930,13 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(this->context, "", function);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(this->context);
-    llvm::BasicBlock* merge = llvm::BasicBlock::Create(this->context);
 
-    this->builder->CreateCondBr(condition, then, else_);
+    this->builder->CreateCondBr(this->cast(condition, BooleanType), then, else_);
     this->builder->SetInsertPoint(then);
 
+    Branch* branch = func->branch;
     func->branch = func->create_branch("if.then");
+
     expr->body->accept(*this);
 
     /*
@@ -953,14 +966,14 @@ Value Visitor::visit(ast::IfExpr* expr) {
             function->getBasicBlockList().push_back(else_);
             this->builder->SetInsertPoint(else_);
 
-            delete merge; // Delete the merge block since it is unused.
-            return this->constants["null"];
+            func->branch = branch;
+            return nullptr; 
         } else {
             function->getBasicBlockList().push_back(else_);
             this->builder->SetInsertPoint(else_);
         
-            delete merge;
-            return this->constants["null"];
+            func->branch = branch;
+            return nullptr;
         }
     }
 
@@ -969,11 +982,12 @@ Value Visitor::visit(ast::IfExpr* expr) {
         this->builder->SetInsertPoint(else_);
 
         expr->ebody->accept(*this);
-        delete merge;
+        func->branch = branch;
 
-        return this->constants["null"];
+        return nullptr;
     }
 
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(this->context);
     this->builder->CreateBr(merge);
 
     function->getBasicBlockList().push_back(else_);
@@ -986,7 +1000,8 @@ Value Visitor::visit(ast::IfExpr* expr) {
         function->getBasicBlockList().push_back(merge);
         this->builder->SetInsertPoint(merge);
 
-        return this->constants["null"];
+        func->branch = branch;
+        return nullptr;
     }
 
     this->builder->CreateBr(merge);
@@ -994,23 +1009,34 @@ Value Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(merge);
     this->builder->SetInsertPoint(merge);
 
-    func->branch = func->branches.front();
-    return this->constants["null"];
+    func->branch = branch;
+    return nullptr;
 }
 
 Value Visitor::visit(ast::WhileExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(this, expr->condition->start);
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
+    Function* func = this->current_function;
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(this->context, "", function);
     llvm::BasicBlock* end = llvm::BasicBlock::Create(this->context);
 
+    Branch* branch = func->branch;
     this->builder->CreateCondBr(condition, loop, end);
 
     function->getBasicBlockList().push_back(loop);
     this->builder->SetInsertPoint(loop);
 
+    func->branch = func->create_branch("while.loop");
     expr->body->accept(*this);
+
+    if (func->branch->has_return) {
+        function->getBasicBlockList().push_back(end);
+        this->builder->SetInsertPoint(end);
+
+        func->branch = branch;
+        return this->constants["null"];
+    }
 
     loop = this->builder->GetInsertBlock();
 
@@ -1020,6 +1046,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     function->getBasicBlockList().push_back(end);
     this->builder->SetInsertPoint(end);
 
+    func->branch = branch;
     return this->constants["null"];
 }
 
@@ -1085,8 +1112,15 @@ Value Visitor::visit(ast::StructExpr* expr) {
         method->accept(*this);
     }
 
+    if (structure->has_method("constructor")) {
+        Function* constructor = structure->methods["constructor"];
+        if (constructor->ret != this->builder->getVoidTy()) {
+            ERROR(expr->start, "Constructor must return void");
+        }
+    }
+
     this->current_struct = nullptr;
-    return llvm::ConstantInt::getNullValue(llvm::IntegerType::getInt1Ty(this->context));
+    return nullptr;
 }
 
 Value Visitor::visit(ast::ConstructorExpr* expr) {
@@ -1200,7 +1234,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         return this->builder->CreateLoad(element, ptr);
     }
     
-    TODO("Implement element indexing for non-pointer types");
+    return nullptr;
 }
 
 Value Visitor::visit(ast::CastExpr* expr) {
@@ -1314,7 +1348,7 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
     }
 
     this->current_namespace = nullptr;
-    return this->constants["null"];
+    return nullptr;
 }
 
 Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
@@ -1351,6 +1385,8 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     } else {
         ERROR(expr->start, "Attribute '{s}' does not exist in namespace '{s}'", expr->attribute, ns->name); exit(1);
     }
+
+    return nullptr;
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {
@@ -1372,5 +1408,5 @@ Value Visitor::visit(ast::UsingExpr* expr) {
         }
     }
 
-    return this->constants["null"];
+    return nullptr;
 }

@@ -812,7 +812,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
 
                 return std::make_unique<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
             } else {
-                ERROR(this->current.start, "Unknown keyword '{s}'", this->current.value); exit(1);
+                ERROR(this->current.start, "Expected an expression"); exit(1);
             }
 
             break;
@@ -1009,9 +1009,9 @@ std::unique_ptr<ast::Expr> Parser::unary() {
 
 std::unique_ptr<ast::Expr> Parser::call() {
     Location start = this->current.start;
-    auto expr = this->factor();
 
-    if (this->current == TokenType::LParen) {
+    auto expr = this->factor();
+    while (this->current == TokenType::LParen) {
         this->next();
         std::vector<std::unique_ptr<ast::Expr>> args;
 
@@ -1101,7 +1101,7 @@ std::unique_ptr<ast::Expr> Parser::attr(Location start, std::unique_ptr<ast::Exp
     if (this->current == TokenType::LBracket) {
         return this->element(start, std::move(expr));
     }
-
+    
     return expr;
 }
 

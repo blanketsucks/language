@@ -92,7 +92,7 @@ Value::Value(
 
 llvm::Value* Value::unwrap(Visitor* visitor, Location location) {
     if (!this->value) {
-        ERROR(location, "Value is null");
+        ERROR(location, "Invalid operand type");
     }
 
     return this->value;

@@ -35,18 +35,7 @@ You can run these examples like the following
 $ ./proton hello.pr
 $ ./hello
 Hello, world!
-Segmentation fault
-``` 
-I have no idea why it segfaults, but the following doesn't
-
-```console
-$ ./proton hello.pr -c
-$ gcc hello.o -o hello
-$ ./hello
-Hello, world!
 ```
-
-The `-c` flag compiles the code down to an object file.
 
 ## Building
 

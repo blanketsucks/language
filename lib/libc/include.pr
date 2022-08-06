@@ -124,8 +124,12 @@ namespace libc {
 
     func exit(code: int) -> void;
 
-
     func atexit(f: ());
+
+    func strerror(err: int) -> char*;
+
+    func __errno_location() -> int*;
+    func __h_errno_location() -> int*;
 
     __END_EXTERN_BLOCK
 }
