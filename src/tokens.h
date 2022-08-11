@@ -31,6 +31,11 @@ enum class TokenType {
     Rsh,
     Lsh,
 
+    IAdd,
+    IMinus,
+    IMul,
+    IDiv,
+
     Eq,
     Neq,
     Gt,
@@ -88,6 +93,7 @@ static std::vector<std::string> KEYWORDS = {
     "if",
     "else",
     "while",
+    "for",
     "let",
     "const",
     "struct",
@@ -102,7 +108,9 @@ static std::vector<std::string> KEYWORDS = {
     "static_assert",
     "using",
     "from",
-    
+    "defer",
+    "private",
+
     "$define",
     "$undef",
     "$error",
@@ -133,6 +141,11 @@ static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
     std::make_pair(TokenType::Rsh, 20),
     std::make_pair(TokenType::Lsh, 20),
 
+    std::make_pair(TokenType::IAdd, 25),
+    std::make_pair(TokenType::IMinus, 25),
+    std::make_pair(TokenType::IMul, 25),
+    std::make_pair(TokenType::IDiv, 25),
+
     std::make_pair(TokenType::Add, 30),
     std::make_pair(TokenType::Minus, 30),
     std::make_pair(TokenType::Div, 40),
@@ -149,6 +162,13 @@ static std::vector<TokenType> UNARY_OPERATORS = {
     TokenType::Inc,
     TokenType::Dec,
 };
+
+static std::map<TokenType, TokenType> INPLACE_OPERATORS {
+    {TokenType::IAdd, TokenType::Add},
+    {TokenType::IMinus, TokenType::Minus},
+    {TokenType::IMul, TokenType::Mul},
+    {TokenType::IDiv, TokenType::Div},
+};  
 
 
 #endif

@@ -35,12 +35,15 @@ public:
         Array,
         UnaryOp,
         BinaryOp,
+        InplaceBinaryOp,
         Call,
         Return,
         Prototype,
         Function,
+        Defer,
         If,
         While,
+        For,
         Struct,
         Constructor,
         Attribute,
@@ -86,10 +89,12 @@ public:
 
     template<class T> T* cast() {
         T* value = dynamic_cast<T*>(this);
-        assert(value != nullptr && "Invalid cast.");
+        assert(value != nullptr && "Invalid cast");
 
         return value; 
     }
+
+    bool is_constant() { return this->kind.in({ExprKind::Integer, ExprKind::Float, ExprKind::String}); }
 
     virtual ~Expr() = default;
     virtual Value accept(Visitor& visitor) = 0;
@@ -98,7 +103,6 @@ public:
 struct Argument {
     std::string name;
     Type* type;
-    std::unique_ptr<Expr> default_value = nullptr;
 };
 
 class BlockExpr : public Expr {
@@ -185,6 +189,15 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class InplaceBinaryOpExpr : public Expr {
+public:
+    std::unique_ptr<Expr> left, right;
+    TokenType op;
+
+    InplaceBinaryOpExpr(Location start, Location end, TokenType op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right);
+    Value accept(Visitor& visitor) override;
+};
+
 class CallExpr : public Expr {
 public:
     std::unique_ptr<ast::Expr> callee;
@@ -223,6 +236,14 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class DeferExpr : public Expr {
+public:
+    std::unique_ptr<Expr> expr;
+
+    DeferExpr(Location start, Location end, std::unique_ptr<Expr> expr);
+    Value accept(Visitor& visitor) override;
+};
+
 class IfExpr : public Expr {
 public:
     std::unique_ptr<Expr> condition;
@@ -242,13 +263,29 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class ForExpr : public Expr {
+public:
+    std::string name;
+    std::unique_ptr<Expr> iterator;
+    std::unique_ptr<BlockExpr> body;
+
+    ForExpr(Location start, Location end, std::string name, std::unique_ptr<Expr> iterator, std::unique_ptr<BlockExpr> body);
+    Value accept(Visitor& visitor) override;
+};
+
+struct StructField {
+    std::string name;
+    Type* type;
+    bool is_private = false;
+};
+
 class StructExpr : public Expr {
 public:
     std::string name;
     bool packed;
     bool opaque;
     std::vector<std::unique_ptr<Expr>> parents;
-    std::map<std::string, Argument> fields;
+    std::map<std::string, StructField> fields;
     std::vector<std::unique_ptr<Expr>> methods;
 
     StructExpr(
@@ -258,9 +295,10 @@ public:
         bool packed, 
         bool opaque, 
         std::vector<std::unique_ptr<Expr>> parents = {}, 
-        std::map<std::string, Argument> fields = {}, 
+        std::map<std::string, StructField> fields = {}, 
         std::vector<std::unique_ptr<Expr>> methods = {}
     );
+
     Value accept(Visitor& visitor) override;
 };
 
@@ -354,13 +392,6 @@ public:
 
     UsingExpr(Location start, Location end, std::vector<std::string> members, std::unique_ptr<Expr> parent);
     Value accept(Visitor& visitor) override;
-};
-
-class Program {
-public:
-    std::vector<std::unique_ptr<Expr>> ast;
-
-    Program(std::vector<std::unique_ptr<Expr>> ast);
 };
 
 }

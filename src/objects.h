@@ -35,10 +35,12 @@ struct Function {
     llvm::AllocaInst* return_value;
     llvm::BasicBlock* return_block;
 
-    // Keep track of the function calls inside this function so we can eliminate them if this function is unused.
     std::vector<Function*> calls;
+    std::vector<ast::Expr*> defers;
 
+    // Structure related attributes
     Struct* parent;
+    bool is_private;
 
     ast::Attributes attrs;
 
@@ -49,13 +51,21 @@ struct Function {
 
     Branch* create_branch(std::string name);
     bool has_return();
+
+    void defer(Visitor& visitor);
+};
+
+struct StructField {
+    std::string name;
+    llvm::Type* type;
+    bool is_private;
 };
 
 struct Struct {
     std::string name;
     llvm::StructType* type;
 
-    std::map<std::string, llvm::Type*> fields;
+    std::map<std::string, StructField> fields;
     std::map<std::string, Function*> methods;
     std::map<std::string, llvm::Value*> locals;
 
@@ -64,9 +74,11 @@ struct Struct {
 
     bool opaque;
 
-    Struct(std::string name, bool opaque, llvm::StructType* type, std::map<std::string, llvm::Type*> fields);
+    Struct(std::string name, bool opaque, llvm::StructType* type, std::map<std::string, StructField> fields);
 
     int get_field_index(std::string name);
+    std::vector<StructField> get_fields(bool with_private = false);
+
     bool has_method(const std::string& name);
     llvm::Value* get_variable(std::string name);
 };

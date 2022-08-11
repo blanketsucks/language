@@ -165,7 +165,7 @@ std::string utils::replace_extension(const std::string& filename, std::string ex
 }
 
 void utils::error(Location location, const std::string& message, bool fatal) {
-    std::cerr << fmt::format("{bold|white}: {bold|red}: {s}", location.format().c_str(), "error", message);
+    std::cerr << fmt::format("{bold|white} {bold|red} {s}", location.format().c_str(), "error:", message);
     std::cerr << std::endl;
     
     if (fatal) {
@@ -174,7 +174,7 @@ void utils::error(Location location, const std::string& message, bool fatal) {
 }
 
 void utils::note(Location location, const std::string& message) {
-    std::cout << fmt::format("{bold|white}: {bold|magenta}: {s}", location.format().c_str(), "note", message);
+    std::cout << fmt::format("{bold|white} {bold|magenta} {s}", location.format().c_str(), "note:", message);
     std::cout << std::endl;
 }
 

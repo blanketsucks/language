@@ -45,6 +45,8 @@ public:
     void dump(llvm::raw_ostream& stream);
 
     std::string format_name(std::string name);
+
+    bool is_iterable(llvm::Value* value);
     std::pair<std::string, bool> is_intrinsic(std::string name);
     
     std::pair<llvm::Value*, bool> get_variable(std::string name);
@@ -57,15 +59,19 @@ public:
     llvm::Value* cast(llvm::Value* value, Type* type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
 
+    llvm::Value* get_struct_field(ast::AttributeExpr* expr);
+    llvm::Value* get_array_element(ast::ElementExpr* expr);
+
     llvm::Type* get_llvm_type(Type* name);
     Type* from_llvm_type(llvm::Type* type);
 
+    llvm::Constant* create_constant(std::string name, llvm::Constant* value);
     llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type);
     llvm::Function* create_function(std::string name, llvm::Type* ret, std::vector<llvm::Type*> args, bool has_varargs, llvm::Function::LinkageTypes linkage);
 
     llvm::Value* unwrap(ast::Expr* expr);
 
-    void visit(std::unique_ptr<ast::Program> program);
+    void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
     Value visit(ast::BlockExpr* expr);
     Value visit(ast::IntegerExpr* expr);
@@ -77,12 +83,15 @@ public:
     Value visit(ast::ArrayExpr* expr);
     Value visit(ast::UnaryOpExpr* expr);
     Value visit(ast::BinaryOpExpr* expr);
+    Value visit(ast::InplaceBinaryOpExpr* expr);
     Value visit(ast::CallExpr* expr);
     Value visit(ast::ReturnExpr* expr);
     Value visit(ast::PrototypeExpr* expr);
     Value visit(ast::FunctionExpr* expr);
+    Value visit(ast::DeferExpr* expr);
     Value visit(ast::IfExpr* expr);
     Value visit(ast::WhileExpr* expr);
+    Value visit(ast::ForExpr* expr);
     Value visit(ast::StructExpr* expr);
     Value visit(ast::ConstructorExpr* expr);
     Value visit(ast::AttributeExpr* expr);

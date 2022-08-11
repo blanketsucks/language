@@ -13,8 +13,11 @@ Function::Function(
     ast::Attributes attrs
 ) : name(name), args(args), ret(ret), is_intrinsic(is_intrinsic) {
     this->used = false;
-    this->calls = {};
+    this->is_private = attrs.has("private");
     this->attrs = attrs;
+    
+    this->calls = {};
+    this->defers = {};
     this->locals = {};
 }
 
@@ -35,13 +38,19 @@ bool Function::has_return() {
     return false;
 }
 
+void Function::defer(Visitor& visitor) {
+    for (auto expr : this->defers) {
+        expr->accept(visitor);
+    }
+}
+
 // Structures
 
 Struct::Struct(
     std::string name,
     bool opaque,
     llvm::StructType* type,
-    std::map<std::string, llvm::Type*> fields
+    std::map<std::string, StructField> fields
 ) : name(name), opaque(opaque), type(type), fields(fields) {
     this->methods = {};
     this->locals = {};
@@ -58,6 +67,21 @@ int Struct::get_field_index(std::string name) {
     }
 
     return std::distance(this->fields.begin(), iter);
+}
+
+std::vector<StructField> Struct::get_fields(bool with_private) {
+    std::vector<StructField> fields;
+    for (auto pair : this->fields) {
+        if (pair.second.is_private) {
+            if (with_private) {
+                fields.push_back(pair.second);
+            }   
+        } else {
+            fields.push_back(pair.second);
+        }
+    }
+
+    return fields;
 }
 
 llvm::Value* Struct::get_variable(std::string name) {
@@ -92,7 +116,7 @@ Value::Value(
 
 llvm::Value* Value::unwrap(Visitor* visitor, Location location) {
     if (!this->value) {
-        ERROR(location, "Invalid operand type");
+        ERROR(location, "Expected an expression");
     }
 
     return this->value;

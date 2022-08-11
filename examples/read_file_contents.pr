@@ -14,7 +14,7 @@ func main(argc: int, argv: char**) -> int {
     }
 
     let file = fopen(argv[1], "r");
-    if (file == 0) {
+    if (!file) {
         # We don't have access to `errno` so we use this instead
         # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
         let errno = *__errno_location();
@@ -23,11 +23,14 @@ func main(argc: int, argv: char**) -> int {
         return 1;
     }
 
+    defer fclose(file);
     fseek(file, 0, SEEK_END);
-    let size = ftell(file);
 
+    let size = ftell(file);
     fseek(file, 0, SEEK_SET);
+
     let buffer = malloc(size) as char*;
+    defer free(buffer);
 
     let n = fread(buffer, 1, size, file);
     if (n != size) {
@@ -43,9 +46,5 @@ func main(argc: int, argv: char**) -> int {
     }
 
     printf("%s\n", buffer);
-
-    free(buffer);
-    fclose(file);
-
     return 0;
 }

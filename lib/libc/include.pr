@@ -29,6 +29,7 @@ namespace libc {
     func fputc(c: int, stream: FILE*) -> int;
     func fputs(s: str, stream: FILE*) -> int;
     func putc(c: int, stream: FILE*) -> int;
+    [[allow_dead_code]] func putchar(c: int) -> int;
     [[allow_dead_code]] func puts(s: str) -> int;
 
     func fread(buf: str, size: int, n: int, stream: FILE*) -> int;

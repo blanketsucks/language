@@ -326,7 +326,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 
     this->expect(TokenType::LBrace, "{");
 
-    std::map<std::string, ast::Argument> fields;
+    std::map<std::string, ast::StructField> fields;
     std::vector<std::unique_ptr<ast::Expr>> methods;
     std::vector<Type*> types;
 
@@ -335,6 +335,13 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 
     this->types[name] = structure;
     while (this->current != TokenType::RBrace) {
+        bool is_private = false;
+
+        if (this->current == TokenType::Keyword && this->current.value == "private") {
+            is_private = true;
+            this->next();
+        }
+
         if (this->current != TokenType::Identifier && (this->current != TokenType::Keyword && this->current.value != "func")) {
             ERROR(this->current.start, "Expected field name or function definition"); exit(1);
         }
@@ -343,6 +350,10 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
             this->next();
 
             auto definition = this->parse_function_definition();
+            if (is_private) {
+                definition->attributes.add("private");
+            }
+
             methods.push_back(std::move(definition));
         } else {
             std::string name = this->current.value;
@@ -355,7 +366,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
             this->next();
             types.push_back(this->parse_type(this->current.value));
 
-            fields[name] = {name, types.back()};
+            fields[name] = {name, types.back(), is_private};
             if (this->current != TokenType::SemiColon) {
                 ERROR(this->current.start, "Expected ;"); exit(1);
             }
@@ -653,7 +664,7 @@ std::unique_ptr<ast::InlineAssemblyExpr> Parser::parse_inline_assembly() {
     return std::make_unique<ast::InlineAssemblyExpr>(start, this->current.end, assembly, std::move(inputs), std::move(outputs), clobbers);
 }
 
-std::unique_ptr<ast::Program> Parser::statements() {
+std::vector<std::unique_ptr<ast::Expr>> Parser::statements() {
     std::vector<std::unique_ptr<ast::Expr>> statements;
 
     while (this->current != TokenType::EOS) {
@@ -666,7 +677,7 @@ std::unique_ptr<ast::Program> Parser::statements() {
         }
     }
 
-    return std::make_unique<ast::Program>(std::move(statements));
+    return statements;
 }
 
 std::unique_ptr<ast::Expr> Parser::statement() {
@@ -741,6 +752,25 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 auto body = this->parse_block();
 
                 return std::make_unique<ast::WhileExpr>(this->current.start, this->current.end, std::move(condition), std::move(body));
+            } else if (this->current.value == "for") {
+                this->next();
+                this->expect(TokenType::LParen, "(");
+
+                std::string name = this->expect(TokenType::Identifier, "identifier").value;
+                if (this->current != TokenType::Keyword && this->current.value != "in") {
+                    ERROR(this->current.start, "Expected 'in'"); exit(1);
+                }
+
+                this->next();
+                auto iterator = this->expr(false);
+
+                this->expect(TokenType::RParen, ")");
+
+                this->expect(TokenType::LBrace, "{");
+                auto body = this->parse_block();
+
+                return std::make_unique<ast::ForExpr>(this->current.start, this->current.end, name, std::move(iterator), std::move(body));
+
             } else if (this->current.value == "sizeof") {
                 Location start = this->current.start;
                 this->next();
@@ -811,6 +841,16 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 auto parent = this->expr();
 
                 return std::make_unique<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
+            } else if (this->current.value == "defer") {
+                if (!this->context.is_inside_function) {
+                    ERROR(this->current.start, "Defer statement outside of function"); exit(1);
+                }
+
+                Location start = this->current.start;
+                this->next();
+
+                auto expr = this->expr();
+                return std::make_unique<ast::DeferExpr>(start, this->current.end, std::move(expr));
             } else {
                 ERROR(this->current.start, "Expected an expression"); exit(1);
             }
@@ -984,7 +1024,13 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
         if (right->kind.in(NUMERIC_KINDS) && left->kind.in(NUMERIC_KINDS)) {
             left = this->parse_immediate_binary_op(std::move(right), std::move(left), op);
         } else {
-            left = std::make_unique<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
+            if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
+                left = std::make_unique<ast::InplaceBinaryOpExpr>(
+                    start, this->current.end, INPLACE_OPERATORS[op], std::move(left), std::move(right)
+                );
+            } else {
+                left = std::make_unique<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
+            }
         }
     }
 }
@@ -1093,8 +1139,8 @@ std::unique_ptr<ast::Expr> Parser::call() {
 std::unique_ptr<ast::Expr> Parser::attr(Location start, std::unique_ptr<ast::Expr> expr) {
     while (this->current == TokenType::Dot) {
         this->next();
+        
         std::string value = this->expect(TokenType::Identifier, "attribute name").value;
-
         expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, value, std::move(expr));
     }
 

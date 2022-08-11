@@ -4,7 +4,7 @@ std::string Location::format() {
     std::string line = std::to_string(this->line);
     std::string column = std::to_string(this->column);
 
-    return this->filename + ":" + line + ":" + column;
+    return this->filename + ":" + line + ":" + column + ":";
 }
 
 std::string Token::getTokenTypeValue(TokenType type) {

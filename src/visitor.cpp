@@ -121,6 +121,27 @@ void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
 }
 
+bool Visitor::is_iterable(llvm::Value* value) {
+    llvm::Type* type = value->getType();
+    if (!type->isPointerTy()) {
+        return false;
+    }
+
+    llvm::Type* elementType = type->getPointerElementType();
+    if (!elementType->isArrayTy()) {
+        return false;
+    }
+
+    if (elementType->isStructTy()) {
+        std::string name = elementType->getStructName().str();
+        Struct* structure = this->structs[name];
+
+        return structure->has_method("next");
+    }
+
+    return true;
+}
+
 std::pair<std::string, bool> Visitor::is_intrinsic(std::string name) {
     bool is_intrinsic = false;
     if (name.substr(0, 12) == "__intrinsic_") {
@@ -244,6 +265,56 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     return this->builder->CreateBitCast(value, type);
 }
 
+llvm::Value* Visitor::get_struct_field(ast::AttributeExpr* expr) {
+    llvm::Value* parent = expr->parent->accept(*this).unwrap(this, expr->start);
+    llvm::Type* type = parent->getType();
+
+    if (!type->isPointerTy()) {
+        ERROR(expr->start, "Attribute access on non-structure type");
+    }
+
+    type = type->getPointerElementType();
+    if (!type->isStructTy()) {
+        ERROR(expr->start, "Attribute access on non-structure type");
+    }
+
+    std::string name = type->getStructName().str();
+    Struct* structure = this->structs[name];
+
+    int index = structure->get_field_index(expr->attribute);
+    if (index < 0) {
+        ERROR(expr->start, "Attribute '{s}' does not exist in structure '{s}'", expr->attribute, name);
+    }
+
+    StructField field = structure->fields[expr->attribute];
+    if (this->current_struct != structure && field.is_private) {
+        ERROR(expr->start, "Cannot access private field '{s}'", expr->attribute);
+    }
+
+    return this->builder->CreateStructGEP(structure->type, parent, index);
+}
+
+llvm::Value* Visitor::get_array_element(ast::ElementExpr* expr) {
+    llvm::Value* parent = expr->value->accept(*this).unwrap(this, expr->start);
+    llvm::Type* type = parent->getType();
+
+    if (!type->isPointerTy()) {
+        ERROR(expr->start, "Array access on non-array type");
+    }
+
+    type = type->getPointerElementType();
+    if (!type->isArrayTy()) {
+        ERROR(expr->start, "Array access on non-array type");
+    }
+
+    llvm::Value* index = expr->index->accept(*this).unwrap(this, expr->start);
+    if (!index->getType()->isIntegerTy()) {
+        ERROR(expr->index->start, "Indicies must be integers");
+    }
+
+    return this->builder->CreateGEP(type, parent, index);
+}
+
 llvm::Function* Visitor::create_function(
     std::string name, llvm::Type* ret, std::vector<llvm::Type*> args, bool has_varargs, llvm::Function::LinkageTypes linkage
 ) {
@@ -255,13 +326,13 @@ llvm::Value* Visitor::unwrap(ast::Expr* expr) {
     return expr->accept(*this).unwrap(this, expr->start);
 }
 
-void Visitor::visit(std::unique_ptr<ast::Program> program) {
-    for (auto& expr : program->ast) {
-        if (!expr) {
+void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
+    for (auto& stmt : statements) {
+        if (!stmt) {
             continue;
         }
 
-        expr->accept(*this);
+        stmt->accept(*this);
     }
 }
 
@@ -410,6 +481,10 @@ Value Visitor::visit(ast::ConstExpr* expr) {
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
     std::vector<Value> elements;
+    // bool is_const = std::all_of(expr->elements.begin(), expr->elements.end(), [](auto& element) {
+    //     return element->is_constant();
+    // });
+
     for (auto& element : expr->elements) {
         Value value = element->accept(*this);
         elements.push_back(value);
@@ -429,12 +504,30 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
 
     llvm::Function* parent = this->builder->GetInsertBlock()->getParent();
 
+    // if (is_const) {
+    //     std::vector<llvm::Constant*> constants;
+    //     for (auto elem : elements) {
+    //         constants.push_back((llvm::Constant*)elem.value);
+    //     }
+
+    //     llvm::ArrayType *atype = llvm::ArrayType::get(etype, elements.size());
+    //     llvm::Constant* array = llvm::ConstantArray::get(atype, constants);
+
+    //     llvm::AllocaInst* inst = this->create_alloca(parent, atype);
+        
+    //     llvm::Value* size = this->builder->getInt32(elements.size() * (etype->getScalarSizeInBits() / 8));
+    //     this->builder->CreateMemCpy(inst, llvm::MaybeAlign(0), array, llvm::MaybeAlign(0), size);
+
+    //     return inst;
+    // }
+
+
     llvm::ArrayType* type = llvm::ArrayType::get(etype, elements.size());
     llvm::AllocaInst* array = this->create_alloca(parent, type);
 
     for (size_t i = 0; i < elements.size(); i++) {
         std::vector<llvm::Value*> indices = {
-            llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, 0, true)),
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, 0)),
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), llvm::APInt(32, i))
         };
 
@@ -470,7 +563,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 return this->builder->CreateNeg(value);
             }
         case TokenType::Not:
-            return this->builder->CreateNot(this->cast(value, BooleanType));
+            return this->builder->CreateIsNull(value);
         case TokenType::BinaryNot:
             return this->builder->CreateNot(value);
         case TokenType::Mul: {
@@ -517,37 +610,20 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenType::Assign) {
         if (expr->left->kind == ast::ExprKind::Attribute) {
-            ast::AttributeExpr* attribute = expr->cast<ast::AttributeExpr>();
-            llvm::Value* parent = attribute->parent->accept(*this).unwrap(this, expr->start);
-            
-            std::string name = parent->getType()->getPointerElementType()->getStructName().str();
-            Struct* structure = this->structs[name];
-            int index = structure->get_field_index(attribute->attribute);
-
-            if (index < 0) {
-                ERROR(expr->start, "Attribute '{s}' does not exist in structure '{s}'", attribute->attribute, name);
-            }
+            ast::AttributeExpr* attribute = (ast::AttributeExpr*)expr->left.get();  
+            llvm::Value* pointer = this->get_struct_field(attribute);
 
             llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
-            llvm::Value* pointer = this->builder->CreateStructGEP(structure->type, parent, index);
-
             this->builder->CreateStore(value, pointer);
+
             return value;
         } else if (expr->left->kind == ast::ExprKind::Element) {
             ast::ElementExpr* element = expr->cast<ast::ElementExpr>();
-            llvm::Value* parent = element->value->accept(*this).unwrap(this, expr->start);
-
-            llvm::Value* index = element->index->accept(*this).unwrap(this, expr->start);
-            if (!index->getType()->isIntegerTy()) {
-                ERROR(element->index->start, "Indicies must be integers");
-            }
-
-            llvm::Type* ty = parent->getType();
+            llvm::Value* pointer = this->get_array_element(element);
 
             llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
-            llvm::Value* pointer = this->builder->CreateGEP(ty, parent, index);
-
             this->builder->CreateStore(value, pointer);
+
             return value;
         }
 
@@ -676,6 +752,48 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     return nullptr;
 }
 
+Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
+    llvm::Value* parent = nullptr;
+    if (expr->left->kind == ast::ExprKind::Attribute) {
+        ast::AttributeExpr* attribute = (ast::AttributeExpr*)expr->left.get();  
+        parent = this->get_struct_field(attribute);
+    } else if (expr->left->kind == ast::ExprKind::Element) {
+        parent = this->get_array_element((ast::ElementExpr*)expr->left.get());
+    } else {
+        ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->left.get());
+        if (!variable) {
+            ERROR(expr->start, "Left side of assignment must be a variable");
+        }
+
+        auto pair = this->get_variable(variable->name);
+        if (pair.second) {
+            ERROR(expr->start, "Cannot assign to constant");
+        }
+
+        parent = pair.first;
+    }
+
+    llvm::Value* lhs = expr->left->accept(*this).unwrap(this, expr->start);
+    llvm::Value* rhs = expr->right->accept(*this).unwrap(this, expr->start);
+
+    llvm::Value* value;
+    switch (expr->op) {
+        case TokenType::Add:
+            value = this->builder->CreateAdd(lhs, rhs); break;
+        case TokenType::Minus:
+            value = this->builder->CreateSub(lhs, rhs); break;
+        case TokenType::Mul:
+            value = this->builder->CreateMul(lhs, rhs); break;
+        case TokenType::Div:
+            value = this->builder->CreateSDiv(lhs, rhs); break;
+        default:
+            _UNREACHABLE
+    }
+
+    this->builder->CreateStore(value, parent);
+    return value;
+}
+
 Value Visitor::visit(ast::CallExpr* expr) {
     Value callable = expr->callee->accept(*this);
     Function* func = callable.function;
@@ -785,13 +903,18 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 
     Function* func = this->current_function;
     if (expr->value) {
+        if (func->ret->isVoidTy()) {
+            ERROR(expr->start, "Cannot return a value from void function");
+        }
+
         llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
         func->branch->has_return = true;
 
         // Got rid of the typechecking for now.
         this->builder->CreateStore(value, func->return_value);
-        this->builder->CreateBr(func->return_block);
+        func->defer(*this);
 
+        this->builder->CreateBr(func->return_block);
         return nullptr;
     } else {
         if (!func->ret->isVoidTy()) {
@@ -799,13 +922,18 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->branch->has_return = true;
-        
+        func->defer(*this);
+
         this->builder->CreateBr(func->return_block);
         return nullptr;
     }
 }
 
 Value Visitor::visit(ast::PrototypeExpr* expr) {
+    if (!this->current_struct && expr->attributes.has("private")) {
+        ERROR(expr->start, "Cannot declare private function outside of a struct");
+    }
+
     std::string original = this->format_name(expr->name);
     auto pair = this->is_intrinsic(original);
 
@@ -872,9 +1000,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     Branch* branch = func->create_branch(name);
     func->branch = branch;
 
-    func->return_value = this->builder->CreateAlloca(function->getReturnType());
-    func->return_block = llvm::BasicBlock::Create(this->context);
+    if (!func->ret->isVoidTy()) {
+        func->return_value = this->builder->CreateAlloca(func->ret);
+    }
 
+    func->return_block = llvm::BasicBlock::Create(this->context);
     for (auto& arg : function->args()) {
         std::string name = arg.getName().str();
 
@@ -896,6 +1026,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
         if (!func->has_return()) {
             if (func->ret->isVoidTy()) {
+                func->defer(*this);
                 this->builder->CreateRetVoid();
             } else {
                 ERROR(expr->start, "Function '{s}' expects a return value", name);
@@ -912,14 +1043,30 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             }
         }
     }
+
+    for (auto defer : func->defers) {
+        delete defer;
+    }
     
     this->current_function = nullptr;
-
+    
     bool error = llvm::verifyFunction(*function, &llvm::errs());
     assert((!error) && "Error while verifying function IR. Most likely a compiler bug.");
 
     this->fpm->run(*function);
     return function;
+}
+
+Value Visitor::visit(ast::DeferExpr* expr) {
+    Function* func = this->current_function;
+    if (!func) {
+        ERROR(expr->start, "Defer statement outside of function");
+    }
+
+    ast::Expr* defer = expr->expr.release();
+    func->defers.push_back(defer);
+    
+    return nullptr;
 }
 
 Value Visitor::visit(ast::IfExpr* expr) {
@@ -1050,6 +1197,149 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     return this->constants["null"];
 }
 
+Value Visitor::visit(ast::ForExpr* expr) {
+    llvm::Function* function = this->builder->GetInsertBlock()->getParent();
+    Function* func = this->current_function;
+
+    llvm::Value* iterator = expr->iterator->accept(*this).unwrap(this, expr->iterator->start);
+
+    Struct* structure = nullptr;
+    size_t elements = SIZE_MAX;
+    
+    if (!iterator->getType()->isPointerTy()) {
+        Type* type = Type::fromLLVMType(iterator->getType());
+        ERROR(expr->iterator->start, "Object of type '{s}' is not iterable", type->name());
+    }
+
+    llvm::Type* element = iterator->getType()->getPointerElementType();
+    llvm::Type* alloca_type = nullptr;
+
+    if (element->isStructTy()) {
+        std::string name = element->getStructName().str();
+        structure = this->structs[name];
+
+        if (!structure->has_method("iter") && !structure->has_method("next")) {
+            std::string fmt = utils::fmt::format("Object of type '{s}' is not iterable", name);
+            utils::error(expr->iterator->start, fmt, false);
+
+            NOTE(expr->iterator->start, "Structures must implement either a `iter` or `next` method.");
+            exit(1);
+        }
+
+        if (structure->has_method("iter")) {
+            Function* method = structure->methods["iter"];
+            method->used = true;
+
+            iterator = this->builder->CreateCall(method->value, {iterator});
+
+            element = iterator->getType()->getPointerElementType();
+            if (!this->is_iterable(iterator)) {
+                ERROR(expr->iterator->start, "Object of type '{s}' is not iterable", name);
+            }
+
+            if (element->isStructTy()) {
+                std::string name = element->getStructName().str();
+                structure = this->structs[name];
+
+                Function* next = structure->methods["next"];
+                alloca_type = next->value->getFunctionType()->getReturnType();
+
+                next->used = true;
+            } else {
+                alloca_type = element->getArrayElementType();
+            }
+        } else {
+            Function* next = structure->methods["next"];
+            alloca_type = next->value->getFunctionType()->getReturnType();
+
+            next->used = true;
+        } 
+    } else if (element->isArrayTy()) {
+        elements = element->getArrayNumElements();
+        alloca_type = element->getArrayElementType();
+    } else {
+        Type* type = Type::fromLLVMType(iterator->getType());
+        ERROR(expr->iterator->start, "Object of type '{s}' is not iterable", type->name());
+    }
+
+    llvm::AllocaInst* inst = this->builder->CreateAlloca(alloca_type);
+
+    llvm::BasicBlock* loop = llvm::BasicBlock::Create(this->context, "", function);
+    llvm::BasicBlock* end = llvm::BasicBlock::Create(this->context);
+
+    Branch* branch = func->branch;
+
+    func->branch = func->create_branch("for.loop");
+    func->locals[expr->name] = inst;
+
+    llvm::Value* value = nullptr;
+    llvm::AllocaInst* index = nullptr;
+
+    if (structure) {
+        Function* method = structure->methods["next"];
+        value = this->builder->CreateCall(method->value, {iterator});
+
+        llvm::Value* is_null = this->builder->CreateIsNull(value);
+        this->builder->CreateStore(value, inst);
+
+        this->builder->CreateCondBr(is_null, end, loop);
+    } else {
+        llvm::Value* elm_count = this->builder->getInt32(elements);
+        llvm::Value* cond = this->builder->CreateICmpEQ(elm_count, this->builder->getInt32(0));
+
+        index = this->create_alloca(function, this->builder->getInt32Ty());
+        this->builder->CreateStore(this->builder->getInt32(0), index);
+
+        llvm::Value* pointer = this->builder->CreateGEP(element, iterator, this->builder->CreateLoad(this->builder->getInt32Ty(), index));
+        value = this->builder->CreateLoad(alloca_type, pointer);
+
+        this->builder->CreateStore(value, inst);
+        this->builder->CreateCondBr(cond, end, loop);
+    }
+
+    this->builder->SetInsertPoint(loop);
+    expr->body->accept(*this);
+
+    if (func->branch->has_return) {
+        function->getBasicBlockList().push_back(end);
+        this->builder->SetInsertPoint(end);
+
+        func->branch = branch;
+        return this->constants["null"];
+    }
+
+    if (structure) {
+        Function* method = structure->methods["next"];
+
+        value = this->builder->CreateCall(method->value, {iterator});
+        this->builder->CreateStore(value, inst);
+
+        llvm::Value* is_null = this->builder->CreateIsNull(value);
+        this->builder->CreateCondBr(is_null, end, loop);
+    } else {
+        // Increment the `index` by 1
+        llvm::Value* index_value = this->builder->CreateLoad(this->builder->getInt32Ty(), index);
+        llvm::Value* next_index = this->builder->CreateAdd(index_value, this->builder->getInt32(1));
+
+        this->builder->CreateStore(next_index, index);
+
+        // Get the next element in the array
+        llvm::Value* pointer = this->builder->CreateGEP(element, iterator, this->builder->CreateLoad(this->builder->getInt32Ty(), index));
+        value = this->builder->CreateLoad(alloca_type, pointer);
+
+        this->builder->CreateStore(value, inst);
+
+        llvm::Value* cond = this->builder->CreateICmpEQ(next_index, this->builder->getInt32(elements));
+        this->builder->CreateCondBr(cond, end, loop);
+    }
+
+    function->getBasicBlockList().push_back(end);   
+    this->builder->SetInsertPoint(end);
+
+    func->branch = branch;
+    return nullptr; 
+}
+
 Value Visitor::visit(ast::StructExpr* expr) {
     if (expr->opaque) {
         llvm::StructType* type = llvm::StructType::create(this->context, expr->name);
@@ -1060,7 +1350,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
     std::vector<Struct*> parents;
     std::vector<llvm::Type*> types;
-    std::map<std::string, llvm::Type*> fields;
+    std::map<std::string, StructField> fields;
 
     // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
     llvm::StructType* type = llvm::StructType::create(this->context, {}, expr->name, expr->packed);
@@ -1087,20 +1377,18 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
     for (auto& parent : parents) {
         for (auto& pair : parent->fields) {
-            types.push_back(pair.second);
-            fields[pair.first] = types.back();
+            types.push_back(pair.second.type);
+            fields[pair.first] = pair.second;
         }
 
         for (auto& pair : parent->methods) {
             structure->methods[pair.first] = pair.second;
         }
-
-        parent->children.push_back(structure);
     }
     
     for (auto& pair : expr->fields) {
         types.push_back(this->get_llvm_type(pair.second.type));
-        fields[pair.first] = types.back();
+        fields[pair.first] = {pair.second.name, types.back(), pair.second.is_private};
     }
 
     type->setBody(types);
@@ -1139,11 +1427,14 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         if (!pair.first.empty()) {
             i = structure->get_field_index(pair.first);
             if (i < 0) {
-                ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", pair.first, structure->name);
+                ERROR(pair.second->start, "Field '{s}' does not exist in struct '{s}'", pair.first, structure->name);
+            } else if (args.find(i) != args.end()) {
+                ERROR(pair.second->start, "Field '{s}' already initialized", pair.first);
             }
 
-            if (args.find(i) != args.end()) {
-                ERROR(expr->start, "Field '{s}' already initialized", pair.first);
+            StructField field = structure->fields.at(pair.first);
+            if (field.is_private) {
+                ERROR(pair.second->start, "Field '{s}' is private and cannot be initialized", pair.first);
             }
         }
 
@@ -1151,7 +1442,8 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         index++;
     }
 
-    if (args.size() != structure->fields.size()) {
+    std::vector<StructField> fields = structure->get_fields();
+    if (args.size() != fields.size()) {
         ERROR(expr->start, "Expected {i} fields, found {i}", structure->fields.size(), args.size());
     }
 
@@ -1183,6 +1475,10 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
 
     if (structure->has_method(expr->attribute)) {
         Function* function = structure->methods[expr->attribute];
+        if (this->current_struct != structure && function->is_private) {
+            ERROR(expr->start, "Cannot access private method '{s}'", expr->attribute);
+        }
+
         if (function->parent != structure) {
             Struct* parent = function->parent;
             value = this->builder->CreateBitCast(value, parent->type->getPointerTo());
@@ -1197,6 +1493,11 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {
         ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", expr->attribute, name);
+    }
+
+    StructField field = structure->fields.at(expr->attribute);
+    if (this->current_struct != structure && field.is_private) {
+        ERROR(expr->start, "Cannot access private field '{s}'", expr->attribute);
     }
     
     if (is_pointer) {

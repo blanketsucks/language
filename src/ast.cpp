@@ -137,6 +137,17 @@ Value BinaryOpExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+InplaceBinaryOpExpr::InplaceBinaryOpExpr(
+    Location start, Location end, TokenType op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right
+) : Expr(start, end, ExprKind::InplaceBinaryOp), op(op) {
+    this->left = std::move(left);
+    this->right = std::move(right);
+}
+
+Value InplaceBinaryOpExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 CallExpr::CallExpr(
     Location start, Location end, std::unique_ptr<ast::Expr> callee, std::vector<std::unique_ptr<Expr>> args
 ) : Expr(start, end, ExprKind::Call) {
@@ -177,6 +188,16 @@ Value FunctionExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+DeferExpr::DeferExpr(
+    Location start, Location end, std::unique_ptr<Expr> expr
+) : Expr(start, end, ExprKind::Defer) {
+    this->expr = std::move(expr);
+}
+
+Value DeferExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 IfExpr::IfExpr(
     Location start, Location end, std::unique_ptr<Expr> condition, std::unique_ptr<BlockExpr> body, std::unique_ptr<BlockExpr> ebody
 ) : Expr(start, end, ExprKind::If) {
@@ -200,6 +221,18 @@ Value WhileExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+ForExpr::ForExpr(
+    Location start, Location end, std::string name, std::unique_ptr<Expr> iterator, std::unique_ptr<BlockExpr> body
+) : Expr(start, end, ExprKind::For) {
+    this->name = name;
+    this->iterator = std::move(iterator);
+    this->body = std::move(body);
+}
+
+Value ForExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 StructExpr::StructExpr(
     Location start, 
     Location end, 
@@ -207,7 +240,7 @@ StructExpr::StructExpr(
     bool packed, 
     bool opaque, 
     std::vector<std::unique_ptr<Expr>> parents,
-    std::map<std::string, Argument> fields, 
+    std::map<std::string, StructField> fields, 
     std::vector<std::unique_ptr<Expr>> methods
 ) : Expr(start, end, ExprKind::Struct), name(name), packed(packed), opaque(opaque) {
     this->fields = std::move(fields);
@@ -312,8 +345,4 @@ Value UsingExpr::accept(Visitor& visitor) {
 
 Value NamespaceAttributeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
-}
-
-Program::Program(std::vector<std::unique_ptr<Expr>> ast) {
-    this->ast = std::move(ast);
 }

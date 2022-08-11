@@ -137,14 +137,14 @@ int main(int argc, char** argv) {
     }
     
     Parser parser(tokens);
-    std::unique_ptr<ast::Program> program = parser.statements();
+    auto ast = parser.statements();
 
     Visitor visitor(args.filename);
-    visitor.visit(std::move(program));
+    visitor.visit(std::move(ast));
 
     visitor.cleanup();
     visitor.free();
-
+    
     if (args.format == OutputFormat::Executable) {
         llvm::Function* entry = visitor.module->getFunction(args.entry);
         if (!entry) {

@@ -296,6 +296,9 @@ std::vector<Token> Lexer::lex() {
             if (next == '+') {
                 this->next();
                 token = this->create_token(TokenType::Inc, start, "++");
+            } else if (next == '=') {
+                this->next();
+                token = this->create_token(TokenType::IAdd, start, "+=");
             } else {
                 token = this->create_token(TokenType::Add, start, "+");
             }
@@ -312,17 +315,40 @@ std::vector<Token> Lexer::lex() {
             } else if (next == '-') {
                 this->next();
                 token = this->create_token(TokenType::Dec, start, "--");
+            } else if (next == '=') {
+                this->next();
+                token = this->create_token(TokenType::IMinus, start, "-=");
             } else {
                 token = this->create_token(TokenType::Minus, "-");
             }
 
             tokens.push_back(token);
         } else if (this->current == '*') {
-            tokens.push_back(this->create_token(TokenType::Mul, "*"));
-            this->next();
+            Location start = this->loc();
+            Token token;
+
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                token = this->create_token(TokenType::IMul, start, "*=");
+            } else {
+                token = this->create_token(TokenType::Mul, "*");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == '/') {
-            tokens.push_back(this->create_token(TokenType::Div, "/"));
-            this->next();
+            Location start = this->loc();
+            Token token;
+
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                token = this->create_token(TokenType::IDiv, start, "/=");
+            } else {
+                token = this->create_token(TokenType::Div, "/");
+            }
+
+            tokens.push_back(token);
         } else if (this->current == '=') {
             Location start = this->loc();
             Token token;

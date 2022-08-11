@@ -98,6 +98,8 @@ namespace utils {
     std::string remove_extension(const std::string& filename);
     std::string replace_extension(const std::string& filename, std::string extension);
 
+    void message(std::string type, fmt::AnsiForeground color, Location location, const std::string& message);
+
     void error(Location location, const std::string& message, bool fatal = true);
     void note(Location location, const std::string& message);
 

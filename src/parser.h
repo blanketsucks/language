@@ -61,7 +61,7 @@ public:
 
     ast::Attributes parse_attributes();
 
-    std::unique_ptr<ast::Program> statements();
+    std::vector<std::unique_ptr<ast::Expr>> statements();
     std::unique_ptr<ast::Expr> statement();
     std::unique_ptr<ast::Expr> expr(bool semicolon = true);
     std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
