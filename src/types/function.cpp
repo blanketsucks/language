@@ -1,8 +1,8 @@
-#include "function.h"
+#include "types/function.h"
+
+#include "utils.h"
 
 #include <sstream>
-
-#include "../utils.h"
 
 FunctionType::FunctionType(
     std::vector<Type*> args, Type* return_type, bool has_varargs

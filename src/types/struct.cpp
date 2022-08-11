@@ -1,6 +1,6 @@
-#include "struct.h"
+#include "types/struct.h"
 
-#include "../utils.h"
+#include "utils.h"
 
 StructType::StructType(std::string name, std::vector<Type*> fields) : Type(Type::Struct, 0), name(name), fields(fields) {}
 

@@ -1,15 +1,10 @@
 #include "preprocessor.h"
 
-#include <sys/stat.h>
-#include <fstream>
-
-#include "lexer.h"
+#include "lexer/lexer.h"
 #include "utils.h"
 
-bool file_exists(const std::string& name) {
-    struct stat buffer;
-    return (stat(name.c_str(), &buffer) == 0);
-}
+#include <sys/stat.h>
+#include <fstream>
 
 std::vector<Token> Macro::expand()  {
     std::vector<Token> tokens;
@@ -163,13 +158,13 @@ Macro Preprocessor::parse_macro_definition() {
 }
 
 std::ifstream Preprocessor::search_include_paths(std::string path) {
-    if (file_exists(path)) {
+    if (utils::filesystem::exists(path)) {
         return std::ifstream(path);
     }
 
     for (auto& search : this->include_paths) {
         std::string full_path = search + path;
-        if (file_exists(full_path)) {
+        if (utils::filesystem::exists(full_path)) {
             return std::ifstream(full_path);
         }
     }

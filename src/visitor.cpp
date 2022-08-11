@@ -1,7 +1,7 @@
 #include "visitor.h"
 
+#include "lexer/lexer.h"
 #include "utils.h"
-#include "lexer.h"
 #include "llvm.h"
 
 std::vector<Struct*> expand(Struct* structure) {

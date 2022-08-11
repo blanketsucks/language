@@ -1,7 +1,7 @@
 #ifndef _PREPROCESSOR_H
 #define _PREPROCESSOR_H
 
-#include "tokens.h"
+#include "lexer/tokens.h"
 
 enum class IncludeState {
     Initialized,

@@ -1,8 +1,8 @@
-#include "array.h"
+#include "types/array.h"
+
+#include "utils.h"
 
 #include <iostream>
-
-#include "../utils.h"
 
 ArrayType::ArrayType(size_t length, Type* element) : Type(Type::Array, length * element->getSize()), element(element), length(length) {}
 

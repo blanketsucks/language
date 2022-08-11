@@ -1,13 +1,12 @@
 #ifndef _VALUES_H
 #define _VALUES_H
 
+#include "parser/ast.h"
+#include "llvm.h"
+
 #include <string>
 #include <vector>
 #include <map>
-
-#include "ast.h"
-#include "llvm.h"
-#include "tokens.h"
 
 class Visitor;
 struct Struct;

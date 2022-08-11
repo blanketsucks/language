@@ -1,5 +1,4 @@
-#include "src/include.h"
-#include "argparse.hpp"
+#include "include.h"
 
 #ifdef __clang__
     #define SOURCE_COMPILER "clang"
@@ -26,27 +25,27 @@ struct Arguments {
     bool lex = false;
 };
 
-argparse::ArgumentParser create_argument_parser() {
-    argparse::ArgumentParser parser = argparse::ArgumentParser(
+utils::argparse::ArgumentParser create_argument_parser() {
+    utils::argparse::ArgumentParser parser = utils::argparse::ArgumentParser(
         "proton", 
         "Compiler for the Proton programming language.",
         "proton [options] ...files"
     );
 
-    parser.add_argument("--output", argparse::Required, "-o", "The output file.", "file");
-    parser.add_argument("--entry", argparse::Required, "-e", "The main entry point for the program.", "function");
-    parser.add_argument("-emit-llvm", argparse::NoArguments, EMPTY, "Emit LLVM IR.");
-    parser.add_argument("-emit-assembly", argparse::NoArguments, "-S", "Emit assembly code.");
-    parser.add_argument("-c", argparse::NoArguments, EMPTY, "Emit object code.");
-    parser.add_argument("-nolibc", argparse::NoArguments, EMPTY, "Disable the use of the libc library.");
-    parser.add_argument("-lex", argparse::NoArguments, EMPTY, "Print the lexer output. Note the tokens are after the preprocessor.");
+    parser.add_argument("--output", utils::argparse::Required, "-o", "The output file.", "file");
+    parser.add_argument("--entry", utils::argparse::Required, "-e", "The main entry point for the program.", "function");
+    parser.add_argument("-emit-llvm", utils::argparse::NoArguments, EMPTY, "Emit LLVM IR.");
+    parser.add_argument("-emit-assembly", utils::argparse::NoArguments, "-S", "Emit assembly code.");
+    parser.add_argument("-c", utils::argparse::NoArguments, EMPTY, "Emit object code.");
+    parser.add_argument("-nolibc", utils::argparse::NoArguments, EMPTY, "Disable the use of the libc library.");
+    parser.add_argument("-lex", utils::argparse::NoArguments, EMPTY, "Print the lexer output. Note the tokens are after the preprocessor.");
 
     return parser;
 }
 
 Arguments parse_arguments(int argc, char** argv) {
     Arguments args;
-    argparse::ArgumentParser parser = create_argument_parser();
+    utils::argparse::ArgumentParser parser = create_argument_parser();
 
     if (argc < 2) {
         parser.display_help();
@@ -73,20 +72,20 @@ Arguments parse_arguments(int argc, char** argv) {
     args.filename = filename;
 
     if (!parser.has_value("output")) {
-        args.output = utils::replace_extension(filename, "o");
+        args.output = utils::filesystem::replace_extension(filename, "o");
         switch (args.format) {
             case OutputFormat::LLVM:
-                args.output = utils::replace_extension(args.output, "ll"); break;
+                args.output = utils::filesystem::replace_extension(args.output, "ll"); break;
             case OutputFormat::Assembly:
-                args.output = utils::replace_extension(args.output, "s"); break;
+                args.output = utils::filesystem::replace_extension(args.output, "s"); break;
             case OutputFormat::Executable:
             #if _WIN32 || _WIN64
-                args.output = utils::replace_extension(args.output, "exe"); break;
+                args.output = utils::filesystem::replace_extension(args.output, "exe"); break;
             #else
-                args.output = utils::remove_extension(args.output); break;
+                args.output = utils::filesystem::remove_extension(args.output); break;
             #endif
             default:
-                args.output = utils::replace_extension(args.output, "o"); break;
+                args.output = utils::filesystem::replace_extension(args.output, "o"); break;
         }
     } else {
         args.output = parser.get<std::string>("output");
@@ -176,7 +175,7 @@ int main(int argc, char** argv) {
     std::error_code error;
 
     std::string object = args.output;
-    if (!utils::has_extension(object)) {
+    if (!utils::filesystem::has_extension(object)) {
         object = object + ".o";
     }
 

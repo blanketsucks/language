@@ -1,15 +1,14 @@
-SOURCES = $(wildcard src/*.cpp src/types/*.cpp)
-HEADERS = $(wildcard src/*.h src/types/*.h)
+SOURCES = $(wildcard src/**/*.cpp src/*.cpp)
 OBJS = $(SOURCES:.cpp=.o)
 
-FLAGS = -O3
+FLAGS = -O3 -Iinclude
 LLVM-CONFIG = llvm-config-14
 
 ifeq ($(DEBUG),true)
 	FLAGS += -g
 endif
 
-CXXFLAGS = $(FLAGS) -Iinclude -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -c -std=c++14
+CXXFLAGS = $(FLAGS) -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -c -std=c++14
 CXXFLAGS += $(shell $(LLVM-CONFIG) --cflags)
 
 LDFLAGS = $(FLAGS) -Wno-non-pod-varargs
@@ -28,5 +27,5 @@ clean:
 ifeq ($(OS),Windows_NT)
 	del /f /q /s *.o
 else
-	rm -fr main.o src/*.o src/types/*.o
+	rm -fr main.o $(OBJS)
 endif

@@ -15,9 +15,9 @@
     #endif
 #endif
 
-#include <string>
+#include "llvm.h"
 
-#include "../llvm.h"
+#include <string>
 
 class Type {
 public:

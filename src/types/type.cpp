@@ -1,11 +1,11 @@
-#include "type.h"
+#include "types/type.h"
 
 #include <iostream>
 
-#include "function.h"
-#include "struct.h"
-#include "pointer.h"
-#include "array.h"
+#include "types/function.h"
+#include "types/struct.h"
+#include "types/pointer.h"
+#include "types/array.h"
 
 Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
 

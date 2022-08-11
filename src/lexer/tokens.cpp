@@ -1,4 +1,4 @@
-#include "tokens.h"
+#include "lexer/tokens.h"
 
 std::string Location::format() { 
     std::string line = std::to_string(this->line);

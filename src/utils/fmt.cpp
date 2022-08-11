@@ -1,8 +1,8 @@
 #include "utils.h"
 
-#include <cstring>
-
 #include "types/type.h"
+
+#include <assert.h>
 
 std::string utils::fmt::join(std::string sep, std::vector<std::string>& strings) {
     std::string result;
@@ -146,49 +146,4 @@ std::string utils::fmt::format(const std::string& str, ...) {
     va_end(args);
 
     return result; 
-}
-
-bool utils::has_extension(const std::string& filename) {
-    return filename.find_last_of('.') != std::string::npos;
-}
-
-std::string utils::remove_extension(const std::string& filename) {
-    if (utils::has_extension(filename)) {
-        return filename.substr(0, filename.find_last_of('.'));
-    } else {
-        return filename;
-    }
-}
-
-std::string utils::replace_extension(const std::string& filename, std::string extension) {
-    return utils::remove_extension(filename) + "." + extension;
-}
-
-void utils::error(Location location, const std::string& message, bool fatal) {
-    std::cerr << fmt::format("{bold|white} {bold|red} {s}", location.format().c_str(), "error:", message);
-    std::cerr << std::endl;
-    
-    if (fatal) {
-        exit(1);
-    }
-}
-
-void utils::note(Location location, const std::string& message) {
-    std::cout << fmt::format("{bold|white} {bold|magenta} {s}", location.format().c_str(), "note:", message);
-    std::cout << std::endl;
-}
-
-std::string utils::exec(const std::string& command) {
-    std::array<char, 128> buffer;
-    std::string result;
-
-    FILE* pipe = popen(command.c_str(), "r");
-    assert(pipe && "Failed to invoke popen().");
-
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-        result += buffer.data();
-    }
-
-    pclose(pipe);
-    return result;
 }

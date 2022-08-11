@@ -1,7 +1,7 @@
-#include "pointer.h"
+#include "types/pointer.h"
 
-#include "array.h"
-#include "../utils.h"
+#include "types/array.h"
+#include "utils.h"
 
 PointerType::PointerType(Type* type) : Type(Type::Pointer, LONG_SIZE), type(type) {}
 
