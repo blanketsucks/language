@@ -80,6 +80,8 @@ struct Struct {
 
     bool has_method(const std::string& name);
     llvm::Value* get_variable(std::string name);
+
+    std::vector<Struct*> expand();
 };
 
 struct Namespace {
@@ -97,12 +99,15 @@ struct Value {
     llvm::Value* value;
     llvm::Value* parent;
 
+    bool is_constant;
+
     Function* function;
     Struct* structure;
     Namespace* ns;
 
     Value(
-        llvm::Value* value, 
+        llvm::Value* value,
+        bool is_constant = false,
         llvm::Value* parent = nullptr,
         Function* function = nullptr,
         Struct* structure = nullptr, 
@@ -114,7 +119,7 @@ struct Value {
     llvm::Type* type();
     std::string name();
 
-    static Value with_function(llvm::Value* value, Function* function);
+    static Value with_function(Function* function);
     static Value with_struct(Struct* structure);
     static Value with_namespace(Namespace* ns);
 };

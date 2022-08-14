@@ -1,25 +1,28 @@
-$include "libc/include.pr"
+$include "libc/ffi.pr"
 
 using (
-    printf,
-    fopen, fseek, ftell, fread, ferror, fclose, ferror, feof,
+    printf, fprintf,
+    fopen, fdopen, fseek, ftell, fread, ferror, fclose, ferror, feof,
     malloc, free, 
     strerror, __errno_location
 ) from libc;
 
 func main(argc: int, argv: char**) -> int {
+    let stderr = fdopen(2, "w");
     if (argc != 2) {
-        printf("Usage: %s <filename>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
         return 1;
     }
 
     let file = fopen(argv[1], "r");
     if (!file) {
-        # We don't have access to `errno` so we use this instead
+        # We don't have access to `errno` so we use `__errno_location` instead, we can have `errno` to be a macro
+        # but idk about that.
+
         # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
         let errno = *__errno_location();
 
-        printf("Could not open file '%s': %s\n", argv[1], strerror(errno));
+        fprintf(stderr, "Could not open file '%s': %s\n", argv[1], strerror(errno));
         return 1;
     }
 
@@ -36,13 +39,16 @@ func main(argc: int, argv: char**) -> int {
     if (n != size) {
         if (ferror(file)) {
             let errno = *__errno_location();
-            printf("Could not read file '%s': %s\n", argv[1], strerror(errno));
+            fprintf(stderr, "Could not read file '%s': %s\n", argv[1], strerror(errno));
 
             return 1;
-        } if (feof(file)) {
-            printf("Could not read file '%s': Reached EOF.", argv[1]);
+        } else if (feof(file)) {
+            fprintf(stderr, "Could not read file '%s': Reached EOF.", argv[1]);
             return 1;
         }
+
+        fprintf(stderr, "Could not read file '%s': Unknown error.", argv[1]);
+        return 1;
     }
 
     printf("%s\n", buffer);

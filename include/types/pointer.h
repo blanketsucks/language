@@ -8,8 +8,8 @@ public:
     static PointerType* create(Type* type);
     ~PointerType() override;
 
-    static PointerType* fromLLVMType(llvm::Type* type);
-    llvm::PointerType* toLLVMType(llvm::LLVMContext& context) override;
+    static PointerType* from_llvm_type(llvm::Type* type);
+    llvm::PointerType* to_llvm_type(llvm::LLVMContext& context) override;
     
     PointerType* copy() override;
 

@@ -14,19 +14,19 @@ StructType* StructType::create(std::string name, std::vector<Type*> fields) {
     return new StructType(name, fields);
 }
 
-StructType* StructType::fromLLVMType(llvm::StructType* type) {
+StructType* StructType::from_llvm_type(llvm::StructType* type) {
     std::vector<Type*> fields;
     for (auto field : type->elements()) {
-        fields.push_back(Type::fromLLVMType(field));
+        fields.push_back(Type::from_llvm_type(field));
     }
 
     return StructType::create(type->getName().str(), fields);
 }
 
-llvm::StructType* StructType::toLLVMType(llvm::LLVMContext& context) {
+llvm::StructType* StructType::to_llvm_type(llvm::LLVMContext& context) {
     std::vector<llvm::Type*> types;
     for (auto& field : this->fields) {
-        types.push_back(field->toLLVMType(context));
+        types.push_back(field->to_llvm_type(context));
     }
 
     return llvm::StructType::get(context, types);
@@ -63,5 +63,5 @@ bool StructType::is_compatible(llvm::Type* type) {
         return false;
     }
 
-    return this->is_compatible(StructType::fromLLVMType(llvm::cast<llvm::StructType>(type)));
+    return this->is_compatible(StructType::from_llvm_type(llvm::cast<llvm::StructType>(type)));
 }

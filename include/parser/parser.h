@@ -6,11 +6,15 @@
 #include "lexer/tokens.h"
 #include "utils.h"
 
+#include "llvm/ADT/Optional.h"
+
 #include <map>
 
 struct Context {
     bool is_inside_function = false;
     StructType* current_struct = nullptr;
+
+    llvm::Optional<std::string> current_namespace;
 };
 
 class Parser {
@@ -34,49 +38,45 @@ public:
     Token next();
     Token peek();
 
-    Token expect(TokenType type, std::string value);
+    Token expect(TokenKind type, std::string value);
 
     int get_token_precendence();
     Type* parse_type(std::string name, bool should_error = true);
     std::map<std::string, Type*> get_types() { return this->types; }
 
-    std::unique_ptr<ast::BlockExpr> parse_block();
-    std::unique_ptr<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage);
-    std::unique_ptr<ast::Expr> parse_function_definition(
+    utils::Ref<ast::BlockExpr> parse_block();
+    utils::Ref<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage);
+    utils::Ref<ast::Expr> parse_function_definition(
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None
     );
-    std::unique_ptr<ast::IfExpr> parse_if_statement();
-    std::unique_ptr<ast::StructExpr> parse_struct();
-    std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);
-    std::unique_ptr<ast::NamespaceExpr> parse_namespace();
-    std::unique_ptr<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
-    std::unique_ptr<ast::BlockExpr> parse_extern_block();
-    std::unique_ptr<ast::InlineAssemblyExpr> parse_inline_assembly();
+    utils::Ref<ast::IfExpr> parse_if_statement();
+    utils::Ref<ast::StructExpr> parse_struct();
+    utils::Ref<ast::Expr> parse_variable_definition(bool is_const = false);
+    utils::Ref<ast::NamespaceExpr> parse_namespace();
+    utils::Ref<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
+    utils::Ref<ast::BlockExpr> parse_extern_block();
 
-    std::unique_ptr<ast::Expr> parse_immediate_binary_op(
-        std::unique_ptr<ast::Expr> right, std::unique_ptr<ast::Expr> left, TokenType op
-    );
-
-    std::unique_ptr<ast::Expr> parse_immediate_unary_op(std::unique_ptr<ast::Expr> expr, TokenType op);
+    utils::Ref<ast::Expr> parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op);
+    utils::Ref<ast::Expr> parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op);
 
     ast::Attributes parse_attributes();
 
-    std::vector<std::unique_ptr<ast::Expr>> statements();
-    std::unique_ptr<ast::Expr> statement();
-    std::unique_ptr<ast::Expr> expr(bool semicolon = true);
-    std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
-    std::unique_ptr<ast::Expr> unary();
-    std::unique_ptr<ast::Expr> call();
-    std::unique_ptr<ast::Expr> attr(Location start, std::unique_ptr<ast::Expr> expr);
-    std::unique_ptr<ast::Expr> element(Location start, std::unique_ptr<ast::Expr> expr);
-    std::unique_ptr<ast::Expr> factor();
+    std::vector<utils::Ref<ast::Expr>> statements();
+    utils::Ref<ast::Expr> statement();
+    utils::Ref<ast::Expr> expr(bool semicolon = true);
+    utils::Ref<ast::Expr> binary(int prec, utils::Ref<ast::Expr> left);
+    utils::Ref<ast::Expr> unary();
+    utils::Ref<ast::Expr> call();
+    utils::Ref<ast::Expr> attr(Location start, utils::Ref<ast::Expr> expr);
+    utils::Ref<ast::Expr> element(Location start, utils::Ref<ast::Expr> expr);
+    utils::Ref<ast::Expr> factor();
 
 private:
     uint32_t index;
     Token current;
     Context context;
     std::vector<Token> tokens;
-    std::map<TokenType, int> precedences;
+    std::map<TokenKind, int> precedences;
     std::map<std::string, Type*> types;
     std::vector<Type*> _allocated_types;
 };

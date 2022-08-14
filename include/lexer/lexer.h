@@ -13,7 +13,7 @@
 class Lexer {
 public:
     Lexer(std::string source, std::string filename);
-    Lexer(std::ifstream& file, std::string filename);
+    Lexer(std::fstream& file, std::string filename);
     Lexer(FILE* file, std::string filename);
 
     char next();
@@ -24,8 +24,8 @@ public:
 
     bool is_keyword(std::string word);
 
-    Token create_token(TokenType type, std::string value);
-    Token create_token(TokenType type, Location start, std::string value);
+    Token create_token(TokenKind type, std::string value);
+    Token create_token(TokenKind type, Location start, std::string value);
 
     Location loc();
 

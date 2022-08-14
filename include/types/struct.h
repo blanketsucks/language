@@ -10,8 +10,8 @@ public:
     static StructType* create(std::string name, std::vector<Type*> fields);
     ~StructType() override;
 
-    static StructType* fromLLVMType(llvm::StructType* type);
-    llvm::StructType* toLLVMType(llvm::LLVMContext& context) override;
+    static StructType* from_llvm_type(llvm::StructType* type);
+    llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
 
     StructType* copy() override;
 

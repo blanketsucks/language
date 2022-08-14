@@ -1,0 +1,131 @@
+$define NULL 0
+
+$define SEEK_END 2
+$define SEEK_SET 0
+
+namespace libc {
+
+type FILE = int;
+    
+extern "C" {
+    func fopen(path: char*, mode: char*) -> libc::FILE*;
+    func fdopen(fd: int, mode: char*) -> libc::FILE*;
+    func freopen(path: char*, mode: char*, stream: libc::FILE*) -> libc::FILE*;
+    func fclose(stream: libc::FILE*) -> int;
+    func fflush(stream: libc::FILE*) -> int;
+
+
+    func fgetc(stream: libc::FILE*) -> int;
+    func fgets(buf: char*, n: int, stream: libc::FILE*) -> char*;
+    func getc(stream: libc::FILE*) -> int;
+    func getchar() -> int;
+    func ungetc(c: int, stream: libc::FILE*) -> int;
+
+
+    func fputc(c: int, stream: libc::FILE*) -> int;
+    func fputs(s: char*, stream: libc::FILE*) -> int;
+    func putc(c: int, stream: libc::FILE*) -> int;
+    [[allow_dead_code]] func putchar(c: int) -> int;
+    [[allow_dead_code]] func puts(s: char*) -> int;
+
+    func fread(buf: char*, size: int, n: int, stream: libc::FILE*) -> int;
+    func fwrite(buf: char*, size: int, n: int, stream: libc::FILE*) -> int;
+
+
+    func fseek(stream: libc::FILE*, offset: int, whence: int) -> int;
+    func ftell(stream: libc::FILE*) -> int;
+    func rewind(stream: libc::FILE*);
+    func fgetpos(stream: libc::FILE*, pos: int*) -> int;
+    func fsetpos(stream: libc::FILE*, pos: int*) -> int;
+
+
+    func clearerr(stream: libc::FILE*);
+    func feof(stream: libc::FILE*) -> int;
+    func ferror(stream: libc::FILE*) -> int;
+    func fileno(stream: libc::FILE*) -> int;
+
+
+    func printf(fmt: char*, ...) -> int;
+    func fprintf(stream: libc::FILE*, fmt: char*, ...) -> int;
+    func dprintf(fd: int, fmt: char*, ...) -> int;
+    func sprintf(buf: char*, fmt: char*, ...) -> int;
+    func snprintf(buf: char*, n: int, fmt: char*, ...) -> int;
+
+
+    func malloc(size: int) -> void*;
+    func calloc(nmemb: int, size: int) -> void*;
+    func realloc(ptr: void*, size: int) -> void*;
+    func reallocarray(ptr: void*, nmemb: int, size: int) -> void*;
+    func free(ptr: void*);
+
+
+    func memcpy(dest: void*, src: void*, size: int) -> void*;
+    func memset(dest: void*, c: int, size: int) -> void*;
+    func memmove(dest: void*, src: void*, size: int) -> void*;
+    func memcmp(s1: void*, s2: void*, size: int) -> int;
+    func memchr(s: void*, c: int, size: int) -> void*;
+    func memrchr(s: void*, c: int, size: int) -> void*;
+    func memmem(s: void*, n: int, needle: void*, m: int) -> void*;
+
+
+    func strlen(s: char*) -> int;
+    func strcmp(s1: char*, s2: char*) -> int;
+    func strncmp(s1: char*, s2: char*, n: int) -> int;
+    func strcasecmp(s1: char*, s2: char*) -> int;
+    func strncasecmp(s1: char*, s2: char*, n: int) -> int;
+    func strchr(s: char*, c: int) -> char*;
+    func strrchr(s: char*, c: int) -> char*;
+    func strstr(haystack: char*, needle: char*) -> char*;
+    func strcasestr(haystack: char*, needle: char*) -> char*;
+    func strtok(s: char*, delim: char*) -> char*;
+    func strtok_r(s: char*, delim: char*, save_ptr: char**) -> char*;
+    func strdup(s: char*) -> char*;
+    func strndup(s: char*, n: int) -> char*;
+    func strnlen(s: char*, n: int) -> int;
+    func strspn(s: char*, accept: char*) -> int;
+    func strcspn(s: char*, reject: char*) -> int;
+    func strpbrk(s: char*, accept: char*) -> char*;
+    func strsep(s: char*, delim: char*) -> char*;
+    func strcoll(s1: char*, s2: char*) -> int;
+
+
+    func isalnum(c: int) -> int;
+    func isalpha(c: int) -> int;
+    func isblank(c: int) -> int;
+    func iscntrl(c: int) -> int;
+    func isdigit(c: int) -> int;
+    func isgraph(c: int) -> int;
+    func islower(c: int) -> int;
+    func isprint(c: int) -> int;
+    func ispunct(c: int) -> int;
+    func isspace(c: int) -> int;
+    func isupper(c: int) -> int;
+    func isxdigit(c: int) -> int;
+
+
+    func tolower(c: int) -> int;
+    func toupper(c: int) -> int;
+    func toascii(c: int) -> int;
+
+
+    func atoi(s: char*) -> int;
+    func atol(s: char*) -> long;
+    func atoll(s: char*) -> long;
+
+
+    func atof(s: char*) -> double;
+
+
+    func sleep(seconds: int) -> int;
+
+    func exit(code: int) -> void;
+
+    func atexit(f: ());
+
+    func strerror(err: int) -> char*;
+
+    func __errno_location() -> int*;
+    func __h_errno_location() -> int*;
+}
+
+}

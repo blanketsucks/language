@@ -20,22 +20,22 @@ FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, b
     return new FunctionType(args, return_type, has_varargs);
 }
 
-FunctionType* FunctionType::fromLLVMType(llvm::FunctionType* type) {
+FunctionType* FunctionType::from_llvm_type(llvm::FunctionType* type) {
     std::vector<Type*> args;
     for (auto arg : type->params()) {
-        args.push_back(Type::fromLLVMType(arg));
+        args.push_back(Type::from_llvm_type(arg));
     }
 
-    return FunctionType::create(args, Type::fromLLVMType(type->getReturnType()), type->isVarArg());
+    return FunctionType::create(args, Type::from_llvm_type(type->getReturnType()), type->isVarArg());
 }
 
-llvm::Type* FunctionType::toLLVMType(llvm::LLVMContext& context) {
+llvm::Type* FunctionType::to_llvm_type(llvm::LLVMContext& context) {
     std::vector<llvm::Type*> types;
     for (auto& arg : this->args) {
-        types.push_back(arg->toLLVMType(context));
+        types.push_back(arg->to_llvm_type(context));
     }
 
-    return llvm::FunctionType::get(this->return_type->toLLVMType(context), types, this->has_varargs)->getPointerTo();
+    return llvm::FunctionType::get(this->return_type->to_llvm_type(context), types, this->has_varargs)->getPointerTo();
 }
 
 FunctionType* FunctionType::copy() {
@@ -69,5 +69,5 @@ bool FunctionType::is_compatible(Type* other) {
 }
 
 bool FunctionType::is_compatible(llvm::Type* type) {
-    return this->is_compatible(Type::fromLLVMType(type));
+    return this->is_compatible(Type::from_llvm_type(type));
 }

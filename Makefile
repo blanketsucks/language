@@ -8,7 +8,7 @@ ifeq ($(DEBUG),true)
 	FLAGS += -g
 endif
 
-CXXFLAGS = $(FLAGS) -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -c -std=c++14
+CXXFLAGS = $(FLAGS) -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -fno-exceptions -c -std=c++14
 CXXFLAGS += $(shell $(LLVM-CONFIG) --cflags)
 
 LDFLAGS = $(FLAGS) -Wno-non-pod-varargs

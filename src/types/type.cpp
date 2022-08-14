@@ -18,7 +18,7 @@ Type* Type::create(Type::Value value, size_t size) {
     return new Type(value, size);
 }
 
-Type* Type::fromLLVMType(llvm::Type* type) {
+Type* Type::from_llvm_type(llvm::Type* type) {
     if (type->isIntegerTy(8)) {
         return CharType;
     } else if (type->isIntegerTy(16)) {
@@ -34,23 +34,19 @@ Type* Type::fromLLVMType(llvm::Type* type) {
     } else if (type->isFloatTy()) {
         return FloatType;
     } else if (type->isStructTy()) {
-        return StructType::fromLLVMType(llvm::cast<llvm::StructType>(type));
+        return StructType::from_llvm_type(llvm::cast<llvm::StructType>(type));
     } else if (type->isFunctionTy()) {
-        return FunctionType::fromLLVMType(llvm::cast<llvm::FunctionType>(type));
+        return FunctionType::from_llvm_type(llvm::cast<llvm::FunctionType>(type));
     } else if (type->isPointerTy()) {
-        if (type->getPointerElementType()->isFunctionTy()) {
-            return FunctionType::fromLLVMType(llvm::cast<llvm::FunctionType>(type->getPointerElementType()));
-        }
-
-        return PointerType::fromLLVMType(type);
+        return PointerType::from_llvm_type(type);
     } else if (type->isArrayTy()) {
-        return ArrayType::fromLLVMType(llvm::cast<llvm::ArrayType>(type));
+        return ArrayType::from_llvm_type(llvm::cast<llvm::ArrayType>(type));
     } else {
         return VoidType;
     }
 }
 
-llvm::Type* Type::toLLVMType(llvm::LLVMContext& context) {
+llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
     switch (this->value) {
         case Type::Short:
             return llvm::Type::getInt16Ty(context);
@@ -70,8 +66,6 @@ llvm::Type* Type::toLLVMType(llvm::LLVMContext& context) {
             return llvm::Type::getFloatTy(context);
         case Type::Char:
             return llvm::Type::getInt8Ty(context);
-        case Type::String:
-            return llvm::Type::getInt8PtrTy(context);
         case Type::Boolean:
             return llvm::Type::getInt1Ty(context);
         default:
@@ -120,9 +114,7 @@ std::string Type::str() {
         case Type::Double:
             return "double";
         case Type::Float:
-            return "float";
-        case Type::String:
-            return "str"; 
+            return "float"; 
         case Type::Char:
             return "char";
         case Type::Boolean:
@@ -151,9 +143,7 @@ bool Type::is_compatible(Type* other) {
         // TODO: Check signedness and possibly the size
         return true;
     } else if (
-        (this->isString() && other->isString()) || 
-        (this->isVoid() && other->isVoid()) || 
-        (this->isArray() && other->isArray())
+        (this->isVoid() && other->isVoid()) || (this->isArray() && other->isArray())
     ) {
         return true;
     } else {
@@ -162,5 +152,5 @@ bool Type::is_compatible(Type* other) {
 }
 
 bool Type::is_compatible(llvm::Type* type) {
-    return this->is_compatible(Type::fromLLVMType(type));
+    return this->is_compatible(Type::from_llvm_type(type));
 }

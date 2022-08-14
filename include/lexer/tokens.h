@@ -6,7 +6,7 @@
 #include <string>
 #include <map>
 
-enum class TokenType {
+enum class TokenKind {
     Identifier,
     Keyword,
     Integer,
@@ -74,16 +74,16 @@ struct Location {
 };
 
 struct Token {
-    TokenType type;
+    TokenKind type;
     Location start;
     Location end;
     std::string value;
 
-    static std::string getTokenTypeValue(TokenType type);
+    static std::string getTokenTypeValue(TokenKind type);
 
-    bool operator==(TokenType type);
+    bool operator==(TokenKind type);
     bool operator==(Token token);
-    bool operator!=(TokenType type);
+    bool operator!=(TokenKind type);
 };
 
 static std::vector<std::string> KEYWORDS = {
@@ -97,15 +97,11 @@ static std::vector<std::string> KEYWORDS = {
     "let",
     "const",
     "struct",
-    "packed",
-    "include",
     "namespace",
     "type",
     "in",
     "as",
     "sizeof",
-    "asm",
-    "static_assert",
     "using",
     "from",
     "defer",
@@ -123,51 +119,51 @@ static std::vector<std::string> KEYWORDS = {
     "$else",
 };
 
-static std::vector<std::pair<TokenType, int>> PRECEDENCES = {
-    std::make_pair(TokenType::Assign, 5),
+static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {
+    std::make_pair(TokenKind::Assign, 5),
 
-    std::make_pair(TokenType::Lt, 10),
-    std::make_pair(TokenType::Gt, 10),
-    std::make_pair(TokenType::Lte, 10),
-    std::make_pair(TokenType::Gte, 10),
-    std::make_pair(TokenType::Eq, 10),
-    std::make_pair(TokenType::Neq, 10),
-    std::make_pair(TokenType::And, 10),
-    std::make_pair(TokenType::Or, 10),
+    std::make_pair(TokenKind::Lt, 10),
+    std::make_pair(TokenKind::Gt, 10),
+    std::make_pair(TokenKind::Lte, 10),
+    std::make_pair(TokenKind::Gte, 10),
+    std::make_pair(TokenKind::Eq, 10),
+    std::make_pair(TokenKind::Neq, 10),
+    std::make_pair(TokenKind::And, 10),
+    std::make_pair(TokenKind::Or, 10),
 
-    std::make_pair(TokenType::BinaryAnd, 20),
-    std::make_pair(TokenType::BinaryOr, 20),
-    std::make_pair(TokenType::Xor, 20),
-    std::make_pair(TokenType::Rsh, 20),
-    std::make_pair(TokenType::Lsh, 20),
+    std::make_pair(TokenKind::BinaryAnd, 20),
+    std::make_pair(TokenKind::BinaryOr, 20),
+    std::make_pair(TokenKind::Xor, 20),
+    std::make_pair(TokenKind::Rsh, 20),
+    std::make_pair(TokenKind::Lsh, 20),
 
-    std::make_pair(TokenType::IAdd, 25),
-    std::make_pair(TokenType::IMinus, 25),
-    std::make_pair(TokenType::IMul, 25),
-    std::make_pair(TokenType::IDiv, 25),
+    std::make_pair(TokenKind::IAdd, 25),
+    std::make_pair(TokenKind::IMinus, 25),
+    std::make_pair(TokenKind::IMul, 25),
+    std::make_pair(TokenKind::IDiv, 25),
 
-    std::make_pair(TokenType::Add, 30),
-    std::make_pair(TokenType::Minus, 30),
-    std::make_pair(TokenType::Div, 40),
-    std::make_pair(TokenType::Mul, 40)
+    std::make_pair(TokenKind::Add, 30),
+    std::make_pair(TokenKind::Minus, 30),
+    std::make_pair(TokenKind::Div, 40),
+    std::make_pair(TokenKind::Mul, 40)
 };
 
-static std::vector<TokenType> UNARY_OPERATORS = {
-    TokenType::Not,
-    TokenType::Add,
-    TokenType::Minus,
-    TokenType::BinaryNot,
-    TokenType::BinaryAnd,
-    TokenType::Mul,
-    TokenType::Inc,
-    TokenType::Dec,
+static std::vector<TokenKind> UNARY_OPERATORS = {
+    TokenKind::Not,
+    TokenKind::Add,
+    TokenKind::Minus,
+    TokenKind::BinaryNot,
+    TokenKind::BinaryAnd,
+    TokenKind::Mul,
+    TokenKind::Inc,
+    TokenKind::Dec,
 };
 
-static std::map<TokenType, TokenType> INPLACE_OPERATORS {
-    {TokenType::IAdd, TokenType::Add},
-    {TokenType::IMinus, TokenType::Minus},
-    {TokenType::IMul, TokenType::Mul},
-    {TokenType::IDiv, TokenType::Div},
+static std::map<TokenKind, TokenKind> INPLACE_OPERATORS {
+    {TokenKind::IAdd, TokenKind::Add},
+    {TokenKind::IMinus, TokenKind::Minus},
+    {TokenKind::IMul, TokenKind::Mul},
+    {TokenKind::IDiv, TokenKind::Div},
 };  
 
 

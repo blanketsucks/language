@@ -18,7 +18,7 @@ std::vector<Token> Macro::expand()  {
 std::vector<Token> Macro::expand(std::map<std::string, Token>& args)  {
     std::vector<Token> tokens;
     for (auto& token : this->body) {
-        if (token == TokenType::Identifier) {
+        if (token == TokenKind::Identifier) {
             if (args.find(token.value) != args.end()) {
                 tokens.push_back(args[token.value]);
             } else {
@@ -48,13 +48,13 @@ void Preprocessor::next() {
     }
 }
 
-std::vector<Token> Preprocessor::skip_until(TokenType type, std::vector<std::string> values) {
+std::vector<Token> Preprocessor::skip_until(TokenKind type, std::vector<std::string> values) {
     auto in = [](std::vector<std::string> values, std::string value) {
         return std::find(values.begin(), values.end(), value) == values.end();
     };
 
     std::vector<Token> tokens;
-    while (this->current != TokenType::EOS && this->current != type && in(values, this->current.value)) {
+    while (this->current != TokenKind::EOS && this->current != type && in(values, this->current.value)) {
         tokens.push_back(this->current);
         this->next();
     }
@@ -75,8 +75,8 @@ void Preprocessor::update(std::map<std::string, Macro> macros) {
 }
 
 std::vector<Token> Preprocessor::process() {
-    while (this->current != TokenType::EOS) {
-        if (this->current == TokenType::Keyword) {
+    while (this->current != TokenKind::EOS) {
+        if (this->current == TokenKind::Keyword) {
             if (this->current.value == "$define") {
                 this->next();
                 this->parse_macro_definition();
@@ -99,14 +99,14 @@ std::vector<Token> Preprocessor::process() {
 
                 this->parse_include(path);
             }
-        } else if (this->current == TokenType::Identifier) {
+        } else if (this->current == TokenKind::Identifier) {
             if (this->is_macro(this->current.value)) {
                 Macro macro = this->macros[this->current.value];
                 this->expand(macro);
             }
         }
 
-        if (this->current != TokenType::Newline) {
+        if (this->current != TokenKind::Newline) {
             this->processed.push_back(this->current);
         }
 
@@ -118,7 +118,7 @@ std::vector<Token> Preprocessor::process() {
 }
 
 Macro Preprocessor::parse_macro_definition() {
-    if (this->current != TokenType::Identifier) {
+    if (this->current != TokenKind::Identifier) {
         ERROR(this->current.start, "Expected identifier"); exit(1);
     }
  
@@ -126,18 +126,18 @@ Macro Preprocessor::parse_macro_definition() {
     this->next();
 
     std::vector<std::string> args;
-    if (this->current == TokenType::LParen) {
+    if (this->current == TokenKind::LParen) {
         this->next();
 
-        while (this->current != TokenType::RParen) {
-            if (this->current != TokenType::Identifier) {
+        while (this->current != TokenKind::RParen) {
+            if (this->current != TokenKind::Identifier) {
                 ERROR(this->current.start, "Expected identifier"); exit(1);
             }
 
             args.push_back(this->current.value);
             this->next();
 
-            if (this->current == TokenType::Comma) {
+            if (this->current == TokenKind::Comma) {
                 this->next();
             }
         }
@@ -146,7 +146,7 @@ Macro Preprocessor::parse_macro_definition() {
     }
 
     std::vector<Token> body;
-    while (this->current != TokenType::Newline && this->current != TokenType::EOS) {
+    while (this->current != TokenKind::Newline && this->current != TokenKind::EOS) {
         body.push_back(this->current);
         this->next();
     }
@@ -157,15 +157,17 @@ Macro Preprocessor::parse_macro_definition() {
     return macro;
 }
 
-std::ifstream Preprocessor::search_include_paths(std::string path) {
-    if (utils::filesystem::exists(path)) {
-        return std::ifstream(path);
+std::fstream Preprocessor::search_include_paths(std::string filename) {
+    utils::filesystem::Path path(filename);
+
+    if (path.exists()) {
+        return path.open();
     }
 
     for (auto& search : this->include_paths) {
-        std::string full_path = search + path;
-        if (utils::filesystem::exists(full_path)) {
-            return std::ifstream(full_path);
+        path = utils::filesystem::Path(search).join(filename);
+        if (path.exists()) {
+            return path.open();
         }
     }
 
@@ -173,7 +175,7 @@ std::ifstream Preprocessor::search_include_paths(std::string path) {
 }
 
 void Preprocessor::parse_include(std::string path) {
-    std::ifstream file = this->search_include_paths(path);
+    std::fstream file = this->search_include_paths(path);
     if (this->includes.find(path) != this->includes.end()) {
         Include inc = this->includes[path];
         if (inc.state != IncludeState::Processed) {
@@ -194,7 +196,7 @@ void Preprocessor::parse_include(std::string path) {
     preprocessor.includes = this->includes;
 
     std::vector<Token> tokens = preprocessor.process();
-    while (tokens.back() == TokenType::EOS) {
+    while (tokens.back() == TokenKind::EOS) {
         tokens.pop_back();
     }
 
@@ -216,7 +218,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
     std::vector<Token> tokens;
     if (macro.is_callable()) {
         this->next();
-        if (this->current != TokenType::LParen) {
+        if (this->current != TokenKind::LParen) {
             ERROR(this->current.start, "Expected '('"); exit(1);
         }
 
@@ -224,7 +226,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
 
         std::map<std::string, Token> args;
         size_t index = 0;
-        while (this->current != TokenType::RParen) {
+        while (this->current != TokenKind::RParen) {
             if (index >= macro.args.size()) {
                 utils::error(this->current.start, "Too many arguments passed to macro call", false);
 
@@ -239,7 +241,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
             args[macro.args[index]] = this->current;
             this->next();
 
-            if (this->current != TokenType::Comma) {
+            if (this->current != TokenKind::Comma) {
                 break;
             }
 
@@ -247,7 +249,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
             index++;
         }
 
-        if (this->current != TokenType::RParen) {
+        if (this->current != TokenKind::RParen) {
             ERROR(this->current.start, "Expected ')'"); exit(1);
         }
 

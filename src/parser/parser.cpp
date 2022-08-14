@@ -9,6 +9,15 @@ static std::vector<ast::ExprKind> NUMERIC_KINDS = {
     ast::ExprKind::Float
 };
 
+static std::vector<std::string> NAMESPACE_ALLOWED_KEYWORDS = {
+    "struct",
+    "namespace",
+    "extern",
+    "func",
+    "type",
+    "const"
+};
+
 Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
     this->index = 0;
     this->current = this->tokens.front();
@@ -26,7 +35,6 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
         {"double", DoubleType},
         {"float", FloatType},
         {"char", CharType},
-        {"str", StringType},
         {"bool", BooleanType},
     };
 }
@@ -46,7 +54,7 @@ void Parser::free() {
 }
 
 void Parser::end() {
-    this->expect(TokenType::SemiColon, ";");
+    this->expect(TokenKind::SemiColon, ";");
 }
 
 Token Parser::next() {
@@ -69,7 +77,7 @@ Token Parser::peek() {
     return this->tokens[this->index + 1];
 }
 
-Token Parser::expect(TokenType type, std::string value) {
+Token Parser::expect(TokenKind type, std::string value) {
     if (this->current != type) {
         ERROR(this->current.start, "Expected {s}", value); exit(1);
     }
@@ -91,57 +99,73 @@ int Parser::get_token_precendence() {
 
 Type* Parser::parse_type(std::string name, bool should_error) {
     Type* type;
-    if (this->current == TokenType::LParen) {
+    if (this->current == TokenKind::LParen) {
         // (int, int) -> int
         this->next();
         std::vector<Type*> args;
 
-        while (this->current != TokenType::RParen) {
+        while (this->current != TokenKind::RParen) {
             Type* type = this->parse_type(this->current.value);
             args.push_back(type);
 
-            if (this->current != TokenType::Comma) {
+            if (this->current != TokenKind::Comma) {
                 break;
             }
             
             this->next();
         }
 
-        this->expect(TokenType::RParen, ")");
+        this->expect(TokenKind::RParen, ")");
         Type* return_type = VoidType;
         
-        if (this->current == TokenType::Arrow) {
+        if (this->current == TokenKind::Arrow) {
             this->next();
             return_type = this->parse_type(this->current.value);
         }
 
         type = FunctionType::create(args, return_type, false);
         this->_allocated_types.push_back(type);
-    } else if (this->current == TokenType::LBracket) {
+    } else if (this->current == TokenKind::LBracket) {
         this->next();
         Type* element = this->parse_type(this->current.value);
 
-        this->expect(TokenType::SemiColon, ";");
-        int result = this->itoa<int>(this->expect(TokenType::Integer, "integer").value);
+        this->expect(TokenKind::SemiColon, ";");
+        int result = this->itoa<int>(this->expect(TokenKind::Integer, "integer").value);
 
-        this->expect(TokenType::RBracket, "]");
+        this->expect(TokenKind::RBracket, "]");
         type = ArrayType::create(result, element);
 
         this->_allocated_types.push_back(type);
     } else {
+        bool skip_token = true;
+        if (this->peek() == TokenKind::DoubleColon) {
+            // A really silly solution
+            this->next(); this->next();
+            name += "::" + this->expect(TokenKind::Identifier, "identifier").value;
+
+            while (this->current == TokenKind::DoubleColon) {
+                this->next();
+                name += "::" + this->expect(TokenKind::Identifier, "identifier").value;
+            }
+
+            skip_token = false;
+        }
+
         if (this->types.find(name) == this->types.end()) {
             if (should_error) {
-                ERROR(this->current.start, "Unrecognized type '{s}'", name);
+                ERROR(this->current.start, "Unrecognized type '{s}'", name); exit(1);
             }
-            
+
             return nullptr;
         }
 
         type = this->types[name];
-        this->next();
+        if (skip_token) {
+            this->next();
+        }
     }
 
-    while (this->current == TokenType::Mul) {
+    while (this->current == TokenKind::Mul) {
         type = type->getPointerTo();
         this->_allocated_types.push_back(type);
 
@@ -151,40 +175,40 @@ Type* Parser::parse_type(std::string name, bool should_error) {
     return type;
 } 
 
-std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
-    std::vector<std::unique_ptr<ast::Expr>> body;
+utils::Ref<ast::BlockExpr> Parser::parse_block() {
+    std::vector<utils::Ref<ast::Expr>> body;
     Location start = this->current.start;
 
-    while (this->current != TokenType::RBrace) {
+    while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
         auto expr = this->statement();
 
         if (expr) {
-            expr->attributes = attrs;
+            expr->attributes.update(attrs);
             body.push_back(std::move(expr));
         }
     }
 
-    Location end = this->expect(TokenType::RBrace, "}").end;
-    return std::make_unique<ast::BlockExpr>(start, end, std::move(body));
+    Location end = this->expect(TokenKind::RBrace, "}").end;
+    return utils::make_ref<ast::BlockExpr>(start, end, std::move(body));
 }
 
-std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSpecifier linkage) {
+utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSpecifier linkage) {
     Location start = this->current.start;
 
-    std::string name = this->expect(TokenType::Identifier, "function name").value;
-    this->expect(TokenType::LParen, "(");
+    std::string name = this->expect(TokenKind::Identifier, "function name").value;
+    this->expect(TokenKind::LParen, "(");
 
     std::vector<ast::Argument> args;
     bool has_varargs = false;
 
-    while (this->current != TokenType::RParen) {
+    while (this->current != TokenKind::RParen) {
         std::string value = this->current.value;
-        if (this->current != TokenType::Identifier && this->current != TokenType::Ellipsis) {
+        if (this->current != TokenKind::Identifier && this->current != TokenKind::Ellipsis) {
             ERROR(this->current.start, "Expected identifier"); exit(1);
         }
 
-        if (this->current == TokenType::Ellipsis) {
+        if (this->current == TokenKind::Ellipsis) {
             if (has_varargs) {
                 ERROR(this->current.start, "Cannot have multiple varargs"); exit(1);
             }
@@ -206,7 +230,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
                 this->next();
             } else {
                 this->next();
-                this->expect(TokenType::Colon, ":");
+                this->expect(TokenKind::Colon, ":");
 
                 type = this->parse_type(this->current.value);
                 argument = value;
@@ -215,7 +239,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
             type = this->parse_type(value, false);
             if (!type) {
                 this->next();
-                this->expect(TokenType::Colon, ":");
+                this->expect(TokenKind::Colon, ":");
 
                 type = this->parse_type(this->current.value);
                 argument = value;
@@ -223,16 +247,16 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
         }
 
         args.push_back({argument, type});
-        if (this->current != TokenType::Comma) {
+        if (this->current != TokenKind::Comma) {
             break;
         }
 
         this->next();
     }
 
-    Location end = this->expect(TokenType::RParen, ")").end;
+    Location end = this->expect(TokenKind::RParen, ")").end;
     Type* ret = VoidType;
-    if (this->current == TokenType::Arrow) {
+    if (this->current == TokenKind::Arrow) {
         this->next();
 
         end = this->current.end;
@@ -240,109 +264,118 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSp
         
     }
 
-    auto expr = std::make_unique<ast::PrototypeExpr>(start, end, name, ret, std::move(args), has_varargs);
+    auto expr = utils::make_ref<ast::PrototypeExpr>(start, end, name, ret, std::move(args), has_varargs);
     expr->linkage_specifier = linkage;
 
     return expr;
 }
 
-std::unique_ptr<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecifier linkage) {
+utils::Ref<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecifier linkage) {
     auto prototype = this->parse_prototype(linkage);
 
-    if (this->current == TokenType::SemiColon) {
+    if (this->current == TokenKind::SemiColon) {
         this->next();
         return prototype;
     }
-
-    this->expect(TokenType::LBrace, "{");
+    
+    this->expect(TokenKind::LBrace, "{");
     this->context.is_inside_function = true;
 
     auto body = this->parse_block();
     this->context.is_inside_function = false;
 
-    return std::make_unique<ast::FunctionExpr>(prototype->start, body->end, std::move(prototype), std::move(body));
+    return utils::make_ref<ast::FunctionExpr>(prototype->start, body->end, std::move(prototype), std::move(body));
 }
 
-std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
+utils::Ref<ast::IfExpr> Parser::parse_if_statement() {
     Location start = this->current.start;
-    this->expect(TokenType::LParen, "(");
+    this->expect(TokenKind::LParen, "(");
 
     auto condition = this->expr(false);
-    this->expect(TokenType::RParen, ")");
+    this->expect(TokenKind::RParen, ")");
 
-    this->expect(TokenType::LBrace, "{");
-    auto body = this->parse_block();
-    
-    Location end = body->end;
-    std::unique_ptr<ast::BlockExpr> else_body = nullptr;
-    if (this->current == TokenType::Keyword && this->current.value == "else") {
+    utils::Ref<ast::Expr> body;
+    if (this->current != TokenKind::LBrace) {
+        body = this->statement();
+    } else {
         this->next();
-        this->expect(TokenType::LBrace, "{");
+        body = this->parse_block();
+    }
 
-        else_body = this->parse_block();
+    Location end = body->end;
+    utils::Ref<ast::Expr> else_body;
+    if (this->current == TokenKind::Keyword && this->current.value == "else") {
+        this->next();
+        if (this->current != TokenKind::LBrace) {
+            else_body = this->statement();
+        } else {
+            this->next();
+            else_body = this->parse_block();
+        }
+
         end = else_body->end;
     }
 
-    return std::make_unique<ast::IfExpr>(start, end, std::move(condition), std::move(body), std::move(else_body));
+    return utils::make_ref<ast::IfExpr>(start, end, std::move(condition), std::move(body), std::move(else_body));
 }
 
-std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
+utils::Ref<ast::StructExpr> Parser::parse_struct() {
     Location start = this->current.start;
-    bool packed = false;
-    if (this->current == TokenType::Keyword && this->current.value == "packed") {
-        packed = true;
-        this->next();
-    }
-    
-    if (this->current != TokenType::Identifier) {
+    if (this->current != TokenKind::Identifier) {
         ERROR(this->current.start, "Expected struct name"); exit(1);
     }
 
     std::string name = this->current.value;
-    this->next();
+    std::string formatted = name;
 
-    if (this->current == TokenType::SemiColon) {
-        this->next();
-
-        this->types[name] = StructType::create(name, {});
-        return std::make_unique<ast::StructExpr>(start, this->current.end, name, packed, true);
+    if (this->context.current_namespace.hasValue()) {
+        formatted = utils::fmt::format("{s}::{s}", this->context.current_namespace.getValue(), name);
     }
 
-    std::vector<std::unique_ptr<ast::Expr>> parents;
+    this->next();
 
-    if (this->current == TokenType::LParen) {
+    if (this->current == TokenKind::SemiColon) {
         this->next();
-        while (this->current != TokenType::RParen) {
+
+        this->types[formatted] = StructType::create(name, {});
+        return utils::make_ref<ast::StructExpr>(start, this->current.end, name, true);
+    }
+
+    std::vector<utils::Ref<ast::Expr>> parents;
+
+    if (this->current == TokenKind::LParen) {
+        this->next();
+        while (this->current != TokenKind::RParen) {
             parents.push_back(this->expr(false));
-            if (this->current != TokenType::Comma) {
+            if (this->current != TokenKind::Comma) {
                 break;
             }
 
             this->next();
         }
 
-        this->expect(TokenType::RParen, ")");
+        this->expect(TokenKind::RParen, ")");
     }
 
-    this->expect(TokenType::LBrace, "{");
+    this->expect(TokenKind::LBrace, "{");
 
     std::map<std::string, ast::StructField> fields;
-    std::vector<std::unique_ptr<ast::Expr>> methods;
+    std::vector<utils::Ref<ast::Expr>> methods;
     std::vector<Type*> types;
 
     StructType* structure = StructType::create(name, {});
     this->context.current_struct = structure;
 
-    this->types[name] = structure;
-    while (this->current != TokenType::RBrace) {
+    this->types[formatted] = structure;
+    while (this->current != TokenKind::RBrace) {
         bool is_private = false;
 
-        if (this->current == TokenType::Keyword && this->current.value == "private") {
+        if (this->current == TokenKind::Keyword && this->current.value == "private") {
             is_private = true;
             this->next();
         }
 
-        if (this->current != TokenType::Identifier && (this->current != TokenType::Keyword && this->current.value != "func")) {
+        if (this->current != TokenKind::Identifier && (this->current != TokenKind::Keyword && this->current.value != "func")) {
             ERROR(this->current.start, "Expected field name or function definition"); exit(1);
         }
 
@@ -359,7 +392,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
             std::string name = this->current.value;
             this->next();
 
-            if (this->current != TokenType::Colon) {
+            if (this->current != TokenKind::Colon) {
                 ERROR(this->current.start, "Expected :"); exit(1);
             }
 
@@ -367,7 +400,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
             types.push_back(this->parse_type(this->current.value));
 
             fields[name] = {name, types.back(), is_private};
-            if (this->current != TokenType::SemiColon) {
+            if (this->current != TokenKind::SemiColon) {
                 ERROR(this->current.start, "Expected ;"); exit(1);
             }
 
@@ -375,7 +408,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
         }
     }
 
-    if (this->current != TokenType::RBrace) {
+    if (this->current != TokenKind::RBrace) {
         ERROR(this->current.start, "Expected }"); exit(1);
     }
 
@@ -383,15 +416,17 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     structure->setFields(types);
 
     this->next();
-    return std::make_unique<ast::StructExpr>(
-        start, end, name, packed, false, std::move(parents), std::move(fields), std::move(methods)
+
+    this->context.current_struct = nullptr;
+    return utils::make_ref<ast::StructExpr>(
+        start, end, name, false, std::move(parents), std::move(fields), std::move(methods)
     );    
 }
 
-std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
+utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     Location start = this->current.start;
 
-    if (this->current != TokenType::Identifier) {
+    if (this->current != TokenKind::Identifier) {
         ERROR(this->current.start, "Expected variable name"); exit(1);
     }
 
@@ -399,14 +434,14 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     std::string name = this->current.value;
     this->next();
 
-    if (this->current == TokenType::Colon) {
+    if (this->current == TokenKind::Colon) {
         this->next();
         type = this->parse_type(this->current.value);
     }
     
-    std::unique_ptr<ast::Expr> expr = nullptr;
-    if (this->current != TokenType::Assign) {
-        if (this->current != TokenType::SemiColon) {
+    utils::Ref<ast::Expr> expr = nullptr;
+    if (this->current != TokenKind::Assign) {
+        if (this->current != TokenKind::SemiColon) {
             ERROR(this->current.start, "Expected = or ;"); exit(1);
         }
 
@@ -417,7 +452,7 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         this->next();
         expr = this->expr(false);
         
-        if (this->current != TokenType::SemiColon) {
+        if (this->current != TokenKind::SemiColon) {
             ERROR(this->current.start, "Expected ;"); exit(1);
         }
     }
@@ -430,38 +465,48 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
             ERROR(this->current.start, "Constants must have an initializer"); exit(1);
         }
 
-        return std::make_unique<ast::ConstExpr>(start, end, name, type, std::move(expr));
+        return utils::make_ref<ast::ConstExpr>(start, end, name, type, std::move(expr));
     } else {
-        return std::make_unique<ast::VariableAssignmentExpr>(start, end, name, type, std::move(expr));
+        return utils::make_ref<ast::VariableAssignmentExpr>(start, end, name, type, std::move(expr));
     }
 }
 
-std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
+utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
     Location start = this->current.start;
-    if (this->current != TokenType::Identifier) {
+    if (this->current != TokenKind::Identifier) {
         ERROR(this->current.start, "Expected namespace name"); exit(1);
     }
 
     std::string name = this->current.value;
+    if (this->context.current_namespace.hasValue()) {
+        std::string current = this->context.current_namespace.getValue();
+        this->context.current_namespace = utils::fmt::format("{s}::{s}", current, name);
+    } else {
+        this->context.current_namespace = name;
+    }
 
     this->next();
-    if (this->current != TokenType::LBrace) {
+    if (this->current != TokenKind::LBrace) {
         ERROR(this->current.start, "Expected {"); exit(1);
     }
 
     this->next();
 
-    std::vector<std::unique_ptr<ast::Expr>> members;
+    std::vector<utils::Ref<ast::Expr>> members;
 
-    while (this->current != TokenType::RBrace) {
+    while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
+
+        bool is_not_allowed = std::find(
+            NAMESPACE_ALLOWED_KEYWORDS.begin(), NAMESPACE_ALLOWED_KEYWORDS.end(), this->current.value
+        ) == NAMESPACE_ALLOWED_KEYWORDS.end();
         if (
-            this->current != TokenType::Keyword || (this->current.value != "func" && this->current.value != "extern" && this->current.value != "struct" && this->current.value != "const" && this->current.value != "namespace")
+            this->current != TokenKind::Keyword && is_not_allowed
         ) {
-            ERROR(this->current.start, "Expected function, extern, struct, const, or namespace"); exit(1);
+            ERROR(this->current.start, "Expected function, extern, struct, const, type, or namespace"); exit(1);
         }
 
-        std::unique_ptr<ast::Expr> member;
+        utils::Ref<ast::Expr> member;
         if (this->current.value == "func") {
             this->next();
             member = this->parse_function_definition();
@@ -474,50 +519,67 @@ std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
         } else if (this->current.value == "namespace") {
             this->next();
             member = this->parse_namespace();
+        } else if (this->current.value == "type") {
+            this->next();
+            std::string name = this->current.value;
+            if (this->context.current_namespace.hasValue()) {
+                std::string current = this->context.current_namespace.getValue();
+                name = utils::fmt::format("{s}::{s}", current, name);
+            }
+
+            this->next();
+            this->expect(TokenKind::Assign, "=");
+
+            Type* type = this->parse_type(this->current.value);
+            this->expect(TokenKind::SemiColon, ";");
+
+            this->types[name] = type;
+            continue;
         }
 
-        member->attributes = attrs;
+        member->attributes.update(attrs);
         members.push_back(std::move(member));
     }
 
-    if (this->current != TokenType::RBrace) {
+    if (this->current != TokenKind::RBrace) {
         ERROR(this->current.start, "Expected }"); exit(1);
     }
 
     Location end = this->current.end;
     this->next();
 
-    return std::make_unique<ast::NamespaceExpr>(start, end, name, std::move(members));
+    this->context.current_namespace.reset();
+    return utils::make_ref<ast::NamespaceExpr>(start, end, name, std::move(members));
 }
 
-std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
-    std::unique_ptr<ast::Expr> definition;
+utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
+    utils::Ref<ast::Expr> definition;
     Location start = this->current.start;
     
     ast::Attributes attrs = this->parse_attributes();
-    if (this->current == TokenType::Identifier) {
+    if (this->current == TokenKind::Identifier) {
         std::string name = this->current.value;
         this->next();
 
-        if (this->current != TokenType::Colon) {
+        if (this->current != TokenKind::Colon) {
             ERROR(this->current.start, "Expected :"); exit(1);
         }
 
         this->next();
         Type* type = this->parse_type(this->current.value);
 
-        if (this->current == TokenType::Assign) {
+        if (this->current == TokenKind::Assign) {
             ERROR(this->current.start, "External variables cannot have an initializer"); exit(1);
         }
 
-        if (this->current != TokenType::SemiColon) {
+        if (this->current != TokenKind::SemiColon) {
             ERROR(this->current.start, "Expected ;"); exit(1);
         }
 
         this->next();
-        definition = std::make_unique<ast::VariableAssignmentExpr>(start, this->current.end, name, type, nullptr, true);
+        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, this->current.end, name, type, nullptr, true);
     } else {
-        if (this->current != TokenType::Keyword && this->current.value != "func") {
+        if (this->current != TokenKind::Keyword && this->current.value != "func") {
             ERROR(this->current.start, "Expected function"); exit(1);
         }
 
@@ -525,15 +587,15 @@ std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier link
         definition = this->parse_function_definition(linkage);
     }
 
-    definition->attributes = attrs;
+    definition->attributes.update(attrs);
     return definition;
 }
 
-std::unique_ptr<ast::BlockExpr> Parser::parse_extern_block() {
+utils::Ref<ast::BlockExpr> Parser::parse_extern_block() {
     Location start = this->current.start;
     ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None;
 
-    if (this->current == TokenType::String) {
+    if (this->current == TokenKind::String) {
         if (this->current.value != "C") {
             ERROR(this->current.start, "Unsupported extern linkage specifier"); exit(1);
         }
@@ -547,11 +609,11 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_extern_block() {
         linkage = ast::ExternLinkageSpecifier::C;
     }
 
-    std::vector<std::unique_ptr<ast::Expr>> definitions;
-    if (this->current == TokenType::LBrace) {
+    std::vector<utils::Ref<ast::Expr>> definitions;
+    if (this->current == TokenKind::LBrace) {
         this->next();
 
-        while (this->current != TokenType::RBrace) {
+        while (this->current != TokenKind::RBrace) {
             auto definition = this->parse_extern(linkage);
             definitions.push_back(std::move(definition));
         }
@@ -559,120 +621,24 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_extern_block() {
         Location end = this->current.end;
         this->next();
 
-        return std::make_unique<ast::BlockExpr>(start, end, std::move(definitions));
+        return utils::make_ref<ast::BlockExpr>(start, end, std::move(definitions));
     }
 
     auto definition = this->parse_extern(linkage);
     definitions.push_back(std::move(definition));
 
-    return std::make_unique<ast::BlockExpr>(start, this->current.end, std::move(definitions));
+    return utils::make_ref<ast::BlockExpr>(start, this->current.end, std::move(definitions));
 }
 
-std::unique_ptr<ast::InlineAssemblyExpr> Parser::parse_inline_assembly() {
-    Location start = this->current.start;
-    if (this->current != TokenType::LParen) {
-        ERROR(this->current.start, "Expected ("); exit(1);
-    }
+std::vector<utils::Ref<ast::Expr>> Parser::statements() {
+    std::vector<utils::Ref<ast::Expr>> statements;
 
-    this->next();
-    if (this->current != TokenType::String) {
-        ERROR(this->current.start, "Expected string"); exit(1);
-    }
-
-    std::string assembly = this->current.value;
-    this->next();
-
-    ast::InlineAssemblyConstraint inputs;
-    ast::InlineAssemblyConstraint outputs;
-    std::vector<std::string> clobbers;
-
-    if (this->current == TokenType::Colon) {
-        this->next();
-        auto parse_constraint = [this](
-            ast::InlineAssemblyConstraint& constraints
-        ) {
-            while (this->current != TokenType::Colon && this->current != TokenType::RParen) {
-                if (this->current != TokenType::String) {
-                    ERROR(this->current.start, "Expected string"); exit(1);
-                }
-
-                std::string value = this->current.value;
-                this->next();
-
-                if (this->current != TokenType::LParen) {
-                    ERROR(this->current.start, "Expected ("); exit(1);
-                }
-
-                this->next();
-                auto expr = this->expr(false);
-
-                if (this->current != TokenType::RParen) {
-                    ERROR(this->current.start, "Expected )"); exit(1);
-                }
-
-                this->next();
-
-                auto pair = std::make_pair(value, expr.release());
-                constraints.push_back(pair);
-
-                if (this->current != TokenType::Comma) {
-                    break;
-                }
-
-                this->next();
-            }
-
-            if (this->current != TokenType::Colon && this->current != TokenType::RParen) {
-                ERROR(this->current.start, "Expected : or )"); exit(1);
-            }
-        };
-
-        parse_constraint(inputs);
-        if (this->current == TokenType::RParen) {
-            this->next();
-            if (this->current != TokenType::SemiColon) {
-                ERROR(this->current.start, "Expected ;"); exit(1);
-            }
-
-            return std::make_unique<ast::InlineAssemblyExpr>(start, this->current.end, assembly, std::move(inputs), std::move(outputs), clobbers);
-        }
-
-        this->next();
-        parse_constraint(outputs);
-        if (this->current == TokenType::RParen) {
-            this->next();
-
-            this->expect(TokenType::SemiColon, ";");
-            return std::make_unique<ast::InlineAssemblyExpr>(start, this->current.end, assembly, std::move(inputs), std::move(outputs), clobbers);
-        }
-
-        while (this->current != TokenType::RParen) {
-            std::string value = this->expect(TokenType::String, "string").value;
-            this->next();
-
-            clobbers.push_back(value);
-
-            if (this->current != TokenType::Comma) {
-                break;
-            }
-        }
-    }
-    
-    this->expect(TokenType::RParen, ")");
-    this->expect(TokenType::SemiColon, ";");
-
-    return std::make_unique<ast::InlineAssemblyExpr>(start, this->current.end, assembly, std::move(inputs), std::move(outputs), clobbers);
-}
-
-std::vector<std::unique_ptr<ast::Expr>> Parser::statements() {
-    std::vector<std::unique_ptr<ast::Expr>> statements;
-
-    while (this->current != TokenType::EOS) {
+    while (this->current != TokenKind::EOS) {
         ast::Attributes attrs = this->parse_attributes();
         auto expr = this->statement();
 
         if (expr) {
-            expr->attributes = attrs;
+            expr->attributes.update(attrs);
             statements.push_back(std::move(expr));
         }
     }
@@ -680,9 +646,9 @@ std::vector<std::unique_ptr<ast::Expr>> Parser::statements() {
     return statements;
 }
 
-std::unique_ptr<ast::Expr> Parser::statement() {
+utils::Ref<ast::Expr> Parser::statement() {
     switch (this->current.type) {
-        case TokenType::Keyword:
+        case TokenKind::Keyword:
             if (this->current.value == "extern") {
                 this->next();
                 return this->parse_extern_block();
@@ -696,16 +662,16 @@ std::unique_ptr<ast::Expr> Parser::statement() {
 
                 this->next();
                 Location start = this->current.start;
-                if (this->current == TokenType::SemiColon) {
+                if (this->current == TokenKind::SemiColon) {
                     this->next();
-                    return std::make_unique<ast::ReturnExpr>(start, this->current.end, nullptr);
+                    return utils::make_ref<ast::ReturnExpr>(start, this->current.end, nullptr);
                 }
 
                 auto expr = this->expr(false);
                 Location end = this->current.end;
 
-                this->expect(TokenType::SemiColon, ";");
-                return std::make_unique<ast::ReturnExpr>(start, end, std::move(expr));
+                this->expect(TokenKind::SemiColon, ";");
+                return utils::make_ref<ast::ReturnExpr>(start, end, std::move(expr));
             } else if (this->current.value == "if") {
                 if (!this->context.is_inside_function) {
                     ERROR(this->current.start, "If statement outside of function"); exit(1);
@@ -732,115 +698,91 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             } else if (this->current.value == "type") {
                 this->next();
                 std::string name = this->current.value;
+                if (this->context.current_namespace.hasValue()) {
+                    std::string current = this->context.current_namespace.getValue();
+                    name = utils::fmt::format("{s}::{s}", current, name);
+                }
 
                 this->next();
-                this->expect(TokenType::Assign, "=");
+                this->expect(TokenKind::Assign, "=");
     
                 Type* type = this->parse_type(this->current.value);
-                this->expect(TokenType::SemiColon, ";");
+                this->expect(TokenKind::SemiColon, ";");
     
                 this->types[name] = type;
                 return nullptr;
             } else if (this->current.value == "while") {
                 this->next();
-                this->expect(TokenType::LParen, "(");
+                this->expect(TokenKind::LParen, "(");
                 
                 auto condition = this->expr(false);
-                this->expect(TokenType::RParen, ")");
+                this->expect(TokenKind::RParen, ")");
 
-                this->expect(TokenType::LBrace, "{");
+                this->expect(TokenKind::LBrace, "{");
                 auto body = this->parse_block();
 
-                return std::make_unique<ast::WhileExpr>(this->current.start, this->current.end, std::move(condition), std::move(body));
+                return utils::make_ref<ast::WhileExpr>(this->current.start, this->current.end, std::move(condition), std::move(body));
             } else if (this->current.value == "for") {
                 this->next();
-                this->expect(TokenType::LParen, "(");
+                this->expect(TokenKind::LParen, "(");
 
-                std::string name = this->expect(TokenType::Identifier, "identifier").value;
-                if (this->current != TokenType::Keyword && this->current.value != "in") {
+                std::string name = this->expect(TokenKind::Identifier, "identifier").value;
+                if (this->current != TokenKind::Keyword && this->current.value != "in") {
                     ERROR(this->current.start, "Expected 'in'"); exit(1);
                 }
 
                 this->next();
                 auto iterator = this->expr(false);
 
-                this->expect(TokenType::RParen, ")");
+                this->expect(TokenKind::RParen, ")");
 
-                this->expect(TokenType::LBrace, "{");
+                this->expect(TokenKind::LBrace, "{");
                 auto body = this->parse_block();
 
-                return std::make_unique<ast::ForExpr>(this->current.start, this->current.end, name, std::move(iterator), std::move(body));
+                return utils::make_ref<ast::ForExpr>(this->current.start, this->current.end, name, std::move(iterator), std::move(body));
 
             } else if (this->current.value == "sizeof") {
                 Location start = this->current.start;
                 this->next();
                 
-                this->expect(TokenType::LParen, "(");
-                Type* type = this->parse_type(this->current.value);
+                this->expect(TokenKind::LParen, "(");
+                Type* type = this->parse_type(this->current.value, false);
+                utils::Ref<ast::Expr> expr = nullptr;
 
-                Location end = this->expect(TokenType::RParen, ")").end;
-                return std::make_unique<ast::SizeofExpr>(start, end, type);
-            } else if (this->current.value == "static_assert") {
-                Location start = this->current.start;
-                this->next();
-
-                this->expect(TokenType::LParen, "(");
-                auto condition = this->expr(false);
-
-                std::string message;
-                if (this->current == TokenType::Comma) {
-                    this->next();
-                    message = this->expect(TokenType::String, "string").value;
+                if (!type) {
+                    expr = this->expr(false);
                 }
 
-                this->expect(TokenType::RParen, ")");
-                this->expect(TokenType::SemiColon, ";");
-
-                if (condition->kind != ast::ExprKind::Integer) {
-                    ERROR(start, "Static assert condition must be an integeral constant.");
-                }
-
-                ast::IntegerExpr* expr = condition->cast<ast::IntegerExpr>();
-                if (expr->value == 0) {
-                    if (message.empty()) {
-                        ERROR(start, "Static assertion failed.");
-                    } else {
-                        ERROR(start, "Static assertion failed. {s}", message);
-                    }
-                }
-
-                return nullptr;
-            } else if (this->current.value == "asm") {
-                this->next();
-                return this->parse_inline_assembly();
+                Location end = this->expect(TokenKind::RParen, ")").end;
+                return utils::make_ref<ast::SizeofExpr>(start, end, type, std::move(expr));
             } else if (this->current.value == "using") {
                 Location start = this->current.start;
                 this->next();
 
                 std::vector<std::string> members;
-                if (this->current != TokenType::LParen) {
-                    members.push_back(this->expect(TokenType::Identifier, "identifier").value);
+                if (this->current != TokenKind::LParen) {
+                    members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
                 } else {
                     this->next();
-                    while (this->current != TokenType::RParen) {
-                        members.push_back(this->expect(TokenType::Identifier, "identifier").value);
-                        if (this->current != TokenType::Comma) {
+                    while (this->current != TokenKind::RParen) {
+                        members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
+                        if (this->current != TokenKind::Comma) {
                             break;
                         }
                         this->next();
                     }
 
-                    this->expect(TokenType::RParen, ")");
+                    this->expect(TokenKind::RParen, ")");
                 }
 
-                if (this->current != TokenType::Keyword && this->current.value != "from") {
+                if (this->current != TokenKind::Keyword && this->current.value != "from") {
                     ERROR(this->current.start, "Expected 'from' keyword."); exit(1);
                 }
 
                 this->next();
                 auto parent = this->expr();
 
-                return std::make_unique<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
+                return utils::make_ref<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
             } else if (this->current.value == "defer") {
                 if (!this->context.is_inside_function) {
                     ERROR(this->current.start, "Defer statement outside of function"); exit(1);
@@ -850,12 +792,15 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 this->next();
 
                 auto expr = this->expr();
-                return std::make_unique<ast::DeferExpr>(start, this->current.end, std::move(expr));
+                return utils::make_ref<ast::DeferExpr>(start, this->current.end, std::move(expr));
             } else {
                 ERROR(this->current.start, "Expected an expression"); exit(1);
             }
 
             break;
+        case TokenKind::SemiColon:
+            this->next();
+            return nullptr;
         default:
             return this->expr();
     }
@@ -864,7 +809,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
     return nullptr;
 }
 
-std::unique_ptr<ast::Expr> Parser::parse_immediate_binary_op(std::unique_ptr<ast::Expr> right, std::unique_ptr<ast::Expr> left, TokenType op) {
+utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op) {
     if (left->kind == ast::ExprKind::String) {
         if (right->kind != ast::ExprKind::String) {
             ERROR(this->current.start, "Expected string.");
@@ -876,19 +821,19 @@ std::unique_ptr<ast::Expr> Parser::parse_immediate_binary_op(std::unique_ptr<ast
         std::string result;
 
         switch (op) {
-            case TokenType::Add:
+            case TokenKind::Add:
                 result = lhs->value + rhs->value; break;
-            case TokenType::Eq:
+            case TokenKind::Eq:
                 result = lhs->value == rhs->value ? "true" : "false";
-                return std::make_unique<ast::VariableExpr>(this->current.start, this->current.end, result);
-            case TokenType::Neq:
+                return utils::make_ref<ast::VariableExpr>(this->current.start, this->current.end, result);
+            case TokenKind::Neq:
                 result = lhs->value != rhs->value ? "true" : "false";
-                return std::make_unique<ast::VariableExpr>(this->current.start, this->current.end, result);
+                return utils::make_ref<ast::VariableExpr>(this->current.start, this->current.end, result);
             default:
                 ERROR(this->current.start, "Unimplemented binary operator."); exit(1);
         }
 
-        return std::make_unique<ast::StringExpr>(this->current.start, this->current.end, result);
+        return utils::make_ref<ast::StringExpr>(this->current.start, this->current.end, result);
     }
     
     ast::IntegerExpr* lhs = left->cast<ast::IntegerExpr>();
@@ -896,68 +841,68 @@ std::unique_ptr<ast::Expr> Parser::parse_immediate_binary_op(std::unique_ptr<ast
 
     long result;
     switch (op) {
-        case TokenType::Add:
+        case TokenKind::Add:
             result = lhs->value + rhs->value; break;
-        case TokenType::Minus:
+        case TokenKind::Minus:
             result = lhs->value - rhs->value; break;
-        case TokenType::Mul:
+        case TokenKind::Mul:
             result = lhs->value * rhs->value; break;
-        case TokenType::Div:
+        case TokenKind::Div:
             result = lhs->value / rhs->value; break;
-        case TokenType::And:
+        case TokenKind::And:
             result = lhs->value || rhs->value; break;
-        case TokenType::Or:
+        case TokenKind::Or:
             result = lhs->value && rhs->value; break;
-        case TokenType::BinaryAnd:
+        case TokenKind::BinaryAnd:
             result = lhs->value | rhs->value; break;
-        case TokenType::BinaryOr:
+        case TokenKind::BinaryOr:
             result = lhs->value & rhs->value; break;
-        case TokenType::Xor:
+        case TokenKind::Xor:
             result = lhs->value ^ rhs->value; break;
-        case TokenType::Lsh:
+        case TokenKind::Lsh:
             result = lhs->value << rhs->value; break;
-        case TokenType::Rsh:
+        case TokenKind::Rsh:
             result = lhs->value >> rhs->value; break;
-        case TokenType::Eq:
+        case TokenKind::Eq:
             result = lhs->value == rhs->value; break;
-        case TokenType::Neq:
+        case TokenKind::Neq:
             result = lhs->value != rhs->value; break;
-        case TokenType::Gt:
+        case TokenKind::Gt:
             result = lhs->value > rhs->value; break;
-        case TokenType::Lt:
+        case TokenKind::Lt:
             result = lhs->value < rhs->value; break;
-        case TokenType::Gte:
+        case TokenKind::Gte:
             result = lhs->value >= rhs->value; break;
-        case TokenType::Lte:
+        case TokenKind::Lte:
             result = lhs->value <= rhs->value; break;
         default:
             ERROR(this->current.start, "Unimplemented binary operator."); exit(1);
     }
 
-    return std::make_unique<ast::IntegerExpr>(this->current.start, this->current.end, result);
+    return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
 }
 
-std::unique_ptr<ast::Expr> Parser::parse_immediate_unary_op(std::unique_ptr<ast::Expr> expr, TokenType op) {
-    if (op == TokenType::BinaryAnd) {
+utils::Ref<ast::Expr> Parser::parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op) {
+    if (op == TokenKind::BinaryAnd) {
         // We look for cases like `&(*ptr)`
         if (expr->kind == ast::ExprKind::UnaryOp) {
             ast::UnaryOpExpr* unary = expr->cast<ast::UnaryOpExpr>();
-            if (unary->op == TokenType::Mul) {
+            if (unary->op == TokenKind::Mul) {
                 return std::move(unary->value);
             }
         }
 
-        return std::make_unique<ast::UnaryOpExpr>(this->current.start, this->current.end, op, std::move(expr));
-    } else if (op == TokenType::Mul) {
+        return utils::make_ref<ast::UnaryOpExpr>(this->current.start, this->current.end, op, std::move(expr));
+    } else if (op == TokenKind::Mul) {
         // Similar to the case above, now we look for `*(&value)`
         if (expr->kind == ast::ExprKind::UnaryOp) {
             ast::UnaryOpExpr* unary = expr->cast<ast::UnaryOpExpr>();
-            if (unary->op == TokenType::And) {
+            if (unary->op == TokenKind::And) {
                 return std::move(unary->value);
             }
         }
 
-        return std::make_unique<ast::UnaryOpExpr>(this->current.start, this->current.end, op, std::move(expr));
+        return utils::make_ref<ast::UnaryOpExpr>(this->current.start, this->current.end, op, std::move(expr));
     }
 
 
@@ -967,31 +912,31 @@ std::unique_ptr<ast::Expr> Parser::parse_immediate_unary_op(std::unique_ptr<ast:
 
 ast::Attributes Parser::parse_attributes() {
     ast::Attributes attrs;
-    if (this->current == TokenType::LBracket) {
+    if (this->current == TokenKind::LBracket) {
         this->next();
-        if (this->current == TokenType::LBracket) {
+        if (this->current == TokenKind::LBracket) {
             this->next();
 
-            while (this->current != TokenType::RBracket) {
-                std::string name = this->expect(TokenType::Identifier, "attribute name").value;
+            while (this->current != TokenKind::RBracket) {
+                std::string name = this->expect(TokenKind::Identifier, "attribute name").value;
                 attrs.add(name);
 
-                if (this->current != TokenType::Comma) {
+                if (this->current != TokenKind::Comma) {
                     break;
                 }
 
                 this->next();
             }
 
-            this->expect(TokenType::RBracket, "]");
-            this->expect(TokenType::RBracket, "]");
+            this->expect(TokenKind::RBracket, "]");
+            this->expect(TokenKind::RBracket, "]");
         }
     }
 
     return attrs;
 }
 
-std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
+utils::Ref<ast::Expr> Parser::expr(bool semicolon) {
     auto left = this->unary();
     auto expr = this->binary(0, std::move(left));
     
@@ -1002,7 +947,7 @@ std::unique_ptr<ast::Expr> Parser::expr(bool semicolon) {
     return expr;
 }
 
-std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> left) {
+utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
     while (true) {
         Location start = this->current.start;
         int precedence = this->get_token_precendence();
@@ -1011,7 +956,7 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
             return left;
         }
 
-        TokenType op = this->current.type;
+        TokenKind op = this->current.type;
         this->next();
 
         auto right = this->unary();
@@ -1025,48 +970,48 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
             left = this->parse_immediate_binary_op(std::move(right), std::move(left), op);
         } else {
             if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
-                left = std::make_unique<ast::InplaceBinaryOpExpr>(
+                left = utils::make_ref<ast::InplaceBinaryOpExpr>(
                     start, this->current.end, INPLACE_OPERATORS[op], std::move(left), std::move(right)
                 );
             } else {
-                left = std::make_unique<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
+                left = utils::make_ref<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
             }
         }
     }
 }
 
-std::unique_ptr<ast::Expr> Parser::unary() {
+utils::Ref<ast::Expr> Parser::unary() {
     if (std::find(UNARY_OPERATORS.begin(), UNARY_OPERATORS.end(), this->current.type) == UNARY_OPERATORS.end()) {
         return this->call();
     }
 
     Location start = this->current.start;
 
-    TokenType op = this->current.type;
+    TokenKind op = this->current.type;
     this->next();
 
     auto value = this->call();
-    if (value->kind.in(NUMERIC_KINDS) || op == TokenType::Mul || op == TokenType::BinaryAnd) {
+    if (value->kind.in(NUMERIC_KINDS) || op == TokenKind::Mul || op == TokenKind::BinaryAnd) {
         return this->parse_immediate_unary_op(std::move(value), op);
     }
 
-    return std::make_unique<ast::UnaryOpExpr>(start, this->current.end, op, std::move(value));
+    return utils::make_ref<ast::UnaryOpExpr>(start, this->current.end, op, std::move(value));
 }
 
-std::unique_ptr<ast::Expr> Parser::call() {
+utils::Ref<ast::Expr> Parser::call() {
     Location start = this->current.start;
 
     auto expr = this->factor();
-    while (this->current == TokenType::LParen) {
+    while (this->current == TokenKind::LParen) {
         this->next();
-        std::vector<std::unique_ptr<ast::Expr>> args;
+        std::vector<utils::Ref<ast::Expr>> args;
 
-        if (this->current != TokenType::RParen) {
+        if (this->current != TokenKind::RParen) {
             while (true) {
                 auto arg = this->expr(false);
                 args.push_back(std::move(arg));
 
-                if (this->current != TokenType::Comma) {
+                if (this->current != TokenKind::Comma) {
                     break;
                 }
 
@@ -1074,24 +1019,24 @@ std::unique_ptr<ast::Expr> Parser::call() {
             }
         }
         
-        this->expect(TokenType::RParen, ")");
-        expr = std::make_unique<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
+        this->expect(TokenKind::RParen, ")");
+        expr = utils::make_ref<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
     }
 
-    if (this->current == TokenType::Inc || this->current == TokenType::Dec) {
-        TokenType op = this->current.type;
-        expr = std::make_unique<ast::UnaryOpExpr>(start, this->current.end, op, std::move(expr));
+    if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
+        TokenKind op = this->current.type;
+        expr = utils::make_ref<ast::UnaryOpExpr>(start, this->current.end, op, std::move(expr));
 
         this->next();
-    } else if (this->current == TokenType::LBrace) {
+    } else if (this->current == TokenKind::LBrace) {
         this->next();
-        std::map<std::string, std::unique_ptr<ast::Expr>> fields;
+        std::map<std::string, utils::Ref<ast::Expr>> fields;
 
         bool previous_is_named_field = true;
-        while (this->current != TokenType::RBrace) {
+        while (this->current != TokenKind::RBrace) {
 
             std::string name;
-            if (this->current == TokenType::Identifier) {
+            if (this->current == TokenKind::Identifier) {
                 if (!previous_is_named_field) {
                     ERROR(this->current.start, "Expected a field name."); exit(1);
                 }
@@ -1100,7 +1045,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
                 name = this->current.value;
 
                 this->next();
-                this->expect(TokenType::Colon, ":");
+                this->expect(TokenKind::Colon, ":");
             } else {
                 previous_is_named_field = false;
             }
@@ -1108,20 +1053,20 @@ std::unique_ptr<ast::Expr> Parser::call() {
             auto value = this->expr(false);
             fields[name] = std::move(value);
 
-            if (this->current != TokenType::Comma) {
+            if (this->current != TokenKind::Comma) {
                 break;
             }
 
             this->next();
         }
 
-        this->expect(TokenType::RBrace, "}");
-        expr = std::make_unique<ast::ConstructorExpr>(start, this->current.end, std::move(expr), std::move(fields));
+        this->expect(TokenKind::RBrace, "}");
+        expr = utils::make_ref<ast::ConstructorExpr>(start, this->current.end, std::move(expr), std::move(fields));
     }
 
-    if (this->current == TokenType::Dot) {
+    if (this->current == TokenKind::Dot) {
         expr = this->attr(start, std::move(expr));
-    } else if (this->current == TokenType::LBracket) {
+    } else if (this->current == TokenKind::LBracket) {
         expr = this->element(start, std::move(expr));
     }
 
@@ -1130,63 +1075,63 @@ std::unique_ptr<ast::Expr> Parser::call() {
         Location end = this->current.end;
 
         Type* to = this->parse_type(this->current.value);
-        expr = std::make_unique<ast::CastExpr>(start, end, std::move(expr), to);   
+        expr = utils::make_ref<ast::CastExpr>(start, end, std::move(expr), to);   
     }
 
     return expr;
 }
 
-std::unique_ptr<ast::Expr> Parser::attr(Location start, std::unique_ptr<ast::Expr> expr) {
-    while (this->current == TokenType::Dot) {
+utils::Ref<ast::Expr> Parser::attr(Location start, utils::Ref<ast::Expr> expr) {
+    while (this->current == TokenKind::Dot) {
         this->next();
         
-        std::string value = this->expect(TokenType::Identifier, "attribute name").value;
-        expr = std::make_unique<ast::AttributeExpr>(start, this->current.end, value, std::move(expr));
+        std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
+        expr = utils::make_ref<ast::AttributeExpr>(start, this->current.end, value, std::move(expr));
     }
 
-    if (this->current == TokenType::LBracket) {
+    if (this->current == TokenKind::LBracket) {
         return this->element(start, std::move(expr));
     }
     
     return expr;
 }
 
-std::unique_ptr<ast::Expr> Parser::element(Location start, std::unique_ptr<ast::Expr> expr) {
-    while (this->current == TokenType::LBracket) {
+utils::Ref<ast::Expr> Parser::element(Location start, utils::Ref<ast::Expr> expr) {
+    while (this->current == TokenKind::LBracket) {
         this->next();
         auto index = this->expr(false);
 
-        this->expect(TokenType::RBracket, "]");
-        expr = std::make_unique<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
+        this->expect(TokenKind::RBracket, "]");
+        expr = utils::make_ref<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
     }
 
-    if (this->current == TokenType::Dot) {
+    if (this->current == TokenKind::Dot) {
         return this->attr(start, std::move(expr));
     }
 
     return expr;
 }
 
-std::unique_ptr<ast::Expr> Parser::factor() {
-    std::unique_ptr<ast::Expr> expr;
+utils::Ref<ast::Expr> Parser::factor() {
+    utils::Ref<ast::Expr> expr;
 
     Location start = this->current.start;
     switch (this->current.type) {
-        case TokenType::Integer: {
+        case TokenKind::Integer: {
             int number = this->itoa<int>(this->current.value);
             this->next();
 
-            expr = std::make_unique<ast::IntegerExpr>(start, this->current.start, number);
+            expr = utils::make_ref<ast::IntegerExpr>(start, this->current.start, number);
             break;
         }
-        case TokenType::Char: {
+        case TokenKind::Char: {
             char c = this->current.value[0];
             this->next();
 
-            expr = std::make_unique<ast::IntegerExpr>(start, this->current.start, c, 8);
+            expr = utils::make_ref<ast::IntegerExpr>(start, this->current.start, c, 8);
             break;
         }
-        case TokenType::Float: {
+        case TokenKind::Float: {
             double number;
             bool error = llvm::StringRef(this->current.value).getAsDouble(number);
             if (error) {
@@ -1195,79 +1140,83 @@ std::unique_ptr<ast::Expr> Parser::factor() {
 
             this->next();
 
-            expr = std::make_unique<ast::FloatExpr>(start, this->current.start, number);
+            expr = utils::make_ref<ast::FloatExpr>(start, this->current.start, number);
             break;
         }
-        case TokenType::String: {
+        case TokenKind::String: {
             std::string value = this->current.value;
             this->next();
 
-            expr = std::make_unique<ast::StringExpr>(start, this->current.start, value);
+            expr = utils::make_ref<ast::StringExpr>(start, this->current.start, value);
             break;
         }
-        case TokenType::Identifier: {
+        case TokenKind::Identifier: {
             std::string name = this->current.value;
             this->next();
 
-            expr = std::make_unique<ast::VariableExpr>(start, this->current.start, name);
+            expr = utils::make_ref<ast::VariableExpr>(start, this->current.start, name);
             break;
         }
-        case TokenType::Keyword: {
+        case TokenKind::Keyword: {
             if (this->current.value == "sizeof") {
-                Location start = this->current.start;
                 this->next();
                 
-                this->expect(TokenType::LParen, "(");
-                Type* type = this->parse_type(this->current.value);
+                this->expect(TokenKind::LParen, "(");
+                Type* type = this->parse_type(this->current.value, false);
+                utils::Ref<ast::Expr> expr = nullptr;
 
-                Location end = this->expect(TokenType::RParen, ")").end;
-                return std::make_unique<ast::SizeofExpr>(start, end, type);
+                if (!type) {
+                    expr = this->expr(false);
+                }
+
+                Location end = this->expect(TokenKind::RParen, ")").end;
+                return utils::make_ref<ast::SizeofExpr>(start, end, type, std::move(expr));
             } else {
                 ERROR(this->current.start, "Unexpected keyword."); exit(1);
             }
         }
-        case TokenType::LParen: {
+        case TokenKind::LParen: {
             this->next();
             expr = this->expr(false);
 
-            this->expect(TokenType::RParen, ")");
+            this->expect(TokenKind::RParen, ")");
             break;
         }
-        case TokenType::LBracket: {
+        case TokenKind::LBracket: {
             this->next();
 
-            std::vector<std::unique_ptr<ast::Expr>> elements;
-            while (this->current != TokenType::RBracket) {
+            std::vector<utils::Ref<ast::Expr>> elements;
+            while (this->current != TokenKind::RBracket) {
                 auto element = this->expr(false);
                 elements.push_back(std::move(element));
 
-                if (this->current != TokenType::Comma) {
+                if (this->current != TokenKind::Comma) {
                     break;
                 }
 
                 this->next();
             }
 
-            Location end = this->expect(TokenType::RBracket, "]").end;
-            expr = std::make_unique<ast::ArrayExpr>(start, end, std::move(elements));
+            Location end = this->expect(TokenKind::RBracket, "]").end;
+            expr = utils::make_ref<ast::ArrayExpr>(start, end, std::move(elements));
             break;
         }
-        case TokenType::LBrace: {
+        case TokenKind::LBrace: {
             this->next();
             expr = this->parse_block();
         }
     }
 
-    while (this->current == TokenType::DoubleColon) {
+    while (this->current == TokenKind::DoubleColon) {
         this->next();
 
-        std::string value = this->expect(TokenType::Identifier, "identifier").value;
-        expr = std::make_unique<ast::NamespaceAttributeExpr>(start, this->current.end, value, std::move(expr));
+        std::string value = this->expect(TokenKind::Identifier, "identifier").value;
+        expr = utils::make_ref<ast::NamespaceAttributeExpr>(start, this->current.end, value, std::move(expr));
     }
 
-    if (this->current == TokenType::Dot) {
+    if (this->current == TokenKind::Dot) {
         expr = this->attr(start, std::move(expr));
-    } else if (this->current == TokenType::LBracket) {
+    } else if (this->current == TokenKind::LBracket) {
         expr = this->element(start, std::move(expr));
     }
 

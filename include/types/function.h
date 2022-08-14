@@ -10,8 +10,8 @@ public:
     static FunctionType* create(std::vector<Type*> args, Type* return_type, bool has_varargs);
     ~FunctionType() override;
 
-    static FunctionType* fromLLVMType(llvm::FunctionType* type);
-    llvm::Type* toLLVMType(llvm::LLVMContext& context) override;
+    static FunctionType* from_llvm_type(llvm::FunctionType* type);
+    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
 
     FunctionType* copy() override;
 

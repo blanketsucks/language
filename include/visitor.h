@@ -22,8 +22,8 @@
 class Visitor {
 public:
     llvm::LLVMContext context;
-    std::unique_ptr<llvm::Module> module;
-    std::unique_ptr<llvm::IRBuilder<>> builder;
+    utils::Ref<llvm::Module> module;
+    utils::Ref<llvm::IRBuilder<>> builder;
     std::unique_ptr<llvm::legacy::FunctionPassManager> fpm;
 
     std::map<std::string, Function*> functions;
@@ -98,7 +98,6 @@ public:
     Value visit(ast::ElementExpr* expr);
     Value visit(ast::CastExpr* expr);
     Value visit(ast::SizeofExpr* expr);
-    Value visit(ast::InlineAssemblyExpr* expr);
     Value visit(ast::NamespaceExpr* expr);
     Value visit(ast::NamespaceAttributeExpr* expr);
     Value visit(ast::UsingExpr* expr);

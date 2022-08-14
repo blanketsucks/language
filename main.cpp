@@ -1,6 +1,6 @@
 #include "include.h"
 
-#ifdef __clang__
+#if __clang__
     #define SOURCE_COMPILER "clang"
 #elif __GNUC__
     #define SOURCE_COMPILER "gcc"
@@ -106,7 +106,18 @@ int main(int argc, char** argv) {
     Arguments args = parse_arguments(argc, argv);
     init();
 
-    std::ifstream file(args.filename);
+    std::fstream file(args.filename, std::ios::in);
+    utils::filesystem::Path path(args.filename);
+
+    if (!path.exists()) {
+        std::string fmt = utils::fmt::format(
+            "{bold|white} {bold|red} File not found: '{s}'",
+            "proton:", "error:", args.filename
+        );
+
+        std::cerr << fmt << std::endl;
+        return 1;
+    }
 
     Lexer lexer(file, args.filename);
     Preprocessor preprocessor(lexer.lex(), {"lib/"});
@@ -139,15 +150,23 @@ int main(int argc, char** argv) {
     auto ast = parser.statements();
 
     Visitor visitor(args.filename);
+
     visitor.visit(std::move(ast));
 
     visitor.cleanup();
     visitor.free();
+
+    parser.free();
     
     if (args.format == OutputFormat::Executable) {
         llvm::Function* entry = visitor.module->getFunction(args.entry);
         if (!entry) {
-            std::cerr << utils::fmt::format("{bold|red}: Entry point '{s}' not found.", "error", args.entry) << std::endl;
+            std::string fmt = utils::fmt::format(
+                "{bold|white} {bold|red} Entry point '{s}' not found.",
+                "proton:", "error:", args.entry
+            );
+
+            std::cerr << fmt << std::endl;
             return 1;
         }
     }

@@ -32,14 +32,14 @@ public:
     Preprocessor(std::vector<Token> tokens, std::vector<std::string> include_paths = {});
 
     void next();
-    std::vector<Token> skip_until(TokenType type, std::vector<std::string> values);
+    std::vector<Token> skip_until(TokenKind type, std::vector<std::string> values);
 
     std::vector<Token> process();
 
     Macro parse_macro_definition();
     void parse_include(std::string path);
 
-    std::ifstream search_include_paths(std::string path);
+    std::fstream search_include_paths(std::string path);
 
     bool is_macro(std::string name);
 

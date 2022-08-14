@@ -93,6 +93,20 @@ llvm::Value* Struct::get_variable(std::string name) {
     return iter->second;
 }
 
+std::vector<Struct*> Struct::expand() {
+   std::vector<Struct*> parents;
+
+    parents.push_back(this);
+    for (Struct* parent : this->parents) {
+        parents.push_back(parent);
+
+        std::vector<Struct*> expanded = parent->expand();
+        parents.insert(parents.end(), expanded.begin(), expanded.end());
+    }
+
+    return parents;
+}
+
 // Namespaces
 
 Namespace::Namespace(std::string name) : name(name) {
@@ -102,12 +116,15 @@ Namespace::Namespace(std::string name) : name(name) {
     this->locals = {};
 }
 
+// Modules
+
 // Values
 
 Value::Value(
-    llvm::Value* value, llvm::Value* parent, Function* function, Struct* structure, Namespace* ns
+    llvm::Value* value, bool is_constant, llvm::Value* parent, Function* function, Struct* structure, Namespace* ns
 ) {
     this->value = value;
+    this->is_constant = is_constant;
     this->parent = parent;
     this->function = function;
     this->structure = structure;
@@ -130,14 +147,14 @@ std::string Value::name() {
     return this->value->getName().str();
 }
 
-Value Value::with_function(llvm::Value* value, Function* function) {
-    return Value(value, nullptr, function);
+Value Value::with_function(Function* function) {
+    return Value(function->value, false, nullptr, function);
 }
 
 Value Value::with_struct(Struct* structure) {
-    return Value(nullptr, nullptr, nullptr, structure);
+    return Value(nullptr, false, nullptr, nullptr, structure);
 }
 
 Value Value::with_namespace(Namespace* ns) {
-    return Value(nullptr, nullptr, nullptr, nullptr, ns);
+    return Value(nullptr, false, nullptr, nullptr, nullptr, ns);
 }

@@ -14,15 +14,15 @@ ArrayType* ArrayType::create(size_t length, Type* element) {
     return new ArrayType(length, element);
 }
 
-ArrayType* ArrayType::fromLLVMType(llvm::ArrayType* type) {
+ArrayType* ArrayType::from_llvm_type(llvm::ArrayType* type) {
     size_t length = type->getNumElements();
-    Type* element = Type::fromLLVMType(type->getElementType());
+    Type* element = Type::from_llvm_type(type->getElementType());
 
     return ArrayType::create(length, element);
 }
 
-llvm::ArrayType* ArrayType::toLLVMType(llvm::LLVMContext& context) {
-    llvm::Type* element = this->element->toLLVMType(context);
+llvm::ArrayType* ArrayType::to_llvm_type(llvm::LLVMContext& context) {
+    llvm::Type* element = this->element->to_llvm_type(context);
     return llvm::ArrayType::get(element, this->length);
 }
 
@@ -60,5 +60,5 @@ bool ArrayType::is_compatible(llvm::Type* type) {
         return false;
     }
 
-    return this->is_compatible(Type::fromLLVMType(type));
+    return this->is_compatible(Type::from_llvm_type(type));
 }

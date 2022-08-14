@@ -100,7 +100,33 @@ namespace fmt {
 }
 
 namespace filesystem {
-    bool exists(const std::string& path);
+
+    enum class OpenMode {
+        Read,
+        Write
+    };
+
+    struct Path {
+        std::string name;
+
+        Path(const std::string& name);
+
+        bool exists() const;
+        bool isfile() const;
+        bool isdir() const;
+
+        std::string filename();
+
+        std::vector<Path> listdir();
+
+        std::fstream open(OpenMode mode = OpenMode::Read);
+
+        Path join(const std::string& path);
+        Path join(const Path& path);
+
+        Path with_extension(const std::string& extension);
+        Path with_extension();
+    };
 
     bool has_extension(const std::string& filename);
     std::string remove_extension(const std::string& filename);
@@ -211,6 +237,23 @@ void error(Location location, const std::string& message, bool fatal = true);
 void note(Location location, const std::string& message);
 
 std::string exec(const std::string& command);
+
+template<typename F, typename S> 
+std::vector<std::pair<F, S>> zip(std::vector<F> first, std::vector<S> second) {
+    std::vector<std::pair<F, S>> result;
+    result.reserve(first.size());
+
+    for (size_t i = 0; i < first.size(); i++) {
+        result.push_back(std::make_pair(first[i], second[i]));
+    }
+
+    return result;
+}
+
+template<typename T> using Ref = std::unique_ptr<T>;
+template<typename T, typename ...Args> Ref<T> make_ref(Args&& ...args) {
+    return std::make_unique<T>(std::forward<Args>(args)...);
+}
 
 }
 

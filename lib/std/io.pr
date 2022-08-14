@@ -1,4 +1,4 @@
-$include "libc/include.pr"
+$include "libc/ffi.pr"
 
 $define _NAMESPACE_STD namespace std {
 $define _NAMESPACE_STD_END }
@@ -8,7 +8,7 @@ _NAMESPACE_STD
 namespace io {
 
 struct WriteStream {
-    stream: FILE*;
+    stream: libc::FILE*;
 
     func from_fd(fd: int) -> WriteStream {
         return WriteStream {
@@ -16,7 +16,7 @@ struct WriteStream {
         };
     }
 
-    func write(self, buffer: str) -> int {
+    func write(self, buffer: char*) -> int {
         return libc::fprintf(self.stream, buffer);
     }
 }
@@ -24,7 +24,6 @@ struct WriteStream {
 func stdout() -> WriteStream {
     return WriteStream::from_fd(1);
 }
-
 
 }
 

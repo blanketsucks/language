@@ -13,12 +13,12 @@ PointerType* PointerType::create(Type* type) {
     return new PointerType(type);
 }
 
-PointerType* PointerType::fromLLVMType(llvm::Type* type) {
-    return PointerType::create(Type::fromLLVMType(type->getPointerElementType()));
+PointerType* PointerType::from_llvm_type(llvm::Type* type) {
+    return PointerType::create(Type::from_llvm_type(type->getPointerElementType()));
 }
 
-llvm::PointerType* PointerType::toLLVMType(llvm::LLVMContext& context) {
-    return llvm::PointerType::get(this->type->toLLVMType(context), 0);
+llvm::PointerType* PointerType::to_llvm_type(llvm::LLVMContext& context) {
+    return llvm::PointerType::get(this->type->to_llvm_type(context), 0);
 }
 
 PointerType* PointerType::copy() {
@@ -58,5 +58,5 @@ bool PointerType::is_compatible(llvm::Type* type) {
         return false;
     }
 
-    return this->is_compatible(Type::fromLLVMType(type));
+    return this->is_compatible(Type::from_llvm_type(type));
 }

@@ -31,7 +31,6 @@ public:
         LongLong,
         Double,
         Float,
-        String,
         Boolean,
         Array,
         Struct,
@@ -45,8 +44,8 @@ public:
     bool operator==(Value other);
 
     static Type* create(Value value, size_t size);
-    static Type* fromLLVMType(llvm::Type* type);
-    virtual llvm::Type* toLLVMType(llvm::LLVMContext& context);
+    static Type* from_llvm_type(llvm::Type* type);
+    virtual llvm::Type* to_llvm_type(llvm::LLVMContext& context);
 
     virtual std::string name() { return this->str(); }
     virtual Type* copy();
@@ -73,7 +72,6 @@ public:
     bool isLongLong() { return this->value == LongLong; }
     bool isDouble() { return this->value == Double; }
     bool isFloat() { return this->value == Float; }
-    bool isString() { return this->value == String; }
     bool isBoolean() { return this->value == Boolean; }
     bool isArray() { return this->value == Array; }
     bool isStruct() { return this->value == Struct; }
@@ -102,7 +100,6 @@ static Type* LongType = Type::create(Type::Long, LONG_SIZE);
 static Type* LongLongType = Type::create(Type::LongLong, 64);
 static Type* DoubleType = Type::create(Type::Double, 64);
 static Type* FloatType = Type::create(Type::Float, 32);
-static Type* StringType = Type::create(Type::String, 32);
 static Type* BooleanType = Type::create(Type::Boolean, 8);
 
 #endif
