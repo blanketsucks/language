@@ -21,6 +21,9 @@
 
 class Visitor {
 public:
+    std::string name;
+    bool with_optimizations;
+
     llvm::LLVMContext context;
     utils::Ref<llvm::Module> module;
     utils::Ref<llvm::IRBuilder<>> builder;
@@ -37,7 +40,7 @@ public:
     
     std::vector<Type*> allocated_types;
 
-    Visitor(std::string name);
+    Visitor(std::string name, bool with_optimizations = true);
 
     void cleanup();
     void free();
@@ -58,9 +61,14 @@ public:
 
     llvm::Value* cast(llvm::Value* value, Type* type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
+    llvm::Value* cast_if_null(llvm::Value* value, llvm::Type* type);
 
-    llvm::Value* get_struct_field(ast::AttributeExpr* expr);
-    llvm::Value* get_array_element(ast::ElementExpr* expr);
+    uint32_t getallocsize(llvm::Type* type);
+    uint32_t getsizeof(llvm::Value* value);
+    uint32_t getsizeof(llvm::Type* type);
+
+    std::pair<llvm::Value*, int> get_struct_field(ast::AttributeExpr* expr);
+    std::pair<llvm::Value*, int> get_array_element(ast::ElementExpr* expr);
 
     llvm::Type* get_llvm_type(Type* name);
     Type* from_llvm_type(llvm::Type* type);
@@ -74,30 +82,43 @@ public:
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
     Value visit(ast::BlockExpr* expr);
+
     Value visit(ast::IntegerExpr* expr);
     Value visit(ast::FloatExpr* expr);
     Value visit(ast::StringExpr* expr);
+
     Value visit(ast::VariableExpr* expr);
     Value visit(ast::VariableAssignmentExpr* expr);
     Value visit(ast::ConstExpr* expr);
-    Value visit(ast::ArrayExpr* expr);
+
     Value visit(ast::UnaryOpExpr* expr);
     Value visit(ast::BinaryOpExpr* expr);
     Value visit(ast::InplaceBinaryOpExpr* expr);
-    Value visit(ast::CallExpr* expr);
-    Value visit(ast::ReturnExpr* expr);
+
     Value visit(ast::PrototypeExpr* expr);
     Value visit(ast::FunctionExpr* expr);
+    Value visit(ast::ReturnExpr* expr);
     Value visit(ast::DeferExpr* expr);
+    Value visit(ast::CallExpr* expr);
+
     Value visit(ast::IfExpr* expr);
+
     Value visit(ast::WhileExpr* expr);
     Value visit(ast::ForExpr* expr);
+    Value visit(ast::BreakExpr* expr);
+    Value visit(ast::ContinueExpr* expr);
+
     Value visit(ast::StructExpr* expr);
     Value visit(ast::ConstructorExpr* expr);
     Value visit(ast::AttributeExpr* expr);
+
+    Value visit(ast::ArrayExpr* expr);
     Value visit(ast::ElementExpr* expr);
+
     Value visit(ast::CastExpr* expr);
     Value visit(ast::SizeofExpr* expr);
+    Value visit(ast::OffsetofExpr* expr);
+
     Value visit(ast::NamespaceExpr* expr);
     Value visit(ast::NamespaceAttributeExpr* expr);
     Value visit(ast::UsingExpr* expr);

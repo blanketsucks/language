@@ -1,5 +1,23 @@
 #include "lexer/tokens.h"
 
+Location Location::update(uint32_t line, uint32_t column, uint32_t index) {
+    return Location {
+        this->line + line,
+        this->column + column,
+        this->index + index,
+        this->filename
+    };
+}
+
+Location Location::update(uint32_t column, uint32_t index) {
+    return Location {
+        this->line,
+        this->column + column,
+        this->index + index,
+        this->filename
+    };
+}
+
 std::string Location::format() { 
     std::string line = std::to_string(this->line);
     std::string column = std::to_string(this->column);
@@ -15,6 +33,7 @@ std::string Token::getTokenTypeValue(TokenKind type) {
         case TokenKind::Minus: return "-";
         case TokenKind::Mul: return "*";
         case TokenKind::Div: return "/";
+        case TokenKind::Mod: return "%";
         case TokenKind::Not: return "!";
         case TokenKind::Or: return "|";
         case TokenKind::And: return "&";
@@ -33,6 +52,14 @@ std::string Token::getTokenTypeValue(TokenKind type) {
         case TokenKind::Assign: return "=";
         default: return "";
     }
+}
+
+bool Token::match(TokenKind type, std::string value) {
+    return this->type == type && this->value == value;
+}
+
+bool Token::match(TokenKind type, std::vector<std::string> values) {
+    return this->type == type && (std::find(values.begin(), values.end(), this->value) != values.end());
 }
 
 bool Token::operator==(TokenKind type) {

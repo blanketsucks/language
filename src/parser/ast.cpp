@@ -228,14 +228,32 @@ Value WhileExpr::accept(Visitor& visitor) {
 }
 
 ForExpr::ForExpr(
-    Location start, Location end, std::string name, utils::Ref<Expr> iterator, utils::Ref<BlockExpr> body
+    Location start,
+    Location end, 
+    utils::Ref<Expr> start_,
+    utils::Ref<Expr> end_,
+    utils::Ref<Expr> step, 
+    utils::Ref<Expr> body
 ) : Expr(start, end, ExprKind::For) {
-    this->name = name;
-    this->iterator = std::move(iterator);
+    this->start = std::move(start_);
+    this->end = std::move(end_);
+    this->step = std::move(step);
     this->body = std::move(body);
 }
 
 Value ForExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+BreakExpr::BreakExpr(Location start, Location end) : Expr(start, end, ExprKind::Break) {}
+
+Value BreakExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+ContinueExpr::ContinueExpr(Location start, Location end) : Expr(start, end, ExprKind::Continue) {}
+
+Value ContinueExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -306,6 +324,16 @@ SizeofExpr::SizeofExpr(
 }
 
 Value SizeofExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+OffsetofExpr::OffsetofExpr(
+    Location start, Location end, utils::Ref<Expr> value, std::string field
+) : Expr(start, end, ExprKind::Offsetof), field(field) {
+    this->value = std::move(value);
+}
+
+Value OffsetofExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 

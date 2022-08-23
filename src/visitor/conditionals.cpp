@@ -13,7 +13,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->SetInsertPoint(then);
 
     Branch* branch = func->branch;
-    func->branch = func->create_branch("if.then");
+    func->branch = func->create_branch("if.then", branch->loop, branch->end);
 
     expr->body->accept(*this);
 
@@ -22,23 +22,24 @@ Value Visitor::visit(ast::IfExpr* expr) {
     There are a couple of cases to take in consideration:
 
     1. There is an if body and no else body:
-        1.1 The if body contains a return statement. 
+        1.1 The if body contains a jump. 
             - In this case, we push the else block and set it as the insert point.
-        1.2 The if body doesn't contain a return statement. 
+        1.2 The if body doesn't contain a jump. 
             - In this case, we branch to the else block and set it as the insert point.
     2. There is an else body:
-        2.1 The if body contains a return statement. 
+        2.1 The if body contains a jump. 
             - In this case we push the else block and set it as the insert point and generate code for the else body.
-        2.2 The if body doesn't contain a return statement.
+        2.2 The if body doesn't contain a jump.
             - In this case, we branch to a merge block and then set the else block as the insert point.
-        2.3 The else body doesn't contain a return statement.
+        2.3 The else body doesn't contain a jump.
             - In this case, we branch to the merge block and set it as the insert point.
-        2.4 The else body contains a return statement.
+        2.4 The else body contains a jump.
             - In this case, unlike 2.3 we don't branch to the merge block, we just set it as the insert point.
 
+    A jump can be either a `return`, `break` or a `continue` since these statements cause a branch in the LLVM IR.
     */
     if (!expr->ebody) {
-        if (!func->branch->has_return) {
+        if (!func->branch->has_jump()) {
             this->builder->CreateBr(else_);
 
             function->getBasicBlockList().push_back(else_);
@@ -55,7 +56,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
         }
     }
 
-    if (func->branch->has_return) {
+    if (func->branch->has_jump()) {
         function->getBasicBlockList().push_back(else_);
         this->builder->SetInsertPoint(else_);
 
@@ -71,10 +72,10 @@ Value Visitor::visit(ast::IfExpr* expr) {
     function->getBasicBlockList().push_back(else_);
     this->builder->SetInsertPoint(else_);
     
-    func->branch = func->create_branch("if.else");
+    func->branch = func->create_branch("if.else", branch->loop, branch->end);
     expr->ebody->accept(*this);
 
-    if (func->branch->has_return) {
+    if (func->branch->has_jump()) {
         function->getBasicBlockList().push_back(merge);
         this->builder->SetInsertPoint(merge);
 

@@ -17,7 +17,7 @@
 
 #define EMPTY ""
 
-#define ERROR(loc, ...) utils::error(loc, utils::fmt::format(__VA_ARGS__))
+#define ERROR(loc, ...) utils::error(loc, utils::fmt::format(__VA_ARGS__)); exit(1)
 #define NOTE(loc, ...) utils::note(loc, utils::fmt::format(__VA_ARGS__))
 
 #define TODO(x) std::cout << "TODO: " << "(" << __FILE__ << ":" << __LINE__ << ") " << x << '\n'; exit(1)
@@ -255,6 +255,17 @@ template<typename T, typename ...Args> Ref<T> make_ref(Args&& ...args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
+template<typename K, typename V> std::vector<V> values(std::map<K, V> map) {
+    std::vector<V> result;
+
+    result.reserve(map.size());
+    for (auto& pair : map) {
+        result.push_back(pair.second);
+    }
+
+    return result;
 }
+
+};
 
 #endif

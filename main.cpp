@@ -20,9 +20,13 @@ struct Arguments {
     std::string output;
     std::string entry;
 
+    std::vector<std::string> includes;
+    std::vector<std::string> libraries;
+
     OutputFormat format;
     bool libc = true;
     bool lex = false;
+    bool optimize = true;
 };
 
 utils::argparse::ArgumentParser create_argument_parser() {
@@ -37,10 +41,25 @@ utils::argparse::ArgumentParser create_argument_parser() {
     parser.add_argument("-emit-llvm", utils::argparse::NoArguments, EMPTY, "Emit LLVM IR.");
     parser.add_argument("-emit-assembly", utils::argparse::NoArguments, "-S", "Emit assembly code.");
     parser.add_argument("-c", utils::argparse::NoArguments, EMPTY, "Emit object code.");
-    parser.add_argument("-nolibc", utils::argparse::NoArguments, EMPTY, "Disable the use of the libc library.");
+    parser.add_argument("-nolibc", utils::argparse::NoArguments, EMPTY, "Disable the use of libc.");
     parser.add_argument("-lex", utils::argparse::NoArguments, EMPTY, "Print the lexer output. Note the tokens are after the preprocessor.");
+    parser.add_argument("-I", utils::argparse::Many, EMPTY, "Add an include path/folder.", "paths");
+    parser.add_argument("-O0", utils::argparse::NoArguments, EMPTY, "Disable optimizations.");
+    parser.add_argument("-l", utils::argparse::Many, EMPTY);
 
     return parser;
+}
+
+std::vector<std::string> get_string_vector(utils::argparse::ArgumentParser parser, const std::string& name) {
+    std::vector<std::string> result;
+
+    auto args = parser.get<std::vector<llvm::Any>>(name, {});
+    for (auto& arg : args) {
+        result.push_back(llvm::any_cast<char*>(arg));
+    }
+
+    return result;
+
 }
 
 Arguments parse_arguments(int argc, char** argv) {
@@ -53,10 +72,16 @@ Arguments parse_arguments(int argc, char** argv) {
     }
 
     std::vector<std::string> filenames = parser.parse(argc, argv);
+    if (filenames.empty()) {
+        std::string fmt = utils::fmt::format("{bold|white} {bold|red} No input files specified.", "proton:", "error:");
+        std::cerr << fmt << std::endl;
+
+        exit(1);
+    }
+
     std::string filename = filenames.back();
 
     args.entry = parser.get("entry", "main");
-
     if (parser.get("c", false)) {
         args.format = OutputFormat::Object;
     } else if (parser.get("emit-llvm", false)) {
@@ -69,6 +94,7 @@ Arguments parse_arguments(int argc, char** argv) {
 
     args.libc = !parser.get("nolibc", false);
     args.lex = parser.get("lex", false);
+    args.optimize = !parser.get("O0", false);
     args.filename = filename;
 
     if (!parser.has_value("output")) {
@@ -88,8 +114,10 @@ Arguments parse_arguments(int argc, char** argv) {
                 args.output = utils::filesystem::replace_extension(args.output, "o"); break;
         }
     } else {
-        args.output = parser.get<std::string>("output");
+        args.output = parser.get<char*>("output");
     }
+
+    args.libraries = get_string_vector(parser, "l");
 
     return args;
 }
@@ -123,15 +151,15 @@ int main(int argc, char** argv) {
     Preprocessor preprocessor(lexer.lex(), {"lib/"});
 
 #if _WIN64
-    preprocessor.define("__WIN64__");
+    preprocessor.define("__WIN64__", 1);
 #elif _WIN32
-    preprocessor.define("__WIN32__");
+    preprocessor.define("__WIN32__", 1);
 #elif __linux__
-    preprocessor.define("__LINUX__");
+    preprocessor.define("__LINUX__", 1);
 #endif
 
     if (args.libc) {
-        preprocessor.define("__LIBC__");
+        preprocessor.define("__LIBC__", 1);
     }
 
     std::vector<Token> tokens = preprocessor.process();
@@ -149,15 +177,13 @@ int main(int argc, char** argv) {
     Parser parser(tokens);
     auto ast = parser.statements();
 
-    Visitor visitor(args.filename);
+    Visitor visitor(args.filename, args.optimize);
 
     visitor.visit(std::move(ast));
 
     visitor.cleanup();
     visitor.free();
 
-    parser.free();
-    
     if (args.format == OutputFormat::Executable) {
         llvm::Function* entry = visitor.module->getFunction(args.entry);
         if (!entry) {
@@ -183,7 +209,7 @@ int main(int argc, char** argv) {
     llvm::TargetOptions options;
     auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
-    llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, "generic", "", options, reloc);
+    llvm::TargetMachine* target_machine = target->createTargetMachine(target_triple, "generic", "", options, reloc, llvm::None, llvm::CodeGenOpt::Aggressive);
     
     visitor.module->setDataLayout(target_machine->createDataLayout());
     visitor.module->setTargetTriple(target_triple);
@@ -235,11 +261,17 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    std::string libraries = utils::fmt::join(" ", args.libraries);
     std::string compiler = args.libc ? SOURCE_COMPILER : "ld";
+
     std::vector<std::string> arguments = {
         "-o", args.output,
         object
     };
+
+    if (!libraries.empty()) {
+        arguments.push_back("-l"); arguments.push_back(libraries);
+    }
 
     if (!args.libc || (args.entry != "main")) {
         arguments.push_back("-e"); arguments.push_back(args.entry);

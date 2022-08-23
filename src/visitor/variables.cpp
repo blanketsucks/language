@@ -72,12 +72,18 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         return global;
     }
 
-    llvm::Value* value;
+    llvm::Value* value = nullptr;
     bool is_constant = false;
 
     if (!expr->value) {
         type = this->get_llvm_type(expr->type);
-        value = llvm::ConstantInt::getNullValue(type);
+        if (type->isAggregateType()) {
+            value = llvm::ConstantAggregateZero::get(type);
+        } else if (type->isPointerTy()) {
+            value = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
+        } else {
+            value = llvm::Constant::getNullValue(type);
+        }
     } else {
         Value val = expr->value->accept(*this);
         is_constant = val.is_constant;
@@ -87,6 +93,11 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             type = value->getType();
         } else {
             type = this->get_llvm_type(expr->type);
+        }
+    
+        Type* ty = Type::from_llvm_type(type);
+        if (!ty->is_compatible(value->getType())) {
+            ERROR(expr->value->start, "Expected value of type '{t}' but got '{t}'", ty, Type::from_llvm_type(value->getType()));
         }
     }
 
@@ -101,13 +112,14 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         llvm::GlobalVariable* variable = this->module->getNamedGlobal(name);
 
         variable->setLinkage(llvm::GlobalValue::ExternalLinkage);
-        variable->setInitializer((llvm::Constant*)value);
+        variable->setInitializer(llvm::cast<llvm::Constant>(value));
 
         this->constants[expr->name] = variable;
         return value;
     }
 
-    // If the expression value is a constant, we don't need to create an alloca
+    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
+
     if (is_constant) {
         std::string name = utils::fmt::format("__const_{s}.{s}", this->current_function->name, expr->name);
         this->module->getOrInsertGlobal(name, type);
@@ -118,15 +130,26 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         variable->setInitializer((llvm::Constant*)value);
 
         this->current_function->constants[expr->name] = variable;
-        return value;
+
+        llvm::AllocaInst* inst = this->create_alloca(func, type);
+
+        llvm::Type* ty = this->builder->getInt8PtrTy();
+        this->builder->CreateMemCpy(
+            this->builder->CreateBitCast(inst, ty), llvm::MaybeAlign(0),
+            this->builder->CreateBitCast(variable, ty), llvm::MaybeAlign(0),
+            this->getsizeof(variable->getValueType())
+        );
+
+        this->current_function->locals[expr->name] = inst;
+        return variable;
     }
 
-    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
     llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
+    if (value) {
+        this->builder->CreateStore(value, alloca_inst);
+    }
 
-    this->builder->CreateStore(value, alloca_inst);
     this->current_function->locals[expr->name] = alloca_inst;
-
     return value;
 }
 

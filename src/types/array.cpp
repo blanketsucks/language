@@ -21,7 +21,7 @@ ArrayType* ArrayType::from_llvm_type(llvm::ArrayType* type) {
     return ArrayType::create(length, element);
 }
 
-llvm::ArrayType* ArrayType::to_llvm_type(llvm::LLVMContext& context) {
+llvm::Type* ArrayType::to_llvm_type(llvm::LLVMContext& context) {
     llvm::Type* element = this->element->to_llvm_type(context);
     return llvm::ArrayType::get(element, this->length);
 }
@@ -38,7 +38,7 @@ bool ArrayType::is_compatible(Type* other) {
     if (!other->isArray()) {
         if (other->isPointer()) {
             Type* ty = other->getPointerElementType();
-            if (ty->isChar() && this->element->isChar()) {
+            if (ty->is_compatible(this->element)) {
                 return true;
             }
         } 

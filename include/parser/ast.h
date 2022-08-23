@@ -45,12 +45,15 @@ public:
         If,
         While,
         For,
+        Break,
+        Continue,
         Struct,
         Constructor,
         Attribute,
         Element,
         Cast,
         Sizeof,
+        Offsetof,
         Assembly,
         Namespace,
         NamespaceAttribute,
@@ -91,11 +94,7 @@ public:
 
     Expr(Location start, Location end, ExprKind kind) : start(start), end(end), kind(kind) {}
 
-    template<class T> T* cast() {
-        T* value = (T*)this;
-        assert(value->kind != this->kind && "Invalid cast");
-
-        return value; 
+    template<class T> T* cast() { return (T*)this;
     }
 
     bool is_constant() { return this->kind.in({ExprKind::Integer, ExprKind::Float, ExprKind::String}); }
@@ -306,19 +305,40 @@ public:
 
 class ForExpr : public Expr {
 public:
-    std::string name;
-    utils::Ref<Expr> iterator;
-    utils::Ref<BlockExpr> body;
+    utils::Ref<Expr> start;
+    utils::Ref<Expr> end;
+    utils::Ref<Expr> step;
+    utils::Ref<Expr> body;
 
-    ForExpr(Location start, Location end, std::string name, utils::Ref<Expr> iterator, utils::Ref<BlockExpr> body);
+    ForExpr(
+        Location start,
+        Location end, 
+        utils::Ref<Expr> start_,
+        utils::Ref<Expr> end_,
+        utils::Ref<Expr> step, 
+        utils::Ref<Expr> body
+    );
     
+    Value accept(Visitor& visitor) override;  
+};
+
+class BreakExpr : public Expr {
+public:
+    BreakExpr(Location start, Location end);
+    Value accept(Visitor& visitor) override;  
+};
+
+class ContinueExpr : public Expr {
+public:
+    ContinueExpr(Location start, Location end);
     Value accept(Visitor& visitor) override;
-    
 };
 
 struct StructField {
     std::string name;
     Type* type;
+
+    uint32_t index;
     bool is_private = false;
 };
 
@@ -396,7 +416,15 @@ public:
     SizeofExpr(Location start, Location end, Type* type, utils::Ref<Expr> value = nullptr);
     
     Value accept(Visitor& visitor) override;
-    
+};
+
+class OffsetofExpr : public Expr {
+public:
+    utils::Ref<Expr> value;
+    std::string field;
+
+    OffsetofExpr(Location start, Location end, utils::Ref<Expr> value, std::string field);
+    Value accept(Visitor& visitor) override;
 };
 
 class NamespaceExpr : public Expr {

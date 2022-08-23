@@ -11,7 +11,7 @@ public:
     ~FunctionType() override;
 
     static FunctionType* from_llvm_type(llvm::FunctionType* type);
-    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::FunctionType* to_llvm_type(llvm::LLVMContext& context) override;
 
     FunctionType* copy() override;
 

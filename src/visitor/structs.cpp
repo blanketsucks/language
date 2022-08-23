@@ -46,14 +46,36 @@ Value Visitor::visit(ast::StructExpr* expr) {
         }
     }
     
-    for (auto& pair : expr->fields) {
-        types.push_back(this->get_llvm_type(pair.second.type));
-        fields[pair.first] = {pair.second.name, types.back(), pair.second.is_private};
+    uint32_t index = fields.empty() ? 0 : fields.rbegin()->second.index + 1;
+    uint32_t offset = 0;
+
+    if (!fields.empty()) {
+        StructField last = fields.rbegin()->second;
+        offset = last.offset + this->getsizeof(last.type);
+    }
+
+    std::vector<ast::StructField> struct_fields = utils::values(expr->fields);
+    std::sort(struct_fields.begin(), struct_fields.end(), [](auto& a, auto& b) { return a.index < b.index; });
+    
+    for (auto& field : struct_fields) {
+        llvm::Type* ty = this->get_llvm_type(field.type);
+        if (ty == type) {
+            ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
+        }
+
+        types.push_back(this->get_llvm_type(field.type));
     }
 
     type->setBody(types);
-    structure->fields = fields;
+    for (auto& pair : utils::zip(struct_fields, types)) {
+        ast::StructField field = pair.first;
+        fields[field.name] = {field.name, pair.second, field.is_private, index, offset};
 
+        index++;
+        offset += this->getsizeof(pair.second);
+    }
+
+    structure->fields = fields;
     this->current_struct = structure;
     for (auto& method : expr->methods) { 
         assert(method->kind == ast::ExprKind::Function && "Expected a function. Might be a compiler bug.");
@@ -99,10 +121,12 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
             value = this->builder->CreateBitCast(value, parent->type->getPointerTo());
         }
 
-        llvm::Function* func = this->module->getFunction(function->name);
-        
+        if (is_pointer) {
+            value = this->builder->CreateLoad(structure->type, value);
+        }
+
         function->used = true;
-        return Value(func, false, value, function);
+        return Value(function->value, false, value, function);
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -177,10 +201,9 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     }
 
     if (args.size() != fields.size()) {
-        ERROR(expr->start, "Expected {i} fields, found {i}", structure->fields.size(), args.size());
+        ERROR(expr->start, "Expected {i} fields, found {i}", fields.size(), args.size());
     }
 
-    // If all of the arguments to the constructor are constants there is no need for an alloca
     if (is_const) {
         std::vector<llvm::Constant*> constants;
         for (auto& pair : args) {
@@ -189,19 +212,36 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
 
         return Value(llvm::ConstantStruct::get(structure->type, constants), true);
     }
-
+    
     llvm::Value* instance = this->builder->CreateAlloca(structure->type);
     for (auto& pair : args) {
         llvm::Value* pointer = this->builder->CreateStructGEP(structure->type, instance, pair.first);
         this->builder->CreateStore(pair.second, pointer);
     }
 
-    return instance;
+    return this->builder->CreateLoad(structure->type, instance);
 }
 
-llvm::Value* Visitor::get_struct_field(ast::AttributeExpr* expr) {
+std::pair<llvm::Value*, int> Visitor::get_struct_field(ast::AttributeExpr* expr) {
     llvm::Value* parent = expr->parent->accept(*this).unwrap(this, expr->start);
     llvm::Type* type = parent->getType();
+
+    if (type->isStructTy()) {
+        std::string name = type->getStructName().str();
+        Struct* structure = this->structs[name];
+
+        int index = structure->get_field_index(expr->attribute);
+        if (index < 0) {
+            ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", expr->attribute, name);
+        }
+
+        StructField field = structure->fields.at(expr->attribute);
+        if (this->current_struct != structure && field.is_private) {
+            ERROR(expr->start, "Cannot access private field '{s}'", expr->attribute);
+        }
+
+        return {parent, index};
+    }
 
     if (!type->isPointerTy()) {
         ERROR(expr->start, "Attribute access on non-structure type");
@@ -213,17 +253,17 @@ llvm::Value* Visitor::get_struct_field(ast::AttributeExpr* expr) {
     }
 
     std::string name = type->getStructName().str();
-    Struct* structure = this->structs[name];
+    Struct* structure = this->structs.at(name);
 
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {
         ERROR(expr->start, "Attribute '{s}' does not exist in structure '{s}'", expr->attribute, name);
     }
 
-    StructField field = structure->fields[expr->attribute];
+    StructField field = structure->fields.at(expr->attribute);
     if (this->current_struct != structure && field.is_private) {
         ERROR(expr->start, "Cannot access private field '{s}'", expr->attribute);
     }
 
-    return this->builder->CreateStructGEP(structure->type, parent, index);
+    return {this->builder->CreateStructGEP(structure->type, parent, field.index), -1};
 }

@@ -54,7 +54,7 @@ std::vector<Token> Preprocessor::skip_until(TokenKind type, std::vector<std::str
     };
 
     std::vector<Token> tokens;
-    while (this->current != TokenKind::EOS && this->current != type && in(values, this->current.value)) {
+    while (this->current != TokenKind::EOS && (this->current != type || in(values, this->current.value))) {
         tokens.push_back(this->current);
         this->next();
     }
@@ -98,6 +98,39 @@ std::vector<Token> Preprocessor::process() {
                 std::string path = this->current.value;
 
                 this->parse_include(path);
+            } else if (this->current.value == "$ifdef") {
+                this->if_directive_location = this->current.start;
+                this->next();
+
+                std::string name = this->current.value;
+                this->has_if_directive = true;
+                if (!this->is_macro(name)) {
+                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"});
+                    continue;
+                }
+            } else if (this->current.value == "$ifndef") {
+                this->if_directive_location = this->current.start;
+                this->next();
+
+                std::string name = this->current.value;
+                this->has_if_directive = true;
+                if (this->is_macro(name)) {
+                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"});
+                    continue;
+                }
+            } else if (this->current.value == "$else") {
+                if (!this->has_if_directive) {
+                    ERROR(this->current.start, "Unexpected '$else'"); exit(1);
+                }
+
+                this->next();
+            } else if (this->current.value == "$endif") {
+                if (!this->has_if_directive) {
+                    ERROR(this->current.start, "Unexpected '$endif'"); exit(1);
+                }
+
+                this->next();
+                this->has_if_directive = false;
             }
         } else if (this->current == TokenKind::Identifier) {
             if (this->is_macro(this->current.value)) {
@@ -111,6 +144,10 @@ std::vector<Token> Preprocessor::process() {
         }
 
         this->next();
+    }
+
+    if (this->has_if_directive) {
+        ERROR(this->if_directive_location, "Unterminated '$if' directive"); exit(1);
     }
     
     this->processed.push_back(this->current);
@@ -159,19 +196,26 @@ Macro Preprocessor::parse_macro_definition() {
 
 std::fstream Preprocessor::search_include_paths(std::string filename) {
     utils::filesystem::Path path(filename);
-
     if (path.exists()) {
+        if (!path.isfile()) {
+            ERROR(this->current.start, "'{s}' is not a file", filename);
+        }
+
         return path.open();
     }
 
     for (auto& search : this->include_paths) {
         path = utils::filesystem::Path(search).join(filename);
         if (path.exists()) {
+            if (!path.isfile()) {
+                ERROR(this->current.start, "'{s}' is not a file", path.name);
+            }
+
             return path.open();
         }
     }
 
-    ERROR(this->current.start, "Could not find include file '{s}'", path); exit(1);
+    ERROR(this->current.start, "Could not find file '{s}'", filename);
 }
 
 void Preprocessor::parse_include(std::string path) {
@@ -212,6 +256,24 @@ void Preprocessor::parse_include(std::string path) {
 
 void Preprocessor::define(std::string name) {
     this->macros[name] = Macro(name, {}, {});
+}
+
+void Preprocessor::define(std::string name, int value) {
+    Location location = {0, 0, 0, "<compiler>"};
+    Token token = {TokenKind::Integer, location, location, std::to_string(value)};
+
+    this->macros[name] = Macro(name, {}, {token});
+}
+
+void Preprocessor::define(std::string name, std::string value) {
+    Location location = {0, 0, 0, "<compiler>"};
+    Token token = {TokenKind::String, location, location, value};
+
+    this->macros[name] = Macro(name, {}, {token});
+}
+
+void Preprocessor::undef(std::string name) {
+    this->macros.erase(name);
 }
 
 std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
@@ -268,20 +330,23 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         tokens = macro.expand();
     }
 
+    std::vector<Token> new_tokens;
     for (auto token : tokens) {
         if (this->is_macro(this->current.value)) {
             Macro macro = this->macros[this->current.value];
             auto expanded = this->expand(macro, true);
 
-            tokens.insert(tokens.end(), expanded.begin(), expanded.end());
+            new_tokens.insert(new_tokens.end(), expanded.begin(), expanded.end());
+        } else {
+            new_tokens.push_back(token);
         }
     }
 
     if (return_tokens) {
-        return tokens;
+        return new_tokens;
     }
 
-    this->update(tokens);
+    this->update(new_tokens);
     return {};
 }
 

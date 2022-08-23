@@ -107,11 +107,18 @@ std::fstream filesystem::Path::open(filesystem::OpenMode mode) {
 }
 
 filesystem::Path filesystem::Path::join(const std::string& path) {
-    return filesystem::Path(this->name + "/" + path);
+    std::string name;
+    if (path[0] == '/') {
+        name = this->name + path;
+    } else {
+        name = this->name + "/" + path;
+    }
+
+    return filesystem::Path(name);
 }
 
 filesystem::Path filesystem::Path::join(const filesystem::Path& path) {
-    return filesystem::Path(this->name + "/" + path.name);
+    return this->join(path.name);
 }
 
 filesystem::Path filesystem::Path::with_extension(const std::string& extension) {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <algorithm>
 
 enum class TokenKind {
     Identifier,
@@ -18,6 +19,7 @@ enum class TokenKind {
     Minus,
     Mul,
     Div,
+    Mod,
     Not,
     Or,
     And,
@@ -70,6 +72,9 @@ struct Location {
 
     std::string filename;
 
+    Location update(uint32_t line, uint32_t column, uint32_t index);
+    Location update(uint32_t column, uint32_t index);
+
     std::string format();
 };
 
@@ -80,6 +85,9 @@ struct Token {
     std::string value;
 
     static std::string getTokenTypeValue(TokenKind type);
+
+    bool match(TokenKind type, std::string value);
+    bool match(TokenKind type, std::vector<std::string> values);
 
     bool operator==(TokenKind type);
     bool operator==(Token token);
@@ -94,14 +102,16 @@ static std::vector<std::string> KEYWORDS = {
     "else",
     "while",
     "for",
+    "break",
+    "continue",
     "let",
     "const",
     "struct",
     "namespace",
     "type",
-    "in",
     "as",
     "sizeof",
+    "offsetof",
     "using",
     "from",
     "defer",
@@ -144,6 +154,7 @@ static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {
 
     std::make_pair(TokenKind::Add, 30),
     std::make_pair(TokenKind::Minus, 30),
+    std::make_pair(TokenKind::Mod, 35),
     std::make_pair(TokenKind::Div, 40),
     std::make_pair(TokenKind::Mul, 40)
 };

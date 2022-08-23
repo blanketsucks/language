@@ -72,16 +72,28 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenKind::Assign) {
         if (expr->left->kind == ast::ExprKind::Attribute) {
-            llvm::Value* pointer = this->get_struct_field((ast::AttributeExpr*)expr->left.get());
-            llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
+            auto pair = this->get_struct_field(
+                expr->left->cast<ast::AttributeExpr>()
+            );
 
-            this->builder->CreateStore(value, pointer);
+            llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
+            if (pair.second < 0) {
+                this->builder->CreateStore(value, pair.first);
+            } else {
+                this->builder->CreateInsertValue(pair.first, value, pair.second);
+            }
+
             return value;
         } else if (expr->left->kind == ast::ExprKind::Element) {
-            llvm::Value* pointer = this->get_array_element((ast::ElementExpr*)expr->left.get());
+            auto pair = this->get_array_element((ast::ElementExpr*)expr->left.get());
             llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
 
-            this->builder->CreateStore(value, pointer);
+            if (pair.second < 0) {
+                this->builder->CreateStore(value, pair.first);
+            } else {
+                this->builder->CreateInsertValue(pair.first, value, pair.second);
+            }
+
             return value;
         }
 
@@ -120,7 +132,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                 std::string rname = rhs->name();
 
                 std::string operation = Token::getTokenTypeValue(expr->op);
-                ERROR(expr->start, "Unsupported operation '{s}' for types '{s}' and '{s}'", operation, lname, rname);
+                ERROR(expr->start, "Unsupported binary operator '{s}' for types '{s}' and '{s}'", operation, lname, rname);
             }
         } else {
             left = this->builder->CreatePtrToInt(left, rtype);
@@ -152,6 +164,12 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                 return this->builder->CreateFDiv(left, right);
             } else {
                 return this->builder->CreateSDiv(left, right);
+            }
+        case TokenKind::Mod:
+            if (is_floating_point) {
+                return this->builder->CreateFRem(left, right);
+            } else {
+                return this->builder->CreateSRem(left, right);
             }
         case TokenKind::Eq:
             if (is_floating_point) {
@@ -212,10 +230,14 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* parent = nullptr;
+    int index = -1;
+
     if (expr->left->kind == ast::ExprKind::Attribute) { 
-        parent = this->get_struct_field((ast::AttributeExpr*)expr->left.get());
+        auto pair = this->get_struct_field((ast::AttributeExpr*)expr->left.get());
+        parent = pair.first; index = pair.second;
     } else if (expr->left->kind == ast::ExprKind::Element) {
-        parent = this->get_array_element((ast::ElementExpr*)expr->left.get());
+        auto pair = this->get_array_element((ast::ElementExpr*)expr->left.get());
+        parent = pair.first; index = pair.second;
     } else {
         ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->left.get());
         if (!variable) {
@@ -247,6 +269,12 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
             _UNREACHABLE
     }
 
-    this->builder->CreateStore(value, parent);
+
+    if (index >= 0) {
+        this->builder->CreateInsertValue(parent, value, index);
+    } else {
+        this->builder->CreateStore(value, parent);
+    }
+
     return value;
 }

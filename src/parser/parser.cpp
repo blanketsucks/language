@@ -54,7 +54,12 @@ void Parser::free() {
 }
 
 void Parser::end() {
-    this->expect(TokenKind::SemiColon, ";");
+    if (this->current != TokenKind::SemiColon) {
+        Token last = this->tokens[this->index - 1];
+        ERROR(last.end, "Expected ';'");
+    }
+
+    this->next();
 }
 
 Token Parser::next() {
@@ -99,11 +104,12 @@ int Parser::get_token_precendence() {
 
 Type* Parser::parse_type(std::string name, bool should_error) {
     Type* type;
-    if (this->current == TokenKind::LParen) {
-        // (int, int) -> int
+    if (this->current == TokenKind::Keyword && this->current.value == "func") {
+        // func(int, int) -> int
         this->next();
-        std::vector<Type*> args;
+        this->expect(TokenKind::LParen, "(");
 
+        std::vector<Type*> args;
         while (this->current != TokenKind::RParen) {
             Type* type = this->parse_type(this->current.value);
             args.push_back(type);
@@ -123,14 +129,14 @@ Type* Parser::parse_type(std::string name, bool should_error) {
             return_type = this->parse_type(this->current.value);
         }
 
-        type = FunctionType::create(args, return_type, false);
+        type = FunctionType::create(args, return_type, false)->getPointerTo();
         this->_allocated_types.push_back(type);
     } else if (this->current == TokenKind::LBracket) {
         this->next();
         Type* element = this->parse_type(this->current.value);
 
         this->expect(TokenKind::SemiColon, ";");
-        int result = this->itoa<int>(this->expect(TokenKind::Integer, "integer").value);
+        int result = this->itoa<int>(this->expect(TokenKind::Integer, "integer").value, "int");
 
         this->expect(TokenKind::RBracket, "]");
         type = ArrayType::create(result, element);
@@ -152,11 +158,17 @@ Type* Parser::parse_type(std::string name, bool should_error) {
         }
 
         if (this->types.find(name) == this->types.end()) {
-            if (should_error) {
-                ERROR(this->current.start, "Unrecognized type '{s}'", name); exit(1);
+            if (this->current_namespace.hasValue()) {
+                name = utils::fmt::format("{s}::{s}", this->current_namespace.getValue(), name);
             }
 
-            return nullptr;
+            if (this->types.find(name) == this->types.end()) {
+                if (should_error) {
+                    ERROR(this->current.start, "Unknown type {s}", name); exit(1);
+                } else {
+                    return nullptr;
+                }
+            }
         }
 
         type = this->types[name];
@@ -223,9 +235,9 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(ast::ExternLinkageSpecifi
         Type* type;
         std::string argument;
         if (value == "self") {
-            if (this->context.current_struct) {
+            if (this->current_struct) {
                 argument = "self";
-                type = this->context.current_struct;
+                type = this->current_struct;
 
                 this->next();
             } else {
@@ -279,10 +291,10 @@ utils::Ref<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecif
     }
     
     this->expect(TokenKind::LBrace, "{");
-    this->context.is_inside_function = true;
+    this->is_inside_function = true;
 
     auto body = this->parse_block();
-    this->context.is_inside_function = false;
+    this->is_inside_function = false;
 
     return utils::make_ref<ast::FunctionExpr>(prototype->start, body->end, std::move(prototype), std::move(body));
 }
@@ -321,18 +333,12 @@ utils::Ref<ast::IfExpr> Parser::parse_if_statement() {
 
 utils::Ref<ast::StructExpr> Parser::parse_struct() {
     Location start = this->current.start;
-    if (this->current != TokenKind::Identifier) {
-        ERROR(this->current.start, "Expected struct name"); exit(1);
-    }
-
-    std::string name = this->current.value;
+    std::string name = this->expect(TokenKind::Identifier, "struct name").value;
     std::string formatted = name;
 
-    if (this->context.current_namespace.hasValue()) {
-        formatted = utils::fmt::format("{s}::{s}", this->context.current_namespace.getValue(), name);
+    if (this->current_namespace.hasValue()) {
+        formatted = utils::fmt::format("{s}::{s}", this->current_namespace.getValue(), name);
     }
-
-    this->next();
 
     if (this->current == TokenKind::SemiColon) {
         this->next();
@@ -364,18 +370,20 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
     std::vector<Type*> types;
 
     StructType* structure = StructType::create(name, {});
-    this->context.current_struct = structure;
+    this->current_struct = structure;
 
     this->types[formatted] = structure;
+    uint32_t index = 0;
+
     while (this->current != TokenKind::RBrace) {
         bool is_private = false;
 
-        if (this->current == TokenKind::Keyword && this->current.value == "private") {
+        if (this->current.match(TokenKind::Keyword, "private")) {
             is_private = true;
             this->next();
         }
 
-        if (this->current != TokenKind::Identifier && (this->current != TokenKind::Keyword && this->current.value != "func")) {
+        if (this->current != TokenKind::Identifier && this->current.match(TokenKind::Keyword, "func")) {
             ERROR(this->current.start, "Expected field name or function definition"); exit(1);
         }
 
@@ -389,35 +397,27 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
             methods.push_back(std::move(definition));
         } else {
+            if (index == UINT32_MAX) {
+                ERROR(this->current.start, "Cannot define more than {i} fields inside a structure", UINT32_MAX); exit(1);
+            }
+
             std::string name = this->current.value;
             this->next();
 
-            if (this->current != TokenKind::Colon) {
-                ERROR(this->current.start, "Expected :"); exit(1);
-            }
-
-            this->next();
+            this->expect(TokenKind::Colon, ":");
             types.push_back(this->parse_type(this->current.value));
 
-            fields[name] = {name, types.back(), is_private};
-            if (this->current != TokenKind::SemiColon) {
-                ERROR(this->current.start, "Expected ;"); exit(1);
-            }
+            fields[name] = {name, types.back(), index, is_private};
 
-            this->next();
+            this->expect(TokenKind::SemiColon, ";");
+            index++;
         }
     }
 
-    if (this->current != TokenKind::RBrace) {
-        ERROR(this->current.start, "Expected }"); exit(1);
-    }
-
-    Location end = this->current.end;
+    Location end = this->expect(TokenKind::RBrace, "}").end;
     structure->setFields(types);
 
-    this->next();
-
-    this->context.current_struct = nullptr;
+    this->current_struct = nullptr;
     return utils::make_ref<ast::StructExpr>(
         start, end, name, false, std::move(parents), std::move(fields), std::move(methods)
     );    
@@ -425,25 +425,19 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
 utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     Location start = this->current.start;
-
-    if (this->current != TokenKind::Identifier) {
-        ERROR(this->current.start, "Expected variable name"); exit(1);
-    }
-
     Type* type = nullptr;
-    std::string name = this->current.value;
-    this->next();
 
+    std::string name = this->expect(TokenKind::Identifier, "variable name").value;
     if (this->current == TokenKind::Colon) {
         this->next();
         type = this->parse_type(this->current.value);
     }
     
     utils::Ref<ast::Expr> expr = nullptr;
+    Location end;
+
     if (this->current != TokenKind::Assign) {
-        if (this->current != TokenKind::SemiColon) {
-            ERROR(this->current.start, "Expected = or ;"); exit(1);
-        }
+        end = this->expect(TokenKind::SemiColon, ";").end;
 
         if (!type) {
             ERROR(this->current.start, "Un-initialized variables must have an inferred type"); exit(1);
@@ -452,14 +446,10 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         this->next();
         expr = this->expr(false);
         
-        if (this->current != TokenKind::SemiColon) {
-            ERROR(this->current.start, "Expected ;"); exit(1);
-        }
-    }
-
-    Location end = this->current.end;
-    this->next();
-
+        this->expect(TokenKind::SemiColon, ";");
+        end = expr->end;
+    };
+    
     if (is_const) {
         if (!expr) {
             ERROR(this->current.start, "Constants must have an initializer"); exit(1);
@@ -473,36 +463,21 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
 
 utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
     Location start = this->current.start;
-    if (this->current != TokenKind::Identifier) {
-        ERROR(this->current.start, "Expected namespace name"); exit(1);
-    }
+    std::string name = this->expect(TokenKind::Identifier, "namespace name").value;
 
-    std::string name = this->current.value;
-    if (this->context.current_namespace.hasValue()) {
-        std::string current = this->context.current_namespace.getValue();
-        this->context.current_namespace = utils::fmt::format("{s}::{s}", current, name);
+    if (this->current_namespace.hasValue()) {
+        this->current_namespace = utils::fmt::format("{s}::{s}", this->current_namespace.getValue(), name);
     } else {
-        this->context.current_namespace = name;
+        this->current_namespace = name;
     }
 
-    this->next();
-    if (this->current != TokenKind::LBrace) {
-        ERROR(this->current.start, "Expected {"); exit(1);
-    }
-
-    this->next();
-
+    this->expect(TokenKind::LBrace, "{");
+    
     std::vector<utils::Ref<ast::Expr>> members;
-
     while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
 
-        bool is_not_allowed = std::find(
-            NAMESPACE_ALLOWED_KEYWORDS.begin(), NAMESPACE_ALLOWED_KEYWORDS.end(), this->current.value
-        ) == NAMESPACE_ALLOWED_KEYWORDS.end();
-        if (
-            this->current != TokenKind::Keyword && is_not_allowed
-        ) {
+        if (!this->current.match(TokenKind::Keyword, NAMESPACE_ALLOWED_KEYWORDS)) {
             ERROR(this->current.start, "Expected function, extern, struct, const, type, or namespace"); exit(1);
         }
 
@@ -522,9 +497,8 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
         } else if (this->current.value == "type") {
             this->next();
             std::string name = this->current.value;
-            if (this->context.current_namespace.hasValue()) {
-                std::string current = this->context.current_namespace.getValue();
-                name = utils::fmt::format("{s}::{s}", current, name);
+            if (this->current_namespace.hasValue()) {
+                name = utils::fmt::format("{s}::{s}", this->current_namespace.getValue(), name);
             }
 
             this->next();
@@ -541,14 +515,9 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
         members.push_back(std::move(member));
     }
 
-    if (this->current != TokenKind::RBrace) {
-        ERROR(this->current.start, "Expected }"); exit(1);
-    }
-
-    Location end = this->current.end;
-    this->next();
-
-    this->context.current_namespace.reset();
+    Location end = this->expect(TokenKind::RBrace, "}").end;
+    this->current_namespace.reset();
+    
     return utils::make_ref<ast::NamespaceExpr>(start, end, name, std::move(members));
 }
 
@@ -561,23 +530,15 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
         std::string name = this->current.value;
         this->next();
 
-        if (this->current != TokenKind::Colon) {
-            ERROR(this->current.start, "Expected :"); exit(1);
-        }
-
-        this->next();
+        this->expect(TokenKind::Colon, ":");
         Type* type = this->parse_type(this->current.value);
 
         if (this->current == TokenKind::Assign) {
             ERROR(this->current.start, "External variables cannot have an initializer"); exit(1);
         }
 
-        if (this->current != TokenKind::SemiColon) {
-            ERROR(this->current.start, "Expected ;"); exit(1);
-        }
-
-        this->next();
-        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, this->current.end, name, type, nullptr, true);
+        Location end = this->expect(TokenKind::SemiColon, ";").end;
+        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, end, name, type, nullptr, true);
     } else {
         if (this->current != TokenKind::Keyword && this->current.value != "func") {
             ERROR(this->current.start, "Expected function"); exit(1);
@@ -591,7 +552,7 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
     return definition;
 }
 
-utils::Ref<ast::BlockExpr> Parser::parse_extern_block() {
+utils::Ref<ast::Expr> Parser::parse_extern_block() {
     Location start = this->current.start;
     ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None;
 
@@ -618,16 +579,11 @@ utils::Ref<ast::BlockExpr> Parser::parse_extern_block() {
             definitions.push_back(std::move(definition));
         }
 
-        Location end = this->current.end;
-        this->next();
-
+        Location end = this->expect(TokenKind::RBrace, "}").end;
         return utils::make_ref<ast::BlockExpr>(start, end, std::move(definitions));
     }
 
-    auto definition = this->parse_extern(linkage);
-    definitions.push_back(std::move(definition));
-
-    return utils::make_ref<ast::BlockExpr>(start, this->current.end, std::move(definitions));
+    return this->parse_extern(linkage);
 }
 
 std::vector<utils::Ref<ast::Expr>> Parser::statements() {
@@ -656,7 +612,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 this->next();
                 return this->parse_function_definition();
             } else if (this->current.value == "return") {
-                if (!this->context.is_inside_function) {
+                if (!this->is_inside_function) {
                     ERROR(this->current.start, "Return statement outside of function"); exit(1);
                 }
 
@@ -668,12 +624,11 @@ utils::Ref<ast::Expr> Parser::statement() {
                 }
 
                 auto expr = this->expr(false);
-                Location end = this->current.end;
 
-                this->expect(TokenKind::SemiColon, ";");
+                Location end = this->expect(TokenKind::SemiColon, ";").end;
                 return utils::make_ref<ast::ReturnExpr>(start, end, std::move(expr));
             } else if (this->current.value == "if") {
-                if (!this->context.is_inside_function) {
+                if (!this->is_inside_function) {
                     ERROR(this->current.start, "If statement outside of function"); exit(1);
                 }
 
@@ -686,7 +641,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 this->next();
                 return this->parse_variable_definition(true);
             } else if (this->current.value == "struct") {
-                if (this->context.is_inside_function) {
+                if (this->is_inside_function) {
                     ERROR(this->current.start, "Struct definition inside function"); exit(1);
                 }
 
@@ -698,8 +653,8 @@ utils::Ref<ast::Expr> Parser::statement() {
             } else if (this->current.value == "type") {
                 this->next();
                 std::string name = this->current.value;
-                if (this->context.current_namespace.hasValue()) {
-                    std::string current = this->context.current_namespace.getValue();
+                if (this->current_namespace.hasValue()) {
+                    std::string current = this->current_namespace.getValue();
                     name = utils::fmt::format("{s}::{s}", current, name);
                 }
 
@@ -712,6 +667,9 @@ utils::Ref<ast::Expr> Parser::statement() {
                 this->types[name] = type;
                 return nullptr;
             } else if (this->current.value == "while") {
+                bool has_outer_loop = this->is_inside_loop;
+                Location start = this->current.start;
+
                 this->next();
                 this->expect(TokenKind::LParen, "(");
                 
@@ -719,42 +677,82 @@ utils::Ref<ast::Expr> Parser::statement() {
                 this->expect(TokenKind::RParen, ")");
 
                 this->expect(TokenKind::LBrace, "{");
+
+                this->is_inside_loop = true;
                 auto body = this->parse_block();
 
-                return utils::make_ref<ast::WhileExpr>(this->current.start, this->current.end, std::move(condition), std::move(body));
+                this->is_inside_loop = has_outer_loop;
+                return utils::make_ref<ast::WhileExpr>(start, body->end, std::move(condition), std::move(body));
             } else if (this->current.value == "for") {
+                bool has_outer_loop = this->is_inside_loop;
+                Location start_ = this->current.start;
+
                 this->next();
                 this->expect(TokenKind::LParen, "(");
 
-                std::string name = this->expect(TokenKind::Identifier, "identifier").value;
-                if (this->current != TokenKind::Keyword && this->current.value != "in") {
-                    ERROR(this->current.start, "Expected 'in'"); exit(1);
-                }
+                auto start = this->parse_variable_definition(false);
 
-                this->next();
-                auto iterator = this->expr(false);
+                auto end = this->expr(false);
+                this->expect(TokenKind::SemiColon, ";");
 
+                auto step = this->expr(false);
                 this->expect(TokenKind::RParen, ")");
 
                 this->expect(TokenKind::LBrace, "{");
+
+                this->is_inside_loop = true;
                 auto body = this->parse_block();
 
-                return utils::make_ref<ast::ForExpr>(this->current.start, this->current.end, name, std::move(iterator), std::move(body));
+                this->is_inside_loop = has_outer_loop;
+                return utils::make_ref<ast::ForExpr>(
+                    start_, body->end, std::move(start), std::move(end), std::move(step), std::move(body)
+                );
+            } else if (this->current.value == "break") {
+                if (!this->is_inside_loop) {
+                    ERROR(this->current.start, "Break statement outside of loop"); exit(1);
+                }
 
+                Location start = this->current.start;
+                this->next();
+
+                Location end = this->expect(TokenKind::SemiColon, ";").end;
+                return utils::make_ref<ast::BreakExpr>(start, end);
+            } else if (this->current.value == "continue") {
+                if (!this->is_inside_loop) {
+                    ERROR(this->current.start, "Continue statement outside of loop"); exit(1);
+                }
+
+                Location start = this->current.start;
+                this->next();
+
+                Location end = this->expect(TokenKind::SemiColon, ";").end;
+                return utils::make_ref<ast::ContinueExpr>(start, end);
             } else if (this->current.value == "sizeof") {
                 Location start = this->current.start;
                 this->next();
                 
                 this->expect(TokenKind::LParen, "(");
                 Type* type = this->parse_type(this->current.value, false);
-                utils::Ref<ast::Expr> expr = nullptr;
 
+                utils::Ref<ast::Expr> expr = nullptr;
                 if (!type) {
                     expr = this->expr(false);
                 }
 
                 Location end = this->expect(TokenKind::RParen, ")").end;
                 return utils::make_ref<ast::SizeofExpr>(start, end, type, std::move(expr));
+            } else if (this->current.value == "offsetof") {
+                Location start = this->current.start;
+                this->next();
+
+                this->expect(TokenKind::LParen, "(");
+                auto value = this->expr(false);
+
+                this->expect(TokenKind::Comma, ",");
+                std::string field = this->expect(TokenKind::Identifier, "identifier").value;
+
+                Location end = this->expect(TokenKind::RParen, ")").end;
+                return utils::make_ref<ast::OffsetofExpr>(start, end, std::move(value), field);
             } else if (this->current.value == "using") {
                 Location start = this->current.start;
                 this->next();
@@ -784,7 +782,7 @@ utils::Ref<ast::Expr> Parser::statement() {
 
                 return utils::make_ref<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
             } else if (this->current.value == "defer") {
-                if (!this->context.is_inside_function) {
+                if (!this->is_inside_function) {
                     ERROR(this->current.start, "Defer statement outside of function"); exit(1);
                 }
 
@@ -823,14 +821,22 @@ utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> ri
         switch (op) {
             case TokenKind::Add:
                 result = lhs->value + rhs->value; break;
-            case TokenKind::Eq:
-                result = lhs->value == rhs->value ? "true" : "false";
-                return utils::make_ref<ast::VariableExpr>(this->current.start, this->current.end, result);
-            case TokenKind::Neq:
-                result = lhs->value != rhs->value ? "true" : "false";
-                return utils::make_ref<ast::VariableExpr>(this->current.start, this->current.end, result);
+            case TokenKind::Eq: 
+                return utils::make_ref<ast::IntegerExpr>(
+                    this->current.start, this->current.end, lhs->value == rhs->value, 1
+                );
+            case TokenKind::Neq: {
+                result = lhs->value != rhs->value;
+                return utils::make_ref<ast::IntegerExpr>(
+                    this->current.start, this->current.end, lhs->value != rhs->value, 1
+                );
+            }
             default:
-                ERROR(this->current.start, "Unimplemented binary operator."); exit(1);
+                ERROR(
+                    this->current.start, 
+                    "Unsupported binary operator '{s}' for types 'char*' and 'char*'.",
+                    Token::getTokenTypeValue(op)
+                ); exit(1);
         }
 
         return utils::make_ref<ast::StringExpr>(this->current.start, this->current.end, result);
@@ -876,7 +882,11 @@ utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> ri
         case TokenKind::Lte:
             result = lhs->value <= rhs->value; break;
         default:
-            ERROR(this->current.start, "Unimplemented binary operator."); exit(1);
+            ERROR(
+                this->current.start, 
+                "Unsupported binary operator '{s}' for types 'int' and 'int'", 
+                Token::getTokenTypeValue(op)
+            );
     }
 
     return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
@@ -905,9 +915,25 @@ utils::Ref<ast::Expr> Parser::parse_immediate_unary_op(utils::Ref<ast::Expr> exp
         return utils::make_ref<ast::UnaryOpExpr>(this->current.start, this->current.end, op, std::move(expr));
     }
 
+    ast::IntegerExpr* lhs = (ast::IntegerExpr*)expr.get();
+    long result = 0;
+    
+    switch (op) {
+        case TokenKind::Not:
+            result = !lhs->value; break;
+        case TokenKind::BinaryNot:
+            result = ~lhs->value; break;
+        case TokenKind::Minus:
+            result = -lhs->value; break;
+        case TokenKind::Add:
+            result = lhs->value; break;
+        case TokenKind::Mul:
+            ERROR(expr->start, "Unsupported unary operator '*' for type 'int'");
+        case TokenKind::And:
+            ERROR(expr->start, "Unsupported unary operator '&' for type 'int'");
+    }
 
-    ERROR(this->current.start, "Unimplemented unary operator."); exit(1);
-    return nullptr;
+    return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
 }
 
 ast::Attributes Parser::parse_attributes() {
@@ -1118,18 +1144,47 @@ utils::Ref<ast::Expr> Parser::factor() {
     Location start = this->current.start;
     switch (this->current.type) {
         case TokenKind::Integer: {
-            int number = this->itoa<int>(this->current.value);
+
+            std::string number = this->current.value;
             this->next();
 
-            expr = utils::make_ref<ast::IntegerExpr>(start, this->current.start, number);
-            break;
+            if (this->current.match(TokenKind::Identifier, "i8")) {
+                this->next();
+                return utils::make_ref<ast::IntegerExpr>(
+                    start, this->current.start, this->itoa<char>(number, "char"), 8
+                );
+
+                this->next();
+            }
+            
+            if (this->current.match(TokenKind::Identifier, "i16")) {
+                this->next();
+                return utils::make_ref<ast::IntegerExpr>(
+                    start, this->current.start, this->itoa<short>(number, "short"), 16
+                );
+            } 
+            
+            if (this->current.match(TokenKind::Identifier, "i64")) {
+                this->next();
+                return utils::make_ref<ast::IntegerExpr>(
+                    start, this->current.start, this->itoa<long>(number, "long"), 64
+                );
+            }
+
+
+            if (this->current.match(TokenKind::Identifier, "i32")) {
+                this->next();
+            }
+        
+            // Integers are not callable nor indexable so we can safely return from this function.
+            return utils::make_ref<ast::IntegerExpr>(start, this->current.start, this->itoa<int>(number, "int"), 32);
         }
         case TokenKind::Char: {
             char c = this->current.value[0];
             this->next();
 
-            expr = utils::make_ref<ast::IntegerExpr>(start, this->current.start, c, 8);
-            break;
+            // Same case for integers.
+            return utils::make_ref<ast::IntegerExpr>(start, this->current.start, c, 8);
         }
         case TokenKind::Float: {
             double number;
@@ -1140,8 +1195,8 @@ utils::Ref<ast::Expr> Parser::factor() {
 
             this->next();
 
-            expr = utils::make_ref<ast::FloatExpr>(start, this->current.start, number);
-            break;
+            // Same case again.
+            return utils::make_ref<ast::FloatExpr>(start, this->current.start, number);
         }
         case TokenKind::String: {
             std::string value = this->current.value;
@@ -1171,6 +1226,18 @@ utils::Ref<ast::Expr> Parser::factor() {
 
                 Location end = this->expect(TokenKind::RParen, ")").end;
                 return utils::make_ref<ast::SizeofExpr>(start, end, type, std::move(expr));
+            } else if (this->current.value == "offsetof") {
+                Location start = this->current.start;
+                this->next();
+
+                this->expect(TokenKind::LParen, "(");
+                auto value = this->expr(false);
+
+                this->expect(TokenKind::Comma, ",");
+                std::string field = this->expect(TokenKind::Identifier, "identifier").value;
+
+                Location end = this->expect(TokenKind::RParen, ")").end;
+                return utils::make_ref<ast::OffsetofExpr>(start, end, std::move(value), field);
             } else {
                 ERROR(this->current.start, "Unexpected keyword."); exit(1);
             }
@@ -1209,6 +1276,7 @@ utils::Ref<ast::Expr> Parser::factor() {
 
     while (this->current == TokenKind::DoubleColon) {
         this->next();
+
 
         std::string value = this->expect(TokenKind::Identifier, "identifier").value;
         expr = utils::make_ref<ast::NamespaceAttributeExpr>(start, this->current.end, value, std::move(expr));

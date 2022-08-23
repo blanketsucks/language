@@ -1,18 +1,16 @@
 SOURCES = $(wildcard src/**/*.cpp src/*.cpp)
+
 OBJS = $(SOURCES:.cpp=.o)
 
-FLAGS = -O3 -Iinclude
+FLAGS = -O3 -Iinclude -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs
 LLVM-CONFIG = llvm-config-14
 
 ifeq ($(DEBUG),true)
 	FLAGS += -g
 endif
 
-CXXFLAGS = $(FLAGS) -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs -fno-exceptions -c -std=c++14
-CXXFLAGS += $(shell $(LLVM-CONFIG) --cflags)
-
-LDFLAGS = $(FLAGS) -Wno-non-pod-varargs
-LDFLAGS += $(shell $(LLVM-CONFIG) --ldflags --libs --system-libs core)
+CXXFLAGS = $(FLAGS) -fno-exceptions -c -std=c++14 $(shell $(LLVM-CONFIG) --cflags)
+LDFLAGS = $(FLAGS) $(shell $(LLVM-CONFIG) --ldflags --libs --system-libs core)
 
 build: main.o $(OBJS)
 	$(CXX) main.o $(OBJS) $(LDFLAGS) -o proton
@@ -20,12 +18,5 @@ build: main.o $(OBJS)
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-run: build
-	./main
-
 clean:
-ifeq ($(OS),Windows_NT)
-	del /f /q /s *.o
-else
-	rm -fr main.o $(OBJS)
-endif
+	rm -fr main.o $(OBJS) proton

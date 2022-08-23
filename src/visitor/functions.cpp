@@ -158,7 +158,10 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     bool error = llvm::verifyFunction(*function, &llvm::errs());
     assert((!error) && "Error while verifying function IR. Most likely a compiler bug.");
 
-    this->fpm->run(*function);
+    if (this->with_optimizations) {
+        this->fpm->run(*function);
+    }
+
     return function;
 }
 
@@ -174,9 +177,20 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+        Type* ret = Type::from_llvm_type(func->ret);
+
+        if (!ret->is_compatible(value->getType())) {
+            ERROR(
+                expr->value->start, 
+                "Return type '{t}' does not match expected function return type '{t}'", 
+                Type::from_llvm_type(value->getType()), ret
+            );
+        } else {
+            value = this->cast(value, func->ret);
+        }
+
         func->branch->has_return = true;
 
-        // Got rid of the typechecking for now.
         this->builder->CreateStore(value, func->return_value);
         func->defer(*this);
 
@@ -234,7 +248,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
                 i++;
             }
 
-            return instance;
+            return this->builder->CreateLoad(structure->type, instance);
         }
 
         callable.parent = instance; // `self` parameter for the constructor
@@ -293,7 +307,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
                 std::string name = argument->getName().str();
                 ERROR(expr->start, "Argument '{s}' of type '{t}' does not match expected type '{t}'", name, type, expected);
             } else {
-                value = this->cast(value, expected);
+                value = this->cast(value, argument->getType());
             }
         }
 

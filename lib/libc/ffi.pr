@@ -8,45 +8,45 @@ namespace libc {
 type FILE = int;
     
 extern "C" {
-    func fopen(path: char*, mode: char*) -> libc::FILE*;
-    func fdopen(fd: int, mode: char*) -> libc::FILE*;
-    func freopen(path: char*, mode: char*, stream: libc::FILE*) -> libc::FILE*;
-    func fclose(stream: libc::FILE*) -> int;
-    func fflush(stream: libc::FILE*) -> int;
+    func fopen(path: char*, mode: char*) -> FILE*;
+    func fdopen(fd: int, mode: char*) -> FILE*;
+    func freopen(path: char*, mode: char*, stream: FILE*) -> FILE*;
+    func fclose(stream: FILE*) -> int;
+    func fflush(stream: FILE*) -> int;
 
 
-    func fgetc(stream: libc::FILE*) -> int;
-    func fgets(buf: char*, n: int, stream: libc::FILE*) -> char*;
-    func getc(stream: libc::FILE*) -> int;
+    func fgetc(stream: FILE*) -> int;
+    func fgets(buf: char*, n: int, stream: FILE*) -> char*;
+    func getc(stream: FILE*) -> int;
     func getchar() -> int;
-    func ungetc(c: int, stream: libc::FILE*) -> int;
+    func ungetc(c: int, stream: FILE*) -> int;
 
 
-    func fputc(c: int, stream: libc::FILE*) -> int;
-    func fputs(s: char*, stream: libc::FILE*) -> int;
-    func putc(c: int, stream: libc::FILE*) -> int;
+    func fputc(c: int, stream: FILE*) -> int;
+    func fputs(s: char*, stream: FILE*) -> int;
+    func putc(c: int, stream: FILE*) -> int;
     [[allow_dead_code]] func putchar(c: int) -> int;
     [[allow_dead_code]] func puts(s: char*) -> int;
 
-    func fread(buf: char*, size: int, n: int, stream: libc::FILE*) -> int;
-    func fwrite(buf: char*, size: int, n: int, stream: libc::FILE*) -> int;
+    func fread(buf: char*, size: int, n: int, stream: FILE*) -> int;
+    func fwrite(buf: char*, size: int, n: int, stream: FILE*) -> int;
 
 
-    func fseek(stream: libc::FILE*, offset: int, whence: int) -> int;
-    func ftell(stream: libc::FILE*) -> int;
-    func rewind(stream: libc::FILE*);
-    func fgetpos(stream: libc::FILE*, pos: int*) -> int;
-    func fsetpos(stream: libc::FILE*, pos: int*) -> int;
+    func fseek(stream: FILE*, offset: int, whence: int) -> int;
+    func ftell(stream: FILE*) -> int;
+    func rewind(stream: FILE*);
+    func fgetpos(stream: FILE*, pos: int*) -> int;
+    func fsetpos(stream: FILE*, pos: int*) -> int;
 
 
-    func clearerr(stream: libc::FILE*);
-    func feof(stream: libc::FILE*) -> int;
-    func ferror(stream: libc::FILE*) -> int;
-    func fileno(stream: libc::FILE*) -> int;
+    func clearerr(stream: FILE*);
+    func feof(stream: FILE*) -> int;
+    func ferror(stream: FILE*) -> int;
+    func fileno(stream: FILE*) -> int;
 
 
     func printf(fmt: char*, ...) -> int;
-    func fprintf(stream: libc::FILE*, fmt: char*, ...) -> int;
+    func fprintf(stream: FILE*, fmt: char*, ...) -> int;
     func dprintf(fd: int, fmt: char*, ...) -> int;
     func sprintf(buf: char*, fmt: char*, ...) -> int;
     func snprintf(buf: char*, n: int, fmt: char*, ...) -> int;
@@ -111,21 +111,22 @@ extern "C" {
     func atoi(s: char*) -> int;
     func atol(s: char*) -> long;
     func atoll(s: char*) -> long;
-
-
     func atof(s: char*) -> double;
 
 
     func sleep(seconds: int) -> int;
 
+
     func exit(code: int) -> void;
 
-    func atexit(f: ());
 
+    func atexit(f: func() -> void);
+    
     func strerror(err: int) -> char*;
 
     func __errno_location() -> int*;
     func __h_errno_location() -> int*;
+
 }
 
 }

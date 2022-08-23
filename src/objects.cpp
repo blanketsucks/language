@@ -21,10 +21,13 @@ Function::Function(
     this->locals = {};
 }
 
-Branch* Function::create_branch(std::string name) {
-    Branch* branch = new Branch(name, false);
-    this->branches.push_back(branch);
+Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::BasicBlock* end) {
+    Branch* branch = new Branch(name);
+    
+    branch->loop = loop;
+    branch->end = end;
 
+    this->branches.push_back(branch);
     return branch;
 }
 
@@ -61,12 +64,11 @@ bool Struct::has_method(const std::string& name) {
 }
 
 int Struct::get_field_index(std::string name) {
-    auto iter = this->fields.find(name);
-    if (iter == this->fields.end()) {
+    if (this->fields.find(name) == this->fields.end()) {
         return -1;
     }
 
-    return std::distance(this->fields.begin(), iter);
+    return this->fields[name].index;
 }
 
 std::vector<StructField> Struct::get_fields(bool with_private) {
@@ -116,8 +118,6 @@ Namespace::Namespace(std::string name) : name(name) {
     this->locals = {};
 }
 
-// Modules
-
 // Values
 
 Value::Value(
@@ -140,10 +140,12 @@ llvm::Value* Value::unwrap(Visitor* visitor, Location location) {
 }
 
 llvm::Type* Value::type() {
+    assert(this->value);
     return this->value->getType();
 }
 
 std::string Value::name() {
+    assert(this->value);
     return this->value->getName().str();
 }
 

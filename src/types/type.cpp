@@ -19,7 +19,9 @@ Type* Type::create(Type::Value value, size_t size) {
 }
 
 Type* Type::from_llvm_type(llvm::Type* type) {
-    if (type->isIntegerTy(8)) {
+    if (type->isIntegerTy(1)) {
+        return BooleanType;
+    } else if (type->isIntegerTy(8)) {
         return CharType;
     } else if (type->isIntegerTy(16)) {
         return ShortType;
@@ -136,7 +138,7 @@ bool Type::is_compatible(Type* other) {
     if (this->value == other->value) {
         return true;
     } else if (this->isNumeric() && other->isNumeric()) {
-        if (this->isInt() && other->isFloationPoint()) {
+        if (this->isInt() && other->isFloatingPoint()) {
             return false;
         }
         

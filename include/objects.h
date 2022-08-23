@@ -13,9 +13,17 @@ struct Struct;
 
 struct Branch {
     std::string name;
-    bool has_return;
 
-    Branch(std::string name, bool has_return) : name(name), has_return(has_return) {}
+    bool has_return;
+    bool has_break;
+    bool has_continue;
+
+    llvm::BasicBlock* loop;
+    llvm::BasicBlock* end;
+
+    Branch(std::string name) : name(name), has_return(false), has_break(false), has_continue(false) {}
+
+    bool has_jump() { return this->has_return || this->has_break || this->has_continue; }
 };
 
 struct Function {
@@ -48,7 +56,7 @@ struct Function {
 
     Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
 
-    Branch* create_branch(std::string name);
+    Branch* create_branch(std::string name, llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
     bool has_return();
 
     void defer(Visitor& visitor);
@@ -57,7 +65,11 @@ struct Function {
 struct StructField {
     std::string name;
     llvm::Type* type;
+    
     bool is_private;
+
+    uint32_t index;
+    uint32_t offset;
 };
 
 struct Struct {

@@ -154,6 +154,7 @@ Argument ArgumentParser::add_argument(Argument arg) {
     
     return arg;
 }
+
 std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
     int i = 1;
     std::vector<std::string> rest; 
@@ -175,7 +176,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
         Argument argument = this->arguments[name];
         i++;
 
-        if (this->has_value(argument)) {
+        if (this->has_value(argument) && argument.type != ArgumentValueType::Many) {
             this->error("Argument is '{s}' already specified.", argument.name);
 
             continue;
@@ -189,6 +190,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             } 
 
             this->set_value(argument, argv[i]);
+            i++;
         } else if (argument.type == ArgumentValueType::Many) {
             std::vector<llvm::Any> values;
             if (this->has_value(argument)) {
@@ -212,6 +214,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             }
 
             this->set_value(argument, argv[i]);
+            i++;
         }
     }
 

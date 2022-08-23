@@ -23,11 +23,11 @@ public:
 
     void free();
 
-    template<typename T> T itoa(const std::string& str) {
+    template<typename T> T itoa(const std::string& str, const char* type) {
         T result = 0;
         bool error = llvm::StringRef(str).getAsInteger(0, result);
         if (error) {
-            ERROR(this->current.start, "Invalid integer literal");
+            ERROR(this->current.start, "Invalid {} integer literal.", type);
         }
 
         return result;
@@ -41,6 +41,7 @@ public:
     Token expect(TokenKind type, std::string value);
 
     int get_token_precendence();
+    
     Type* parse_type(std::string name, bool should_error = true);
     std::map<std::string, Type*> get_types() { return this->types; }
 
@@ -54,7 +55,7 @@ public:
     utils::Ref<ast::Expr> parse_variable_definition(bool is_const = false);
     utils::Ref<ast::NamespaceExpr> parse_namespace();
     utils::Ref<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
-    utils::Ref<ast::BlockExpr> parse_extern_block();
+    utils::Ref<ast::Expr> parse_extern_block();
 
     utils::Ref<ast::Expr> parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op);
     utils::Ref<ast::Expr> parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op);
@@ -74,7 +75,13 @@ public:
 private:
     uint32_t index;
     Token current;
-    Context context;
+
+    bool is_inside_function = false;
+    bool is_inside_loop = false;
+
+    StructType* current_struct = nullptr;
+    llvm::Optional<std::string> current_namespace;
+
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
     std::map<std::string, Type*> types;

@@ -50,6 +50,10 @@ Lexer::Lexer(FILE* file, std::string filename) {
 }
 
 char Lexer::next() {
+    if (this->index == UINT32_MAX) {
+        ERROR(this->loc(), "Lexer index overflow.");
+    }
+
     this->current = this->source[this->index];
     this->index++;
 
@@ -59,6 +63,10 @@ char Lexer::next() {
     }
 
     this->column++;
+    if (this->column == UINT32_MAX) {
+        ERROR(this->loc(), "Lexer column overflow.");
+    }
+
     return this->current;
 }
 
@@ -185,7 +193,7 @@ Token Lexer::parse_string() {
     if (this->current == '\'') {
         char character = this->escape(this->next());
 
-        this->next();
+        this->next(); this->next();
         return this->create_token(TokenKind::Char, start, std::to_string(character));
     }
 
@@ -270,6 +278,10 @@ std::vector<Token> Lexer::lex() {
         if (this->eof) break;
 
         if (this->current == '\n') {
+            if (this->line == UINT32_MAX) {
+                ERROR(this->loc(), "Lexer line overflow. Too many lines in file.");
+            }
+
             this->line++;
             this->column = 0;
 
@@ -349,6 +361,8 @@ std::vector<Token> Lexer::lex() {
             }
 
             tokens.push_back(token);
+        } else if (this->current == '%') {
+            tokens.push_back(this->create_token(TokenKind::Mod, "%"));
         } else if (this->current == '=') {
             Location start = this->loc();
             Token token;

@@ -1,9 +1,12 @@
 #include "visitor.h"
 
-Visitor::Visitor(std::string name) {
+Visitor::Visitor(std::string name, bool with_optimizations) {
+    this->name = name;
+    this->with_optimizations = with_optimizations;
+
     this->module = utils::make_ref<llvm::Module>(name, this->context);
     this->builder = utils::make_ref<llvm::IRBuilder<>>(this->context);
-    this->fpm = std::make_unique<llvm::legacy::FunctionPassManager>(this->module.get());
+    this->fpm = utils::make_ref<llvm::legacy::FunctionPassManager>(this->module.get());
 
     this->fpm->add(llvm::createPromoteMemoryToRegisterPass());
     this->fpm->add(llvm::createInstructionCombiningPass());
@@ -11,7 +14,7 @@ Visitor::Visitor(std::string name) {
     this->fpm->add(llvm::createGVNPass());
     this->fpm->add(llvm::createCFGSimplificationPass());
     this->fpm->add(llvm::createDeadStoreEliminationPass());
-
+    
     this->fpm->doInitialization();
 
     this->constants = {
@@ -136,11 +139,6 @@ llvm::Type* Visitor::get_llvm_type(Type* type) {
         Struct* structure = this->structs[name];
         llvm::Type* ty = structure->type;
 
-        // Only create a pointer type if the structure is not opaque since opaque types are not constructable.
-        if (!structure->opaque) {
-            ty = ty->getPointerTo();
-        }
-
         while (type->isPointer()) {
             ty = ty->getPointerTo();
             type = type->getPointerElementType();
@@ -181,6 +179,44 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     }
 
     return this->builder->CreateBitCast(value, type);
+}
+
+llvm::Value* Visitor::cast_if_null(llvm::Value* value, llvm::Type* type) {
+    if (value == this->constants["null"]) {
+        return llvm::ConstantInt::getNullValue(type);
+    } else if (value == this->constants["nullptr"]) {
+        if (!type->isPointerTy()) {
+            exit(1);
+        }
+
+        return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
+    }
+
+    return value;
+}
+
+uint32_t Visitor::getsizeof(llvm::Value* value) {
+    return this->getsizeof(value->getType());
+}
+
+uint32_t Visitor::getallocsize(llvm::Type* type) {
+    llvm::TypeSize tsize = this->module->getDataLayout().getTypeAllocSize(type);
+    return tsize.getFixedSize();
+}
+
+uint32_t Visitor::getsizeof(llvm::Type* type) {
+    if (type->isPointerTy()) {
+        return this->getallocsize(type);
+    }
+
+    if (type->isArrayTy()) {
+        uint32_t tsize = type->getArrayElementType()->getPrimitiveSizeInBits() / 8;
+        return type->getArrayNumElements() * tsize;
+    } else if (type->isStructTy()) {
+        return this->getallocsize(type);
+    }
+
+    return type->getPrimitiveSizeInBits() / 8;
 }
 
 void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
@@ -258,35 +294,30 @@ Value Visitor::visit(ast::CastExpr* expr) {
 
 Value Visitor::visit(ast::SizeofExpr* expr) {
     uint32_t size;
-
     if (expr->value) {
         llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
-        llvm::Type* type = value->getType();
-
-        if (type->isPointerTy()) {
-            type = value->getType()->getPointerElementType();
-
-            if (type->isArrayTy()) {
-                uint32_t tsize = type->getArrayElementType()->getPrimitiveSizeInBits() / 8;
-                size = type->getArrayNumElements() * tsize;
-            } else if (type->isStructTy()) {
-                llvm::TypeSize tsize = this->module->getDataLayout().getTypeAllocSize(type);
-                size = tsize.getFixedSize();
-            } else {
-                size = type->getPrimitiveSizeInBits() / 8;
-            }
-        } else {
-            if (type->isArrayTy()) {
-                uint32_t tsize = type->getArrayElementType()->getPrimitiveSizeInBits() / 8;
-                size = type->getArrayNumElements() * tsize;
-            } else {
-                size = value->getType()->getPrimitiveSizeInBits() / 8;
-            }
-        }
+        size = this->getsizeof(value);
     } else {
         llvm::Type* type = this->get_llvm_type(expr->type);
-        size = type->getPrimitiveSizeInBits() / 8;
+        size = this->getsizeof(type);
     }
 
     return llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), size);
+}
+
+Value Visitor::visit(ast::OffsetofExpr* expr) {
+    Value value = expr->value->accept(*this);
+    if (!value.structure) {
+        ERROR(expr->start, "Expected a structure");
+    }
+
+    Struct* structure = value.structure;
+    int index = structure->get_field_index(expr->field);
+
+    if (index < 0) {
+        ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", expr->field, structure->name);
+    }
+
+    StructField field = structure->fields[expr->field];
+    return this->builder->getInt32(field.offset);
 }

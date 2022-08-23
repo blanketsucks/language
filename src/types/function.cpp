@@ -29,13 +29,13 @@ FunctionType* FunctionType::from_llvm_type(llvm::FunctionType* type) {
     return FunctionType::create(args, Type::from_llvm_type(type->getReturnType()), type->isVarArg());
 }
 
-llvm::Type* FunctionType::to_llvm_type(llvm::LLVMContext& context) {
+llvm::FunctionType* FunctionType::to_llvm_type(llvm::LLVMContext& context) {
     std::vector<llvm::Type*> types;
     for (auto& arg : this->args) {
         types.push_back(arg->to_llvm_type(context));
     }
 
-    return llvm::FunctionType::get(this->return_type->to_llvm_type(context), types, this->has_varargs)->getPointerTo();
+    return llvm::FunctionType::get(this->return_type->to_llvm_type(context), types, this->has_varargs);
 }
 
 FunctionType* FunctionType::copy() {
@@ -49,13 +49,17 @@ FunctionType* FunctionType::copy() {
 
 std::string FunctionType::str() {
     std::stringstream stream;
-    stream << "(";
+    stream << "func(";
 
     for (auto argument : this->args) {
         stream << argument->str() << ", ";
     }
 
-    stream << this->return_type->str() << ")";
+    if (this->args.size() > 0) {
+        stream.seekp(-2, stream.cur);
+    }
+
+    stream << ") -> " << this->return_type->str();
     return stream.str();
 }
 
@@ -64,8 +68,18 @@ bool FunctionType::is_compatible(Type* other) {
         return false;
     }
 
-    // TODO: this
-    return true;
+    FunctionType* func = (FunctionType*)other;
+    if (this->args.size() != func->args.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < this->args.size(); i++) {
+        if (!this->args[i]->is_compatible(func->args[i])) {
+            return false;
+        }
+    }
+
+    return this->return_type->is_compatible(func->return_type);
 }
 
 bool FunctionType::is_compatible(llvm::Type* type) {

@@ -78,9 +78,9 @@ public:
     bool isFunction() { return this->value == Function; }
     bool isVoid() { return this->value == Void; }
     bool isPointer() { return this->value == Pointer; }
-    bool isFloationPoint() { return this->isFloat() || this->isDouble(); }
+    bool isFloatingPoint() { return this->isFloat() || this->isDouble(); }
     bool isInteger() { return this->isBoolean() || this->isShort() || this->isInt() || this->isLong() || this->isLongLong() || this->isChar();  }
-    bool isNumeric() { return this->isInteger() || this->isFloationPoint(); }
+    bool isNumeric() { return this->isInteger() || this->isFloatingPoint(); }
 
     bool hasContainedType() { return this->isArray() || this->isPointer(); }
     Type* getContainedType();

@@ -34,7 +34,7 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
             Function* function = value.structure->methods[expr->attribute];
             function->used = true;
 
-            return this->module->getFunction(function->name);
+            return Value::with_function(function);
         }
 
         std::string name = value.structure->name;

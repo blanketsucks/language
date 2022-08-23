@@ -11,7 +11,7 @@ public:
     ~ArrayType() override;
 
     static ArrayType* from_llvm_type(llvm::ArrayType* type);
-    llvm::ArrayType* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
 
     ArrayType* copy() override;
 

@@ -2,9 +2,9 @@
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
     std::vector<Value> elements;
-    bool is_const = std::all_of(expr->elements.begin(), expr->elements.end(), [](auto& element) {
-        return element->is_constant();
-    });
+    // bool is_const = std::all_of(expr->elements.begin(), expr->elements.end(), [](auto& element) {
+    //     return element->is_constant();
+    // });
 
     for (auto& element : expr->elements) {
         Value value = element->accept(*this);
@@ -26,14 +26,14 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     llvm::Function* parent = this->builder->GetInsertBlock()->getParent();
     llvm::ArrayType* type = llvm::ArrayType::get(etype, elements.size());
 
-    if (is_const) {
-        std::vector<llvm::Constant*> constants;
-        for (auto elem : elements) {
-            constants.push_back((llvm::Constant*)elem.value);
-        }
-
-        return Value(llvm::ConstantArray::get(type, constants), true);
-    }
+    // if (is_const) {
+    //     std::vector<llvm::Constant*> constants;
+    //     for (auto elem : elements) {
+    //         constants.push_back((llvm::Constant*)elem.value);
+    //     }
+        
+    //     return Value(llvm::ConstantArray::get(type, constants), true);
+    // }
 
     llvm::AllocaInst* array = this->create_alloca(parent, type);
     for (size_t i = 0; i < elements.size(); i++) {
@@ -54,7 +54,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->value->start);
     llvm::Type* type = value->getType();
 
-    bool is_pointer = false;
+    bool is_pointer = true;
     if (!type->isArrayTy()) {
         if (!type->isPointerTy()) {
             ERROR(expr->start, "Expected an array or a pointer");
@@ -69,16 +69,16 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         llvm::Type* element = type;
         if (type->isArrayTy()) {
             element = type->getArrayElementType();
-        } 
+        }
 
         llvm::Value* ptr = this->builder->CreateGEP(type, value, index);
         return this->builder->CreateLoad(element, ptr);
     }
-    
-    return nullptr;
+
+    ERROR(expr->start, "Expected an array or a pointer"); exit(1);
 }
 
-llvm::Value* Visitor::get_array_element(ast::ElementExpr* expr) {
+std::pair<llvm::Value*, int> Visitor::get_array_element(ast::ElementExpr* expr) {
     llvm::Value* parent = expr->value->accept(*this).unwrap(this, expr->start);
     llvm::Type* type = parent->getType();
 
@@ -87,7 +87,7 @@ llvm::Value* Visitor::get_array_element(ast::ElementExpr* expr) {
     }
 
     type = type->getPointerElementType();
-    if (!type->isArrayTy()) {
+    if (!type->isArrayTy() && type->isStructTy()) {
         ERROR(expr->start, "Array access on non-array type");
     }
 
@@ -96,5 +96,9 @@ llvm::Value* Visitor::get_array_element(ast::ElementExpr* expr) {
         ERROR(expr->index->start, "Indicies must be integers");
     }
 
-    return this->builder->CreateGEP(type, parent, index);
+    if (type->isArrayTy()) {
+        return {this->builder->CreateGEP(type, parent, {this->builder->getInt32(0), index}), -1};
+    } else {
+        return {this->builder->CreateGEP(type, parent, index), -1};
+    }
 }

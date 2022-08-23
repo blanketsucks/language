@@ -47,20 +47,26 @@ public:
     void update(std::map<std::string, Macro> macros);
 
     void define(std::string name);
+    void define(std::string name, int value);
+    void define(std::string name, std::string value);
+
+    void undef(std::string name);
+
     std::vector<Token> expand(Macro macro, bool return_tokens = false);
 
     static std::vector<Token> run(std::vector<Token> tokens);
 
     Token current;
-    std::vector<Token> tokens;
     uint32_t index;
+
+    bool has_if_directive = false;
+    Location if_directive_location;
+
+    std::vector<Token> tokens;
     std::vector<std::string> include_paths;
     std::vector<Token> processed;
     std::map<std::string, Macro> macros;
     std::map<std::string, Include> includes;
 };
-
-// Lexer lexer(text, filename);
-// std::vector<Token> tokens = Preprocessor::run(lexer.lex());
 
 #endif
