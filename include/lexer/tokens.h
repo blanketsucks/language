@@ -95,6 +95,7 @@ struct Token {
 };
 
 static std::vector<std::string> KEYWORDS = {
+    // Keywords
     "extern",
     "func",
     "return",
@@ -117,6 +118,7 @@ static std::vector<std::string> KEYWORDS = {
     "defer",
     "private",
 
+    // Preprocessor keywords
     "$define",
     "$undef",
     "$error",
@@ -127,6 +129,9 @@ static std::vector<std::string> KEYWORDS = {
     "$if",
     "$elif",
     "$else",
+
+    // Reserved words
+    "__tuple"
 };
 
 static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {
@@ -175,6 +180,7 @@ static std::map<TokenKind, TokenKind> INPLACE_OPERATORS {
     {TokenKind::IMinus, TokenKind::Minus},
     {TokenKind::IMul, TokenKind::Mul},
     {TokenKind::IDiv, TokenKind::Div},
+    // TODO: add more
 };  
 
 

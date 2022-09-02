@@ -78,7 +78,6 @@ Value Visitor::visit(ast::StructExpr* expr) {
     structure->fields = fields;
     this->current_struct = structure;
     for (auto& method : expr->methods) { 
-        assert(method->kind == ast::ExprKind::Function && "Expected a function. Might be a compiler bug.");
         method->accept(*this);
     }
 
@@ -94,17 +93,19 @@ Value Visitor::visit(ast::StructExpr* expr) {
 }
 
 Value Visitor::visit(ast::AttributeExpr* expr) {
-    llvm::Value* value = expr->parent->accept(*this).unwrap(this, expr->parent->start);
+    Value parent = expr->parent->accept(*this);
+    bool is_constant = parent.is_constant;
+
+    llvm::Value* value = parent.unwrap(expr->parent->start);
     llvm::Type* type = value->getType();
 
-    bool is_pointer = false;
-    if (!type->isStructTy()) {
-        if (!(type->isPointerTy() && type->getPointerElementType()->isStructTy())) { 
-            ERROR(expr->start, "Expected a struct or a pointer to a struct");
-        }
+    if (!type->isPointerTy()) {
+        ERROR(expr->parent->start, "Expected a structure");
+    }
 
-        type = type->getPointerElementType();
-        is_pointer = true;
+    type = type->getNonOpaquePointerElementType();
+    if (!type->isStructTy()) {
+        ERROR(expr->start, "Expected a structure");
     }
 
     std::string name = type->getStructName().str();
@@ -120,11 +121,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
             Struct* parent = function->parent;
             value = this->builder->CreateBitCast(value, parent->type->getPointerTo());
         }
-
-        if (is_pointer) {
-            value = this->builder->CreateLoad(structure->type, value);
-        }
-
+        
         function->used = true;
         return Value(function->value, false, value, function);
     }
@@ -139,14 +136,17 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         ERROR(expr->start, "Cannot access private field '{s}'", expr->attribute);
     }
     
-    if (is_pointer) {
-        llvm::Type* element = type->getStructElementType(index);
+    llvm::Type* element = type->getStructElementType(index);
 
-        llvm::Value* ptr = this->builder->CreateStructGEP(type, value, index);
-        return this->builder->CreateLoad(element, ptr);
+    llvm::Value* ptr = nullptr;
+    if (is_constant) {
+        ptr = this->builder->CreateConstGEP2_32(type, value, 0, index);
+        return ptr;
     } else {
-        return this->builder->CreateExtractValue(value, index);
+        ptr = this->builder->CreateStructGEP(type, value, index);
     }
+
+    return this->builder->CreateLoad(element, ptr);
 }
 
 Value Visitor::visit(ast::ConstructorExpr* expr) {
@@ -173,8 +173,9 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     int index = 0;
 
     for (auto& pair : expr->fields) {
-        llvm::Value* value = pair.second->accept(*this).unwrap(this, pair.second->start);
         int i = index;
+        StructField field;
+
         if (!pair.first.empty()) {
             i = structure->get_field_index(pair.first);
             if (i < 0) {
@@ -183,14 +184,21 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
                 ERROR(pair.second->start, "Field '{s}' already initialized", pair.first);
             }
 
-            StructField field = structure->fields.at(pair.first);
+            field = structure->fields.at(pair.first);
             if (this->current_struct != structure && field.is_private) {
                 ERROR(pair.second->start, "Field '{s}' is private and cannot be initialized", pair.first);
             }
+        } else {
+            field = structure->get_field_at(index);
         }
+
+        this->ctx = field.type;
+        llvm::Value* value = pair.second->accept(*this).unwrap(pair.second->start);
 
         args[i] = value;
         index++;
+
+        this->ctx = nullptr;
     }
 
     std::vector<StructField> fields;
@@ -223,7 +231,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
 }
 
 std::pair<llvm::Value*, int> Visitor::get_struct_field(ast::AttributeExpr* expr) {
-    llvm::Value* parent = expr->parent->accept(*this).unwrap(this, expr->start);
+    llvm::Value* parent = expr->parent->accept(*this).unwrap(expr->start);
     llvm::Type* type = parent->getType();
 
     if (type->isStructTy()) {
@@ -247,7 +255,7 @@ std::pair<llvm::Value*, int> Visitor::get_struct_field(ast::AttributeExpr* expr)
         ERROR(expr->start, "Attribute access on non-structure type");
     }
 
-    type = type->getPointerElementType();
+    type = type->getNonOpaquePointerElementType();
     if (!type->isStructTy()) {
         ERROR(expr->start, "Attribute access on non-structure type");
     }

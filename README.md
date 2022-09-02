@@ -19,15 +19,7 @@ func main() {
     libc::printf("Hello, world!\n");
 }
 ```
-Or using the incomplete standard library:
-```
-$include "std/io.pr"
-
-func main() {
-    let stdout = std::io::stdout();
-    stdout.write("Hello, world!\n");
-}
-```
+=
 
 You can run these examples like the following
 
@@ -53,6 +45,7 @@ $ make
 - [x] ~~return inside if statements. Already works if we make LLVM shut up.~~ Solved.
 - [ ] More preprocessor directives.
 - [ ] Better errors.
+- [ ] Rewrite include system and maybe implement modules?
 - [ ] Fix memory leaks.
 - [ ] Name mangling.
 - [ ] Self-hosted.

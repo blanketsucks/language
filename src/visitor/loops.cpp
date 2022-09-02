@@ -1,28 +1,7 @@
 #include "visitor.h"
 
-bool Visitor::is_iterable(llvm::Value* value) {
-    llvm::Type* type = value->getType();
-    if (!type->isPointerTy()) {
-        return false;
-    }
-
-    llvm::Type* elementType = type->getPointerElementType();
-    if (!elementType->isArrayTy()) {
-        return false;
-    }
-
-    if (elementType->isStructTy()) {
-        std::string name = elementType->getStructName().str();
-        Struct* structure = this->structs[name];
-
-        return structure->has_method("next");
-    }
-
-    return true;
-}
-
 Value Visitor::visit(ast::WhileExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(this, expr->condition->start);
+    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     Function* func = this->current_function;
@@ -46,7 +25,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
         return this->constants["null"];
     }
 
-    condition = expr->condition->accept(*this).unwrap(this, expr->condition->start);
+    condition = expr->condition->accept(*this).unwrap(expr->condition->start);
     this->builder->CreateCondBr(this->cast(condition, BooleanType), loop, end);
 
     function->getBasicBlockList().push_back(end);
@@ -65,8 +44,8 @@ Value Visitor::visit(ast::ForExpr* expr) {
 
     Branch* branch = func->branch;
 
-    expr->start->accept(*this).unwrap(this, expr->start->start);
-    llvm::Value* end = expr->end->accept(*this).unwrap(this, expr->end->start);
+    expr->start->accept(*this).unwrap(expr->start->start);
+    llvm::Value* end = expr->end->accept(*this).unwrap(expr->end->start);
 
     this->builder->CreateCondBr(this->cast(end, BooleanType), loop, stop);
     this->builder->SetInsertPoint(loop);
@@ -82,8 +61,8 @@ Value Visitor::visit(ast::ForExpr* expr) {
         return this->constants["null"];
     }
     
-    expr->step->accept(*this).unwrap(this, expr->step->start);
-    end = expr->end->accept(*this).unwrap(this, expr->end->start);
+    expr->step->accept(*this).unwrap(expr->step->start);
+    end = expr->end->accept(*this).unwrap(expr->end->start);
 
     this->builder->CreateCondBr(this->cast(end, BooleanType), loop, stop);
 
@@ -95,6 +74,8 @@ Value Visitor::visit(ast::ForExpr* expr) {
 }
 
 Value Visitor::visit(ast::BreakExpr* expr) {
+    UNUSED(expr);
+
     Function* func = this->current_function;
     func->branch->has_break = true;
 
@@ -103,6 +84,8 @@ Value Visitor::visit(ast::BreakExpr* expr) {
 }
 
 Value Visitor::visit(ast::ContinueExpr* expr) {
+    UNUSED(expr);
+
     Function* func = this->current_function;
     func->branch->has_continue = true;
 

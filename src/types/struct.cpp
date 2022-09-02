@@ -36,6 +36,15 @@ StructType* StructType::copy() {
     return StructType::create(this->name, this->fields);
 }
 
+uint32_t StructType::hash() {
+    uint32_t hash = 0;
+    for (auto& field : this->fields) {
+        hash |= field->hash();
+    }
+
+    return hash;
+}
+
 std::string StructType::str() {
     return this->name;
 }

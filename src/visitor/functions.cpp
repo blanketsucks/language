@@ -1,4 +1,5 @@
 #include "visitor.h"
+#include "llvm/IR/DerivedTypes.h"
 
 llvm::Function* Visitor::create_function(
     std::string name, llvm::Type* ret, std::vector<llvm::Type*> args, bool has_varargs, llvm::Function::LinkageTypes linkage
@@ -176,9 +177,10 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             ERROR(expr->start, "Cannot return a value from void function");
         }
 
-        llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+        this->ctx = func->ret;
+        llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
+        
         Type* ret = Type::from_llvm_type(func->ret);
-
         if (!ret->is_compatible(value->getType())) {
             ERROR(
                 expr->value->start, 
@@ -195,6 +197,8 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         func->defer(*this);
 
         this->builder->CreateBr(func->return_block);
+        this->ctx = nullptr;
+
         return nullptr;
     } else {
         if (!func->ret->isVoidTy()) {
@@ -239,7 +243,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
             int i = 0;
             for (auto& argument : expr->args) {
-                llvm::Value* arg = argument->accept(*this).unwrap(this, argument->start);
+                llvm::Value* arg = argument->accept(*this).unwrap(argument->start);
                 llvm::Value* ptr = this->builder->CreateStructGEP(structure->type, instance, i);
 
                 this->builder->CreateStore(arg, ptr);
@@ -257,18 +261,17 @@ Value Visitor::visit(ast::CallExpr* expr) {
         callable.value = this->module->getFunction(func->name);
         is_constructor = true;
     } else {
-        if (!callable.function) {
-            ERROR(expr->start, "Cannot call non-function");
-        }
+        llvm::Type* type = callable.type();
+        if (type->isPointerTy()) {
+            type = type->getNonOpaquePointerElementType();
 
-        if (callable.type()->isPointerTy()) {
-            llvm::Type* type = callable.type()->getPointerElementType();
             if (!type->isFunctionTy()) {
-                ERROR(expr->start, "Cannot call non-function type");
+                ERROR(expr->start, "Cannot call non-function");
             }
-
-        } else if (!callable.type()->isFunctionTy()) {
-            ERROR(expr->start, "Cannot call non-function type");
+        } else {
+            if (!callable.function) {
+                ERROR(expr->start, "Cannot call non-function");
+            }
         }
     }
 
@@ -277,17 +280,32 @@ Value Visitor::visit(ast::CallExpr* expr) {
     }
 
     llvm::Function* function = (llvm::Function*)callable.value;
-    if (function->arg_size() != argc) {
-        if (function->isVarArg()) {
+    std::string name = function->getName().str();
+    if (function->getName() == this->entry) {
+        ERROR(expr->start, "Cannot call the main entry function");
+    }
+
+    llvm::Type* type = function->getType()->getNonOpaquePointerElementType();
+    llvm::FunctionType* ty = llvm::cast<llvm::FunctionType>(type);
+
+    if (ty->getNumParams() != argc) {
+        if (ty->isVarArg()) {
             if (argc < 1) {
-                ERROR(expr->start, "Function '{s}' expects at least one argument", callable.name());
+                if (name.empty()) {
+                    ERROR(expr->start, "Function call expects at least one argument", name);
+                }
+
+                ERROR(expr->start, "Function '{s}' expects at least one argument", name);
             }
         } else {
-            ERROR(expr->start, "Function '{s}' expects {i} arguments", callable.name(), function->arg_size());
+            if (name.empty()) {
+                ERROR(expr->start, "Function call expects {i} arguments", function->arg_size());
+            }
+
+            ERROR(expr->start, "Function '{s}' expects {i} arguments", name, function->arg_size());
         }
     }
 
-    
     std::vector<llvm::Value*> args;
     if (callable.parent) {
         args.push_back(callable.parent);
@@ -295,19 +313,36 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     int i = callable.parent ? 1 : 0;
     for (auto& arg : expr->args) {
-        llvm::Value* value = arg->accept(*this).unwrap(this, expr->start);
+        // We do not load the first argument if we're calling a structure method since we need to ensure that
+        // `self` is a pointer to the structure because of how `insertvalue` in LLVM works.
+        // Kind of jank but whatever.
+        llvm::Value* value = arg->accept(*this).unwrap(arg->start);
+        if (!(callable.parent && i == 1)) {
+            value = this->load(value);
+        }
 
-        if ((function->isVarArg() && i == 0) || !function->isVarArg()) {
-            llvm::Value* argument = function->getArg(i);
+        if ((ty->isVarArg() && i == 0) || !ty->isVarArg()) {
+            llvm::Type* argument = ty->getParamType(i);
 
-            Type* expected = Type::from_llvm_type(argument->getType());
+            Type* expected = Type::from_llvm_type(argument);
             Type* type = Type::from_llvm_type(value->getType());
 
             if (!expected->is_compatible(type)) {
-                std::string name = argument->getName().str();
-                ERROR(expr->start, "Argument '{s}' of type '{t}' does not match expected type '{t}'", name, type, expected);
+                if (name.empty()) {
+                    ERROR(
+                        expr->start, 
+                        "Argument of index {i} of type '{t}' does not match expected type '{t}'", 
+                        i, type, expected
+                    );
+                } else {
+                    ERROR(
+                        expr->start,
+                        "Argument of index {i} of type '{t}' does not match expected type '{t}' in function '{s}'",
+                        i, type, expected, name
+                    );
+                }
             } else {
-                value = this->cast(value, argument->getType());
+                value = this->cast(value, argument);
             }
         }
 
@@ -319,7 +354,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         this->current_function->calls.push_back(func);
     }
 
-    llvm::Value* ret = this->builder->CreateCall(function, args);
+    llvm::Value* ret = this->builder->CreateCall({ty, function}, args);
     if (is_constructor) {
         return callable.parent;
     }

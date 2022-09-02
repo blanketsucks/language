@@ -11,7 +11,7 @@ std::string utils::fmt::join(std::string sep, std::vector<std::string>& strings)
     }
 
     if (!result.empty()) {
-        result.pop_back();
+        for (size_t i = 0; i < sep.size(); i++) { result.pop_back(); }
     }
 
     return result;

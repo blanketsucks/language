@@ -71,6 +71,13 @@ int Struct::get_field_index(std::string name) {
     return this->fields[name].index;
 }
 
+StructField Struct::get_field_at(uint32_t index) {
+    std::vector<StructField> fields = utils::values(this->fields);
+    std::sort(fields.begin(), fields.end(), [](auto& a, auto& b) { return a.index < b.index; });
+
+    return fields[index];
+}
+
 std::vector<StructField> Struct::get_fields(bool with_private) {
     std::vector<StructField> fields;
     for (auto pair : this->fields) {
@@ -131,7 +138,7 @@ Value::Value(
     this->ns = ns;
 }
 
-llvm::Value* Value::unwrap(Visitor* visitor, Location location) {
+llvm::Value* Value::unwrap(Location location) {
     if (!this->value) {
         ERROR(location, "Expected an expression");
     }

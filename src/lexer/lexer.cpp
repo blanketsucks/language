@@ -1,6 +1,7 @@
 #include "lexer/lexer.h"
 
 #include "utils.h"
+#include <string>
 
 std::string escape_str(std::string str) {
     std::string result;
@@ -149,10 +150,9 @@ char Lexer::escape(char current) {
         }
 
         return (char)(hex[0] * 16 + hex[1]);
-    } else {
-        utils::error(this->loc(), "Invalid escape sequence");
-        return '\0';
     }
+
+    ERROR(this->loc(), "Invalid escape sequence");
 }
 
 void Lexer::skip_comment() {
@@ -179,7 +179,7 @@ Token Lexer::parse_identifier() {
         return this->create_token(TokenKind::Keyword, start, value);
     } else {
         if (value[0] == '$') {
-            utils::error(start, "Identifiers starting with '$' are reserved for keywords.");
+            ERROR(start, "Identifiers starting with '$' are reserved for keywords.");
         }
 
         return this->create_token(TokenKind::Identifier, start, value);
@@ -192,9 +192,10 @@ Token Lexer::parse_string() {
 
     if (this->current == '\'') {
         char character = this->escape(this->next());
-
         this->next(); this->next();
-        return this->create_token(TokenKind::Char, start, std::to_string(character));
+
+        std::string value; value.push_back(character);
+        return this->create_token(TokenKind::Char, start, value);
     }
 
     char next = this->next();
@@ -204,7 +205,7 @@ Token Lexer::parse_string() {
     }
 
     if (this->current != '"') {
-        utils::error(this->loc(), "Expected end of string.");
+        ERROR(this->loc(), "Expected end of string.");
     }
     
     Token token = this->create_token(TokenKind::String, start, value);
@@ -220,6 +221,8 @@ Token Lexer::parse_number() {
     value += this->current;
 
     char next = this->next();
+    bool dot = false;
+
     if (value == "0") {
         if (next == 'x' || next == 'b') {
             value += this->current;
@@ -245,12 +248,18 @@ Token Lexer::parse_number() {
             return this->create_token(TokenKind::Integer, start, value);
         }
     
-        if (std::isdigit(this->peek()) ) {
-            utils::error(start, "Leading zeros on integer constants are not allowed");
+        if (this->current != '.') {
+            if (std::isdigit(this->peek()) ) {
+                ERROR(start, "Leading zeros on integer constants are not allowed");
+            }
+
+            return this->create_token(TokenKind::Integer, start, "0");
         }
+
+        dot = true;
+        next = this->next();
     }
 
-    bool dot = false;
     while (std::isdigit(next) || next == '.') {
         if (next == '.') {
             if (dot) {
@@ -260,7 +269,7 @@ Token Lexer::parse_number() {
             dot = true;
         }
 
-        value += this->current;
+        value += next;
         next = this->next();
     }
 
@@ -363,6 +372,7 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(token);
         } else if (this->current == '%') {
             tokens.push_back(this->create_token(TokenKind::Mod, "%"));
+            this->next();
         } else if (this->current == '=') {
             Location start = this->loc();
             Token token;

@@ -1,5 +1,5 @@
-srcp/
 .vscode
+.clangd
 
 proton
 *.o

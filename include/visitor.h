@@ -8,6 +8,7 @@
 #include "objects.h"
 
 #include <map>
+#include <stdint.h>
 #include <string>
 #include <memory>
 
@@ -22,6 +23,7 @@
 class Visitor {
 public:
     std::string name;
+    std::string entry;
     bool with_optimizations;
 
     llvm::LLVMContext context;
@@ -34,13 +36,17 @@ public:
     std::map<std::string, Struct*> structs;
     std::map<std::string, Namespace*> namespaces;
 
+    std::map<uint32_t, llvm::StructType*> tuples; 
+
     Function* current_function = nullptr;
     Struct* current_struct = nullptr;
     Namespace* current_namespace = nullptr;
     
     std::vector<Type*> allocated_types;
 
-    Visitor(std::string name, bool with_optimizations = true);
+    llvm::Type* ctx;
+
+    Visitor(std::string name, std::string entry, bool with_optimizations = true);
 
     void cleanup();
     void free();
@@ -49,7 +55,6 @@ public:
 
     std::string format_name(std::string name);
 
-    bool is_iterable(llvm::Value* value);
     std::pair<std::string, bool> is_intrinsic(std::string name);
     
     std::pair<llvm::Value*, bool> get_variable(std::string name);
@@ -61,7 +66,11 @@ public:
 
     llvm::Value* cast(llvm::Value* value, Type* type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
-    llvm::Value* cast_if_null(llvm::Value* value, llvm::Type* type);
+
+    llvm::Value* load(llvm::Type* type, llvm::Value* value);
+    llvm::Value* load(llvm::Value* value);
+
+    std::vector<llvm::Value*> unpack(Location location, llvm::Value* value, uint32_t n);
 
     uint32_t getallocsize(llvm::Type* type);
     uint32_t getsizeof(llvm::Value* value);
@@ -77,7 +86,7 @@ public:
     llvm::AllocaInst* create_alloca(llvm::Function* function, llvm::Type* type);
     llvm::Function* create_function(std::string name, llvm::Type* ret, std::vector<llvm::Type*> args, bool has_varargs, llvm::Function::LinkageTypes linkage);
 
-    llvm::Value* unwrap(ast::Expr* expr);
+    void store_tuple(Location location, Function* func, llvm::Value* value, std::vector<std::string> names);
 
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
@@ -123,6 +132,7 @@ public:
     Value visit(ast::NamespaceAttributeExpr* expr);
     Value visit(ast::UsingExpr* expr);
 
+    Value visit(ast::TupleExpr* expr);
 };
 
 

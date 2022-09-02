@@ -1,7 +1,7 @@
 #include "visitor.h"
 
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
     bool is_floating_point = value->getType()->isFloatingPointTy();
     bool is_numeric = value->getType()->isIntegerTy() || is_floating_point;
@@ -33,7 +33,11 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '*' for type: '{s}'", name);
             }
 
-            llvm::Type* type = value->getType()->getPointerElementType();
+            llvm::Type* type = value->getType()->getNonOpaquePointerElementType();
+            // if (type->isAggregateType()) {
+            //     ERROR(expr->start, "Unsupported unary operator '*' for type: '{s}'", name);
+            // }
+
             return this->builder->CreateLoad(type, value);
         }
         case TokenKind::BinaryAnd: {
@@ -71,12 +75,10 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
 Value Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenKind::Assign) {
-        if (expr->left->kind == ast::ExprKind::Attribute) {
-            auto pair = this->get_struct_field(
-                expr->left->cast<ast::AttributeExpr>()
-            );
+        if (expr->left->kind() == ast::ExprKind::Attribute) {
+            auto pair = this->get_struct_field(expr->left->cast<ast::AttributeExpr>());
 
-            llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
+            llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
             if (pair.second < 0) {
                 this->builder->CreateStore(value, pair.first);
             } else {
@@ -84,10 +86,10 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             }
 
             return value;
-        } else if (expr->left->kind == ast::ExprKind::Element) {
-            auto pair = this->get_array_element((ast::ElementExpr*)expr->left.get());
-            llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
+        } else if (expr->left->kind() == ast::ExprKind::Element) {
+            auto pair = this->get_array_element(expr->left->cast<ast::ElementExpr>());
 
+            llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
             if (pair.second < 0) {
                 this->builder->CreateStore(value, pair.first);
             } else {
@@ -108,28 +110,33 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             ERROR(expr->start, "Cannot assign to constant");
         }
 
-        llvm::Value* value = expr->right->accept(*this).unwrap(this, expr->start);
+        llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
         this->builder->CreateStore(value, pair.first);
 
         return value;
     }
 
-    llvm::Value* left = expr->left->accept(*this).unwrap(this, expr->start);
-    llvm::Value* right = expr->right->accept(*this).unwrap(this, expr->start);
+    Value lhs = expr->left->accept(*this);
+    Value rhs = expr->right->accept(*this);
+
+    bool is_constant = lhs.is_constant && rhs.is_constant;
+
+    llvm::Value* left = lhs.unwrap(expr->start);
+    llvm::Value* right = rhs.unwrap(expr->start);
 
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
 
     if (ltype != rtype) {
-        Type* lhs = Type::from_llvm_type(ltype);
-        Type* rhs = Type::from_llvm_type(rtype);
+        Type* lhst = Type::from_llvm_type(ltype);
+        Type* rhst = Type::from_llvm_type(rtype);
 
-        if (!(lhs->isPointer() && rhs->isInteger())) {
-            if (lhs->is_compatible(rtype)) {
+        if (!(lhst->isPointer() && rhst->isInteger())) {
+            if (lhst->is_compatible(rtype)) {
                 right = this->cast(right, ltype);
             } else {
-                std::string lname = lhs->name();
-                std::string rname = rhs->name();
+                std::string lname = lhst->name();
+                std::string rname = rhst->name();
 
                 std::string operation = Token::getTokenTypeValue(expr->op);
                 ERROR(expr->start, "Unsupported binary operator '{s}' for types '{s}' and '{s}'", operation, lname, rname);
@@ -140,103 +147,107 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     }
 
     bool is_floating_point = ltype->isFloatingPointTy();
+    llvm::Value* result = nullptr;
+
     switch (expr->op) {
         case TokenKind::Add:
             if (is_floating_point) {
-                return this->builder->CreateFAdd(left, right);
+                result = this->builder->CreateFAdd(left, right); break;
             } else {
-                return this->builder->CreateAdd(left, right);
+                result = this->builder->CreateAdd(left, right); break;
             }
         case TokenKind::Minus:
             if (is_floating_point) {
-                return this->builder->CreateFSub(left, right);
+                result = this->builder->CreateFSub(left, right); break;
             } else {
-                return this->builder->CreateSub(left, right);
+                result = this->builder->CreateSub(left, right); break;
             }
         case TokenKind::Mul:
             if (is_floating_point) {
-                return this->builder->CreateFMul(left, right);
+                result = this->builder->CreateFMul(left, right); break;
             } else {
-                return this->builder->CreateMul(left, right);
+                result = this->builder->CreateMul(left, right); break;
             }
         case TokenKind::Div:
             if (is_floating_point) {
-                return this->builder->CreateFDiv(left, right);
+                result = this->builder->CreateFDiv(left, right); break;
             } else {
-                return this->builder->CreateSDiv(left, right);
+                result = this->builder->CreateSDiv(left, right); break;
             }
         case TokenKind::Mod:
             if (is_floating_point) {
-                return this->builder->CreateFRem(left, right);
+                result = this->builder->CreateFRem(left, right); break;
             } else {
-                return this->builder->CreateSRem(left, right);
+                result = this->builder->CreateSRem(left, right); break;
             }
         case TokenKind::Eq:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOEQ(left, right);
+                result = this->builder->CreateFCmpOEQ(left, right); break;
             } else {
-                return this->builder->CreateICmpEQ(left, right);
+                result = this->builder->CreateICmpEQ(left, right); break;
             }
         case TokenKind::Neq:
             if (is_floating_point) {
-                return this->builder->CreateFCmpONE(left, right);
+                result = this->builder->CreateFCmpONE(left, right); break;
             } else {
-                return this->builder->CreateICmpNE(left, right);
+                result = this->builder->CreateICmpNE(left, right); break;
             }
         case TokenKind::Gt:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOGT(left, right);
+                result = this->builder->CreateFCmpOGT(left, right); break;
             } else {
-                return this->builder->CreateICmpSGT(left, right);
+                result = this->builder->CreateICmpSGT(left, right); break;
             }
         case TokenKind::Lt:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOLT(left, right);
+                result = this->builder->CreateFCmpOLT(left, right); break;
             } else {
-                return this->builder->CreateICmpSLT(left, right);
+                result = this->builder->CreateICmpSLT(left, right); break;
             }
         case TokenKind::Gte:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOGE(left, right);
+                result = this->builder->CreateFCmpOGE(left, right); break;
             } else {
-                return this->builder->CreateICmpSGE(left, right);
+                result = this->builder->CreateICmpSGE(left, right); break;
             }
         case TokenKind::Lte:
             if (is_floating_point) {
-                return this->builder->CreateFCmpOLE(left, right);
+                result = this->builder->CreateFCmpOLE(left, right); break;
             } else {
-                return this->builder->CreateICmpSLE(left, right);
+                result = this->builder->CreateICmpSLE(left, right); break;
             }
         case TokenKind::And:
-            return this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            result = this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            break;
         case TokenKind::Or:
-            return this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            result = this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            break;
         case TokenKind::BinaryAnd:
-            return this->builder->CreateAnd(left, right);
+            result = this->builder->CreateAnd(left, right); break;
         case TokenKind::BinaryOr:
-            return this->builder->CreateOr(left, right);
+            result = this->builder->CreateOr(left, right); break;
         case TokenKind::Xor:
-            return this->builder->CreateXor(left, right);
+            result = this->builder->CreateXor(left, right); break;
         case TokenKind::Lsh:
-            return this->builder->CreateShl(left, right);
+            result = this->builder->CreateShl(left, right); break;
         case TokenKind::Rsh:
-            return this->builder->CreateLShr(left, right);
+            result = this->builder->CreateLShr(left, right); break;
         default:
             _UNREACHABLE
     }
 
-    return nullptr;
+    return Value(result, is_constant);
 }
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* parent = nullptr;
     int index = -1;
 
-    if (expr->left->kind == ast::ExprKind::Attribute) { 
-        auto pair = this->get_struct_field((ast::AttributeExpr*)expr->left.get());
+    if (expr->left->kind() == ast::ExprKind::Attribute) { 
+        auto pair = this->get_struct_field(expr->left->cast<ast::AttributeExpr>());
         parent = pair.first; index = pair.second;
-    } else if (expr->left->kind == ast::ExprKind::Element) {
-        auto pair = this->get_array_element((ast::ElementExpr*)expr->left.get());
+    } else if (expr->left->kind() == ast::ExprKind::Element) {
+        auto pair = this->get_array_element(expr->left->cast<ast::ElementExpr>());
         parent = pair.first; index = pair.second;
     } else {
         ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->left.get());
@@ -252,8 +263,8 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
         parent = pair.first;
     }
 
-    llvm::Value* lhs = expr->left->accept(*this).unwrap(this, expr->start);
-    llvm::Value* rhs = expr->right->accept(*this).unwrap(this, expr->start);
+    llvm::Value* lhs = expr->left->accept(*this).unwrap(expr->start);
+    llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->start);
 
     llvm::Value* value;
     switch (expr->op) {

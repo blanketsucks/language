@@ -22,23 +22,22 @@
 class Type {
 public:
     enum Value {
-        Unknown = -1,
-        Void,
-        Short,
-        Char,
-        Integer,
-        Long,
-        LongLong,
-        Double,
-        Float,
-        Boolean,
-        Array,
-        Struct,
-        Function,
-        Pointer
+        Void     = (1 << 0),
+        Short    = (1 << 1),
+        Char     = (1 << 2),
+        Integer  = (1 << 3),
+        Long     = (1 << 4),
+        LongLong = (1 << 5),
+        Double   = (1 << 6),
+        Float    = (1 << 7),
+        Boolean  = (1 << 8),
+        Array    = (1 << 9),
+        Struct   = (1 << 10),
+        Function = (1 << 11),
+        Pointer  = (1 << 12),
+        Tuple    = (1 << 13)
     };
 
-    Type(Value value, size_t size);
     virtual ~Type() = default;
 
     bool operator==(Value other);
@@ -50,20 +49,19 @@ public:
     virtual std::string name() { return this->str(); }
     virtual Type* copy();
 
-    template<class T> T* cast() {
-        T* value = dynamic_cast<T*>(this);
-        assert(value != nullptr && "Invalid cast.");
-
-        return value;
-    }
+    template<class T> T* cast() { return static_cast<T*>(this); }
 
     size_t getSize() { return this->size; }
+    Value getValue() { return this->value; }
+
+    virtual uint32_t hash() { return this->getValue(); }
 
     Type* getPointerTo();
     virtual std::string str();
 
     Type* getPointerElementType();
     Type* getArrayElementType();
+    std::vector<Type*> getTupleElementTypes();
 
     bool isShort() { return this->value == Short; }
     bool isChar() { return this->value == Char; }
@@ -78,6 +76,7 @@ public:
     bool isFunction() { return this->value == Function; }
     bool isVoid() { return this->value == Void; }
     bool isPointer() { return this->value == Pointer; }
+    bool isTuple() { return this->value == Tuple; }
     bool isFloatingPoint() { return this->isFloat() || this->isDouble(); }
     bool isInteger() { return this->isBoolean() || this->isShort() || this->isInt() || this->isLong() || this->isLongLong() || this->isChar();  }
     bool isNumeric() { return this->isInteger() || this->isFloatingPoint(); }
@@ -87,6 +86,10 @@ public:
 
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);
+
+protected:
+    Type(Value value, size_t size);
+
 private:
     Value value;
     size_t size;

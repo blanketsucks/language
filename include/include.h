@@ -7,3 +7,4 @@
 #include "preprocessor.h"
 #include "utils.h"
 #include "visitor.h"
+#include "compiler.h"

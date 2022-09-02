@@ -49,12 +49,8 @@ void Preprocessor::next() {
 }
 
 std::vector<Token> Preprocessor::skip_until(TokenKind type, std::vector<std::string> values) {
-    auto in = [](std::vector<std::string> values, std::string value) {
-        return std::find(values.begin(), values.end(), value) == values.end();
-    };
-
     std::vector<Token> tokens;
-    while (this->current != TokenKind::EOS && (this->current != type || in(values, this->current.value))) {
+    while (this->current != TokenKind::EOS && !this->current.match(type, values)) {
         tokens.push_back(this->current);
         this->next();
     }
@@ -105,9 +101,11 @@ std::vector<Token> Preprocessor::process() {
                 std::string name = this->current.value;
                 this->has_if_directive = true;
                 if (!this->is_macro(name)) {
-                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"});
-                    continue;
+                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"}); continue;
                 }
+
+                this->should_close_if_directive = true;
+                this->next();
             } else if (this->current.value == "$ifndef") {
                 this->if_directive_location = this->current.start;
                 this->next();
@@ -115,21 +113,28 @@ std::vector<Token> Preprocessor::process() {
                 std::string name = this->current.value;
                 this->has_if_directive = true;
                 if (this->is_macro(name)) {
-                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"});
-                    continue;
+                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"}); continue;
                 }
+
+                this->should_close_if_directive = true;
+                this->next();
             } else if (this->current.value == "$else") {
                 if (!this->has_if_directive) {
                     ERROR(this->current.start, "Unexpected '$else'"); exit(1);
                 }
 
                 this->next();
+                if (this->should_close_if_directive) {
+                    this->skip_until(TokenKind::Keyword, {"$endif"}); continue;
+                }
             } else if (this->current.value == "$endif") {
                 if (!this->has_if_directive) {
                     ERROR(this->current.start, "Unexpected '$endif'"); exit(1);
                 }
 
                 this->next();
+
+                this->should_close_if_directive = false;
                 this->has_if_directive = false;
             }
         } else if (this->current == TokenKind::Identifier) {
@@ -147,7 +152,7 @@ std::vector<Token> Preprocessor::process() {
     }
 
     if (this->has_if_directive) {
-        ERROR(this->if_directive_location, "Unterminated '$if' directive"); exit(1);
+        ERROR(this->if_directive_location, "Unterminated if directive"); exit(1);
     }
     
     this->processed.push_back(this->current);
@@ -258,20 +263,6 @@ void Preprocessor::define(std::string name) {
     this->macros[name] = Macro(name, {}, {});
 }
 
-void Preprocessor::define(std::string name, int value) {
-    Location location = {0, 0, 0, "<compiler>"};
-    Token token = {TokenKind::Integer, location, location, std::to_string(value)};
-
-    this->macros[name] = Macro(name, {}, {token});
-}
-
-void Preprocessor::define(std::string name, std::string value) {
-    Location location = {0, 0, 0, "<compiler>"};
-    Token token = {TokenKind::String, location, location, value};
-
-    this->macros[name] = Macro(name, {}, {token});
-}
-
 void Preprocessor::undef(std::string name) {
     this->macros.erase(name);
 }
@@ -348,6 +339,30 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
 
     this->update(new_tokens);
     return {};
+}
+
+int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token left) {
+    if (right == TokenKind::String) {
+        if (left != right.type) {
+            ERROR(left.start, "Expected left hand side of expression to be a string");
+        }
+
+        switch (op) {
+            case TokenKind::Eq:
+                return right.value == left.value;
+            case TokenKind::Neq:
+                return right.value != left.value;
+            default:
+                std::string name = Token::getTokenTypeValue(op);
+                ERROR(right.start, "Unsupported binary operator '{s}' for types 'char*' and 'char*'", name);
+        }
+
+
+    } else if (right == TokenKind::Integer || right == TokenKind::Float) {
+
+    }
+    
+    ERROR(right.start, "Expected an integer or a string expression");
 }
 
 std::vector<Token> Preprocessor::run(std::vector<Token> tokens) {

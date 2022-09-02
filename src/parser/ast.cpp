@@ -5,54 +5,9 @@
 
 using namespace ast;
 
-ExprKind::ExprKind(Value value) : value(value) {}
-
-bool ExprKind::operator==(Value other) {
-    return this->value == other;
-}
-
-bool ExprKind::operator==(ExprKind other) {
-    return this->value == other.value;
-}
-
-bool ExprKind::operator!=(Value other) {
-    return this->value != other;
-}
-
-bool ExprKind::operator!=(ExprKind other) {
-    return this->value != other.value;
-}
-
-bool ExprKind::in(ExprKind other, ...)  {
-    va_list args;
-    va_start(args, other);
-
-    ExprKind* arg = va_arg(args, ExprKind*);
-    while (arg != nullptr) {
-        if (this->value == arg->value) {
-            va_end(args);
-            return true;
-        }
-        arg = va_arg(args, ExprKind*);
-    }
-
-    va_end(args);
-    return false;
-}
-
-bool ExprKind::in(std::vector<ExprKind> others) {
-    for (auto kind : others) {
-        if (kind == this->value) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 BlockExpr::BlockExpr(
     Location start, Location end, std::vector<utils::Ref<Expr>> block
-) : Expr(start, end, ExprKind::Block) {
+) : ExprMixin(start, end) {
     this->block = std::move(block);
 }
 
@@ -62,7 +17,7 @@ Value BlockExpr::accept(Visitor& visitor) {
 
 IntegerExpr::IntegerExpr(
     Location start, Location end, int value, int bits
-) : Expr(start, end, ExprKind::Integer), value(value), bits(bits) {}
+) : ExprMixin(start, end), value(value), bits(bits) {}
 
 Value IntegerExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -70,7 +25,7 @@ Value IntegerExpr::accept(Visitor& visitor) {
 
 FloatExpr::FloatExpr(
     Location start, Location end, float value
-) : Expr(start, end, ExprKind::Float), value(value) {}
+) : ExprMixin(start, end), value(value) {}
 
 Value FloatExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -78,7 +33,7 @@ Value FloatExpr::accept(Visitor& visitor) {
 
 StringExpr::StringExpr(
     Location start, Location end, std::string value
-) : Expr(start, end, ExprKind::String), value(value) {}
+) : ExprMixin(start, end), value(value) {}
 
 Value StringExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -86,7 +41,7 @@ Value StringExpr::accept(Visitor& visitor) {
 
 VariableExpr::VariableExpr(
     Location start, Location end, std::string name
-) : Expr(start, end, ExprKind::Variable), name(name) {}
+) : ExprMixin(start, end), name(name) {}
 
 Value VariableExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -95,8 +50,14 @@ Value VariableExpr::accept(Visitor& visitor) {
 
 
 VariableAssignmentExpr::VariableAssignmentExpr(
-    Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value, bool external
-) : Expr(start, end, ExprKind::VariableAssignment), name(name), type(type), external(external) {
+    Location start, 
+    Location end, 
+    std::vector<std::string> names, 
+    Type* type, 
+    utils::Ref<Expr> value, 
+    bool external,
+    bool is_multiple_variables
+) : ExprMixin(start, end), names(names), type(type), external(external), is_multiple_variables(is_multiple_variables) {
     this->value = std::move(value);
 }
 
@@ -106,7 +67,9 @@ Value VariableAssignmentExpr::accept(Visitor& visitor) {
 
 ConstExpr::ConstExpr(
     Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value
-) : VariableAssignmentExpr(start, end, name, type, std::move(value)) {}
+) : ExprMixin(start, end), type(type), name(name) {
+    this->value = std::move(value);
+}
 
 Value ConstExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -114,7 +77,7 @@ Value ConstExpr::accept(Visitor& visitor) {
 
 ArrayExpr::ArrayExpr(
     Location start, Location end, std::vector<utils::Ref<Expr>> elements
-) : Expr(start, end, ExprKind::Array) {
+) : ExprMixin(start, end) {
     this->elements = std::move(elements);
 }
 
@@ -124,7 +87,7 @@ Value ArrayExpr::accept(Visitor& visitor) {
 
 UnaryOpExpr::UnaryOpExpr(
     Location start, Location end, TokenKind op, utils::Ref<Expr> value
-) : Expr(start, end, ExprKind::UnaryOp), op(op) {
+) : ExprMixin(start, end), op(op) {
     this->value = std::move(value);
 }
 
@@ -134,7 +97,7 @@ Value UnaryOpExpr::accept(Visitor& visitor) {
 
 BinaryOpExpr::BinaryOpExpr(
     Location start, Location end, TokenKind op, utils::Ref<Expr> left, utils::Ref<Expr> right
-) : Expr(start, end, ExprKind::BinaryOp), op(op) {
+) : ExprMixin(start, end), op(op) {
     this->left = std::move(left);
     this->right = std::move(right);
 }
@@ -145,7 +108,7 @@ Value BinaryOpExpr::accept(Visitor& visitor) {
 
 InplaceBinaryOpExpr::InplaceBinaryOpExpr(
     Location start, Location end, TokenKind op, utils::Ref<Expr> left, utils::Ref<Expr> right
-) : Expr(start, end, ExprKind::InplaceBinaryOp), op(op) {
+) : ExprMixin(start, end), op(op) {
     this->left = std::move(left);
     this->right = std::move(right);
 }
@@ -156,7 +119,7 @@ Value InplaceBinaryOpExpr::accept(Visitor& visitor) {
 
 CallExpr::CallExpr(
     Location start, Location end, utils::Ref<ast::Expr> callee, std::vector<utils::Ref<Expr>> args
-) : Expr(start, end, ExprKind::Call) {
+) : ExprMixin(start, end) {
     this->callee = std::move(callee);
     this->args = std::move(args);
 }
@@ -165,7 +128,7 @@ Value CallExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-ReturnExpr::ReturnExpr(Location start, Location end, utils::Ref<Expr> value) : Expr(start, end, ExprKind::Return) {
+ReturnExpr::ReturnExpr(Location start, Location end, utils::Ref<Expr> value) : ExprMixin(start, end) {
     this->value = std::move(value);
 }
 
@@ -175,7 +138,7 @@ Value ReturnExpr::accept(Visitor& visitor) {
 
 PrototypeExpr::PrototypeExpr(
     Location start, Location end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs
-) : Expr(start, end, ExprKind::Prototype), name(name), return_type(return_type), has_varargs(has_varargs) {
+) : ExprMixin(start, end), name(name), return_type(return_type), has_varargs(has_varargs) {
     this->args = std::move(args);
 }
 
@@ -185,7 +148,7 @@ Value PrototypeExpr::accept(Visitor& visitor) {
 
 FunctionExpr::FunctionExpr(
     Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<BlockExpr> body
-) : Expr(start, end, ExprKind::Function) {
+) : ExprMixin(start, end) {
     this->prototype = std::move(prototype);
     this->body = std::move(body);
 }
@@ -196,7 +159,7 @@ Value FunctionExpr::accept(Visitor& visitor) {
 
 DeferExpr::DeferExpr(
     Location start, Location end, utils::Ref<Expr> expr
-) : Expr(start, end, ExprKind::Defer) {
+) : ExprMixin(start, end) {
     this->expr = std::move(expr);
 }
 
@@ -206,7 +169,7 @@ Value DeferExpr::accept(Visitor& visitor) {
 
 IfExpr::IfExpr(
     Location start, Location end, utils::Ref<Expr> condition, utils::Ref<Expr> body, utils::Ref<Expr> ebody
-) : Expr(start, end, ExprKind::If) {
+) : ExprMixin(start, end) {
     this->condition = std::move(condition);
     this->body = std::move(body);
     this->ebody = std::move(ebody);
@@ -218,7 +181,7 @@ Value IfExpr::accept(Visitor& visitor) {
 
 WhileExpr::WhileExpr(
     Location start, Location end, utils::Ref<Expr> condition, utils::Ref<BlockExpr> body
-) : Expr(start, end, ExprKind::While) {
+) : ExprMixin(start, end) {
     this->condition = std::move(condition);
     this->body = std::move(body);
 }
@@ -234,7 +197,7 @@ ForExpr::ForExpr(
     utils::Ref<Expr> end_,
     utils::Ref<Expr> step, 
     utils::Ref<Expr> body
-) : Expr(start, end, ExprKind::For) {
+) : ExprMixin(start, end) {
     this->start = std::move(start_);
     this->end = std::move(end_);
     this->step = std::move(step);
@@ -245,13 +208,13 @@ Value ForExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-BreakExpr::BreakExpr(Location start, Location end) : Expr(start, end, ExprKind::Break) {}
+BreakExpr::BreakExpr(Location start, Location end) : ExprMixin(start, end) {}
 
 Value BreakExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-ContinueExpr::ContinueExpr(Location start, Location end) : Expr(start, end, ExprKind::Continue) {}
+ContinueExpr::ContinueExpr(Location start, Location end) : ExprMixin(start, end) {}
 
 Value ContinueExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -265,7 +228,7 @@ StructExpr::StructExpr(
     std::vector<utils::Ref<Expr>> parents,
     std::map<std::string, StructField> fields, 
     std::vector<utils::Ref<Expr>> methods
-) : Expr(start, end, ExprKind::Struct), name(name), opaque(opaque) {
+) : ExprMixin(start, end), name(name), opaque(opaque) {
     this->fields = std::move(fields);
     this->methods = std::move(methods);
     this->parents = std::move(parents);
@@ -277,7 +240,7 @@ Value StructExpr::accept(Visitor& visitor) {
 
 ConstructorExpr::ConstructorExpr(
     Location start, Location end, utils::Ref<Expr> parent, std::map<std::string, utils::Ref<Expr>> fields
-) : Expr(start, end, ExprKind::Constructor) {
+) : ExprMixin(start, end) {
     this->parent = std::move(parent);
     this->fields = std::move(fields);
 }
@@ -288,7 +251,7 @@ Value ConstructorExpr::accept(Visitor& visitor) {
 
 AttributeExpr::AttributeExpr(
     Location start, Location end, std::string attribute, utils::Ref<Expr> parent
-) : Expr(start, end, ExprKind::Attribute), attribute(attribute) {
+) : ExprMixin(start, end), attribute(attribute) {
     this->parent = std::move(parent);
 }
 
@@ -298,7 +261,7 @@ Value AttributeExpr::accept(Visitor& visitor) {
 
 ElementExpr::ElementExpr(
     Location start, Location end, utils::Ref<Expr> value, utils::Ref<Expr> index
-) : Expr(start, end, ExprKind::Element) {
+) : ExprMixin(start, end) {
     this->value = std::move(value);
     this->index = std::move(index);
 }
@@ -309,7 +272,7 @@ Value ElementExpr::accept(Visitor& visitor) {
 
 CastExpr::CastExpr(
     Location start, Location end, utils::Ref<Expr> value, Type* to
-) : Expr(start, end, ExprKind::Cast), to(to) {
+) : ExprMixin(start, end), to(to) {
     this->value = std::move(value);
 }
 
@@ -319,7 +282,7 @@ Value CastExpr::accept(Visitor& visitor) {
 
 SizeofExpr::SizeofExpr(
     Location start, Location end, Type* type, utils::Ref<Expr> value
-) : Expr(start, end, ExprKind::Sizeof), type(type) {
+) : ExprMixin(start, end), type(type) {
     this->value = std::move(value);
 }
 
@@ -329,7 +292,7 @@ Value SizeofExpr::accept(Visitor& visitor) {
 
 OffsetofExpr::OffsetofExpr(
     Location start, Location end, utils::Ref<Expr> value, std::string field
-) : Expr(start, end, ExprKind::Offsetof), field(field) {
+) : ExprMixin(start, end), field(field) {
     this->value = std::move(value);
 }
 
@@ -339,7 +302,7 @@ Value OffsetofExpr::accept(Visitor& visitor) {
 
 NamespaceExpr::NamespaceExpr(
     Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> members
-) : Expr(start, end, ExprKind::Namespace), name(name) {
+) : ExprMixin(start, end), name(name) {
     this->members = std::move(members);
 }
 
@@ -349,7 +312,7 @@ Value NamespaceExpr::accept(Visitor& visitor) {
 
 NamespaceAttributeExpr::NamespaceAttributeExpr(
     Location start, Location end, std::string attribute, utils::Ref<Expr> parent
-) : Expr(start, end, ExprKind::NamespaceAttribute), attribute(attribute) {
+) : ExprMixin(start, end), attribute(attribute) {
     this->parent = std::move(parent);
 }
 
@@ -359,10 +322,20 @@ Value NamespaceAttributeExpr::accept(Visitor& visitor) {
 
 UsingExpr::UsingExpr(
     Location start, Location end, std::vector<std::string> members, utils::Ref<Expr> parent
-) : Expr(start, end, ExprKind::Using), members(members) {
+) : ExprMixin(start, end), members(members) {
     this->parent = std::move(parent);
 }
 
 Value UsingExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+TupleExpr::TupleExpr(
+    Location start, Location end, std::vector<utils::Ref<Expr>> elements
+) : ExprMixin(start, end) {
+    this->elements = std::move(elements);
+}
+
+Value TupleExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }

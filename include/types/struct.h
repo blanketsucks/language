@@ -17,6 +17,8 @@ public:
 
     std::string str() override;
 
+    uint32_t hash() override;
+
     void setFields(std::vector<Type*> fields) { this->fields = fields; }
 
     bool is_compatible(Type* other) override;

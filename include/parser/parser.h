@@ -62,6 +62,7 @@ public:
 
     ast::Attributes parse_attributes();
 
+    std::vector<utils::Ref<ast::Expr>> parse();
     std::vector<utils::Ref<ast::Expr>> statements();
     utils::Ref<ast::Expr> statement();
     utils::Ref<ast::Expr> expr(bool semicolon = true);
@@ -85,6 +86,7 @@ private:
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
     std::map<std::string, Type*> types;
+    std::map<uint32_t, TupleType*> tuples;
     std::vector<Type*> _allocated_types;
 };
 

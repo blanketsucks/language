@@ -17,6 +17,8 @@ public:
 
     std::string str() override;
 
+    uint32_t hash() override;
+
     std::vector<Type*> arguments() { return this->args; }
     Type* getReturnType() { return this->return_type; }
     bool isVarargs() { return this->has_varargs; }

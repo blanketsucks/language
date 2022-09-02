@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <sstream>
+#include <stdint.h>
 
 FunctionType::FunctionType(
     std::vector<Type*> args, Type* return_type, bool has_varargs
@@ -45,6 +46,16 @@ FunctionType* FunctionType::copy() {
     }
 
     return FunctionType::create(args, this->return_type->copy(), this->has_varargs);
+}
+
+uint32_t FunctionType::hash() {
+    uint32_t hash = 0;
+    for (auto& arg : this->args) {
+        hash |= arg->hash();
+    }
+
+    hash |= this->return_type->hash();
+    return hash;
 }
 
 std::string FunctionType::str() {

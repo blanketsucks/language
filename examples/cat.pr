@@ -1,0 +1,66 @@
+$include "libc/ffi.pr"
+
+using (
+    printf, fprintf,
+    fopen, fdopen, fseek, ftell, fread, ferror, fclose, ferror, feof,
+    malloc, free, 
+    strerror, __errno_location
+) from libc;
+
+func main(argc: int, argv: char**) -> int {
+    let stderr = fdopen(2, "w");
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s [filenames...]\n", argv[0]);
+        return 1;
+    }
+
+    for (i = 1; i < argc; i += 1) {
+        let filename = argv[i];
+        let file = fopen(filename, "r");
+
+        if (!file) {
+            # We don't have access to `errno` so we use `__errno_location` instead, we can have `errno` to be a macro
+            # but idk about that. We could also use `perror` instead of doing all of this.
+
+            # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
+            let errno = *__errno_location();
+
+            fprintf(stderr, "Could not open file '%s': %s\n", filename, strerror(errno));
+            return 1;
+        }
+
+        fseek(file, 0, SEEK_END);
+        let size = ftell(file);
+
+        if (size == 0) { # Empty file
+            fclose(file);
+            continue;
+        }
+
+        fseek(file, 0, SEEK_SET);
+        let buffer = malloc(size) as char*;
+
+        let n = fread(buffer, 1, size, file);
+        if (n != size) {
+            if (ferror(file)) {
+                let errno = *__errno_location();
+                fprintf(stderr, "Could not read file '%s': %s\n", filename, strerror(errno));
+
+                return 1;
+            } else if (feof(file)) {
+                fprintf(stderr, "Could not read file '%s': Reached EOF.", filename);
+                return 1;
+            }
+
+            fprintf(stderr, "Could not read file '%s': Unknown error.", filename);
+            return 1;
+        }
+
+        printf("%s\n", buffer);
+
+        free(buffer);
+        fclose(file);
+    }
+    
+    return 0;
+}

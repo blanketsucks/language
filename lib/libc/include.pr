@@ -113,12 +113,9 @@ extern "C" {
     func atoll(s: char*) -> long;
     func atof(s: char*) -> double;
 
-
     func sleep(seconds: int) -> int;
 
-
     func exit(code: int) -> void;
-
 
     func atexit(f: func() -> void);
     
@@ -126,7 +123,6 @@ extern "C" {
 
     func __errno_location() -> int*;
     func __h_errno_location() -> int*;
-
 }
 
 }

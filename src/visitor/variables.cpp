@@ -1,5 +1,15 @@
 #include "visitor.h"
 
+void Visitor::store_tuple(Location location, Function *func, llvm::Value *value, std::vector<std::string> names) {
+    std::vector<llvm::Value*> values = this->unpack(location, value, names.size());
+    for (auto& pair : utils::zip(names, values)) {
+        llvm::AllocaInst* inst = this->create_alloca(func->value, pair.second->getType());
+        this->builder->CreateStore(pair.second, inst);
+
+        func->locals[pair.first] = inst;
+    }
+}
+
 std::pair<llvm::Value*, bool> Visitor::get_variable(std::string name) {
     if (this->current_function) {
         llvm::Value* value = this->current_function->locals[name];
@@ -25,56 +35,59 @@ Value Visitor::visit(ast::VariableExpr* expr) {
 
     if (this->current_function) {
         llvm::AllocaInst* variable = this->current_function->locals[expr->name];
-        if (variable) {
-            return this->builder->CreateLoad(variable->getAllocatedType(), variable);;
-        }
+        if (variable) { return this->load(variable->getAllocatedType(), variable); }
 
         llvm::GlobalVariable* constant = this->current_function->constants[expr->name];
-        if (constant) {
-            return this->builder->CreateLoad(constant->getValueType(), constant);
-        }
+        if (constant) { return Value(this->load(constant->getValueType(), constant), true); }
     }
 
     if (this->current_struct) {
         llvm::Value* value = this->current_struct->locals[expr->name];
-        if (value) {
-            return value;
+        if (value) { return value; }
+    }
+
+    if (expr->name == "null" || expr->name == "nullptr") {
+        llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
+        if (expr->name == "nullptr") {
+            if (!type->isPointerTy()) {
+                ERROR(expr->start, "Cannot use nullptr with non-pointer types");
+            }
+
+            return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
         }
+
+        return llvm::Constant::getNullValue(type);
     }
 
     llvm::Constant* constant = this->constants[expr->name];
     if (constant) {
         llvm::GlobalVariable* global = this->module->getGlobalVariable(constant->getName());
-        if (global) {
-            return this->builder->CreateLoad(global->getValueType(), global);
-        }
+        if (global) { return Value(this->load(global->getValueType(), global), true); }
 
-        return constant;
+        return Value(constant, true);
     }
 
-    Value function = this->get_function(expr->name);
-    if (function.function) {
-        return function;
-    }
+    Value val = this->get_function(expr->name);
+    if (val.function) { return val; }
 
     ERROR(expr->start, "Undefined variable '{s}'", expr->name); exit(1);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
-    llvm::Type* type;
+    llvm::Type* type = nullptr;
     if (expr->external) {
-        type = this->get_llvm_type(expr->type);
-        this->module->getOrInsertGlobal(expr->name, type);
+        std::string name = expr->names[0];
 
-        llvm::GlobalVariable* global = this->module->getGlobalVariable(expr->name);
+        type = this->get_llvm_type(expr->type);
+        this->module->getOrInsertGlobal(name, type);
+
+        llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
         global->setLinkage(llvm::GlobalValue::ExternalLinkage);
 
         return global;
     }
 
     llvm::Value* value = nullptr;
-    bool is_constant = false;
-
     if (!expr->value) {
         type = this->get_llvm_type(expr->type);
         if (type->isAggregateType()) {
@@ -85,14 +98,14 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             value = llvm::Constant::getNullValue(type);
         }
     } else {
-        Value val = expr->value->accept(*this);
-        is_constant = val.is_constant;
+        if (expr->type) {
+            type = this->get_llvm_type(expr->type);
+            this->ctx = type;
+        }
 
-        value = val.unwrap(this, expr->start);
+        value = expr->value->accept(*this).unwrap(expr->start);
         if (!expr->type) {
             type = value->getType();
-        } else {
-            type = this->get_llvm_type(expr->type);
         }
     
         Type* ty = Type::from_llvm_type(type);
@@ -101,60 +114,21 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
     }
 
-    if (!this->current_function) {
-        if (!is_constant) {
-            ERROR(expr->start, "Initializer of global variable '{s}' must be a constant expression", expr->name); exit(1);
-        }
-
-        std::string name = "__const_" + expr->name;
-        
-        this->module->getOrInsertGlobal(name, type);
-        llvm::GlobalVariable* variable = this->module->getNamedGlobal(name);
-
-        variable->setLinkage(llvm::GlobalValue::ExternalLinkage);
-        variable->setInitializer(llvm::cast<llvm::Constant>(value));
-
-        this->constants[expr->name] = variable;
-        return value;
-    }
-
     llvm::Function* func = this->builder->GetInsertBlock()->getParent();
+    if (!expr->is_multiple_variables) {
+        llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
+        if (value) { this->builder->CreateStore(value, alloca_inst); }
 
-    if (is_constant) {
-        std::string name = utils::fmt::format("__const_{s}.{s}", this->current_function->name, expr->name);
-        this->module->getOrInsertGlobal(name, type);
-
-        llvm::GlobalVariable* variable = this->module->getNamedGlobal(name);
-
-        variable->setLinkage(llvm::GlobalValue::ExternalLinkage);
-        variable->setInitializer((llvm::Constant*)value);
-
-        this->current_function->constants[expr->name] = variable;
-
-        llvm::AllocaInst* inst = this->create_alloca(func, type);
-
-        llvm::Type* ty = this->builder->getInt8PtrTy();
-        this->builder->CreateMemCpy(
-            this->builder->CreateBitCast(inst, ty), llvm::MaybeAlign(0),
-            this->builder->CreateBitCast(variable, ty), llvm::MaybeAlign(0),
-            this->getsizeof(variable->getValueType())
-        );
-
-        this->current_function->locals[expr->name] = inst;
-        return variable;
+        this->current_function->locals[expr->names[0]] = alloca_inst;
+    } else {
+        this->store_tuple(expr->start, this->current_function, value, expr->names);
     }
-
-    llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
-    if (value) {
-        this->builder->CreateStore(value, alloca_inst);
-    }
-
-    this->current_function->locals[expr->name] = alloca_inst;
+    
     return value;
 }
 
 Value Visitor::visit(ast::ConstExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
     llvm::Type* type;
 
     if (!expr->type) {
@@ -170,7 +144,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         name = this->current_function->name + "." + name;
     }
 
-    name = "__const_" + name;
+    name = "__const." + name;
     this->module->getOrInsertGlobal(name, type);
 
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);

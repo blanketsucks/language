@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <iostream>
+#include <stdint.h>
 
 ArrayType::ArrayType(size_t length, Type* element) : Type(Type::Array, length * element->getSize()), element(element), length(length) {}
 

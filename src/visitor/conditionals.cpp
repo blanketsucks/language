@@ -1,7 +1,7 @@
 #include "visitor.h"
 
 Value Visitor::visit(ast::IfExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(this, expr->condition->start);
+    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
 
     Function* func = this->current_function;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();

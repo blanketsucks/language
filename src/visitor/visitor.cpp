@@ -1,7 +1,13 @@
 #include "visitor.h"
+#include "utils.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Transforms/Scalar.h"
 
-Visitor::Visitor(std::string name, bool with_optimizations) {
+Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->name = name;
+    this->entry = entry;
     this->with_optimizations = with_optimizations;
 
     this->module = utils::make_ref<llvm::Module>(name, this->context);
@@ -14,12 +20,11 @@ Visitor::Visitor(std::string name, bool with_optimizations) {
     this->fpm->add(llvm::createGVNPass());
     this->fpm->add(llvm::createCFGSimplificationPass());
     this->fpm->add(llvm::createDeadStoreEliminationPass());
+    this->fpm->add(llvm::createAggressiveDCEPass());
     
     this->fpm->doInitialization();
 
     this->constants = {
-        {"true", llvm::ConstantInt::getTrue(this->context)},
-        {"false", llvm::ConstantInt::getFalse(this->context)},
         {"null", llvm::ConstantInt::getNullValue(llvm::Type::getInt1PtrTy(this->context))},
         {"nullptr", llvm::ConstantPointerNull::get(llvm::Type::getInt1PtrTy(this->context))}
     };
@@ -145,6 +150,19 @@ llvm::Type* Visitor::get_llvm_type(Type* type) {
         }
         
         return ty;
+    } else if (type->isTuple()) { // TODO: pointers to tuples
+        TupleType* tuple = type->cast<TupleType>();
+        uint32_t hash = tuple->hash();
+        
+        llvm::StructType* structure;
+        if (this->tuples.find(hash) != this->tuples.end()) {
+            structure = this->tuples[hash];
+        } else {
+            structure = tuple->to_llvm_type(this->context);
+            this->tuples[hash] = structure;
+        }
+
+        return structure;
     }
 
     return type->to_llvm_type(this->context);
@@ -181,18 +199,98 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     return this->builder->CreateBitCast(value, type);
 }
 
-llvm::Value* Visitor::cast_if_null(llvm::Value* value, llvm::Type* type) {
-    if (value == this->constants["null"]) {
-        return llvm::ConstantInt::getNullValue(type);
-    } else if (value == this->constants["nullptr"]) {
-        if (!type->isPointerTy()) {
-            exit(1);
-        }
+llvm::Value* Visitor::load(llvm::Type* type, llvm::Value* value) {
+    if (type->isAggregateType()) {
+        return value;
+    }
 
-        return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
+    return this->builder->CreateLoad(type, value);
+}
+
+llvm::Value* Visitor::load(llvm::Value* value) {
+    llvm::Type* type = value->getType();
+    if (type->isPointerTy()) {
+        type = type->getNonOpaquePointerElementType();
+        if (type->isAggregateType()) {
+            return this->builder->CreateLoad(type, value);
+        }
     }
 
     return value;
+}
+
+std::vector<llvm::Value*> Visitor::unpack(Location location, llvm::Value* value, uint32_t n) {
+    llvm::Type* type = value->getType();
+    if (!type->isPointerTy()) {
+        if (!type->isStructTy()) {
+            std::string name = Type::from_llvm_type(type)->name();
+            ERROR(location, "Cannot unpack value of type '{s}'", name);
+        }
+
+        llvm::StringRef name = type->getStructName();
+        if (!name.startswith("__tuple")) {
+            ERROR(location, "Cannot unpack value of type '{s}'", name);
+        }
+
+        uint32_t elements = type->getStructNumElements();
+        if (n > elements) {
+            ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+        }
+
+        std::vector<llvm::Value*> values;
+        for (uint32_t i = 0; i < n; i++) {
+            llvm::Value* val = this->builder->CreateExtractValue(value, i);
+            values.push_back(val);
+        }
+
+        return values;
+    }
+
+    type = type->getNonOpaquePointerElementType();
+    if (!type->isAggregateType()) {
+        std::string name = Type::from_llvm_type(type)->name();
+        ERROR(location, "Cannot unpack value of type '{s}'", name);
+    }
+
+    if (type->isArrayTy()) {
+        uint32_t elements = type->getArrayNumElements();
+        if (n > elements) {
+            ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+        }
+
+        llvm::Type* ty = type->getArrayElementType();
+        std::vector<llvm::Value*> values;
+        for (uint32_t i = 0; i < n; i++) {
+            std::vector<llvm::Value*> idx = {this->builder->getInt32(0), this->builder->getInt32(i)};
+            llvm::Value* ptr = this->builder->CreateGEP(type, value, idx);
+
+            llvm::Value* val = this->builder->CreateLoad(ty, ptr);
+            values.push_back(val);
+        }
+
+        return values;
+    }
+
+    llvm::StringRef name = type->getStructName();
+    // Maybe i should allow it either way??
+    if (!name.startswith("__tuple")) {
+        ERROR(location, "Cannot unpack value of type '{s}'", name);
+    }
+
+    uint32_t elements = type->getStructNumElements();
+    if (n > elements) {
+        ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+    }
+
+    std::vector<llvm::Value*> values;
+    for (uint32_t i = 0; i < n; i++) {
+        llvm::Value* ptr = this->builder->CreateStructGEP(type, value, i);
+        llvm::Value* val = this->builder->CreateLoad(type->getStructElementType(i), ptr);
+
+        values.push_back(val);
+    }
+
+    return values;
 }
 
 uint32_t Visitor::getsizeof(llvm::Value* value) {
@@ -230,11 +328,17 @@ void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
 }
 
 Value Visitor::visit(ast::IntegerExpr* expr) {
-    return Value(llvm::ConstantInt::get(this->context, llvm::APInt(expr->bits, expr->value, true)), true);
+    return Value(
+        this->builder->getInt(llvm::APInt(expr->bits, expr->value, true)),
+        true
+    );
 }
 
 Value Visitor::visit(ast::FloatExpr* expr) {
-    return Value(llvm::ConstantFP::get(this->context, llvm::APFloat(expr->value)), true);
+    return Value(
+        llvm::ConstantFP::get(this->context, llvm::APFloat(expr->value)), 
+        true
+    );
 }
 
 Value Visitor::visit(ast::StringExpr* expr) {
@@ -255,7 +359,7 @@ Value Visitor::visit(ast::BlockExpr* expr) {
 }
 
 Value Visitor::visit(ast::CastExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
     llvm::Type* from = value->getType();
     llvm::Type* to = this->get_llvm_type(expr->to);
@@ -295,7 +399,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
 Value Visitor::visit(ast::SizeofExpr* expr) {
     uint32_t size;
     if (expr->value) {
-        llvm::Value* value = expr->value->accept(*this).unwrap(this, expr->start);
+        llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
         size = this->getsizeof(value);
     } else {
         llvm::Type* type = this->get_llvm_type(expr->type);

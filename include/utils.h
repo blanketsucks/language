@@ -240,6 +240,8 @@ std::string exec(const std::string& command);
 
 template<typename F, typename S> 
 std::vector<std::pair<F, S>> zip(std::vector<F> first, std::vector<S> second) {
+    assert(first.size() == second.size() && "first and second must have the same size");
+
     std::vector<std::pair<F, S>> result;
     result.reserve(first.size());
 
@@ -264,6 +266,59 @@ template<typename K, typename V> std::vector<V> values(std::map<K, V> map) {
     }
 
     return result;
+}
+
+template<typename T> bool in(std::vector<T> values, T value) {
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+template<typename L, typename R> L evaluate_integral_expression(
+    TokenKind op, Location start, const char* type, L left, R right
+) {
+    switch (op) {
+        case TokenKind::Add:
+            return left + right;
+        case TokenKind::Minus:
+            return left - right;
+        case TokenKind::Mul:
+            return left * right;
+        case TokenKind::Div:
+            return left / right;
+        case TokenKind::Mod:
+            return (int)left % (int)right;
+        case TokenKind::And:
+            return left && right;
+        case TokenKind::Or:
+            return left || right;
+        case TokenKind::BinaryAnd:
+            return (int)left | (int)right;
+        case TokenKind::BinaryOr:
+            return (int)left & (int)right;
+        case TokenKind::Xor:
+            return (int)left ^ (int)right;
+        case TokenKind::Lsh:
+            return (int)left << (int)right;
+        case TokenKind::Rsh:
+            return (int)left >> (int)right;
+        case TokenKind::Eq:
+            return left == right;
+        case TokenKind::Neq:
+            return left != right;
+        case TokenKind::Gt:
+            return left > right;
+        case TokenKind::Lt:
+            return left < right;
+        case TokenKind::Gte:
+            return left >= right;
+        case TokenKind::Lte:
+            return left <= right;
+        default:
+            ERROR(
+                start, 
+                "Unsupported binary operator '{s}' for types '{}' and '{}'", 
+                Token::getTokenTypeValue(op), type, type
+            );
+    }
 }
 
 };

@@ -38,7 +38,6 @@ public:
 
     std::vector<Token> lex();
 
-private:
     uint32_t line;
     uint32_t column;
     uint32_t index;

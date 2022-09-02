@@ -6,6 +6,7 @@
 #include "types/struct.h"
 #include "types/pointer.h"
 #include "types/array.h"
+#include "types/tuple.h"
 
 Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
 
@@ -36,6 +37,10 @@ Type* Type::from_llvm_type(llvm::Type* type) {
     } else if (type->isFloatTy()) {
         return FloatType;
     } else if (type->isStructTy()) {
+        if (type->getStructName().startswith("__tuple")) {
+            return TupleType::from_llvm_type(llvm::cast<llvm::StructType>(type));
+        }
+
         return StructType::from_llvm_type(llvm::cast<llvm::StructType>(type));
     } else if (type->isFunctionTy()) {
         return FunctionType::from_llvm_type(llvm::cast<llvm::FunctionType>(type));
@@ -87,6 +92,11 @@ Type* Type::getPointerElementType() {
 Type* Type::getArrayElementType() {
     ArrayType* array = this->cast<ArrayType>();
     return array->getElementType();
+}
+
+std::vector<Type*> Type::getTupleElementTypes() {
+    TupleType* tuple = this->cast<TupleType>();
+    return tuple->getElementTypes();
 }
 
 Type* Type::getContainedType() {

@@ -54,12 +54,15 @@ public:
 
     std::vector<Token> expand(Macro macro, bool return_tokens = false);
 
+    int evaluate_token_expression(TokenKind op, Token right, Token left);
+
     static std::vector<Token> run(std::vector<Token> tokens);
 
     Token current;
     uint32_t index;
 
     bool has_if_directive = false;
+    bool should_close_if_directive = false;
     Location if_directive_location;
 
     std::vector<Token> tokens;

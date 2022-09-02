@@ -88,6 +88,8 @@ struct Struct {
     Struct(std::string name, bool opaque, llvm::StructType* type, std::map<std::string, StructField> fields);
 
     int get_field_index(std::string name);
+    StructField get_field_at(uint32_t index);
+
     std::vector<StructField> get_fields(bool with_private = false);
 
     bool has_method(const std::string& name);
@@ -126,7 +128,7 @@ struct Value {
         Namespace* ns = nullptr
     );
 
-    llvm::Value* unwrap(Visitor* visitor, Location location);
+    llvm::Value* unwrap(Location location);
 
     llvm::Type* type();
     std::string name();

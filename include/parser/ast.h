@@ -21,57 +21,40 @@ enum class ExternLinkageSpecifier {
     C,
 };
 
-class ExprKind {
-public:
-    enum Value {
-        Unknown = -1,
-
-        Block,
-        Integer,
-        Float,
-        String,
-        Variable,
-        VariableAssignment,
-        Const,
-        Array,
-        UnaryOp,
-        BinaryOp,
-        InplaceBinaryOp,
-        Call,
-        Return,
-        Prototype,
-        Function,
-        Defer,
-        If,
-        While,
-        For,
-        Break,
-        Continue,
-        Struct,
-        Constructor,
-        Attribute,
-        Element,
-        Cast,
-        Sizeof,
-        Offsetof,
-        Assembly,
-        Namespace,
-        NamespaceAttribute,
-        Using,
-        Import
-    };
-
-    Value value;
-
-    ExprKind(Value value);
-
-    bool operator==(Value other);
-    bool operator==(ExprKind other);
-    bool operator!=(Value other);
-    bool operator!=(ExprKind other);
-
-    bool in(ExprKind other, ...);
-    bool in(std::vector<ExprKind> others);
+enum class ExprKind {
+    Block,
+    Integer,
+    Float,
+    String,
+    Variable,
+    VariableAssignment,
+    Const,
+    Array,
+    UnaryOp,
+    BinaryOp,
+    InplaceBinaryOp,
+    Call,
+    Return,
+    Prototype,
+    Function,
+    Defer,
+    If,
+    While,
+    For,
+    Break,
+    Continue,
+    Struct,
+    Constructor,
+    Attribute,
+    Element,
+    Cast,
+    Sizeof,
+    Offsetof,
+    Assembly,
+    Namespace,
+    NamespaceAttribute,
+    Using,
+    Tuple
 };
 
 struct Attributes {
@@ -89,19 +72,33 @@ class Expr {
 public:
     Location start;
     Location end;
-    ExprKind kind;
     Attributes attributes;
 
-    Expr(Location start, Location end, ExprKind kind) : start(start), end(end), kind(kind) {}
+    Expr(Location start, Location end, ExprKind kind) : start(start), end(end), _kind(kind) {}
 
-    template<class T> T* cast() { return (T*)this;
+    ExprKind kind() const { return this->_kind; }
+    bool is_constant() { 
+        return this->kind() == ExprKind::Integer || this->kind() == ExprKind::Float || this->kind() == ExprKind::String;
     }
 
-    bool is_constant() { return this->kind.in({ExprKind::Integer, ExprKind::Float, ExprKind::String}); }
+    template<typename T> T* cast() {
+        assert(T::classof(this) && "Invalid cast.");
+        return static_cast<T*>(this);
+    }
 
     virtual ~Expr() = default;
     virtual Value accept(Visitor& visitor) = 0;
 
+private:
+    ExprKind _kind;
+};
+
+// Designed after wabt's expression style
+// Source: https://github.com/WebAssembly/wabt/blob/main/src/ir.h
+template<ExprKind Kind> class ExprMixin : public Expr {
+public:
+    static bool classof(const Expr* expr) { return expr->kind() == Kind; }
+    ExprMixin(Location start, Location end) : Expr(start, end, Kind) {}
 };
 
 struct Argument {
@@ -109,143 +106,131 @@ struct Argument {
     Type* type;
 };
 
-class BlockExpr : public Expr {
+class BlockExpr : public ExprMixin<ExprKind::Block> {
 public:
     std::vector<utils::Ref<Expr>> block;
 
     BlockExpr(Location start, Location end, std::vector<utils::Ref<Expr>> block);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class IntegerExpr : public Expr {
+class IntegerExpr : public ExprMixin<ExprKind::Integer> {
 public:
     int value;
     int bits;
 
     IntegerExpr(Location start, Location end, int value, int bits = 32);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class FloatExpr : public Expr {
+class FloatExpr : public ExprMixin<ExprKind::Float> {
 public:
     float value;
 
     FloatExpr(Location start, Location end, float value);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class StringExpr : public Expr {
+class StringExpr : public ExprMixin<ExprKind::String> {
 public:
     std::string value;
 
     StringExpr(Location start, Location end, std::string value);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class VariableExpr : public Expr {
+class VariableExpr : public ExprMixin<ExprKind::Variable> {
 public:
     std::string name;
 
     VariableExpr(Location start, Location end, std::string name);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class VariableAssignmentExpr : public Expr {
+class VariableAssignmentExpr : public ExprMixin<ExprKind::VariableAssignment> {
+public:
+    std::vector<std::string> names;
+    Type* type;
+    utils::Ref<Expr> value;
+    bool external;
+    bool is_multiple_variables;
+
+    VariableAssignmentExpr(
+        Location start, 
+        Location end, 
+        std::vector<std::string> names, 
+        Type* type, 
+        utils::Ref<Expr> value, 
+        bool external = false,
+        bool is_multiple_variables = false
+    );
+    
+    Value accept(Visitor& visitor) override;
+};
+
+class ConstExpr : public ExprMixin<ExprKind::Const> {
 public:
     std::string name;
     Type* type;
     utils::Ref<Expr> value;
-    bool external;
 
-    VariableAssignmentExpr(Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value, bool external = false);
-    
-    Value accept(Visitor& visitor) override;
-    
-};
-
-class ConstExpr : public VariableAssignmentExpr {
-public:
     ConstExpr(Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class ArrayExpr : public Expr {
+class ArrayExpr : public ExprMixin<ExprKind::Array> {
 public:
     std::vector<utils::Ref<Expr>> elements;
 
     ArrayExpr(Location start, Location end, std::vector<utils::Ref<Expr>> elements);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class UnaryOpExpr : public Expr {
+class UnaryOpExpr : public ExprMixin<ExprKind::UnaryOp> {
 public:
     utils::Ref<Expr> value;
     TokenKind op;
 
     UnaryOpExpr(Location start, Location end, TokenKind op, utils::Ref<Expr> value);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class BinaryOpExpr : public Expr {
+class BinaryOpExpr : public ExprMixin<ExprKind::BinaryOp> {
 public:
     utils::Ref<Expr> left, right;
     TokenKind op;
 
     BinaryOpExpr(Location start, Location end, TokenKind op, utils::Ref<Expr> left, utils::Ref<Expr> right);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class InplaceBinaryOpExpr : public Expr {
+class InplaceBinaryOpExpr : public ExprMixin<ExprKind::InplaceBinaryOp> {
 public:
     utils::Ref<Expr> left, right;
     TokenKind op;
 
     InplaceBinaryOpExpr(Location start, Location end, TokenKind op, utils::Ref<Expr> left, utils::Ref<Expr> right);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class CallExpr : public Expr {
+class CallExpr : public ExprMixin<ExprKind::Call> {
 public:
     utils::Ref<ast::Expr> callee;
     std::vector<utils::Ref<Expr>> args;
 
     CallExpr(Location start, Location end, utils::Ref<ast::Expr> callee, std::vector<utils::Ref<Expr>> args);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class ReturnExpr : public Expr {
+class ReturnExpr : public ExprMixin<ExprKind::Return> {
 public:
     utils::Ref<Expr> value;
 
     ReturnExpr(Location start, Location end, utils::Ref<Expr> value);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class PrototypeExpr : public Expr {
+class PrototypeExpr : public ExprMixin<ExprKind::Prototype> {
 public:
     std::string name;
     std::vector<Argument> args;
@@ -254,56 +239,46 @@ public:
     ExternLinkageSpecifier linkage_specifier = ExternLinkageSpecifier::None;
 
     PrototypeExpr(Location start, Location end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class FunctionExpr : public Expr {
+class FunctionExpr : public ExprMixin<ExprKind::Function> {
 public:
     utils::Ref<PrototypeExpr> prototype;
     utils::Ref<BlockExpr> body;
     
     FunctionExpr(Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<BlockExpr> body);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class DeferExpr : public Expr {
+class DeferExpr : public ExprMixin<ExprKind::Defer> {
 public:
     utils::Ref<Expr> expr;
 
     DeferExpr(Location start, Location end, utils::Ref<Expr> expr);
-
     Value accept(Visitor& visitor) override;
-    
 };
 
-class IfExpr : public Expr {
+class IfExpr : public ExprMixin<ExprKind::If> {
 public:
     utils::Ref<Expr> condition;
     utils::Ref<Expr> body;
     utils::Ref<Expr> ebody;
 
     IfExpr(Location start, Location end, utils::Ref<Expr> condition, utils::Ref<Expr> body, utils::Ref<Expr> ebody);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class WhileExpr : public Expr {
+class WhileExpr : public ExprMixin<ExprKind::While> {
 public:
     utils::Ref<Expr> condition;
     utils::Ref<BlockExpr> body;
 
     WhileExpr(Location start, Location end, utils::Ref<Expr> condition, utils::Ref<BlockExpr> body);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class ForExpr : public Expr {
+class ForExpr : public ExprMixin<ExprKind::For> {
 public:
     utils::Ref<Expr> start;
     utils::Ref<Expr> end;
@@ -322,13 +297,13 @@ public:
     Value accept(Visitor& visitor) override;  
 };
 
-class BreakExpr : public Expr {
+class BreakExpr : public ExprMixin<ExprKind::Break> {
 public:
     BreakExpr(Location start, Location end);
     Value accept(Visitor& visitor) override;  
 };
 
-class ContinueExpr : public Expr {
+class ContinueExpr : public ExprMixin<ExprKind::Continue> {
 public:
     ContinueExpr(Location start, Location end);
     Value accept(Visitor& visitor) override;
@@ -342,7 +317,7 @@ struct StructField {
     bool is_private = false;
 };
 
-class StructExpr : public Expr {
+class StructExpr : public ExprMixin<ExprKind::Struct> {
 public:
     std::string name;
     bool opaque;
@@ -361,64 +336,54 @@ public:
     );
 
     Value accept(Visitor& visitor) override;
-    
 };
 
-class ConstructorExpr : public Expr {
+class ConstructorExpr : public ExprMixin<ExprKind::Constructor> {
 public:
     utils::Ref<Expr> parent;
     std::map<std::string, utils::Ref<Expr>> fields;
 
     ConstructorExpr(Location start, Location end, utils::Ref<Expr> parent, std::map<std::string, utils::Ref<Expr>> fields);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class AttributeExpr : public Expr {
+class AttributeExpr : public ExprMixin<ExprKind::Attribute> {
 public:
     utils::Ref<Expr> parent;
     std::string attribute;
 
     AttributeExpr(Location start, Location end, std::string attribute, utils::Ref<Expr> parent);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class ElementExpr : public Expr {
+class ElementExpr : public ExprMixin<ExprKind::Element> {
 public:
     utils::Ref<Expr> value;
     utils::Ref<Expr> index;
 
     ElementExpr(Location start, Location end, utils::Ref<Expr> value, utils::Ref<Expr> index);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class CastExpr : public Expr {
+class CastExpr : public ExprMixin<ExprKind::Cast> {
 public:
     utils::Ref<Expr> value;
     Type* to;
 
     CastExpr(Location start, Location end, utils::Ref<Expr> value, Type* to);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class SizeofExpr : public Expr {
+class SizeofExpr : public ExprMixin<ExprKind::Sizeof> {
 public:
     Type* type;
     utils::Ref<Expr> value;
 
     SizeofExpr(Location start, Location end, Type* type, utils::Ref<Expr> value = nullptr);
-    
     Value accept(Visitor& visitor) override;
 };
 
-class OffsetofExpr : public Expr {
+class OffsetofExpr : public ExprMixin<ExprKind::Offsetof> {
 public:
     utils::Ref<Expr> value;
     std::string field;
@@ -427,38 +392,39 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-class NamespaceExpr : public Expr {
+class NamespaceExpr : public ExprMixin<ExprKind::Namespace> {
 public:
     std::string name;
-    
     std::vector<utils::Ref<Expr>> members;
 
     NamespaceExpr(Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> members);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class NamespaceAttributeExpr : public Expr {
+class NamespaceAttributeExpr : public ExprMixin<ExprKind::NamespaceAttribute> {
 public:
     utils::Ref<Expr> parent;
     std::string attribute;
 
     NamespaceAttributeExpr(Location start, Location end, std::string attribute, utils::Ref<Expr> parent);
-    
     Value accept(Visitor& visitor) override;
-    
 };
 
-class UsingExpr : public Expr {
+class UsingExpr : public ExprMixin<ExprKind::Using> {
 public:
     std::vector<std::string> members;
     utils::Ref<Expr> parent;
 
     UsingExpr(Location start, Location end, std::vector<std::string> members, utils::Ref<Expr> parent);
-    
     Value accept(Visitor& visitor) override;
-    
+};
+
+class TupleExpr : public ExprMixin<ExprKind::Tuple> {
+public:
+    std::vector<utils::Ref<Expr>> elements;
+
+    TupleExpr(Location start, Location end, std::vector<utils::Ref<Expr>> elements);
+    Value accept(Visitor& visitor) override;
 };
 
 }
