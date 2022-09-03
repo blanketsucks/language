@@ -19,7 +19,6 @@ func main() {
     libc::printf("Hello, world!\n");
 }
 ```
-=
 
 You can run these examples like the following
 

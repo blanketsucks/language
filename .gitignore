@@ -6,4 +6,3 @@ proton
 main
 test.*
 test
-output.txt

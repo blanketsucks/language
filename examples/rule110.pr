@@ -1,6 +1,6 @@
 # Definitely not stolen from https://gist.github.com/rexim/c595009436f87ca076e7c4a2fb92ce10 
 
-$include "libc/ffi.pr"
+$include "libc/include.pr"
 
 $define SIZE 100
 
