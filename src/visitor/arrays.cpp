@@ -61,14 +61,14 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     llvm::Type* type = value->getType();
 
     if (!type->isPointerTy()) {
-        ERROR(expr->value->start, "Expected an array or a tuple");
+        ERROR(expr->value->start, "Expected a pointer, array or tuple");
     }
 
     type = type->getNonOpaquePointerElementType();
     if (type->isStructTy()) {
         llvm::StringRef name = type->getStructName();
         if (!name.startswith("__tuple")) {
-            ERROR(expr->value->start, "Expected an array or a tuple");
+            ERROR(expr->value->start, "Expected a pointer, array or tuple");
         }
 
         if (expr->index->kind() != ast::ExprKind::Integer) {
@@ -90,12 +90,22 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->start);
+    if (!index->getType()->isIntegerTy()) {
+        ERROR(expr->index->start, "Indicies must be integers");
+    }
+
     llvm::Type* element = type;
     if (type->isArrayTy()) {
         element = type->getArrayElementType();
     }
 
-    llvm::Value* ptr = this->builder->CreateGEP(type, value, {this->builder->getInt32(0), index});
+    llvm::Value* ptr = nullptr;
+    if (!type->isArrayTy()) {
+        ptr = this->builder->CreateGEP(type, value, index);
+    } else {
+        ptr = this->builder->CreateGEP(type, value, {this->builder->getInt32(0), index});
+    }
+
     return this->builder->CreateLoad(element, ptr);
 }
 
@@ -118,10 +128,8 @@ std::pair<llvm::Value*, int> Visitor::get_array_element(ast::ElementExpr* expr) 
     }
 
     if (type->isArrayTy()) {
-        return {this->builder->CreateGEP(
-            type, parent, {this->builder->getInt32(0), index}
-        ), -1
-        };
+        std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
+        return {this->builder->CreateGEP(type, parent, indicies), -1};
     } else {
         return {this->builder->CreateGEP(type, parent, index), -1};
     }

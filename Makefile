@@ -1,5 +1,4 @@
 SOURCES = $(wildcard src/**/*.cpp src/*.cpp)
-
 OBJS = $(SOURCES:.cpp=.o)
 
 FLAGS = -O3 -Iinclude -Wall -Wextra -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs
