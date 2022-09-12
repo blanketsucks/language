@@ -11,8 +11,14 @@
 #include <functional>
 
 #if _WIN32 || _WIN64
+    #include <io.h>
+
     #define popen _popen
     #define pclose _pclose
+    #define isatty _isatty
+    #define fileno _fileno
+#else
+    #include <unistd.h>
 #endif
 
 #define EMPTY ""
@@ -26,6 +32,8 @@
 namespace utils {
 
 namespace fmt {
+    bool has_ansi_support();
+
     std::string join(std::string sep, std::vector<std::string>& strings);
     std::vector<std::string> split(const std::string& str, char delimiter);
 

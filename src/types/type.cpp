@@ -8,8 +8,9 @@
 #include "types/array.h"
 #include "types/tuple.h"
 
-Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
+std::vector<Type*> Type::ALLOCATED_TYPES;
 
+Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
 
 bool Type::operator==(Type::Value other) {
     return this->value == other;

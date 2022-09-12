@@ -56,6 +56,7 @@ public:
     utils::Ref<ast::NamespaceExpr> parse_namespace();
     utils::Ref<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
     utils::Ref<ast::Expr> parse_extern_block();
+    utils::Ref<ast::EnumExpr> parse_enum();
 
     utils::Ref<ast::Expr> parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op);
     utils::Ref<ast::Expr> parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op);
@@ -87,7 +88,6 @@ private:
     std::map<TokenKind, int> precedences;
     std::map<std::string, Type*> types;
     std::map<uint32_t, TupleType*> tuples;
-    std::vector<Type*> _allocated_types;
 };
 
 #endif

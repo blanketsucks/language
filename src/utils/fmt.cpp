@@ -4,6 +4,10 @@
 
 #include <assert.h>
 
+bool utils::fmt::has_ansi_support() {
+    return isatty(fileno(stdout));
+}
+
 std::string utils::fmt::join(std::string sep, std::vector<std::string>& strings) {
     std::string result;
     for (auto& str : strings) {
@@ -93,7 +97,7 @@ std::string utils::fmt::format(const std::string& str, va_list args) {
             if (fmt.find("|") != std::string::npos) {
                 std::vector<std::string> tokens = fmt::split(fmt, '|');
 
-                const char* code;
+                const char* code = nullptr;
                 if (tokens.size() == 2) {
                     std::string format = tokens[0];
                     std::string foreground = tokens[1];
@@ -114,7 +118,12 @@ std::string utils::fmt::format(const std::string& str, va_list args) {
                 }
 
                 char* val = va_arg(args, char*);
-                value = std::string(code) + val + fmt::create_ansi_code();
+                if (utils::fmt::has_ansi_support()) {
+                    value = std::string(code) + val + fmt::create_ansi_code();
+                } else {
+                    value = val;
+                }
+
             } else if (fmt == "i") {
                 value = std::to_string(va_arg(args, int));
             } else if (fmt == "s") {

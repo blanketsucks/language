@@ -35,14 +35,13 @@ public:
     std::map<std::string, llvm::Constant*> constants;
     std::map<std::string, Struct*> structs;
     std::map<std::string, Namespace*> namespaces;
+    std::map<std::string, Enum*> enums;
 
     std::map<uint32_t, llvm::StructType*> tuples; 
 
     Function* current_function = nullptr;
     Struct* current_struct = nullptr;
     Namespace* current_namespace = nullptr;
-    
-    std::vector<Type*> allocated_types;
 
     llvm::Type* ctx;
 
@@ -133,6 +132,8 @@ public:
     Value visit(ast::UsingExpr* expr);
 
     Value visit(ast::TupleExpr* expr);
+
+    Value visit(ast::EnumExpr* expr);
 };
 
 

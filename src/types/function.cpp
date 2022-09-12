@@ -18,7 +18,10 @@ FunctionType::~FunctionType() {
 }
 
 FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, bool has_varargs) {
-    return new FunctionType(args, return_type, has_varargs);
+    auto type = new FunctionType(args, return_type, has_varargs);
+    Type::ALLOCATED_TYPES.push_back(type);
+
+    return type;
 }
 
 FunctionType* FunctionType::from_llvm_type(llvm::FunctionType* type) {

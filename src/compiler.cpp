@@ -186,7 +186,9 @@ CompilerError Compiler::compile() {
     visitor.visit(std::move(ast));
 
     visitor.cleanup();
+    
     visitor.free();
+    parser.free();
 
     std::string target_triple = llvm::sys::getDefaultTargetTriple();
     std::string err;

@@ -1,6 +1,7 @@
 #include "types/pointer.h"
 
 #include "types/array.h"
+#include "types/type.h"
 #include "utils.h"
 
 PointerType::PointerType(Type* type) : Type(Type::Pointer, LONG_SIZE), type(type) {}
@@ -9,12 +10,15 @@ PointerType::~PointerType() {
     // delete this->type;
 }
 
-PointerType* PointerType::create(Type* type) {
-    return new PointerType(type);
+PointerType* PointerType::create(Type* ty) {
+    auto type = new PointerType(ty);
+    Type::ALLOCATED_TYPES.push_back(type);
+
+    return type;
 }
 
 PointerType* PointerType::from_llvm_type(llvm::Type* type) {
-    return PointerType::create(Type::from_llvm_type(type->getPointerElementType()));
+    return PointerType::create(Type::from_llvm_type(type->getNonOpaquePointerElementType()));
 }
 
 llvm::PointerType* PointerType::to_llvm_type(llvm::LLVMContext& context) {

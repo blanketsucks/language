@@ -1,0 +1,43 @@
+$include "libc/include.pr"
+
+enum MyEnum {
+    A,
+    B,
+    C = 10,
+    D
+}
+
+enum CharEnum : char {
+    A = 'a',
+    B,
+    Y = 'y',
+    Z
+}
+
+# When using types that aren't integer types, you have to provide a value for each field
+enum TupleEnum : (int, int) {
+    A = (1, 2),
+    B = (2, 3),
+}
+
+func main() {
+    libc::printf("MyEnum::A = %d\n", MyEnum::A);
+    libc::printf("MyEnum::B = %d\n", MyEnum::B);
+    libc::printf("MyEnum::C = %d\n", MyEnum::C);
+    libc::printf("MyEnum::D = %d\n", MyEnum::D);
+
+    libc::printf("----------------------------------\n");
+
+    libc::printf("CharEnum::A = %c\n", CharEnum::A);
+    libc::printf("CharEnum::B = %c\n", CharEnum::B);
+    libc::printf("CharEnum::Y = %c\n", CharEnum::Y);
+    libc::printf("CharEnum::Z = %c\n", CharEnum::Z);
+
+    libc::printf("----------------------------------\n");
+
+    let (a, b) = TupleEnum::A;
+    libc::printf("TupleEnum::A = (%d, %d)\n", a, b);
+
+    let (c, d) = TupleEnum::B;
+    libc::printf("TupleEnum::B = (%d, %d)\n", c, d);
+}

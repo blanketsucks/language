@@ -98,13 +98,26 @@ struct Struct {
     std::vector<Struct*> expand();
 };
 
+struct Enum {
+    std::string name;
+    llvm::Type* type;
+
+    std::map<std::string, llvm::Constant*> fields;
+
+    Enum(std::string name, llvm::Type* type);
+
+    void add_field(std::string name, llvm::Constant* value);
+    bool has_field(std::string name);
+    llvm::Constant* get_field(std::string name);
+};
+
 struct Namespace {
     std::string name;
 
     std::map<std::string, Struct*> structs;
     std::map<std::string, Function*> functions;
     std::map<std::string, Namespace*> namespaces;
-    std::map<std::string, llvm::Value*> locals;
+    std::map<std::string, llvm::Constant*> constants;
 
     Namespace(std::string name);
 };
@@ -118,6 +131,7 @@ struct Value {
     Function* function;
     Struct* structure;
     Namespace* ns;
+    Enum* enumeration;
 
     Value(
         llvm::Value* value,
@@ -125,7 +139,8 @@ struct Value {
         llvm::Value* parent = nullptr,
         Function* function = nullptr,
         Struct* structure = nullptr, 
-        Namespace* ns = nullptr
+        Namespace* ns = nullptr,
+        Enum* enumeration = nullptr
     );
 
     llvm::Value* unwrap(Location location);
@@ -136,6 +151,7 @@ struct Value {
     static Value with_function(Function* function);
     static Value with_struct(Struct* structure);
     static Value with_namespace(Namespace* ns);
+    static Value with_enum(Enum* enumeration);
 };
 
 #endif

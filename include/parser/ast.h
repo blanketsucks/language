@@ -54,7 +54,8 @@ enum class ExprKind {
     Namespace,
     NamespaceAttribute,
     Using,
-    Tuple
+    Tuple,
+    Enum
 };
 
 struct Attributes {
@@ -424,6 +425,21 @@ public:
     std::vector<utils::Ref<Expr>> elements;
 
     TupleExpr(Location start, Location end, std::vector<utils::Ref<Expr>> elements);
+    Value accept(Visitor& visitor) override;
+};
+
+struct EnumField {
+    std::string name;
+    utils::Ref<Expr> value = nullptr;
+};
+
+class EnumExpr : public ExprMixin<ExprKind::Enum> {
+public:
+    std::string name;
+    Type* type;
+    std::vector<EnumField> fields;
+
+    EnumExpr(Location start, Location end, std::string name, Type* type, std::vector<EnumField> fields);
     Value accept(Visitor& visitor) override;
 };
 

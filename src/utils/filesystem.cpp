@@ -64,15 +64,12 @@ std::vector<filesystem::Path> filesystem::Path::listdir() {
     WIN32_FIND_DATA fd;
 
     std::wstring wsearch = std::wstring(search.begin(), search.end());
-    HANDLE handle = FindFirstFile(wsearch.c_str(), &fd);
+    HANDLE handle = FindFirstFile(search.c_str(), &fd);
 
     if (handle != INVALID_HANDLE_VALUE) {
         do {
             if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                std::wstring wfilename = std::wstring(fd.cFileName);
-
-                std::string filename = std::string(wfilename.begin(), wfilename.end());
-                paths.push_back(this->join(filename));
+                paths.push_back(this->join(fd.cFileName));
             }
         } while (FindNextFile(handle, &fd));
 

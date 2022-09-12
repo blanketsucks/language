@@ -3,8 +3,8 @@
 #include <assert.h>
 
 void utils::error(Location location, const std::string& message, bool fatal) {
-    std::cerr << fmt::format("{bold|white} {bold|red} {s}", location.format().c_str(), "error:", message);
-    std::cerr << std::endl;
+    std::cout << fmt::format("{bold|white} {bold|red} {s}", location.format().c_str(), "error:", message);
+    std::cout << std::endl;
     
     if (fatal) {
         exit(1);

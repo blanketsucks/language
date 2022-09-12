@@ -1,5 +1,4 @@
 #include "visitor.h"
-#include "llvm/IR/DerivedTypes.h"
 
 llvm::Function* Visitor::create_function(
     std::string name, llvm::Type* ret, std::vector<llvm::Type*> args, bool has_varargs, llvm::Function::LinkageTypes linkage

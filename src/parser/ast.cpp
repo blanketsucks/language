@@ -3,6 +3,8 @@
 #include "objects.h"
 #include "visitor.h"
 
+#include <vector>
+
 using namespace ast;
 
 BlockExpr::BlockExpr(
@@ -46,8 +48,6 @@ VariableExpr::VariableExpr(
 Value VariableExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
-
-
 
 VariableAssignmentExpr::VariableAssignmentExpr(
     Location start, 
@@ -337,5 +337,15 @@ TupleExpr::TupleExpr(
 }
 
 Value TupleExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+EnumExpr::EnumExpr(
+    Location start, Location end, std::string name, Type* type, std::vector<EnumField> fields
+) : ExprMixin(start, end), name(name), type(type) {
+    this->fields = std::move(fields);
+}
+
+Value EnumExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

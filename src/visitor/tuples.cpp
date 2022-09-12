@@ -1,7 +1,4 @@
 #include "visitor.h"
-#include "llvm/IR/Constant.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/Instructions.h"
 
 Value Visitor::visit(ast::TupleExpr* expr) {
     std::vector<Type*> types;

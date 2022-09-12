@@ -25,8 +25,8 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
 
 Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     Value value = expr->parent->accept(*this);
-    if (!value.ns && !value.structure) {
-        ERROR(expr->start, "Expected a namespace or a struct");
+    if (!value.ns && !value.structure && !value.enumeration) {
+        ERROR(expr->start, "Expected a namespace, struct or an enum");
     }
 
     if (value.structure) {
@@ -39,6 +39,13 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
 
         std::string name = value.structure->name;
         ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", expr->attribute, name);
+    } else if (value.enumeration) {
+        if (value.enumeration->has_field(expr->attribute)) {
+            return value.enumeration->get_field(expr->attribute);
+        }
+
+        std::string name = value.enumeration->name;
+        ERROR(expr->start, "Field '{s}' does not exist in enum '{s}'", expr->attribute, name);
     }
 
     Namespace* ns = value.ns;
@@ -51,8 +58,8 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
         return Value::with_function(func);
     } else if (ns->namespaces.find(expr->attribute) != ns->namespaces.end()) {
         return Value::with_namespace(ns->namespaces[expr->attribute]);
-    } else if (ns->locals.find(expr->attribute) != ns->locals.end()) {
-        return ns->locals[expr->attribute];
+    } else if (ns->constants.find(expr->attribute) != ns->constants.end()) {
+        return ns->constants[expr->attribute];
     } else {
         ERROR(expr->start, "Attribute '{s}' does not exist in namespace '{s}'", expr->attribute, ns->name); exit(1);
     }

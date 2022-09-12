@@ -31,6 +31,8 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value::with_struct(this->structs[expr->name]);
     } else if (this->namespaces.find(expr->name) != this->namespaces.end()) {
         return Value::with_namespace(this->namespaces[expr->name]);
+    } else if (this->enums.find(expr->name) != this->enums.end()) {
+        return Value::with_enum(this->enums[expr->name]);
     }
 
     if (this->current_function) {
@@ -44,6 +46,11 @@ Value Visitor::visit(ast::VariableExpr* expr) {
     if (this->current_struct) {
         llvm::Value* value = this->current_struct->locals[expr->name];
         if (value) { return value; }
+    }
+
+    if (this->current_namespace) {
+        llvm::Constant* constant = this->current_namespace->constants[expr->name];
+        if (constant) { return Value(constant, true); }
     }
 
     if (expr->name == "null" || expr->name == "nullptr") {
@@ -62,7 +69,10 @@ Value Visitor::visit(ast::VariableExpr* expr) {
     llvm::Constant* constant = this->constants[expr->name];
     if (constant) {
         llvm::GlobalVariable* global = this->module->getGlobalVariable(constant->getName());
-        if (global) { return Value(this->load(global->getValueType(), global), true); }
+        if (global) { 
+            llvm::Type* type = global->getValueType();
+            return Value(this->load(type, global), true); 
+        }
 
         return Value(constant, true);
     }
@@ -144,15 +154,18 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         name = this->current_function->name + "." + name;
     }
 
+    if (this->current_namespace) {
+        this->current_namespace->constants[expr->name] = (llvm::Constant*)value;
+        return nullptr;
+    }
+
     name = "__const." + name;
     this->module->getOrInsertGlobal(name, type);
 
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);
     global->setInitializer((llvm::Constant*)value);
 
-    if (this->current_namespace) {
-        this->current_namespace->locals[expr->name] = global;
-    } else if (this->current_function) {
+    if (this->current_function) {
         this->current_function->constants[expr->name] = global;
     } else {
         this->constants[expr->name] = global;

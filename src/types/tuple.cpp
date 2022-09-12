@@ -2,12 +2,15 @@
 
 #include <sstream>
 
-TupleType::TupleType(std::vector<Type*> types) : types(types), Type(Type::Tuple, 0) {}
+TupleType::TupleType(std::vector<Type*> types) : Type(Type::Tuple, 0), types(types) {}
 
 TupleType::~TupleType() {}
 
 TupleType* TupleType::create(std::vector<Type*> types) {
-    return new TupleType(types);
+    auto type = new TupleType(types);
+    Type::ALLOCATED_TYPES.push_back(type);
+
+    return type;
 };
 
 TupleType* TupleType::from_llvm_type(llvm::StructType* type) {

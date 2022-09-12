@@ -11,7 +11,10 @@ StructType::~StructType() {
 }
 
 StructType* StructType::create(std::string name, std::vector<Type*> fields) {
-    return new StructType(name, fields);
+    auto type = new StructType(name, fields);
+    Type::ALLOCATED_TYPES.push_back(type);
+
+    return type;
 }
 
 StructType* StructType::from_llvm_type(llvm::StructType* type) {

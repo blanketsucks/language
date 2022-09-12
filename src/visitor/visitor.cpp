@@ -36,10 +36,6 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
 
 void Visitor::cleanup() {
     auto remove = [this](Function* func) {
-        if (!func) {
-            return;
-        }
-
         if (!func->used) {
             for (auto call : func->calls) {
                 if (call) call->used = false;
@@ -54,57 +50,63 @@ void Visitor::cleanup() {
                 function->eraseFromParent();
             }
         }
+
+        for (auto branch : func->branches) {
+            delete branch;
+        }
+
+        delete func;
     };
 
+    Function* entry = this->functions[this->entry];
+    entry->used = true;
+
     for (auto pair : this->functions) {
-        if (pair.first == "main") continue;
+        if (!pair.second) {
+            continue;
+        }
+
         remove(pair.second);
     }
 
     for (auto pair : this->structs) {
         for (auto method : pair.second->methods) {
+            if (!method.second) {
+                continue;
+            }
+
             remove(method.second);
         }
     }
 
+    // TODO: segfault involving `using` expr. Maybe copy objects?
     for (auto pair : this->namespaces) {
-        for (auto method : pair.second->functions) {
-            remove(method.second);
+        for (auto func : pair.second->functions) {
+            if (!func.second) {
+                continue;
+            }
+
+            remove(func.second);
         }
     }
 }
 
 void Visitor::free() {
-    auto free = [](std::map<std::string, Function*> map) {
-        for (auto& pair : map) {
-            for (auto branch : pair.second->branches) {
-                delete branch;
-            }
-
-            delete pair.second;
-        }
-
-        map.clear();
-    };
-
-    free(this->functions);
-
     for (auto pair : this->structs) { 
-        free(pair.second->methods); 
         delete pair.second;
     }
 
     for (auto pair : this->namespaces) {
-        // free(pair.second->functions);
+        delete pair.second;
+    }
+
+    for (auto pair : this->enums) {
         delete pair.second;
     }
 
     this->structs.clear();
     this->namespaces.clear();
-
-    for (auto type : this->allocated_types) {
-        delete type;
-    }
+    this->enums.clear();
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -169,16 +171,7 @@ llvm::Type* Visitor::get_llvm_type(Type* type) {
 }
 
 Type* Visitor::from_llvm_type(llvm::Type* ty) {
-    Type* type = Type::from_llvm_type(ty);
-    this->allocated_types.push_back(type);
-
-    Type* holder = type;
-    while (holder->hasContainedType()) {
-        holder = holder->getContainedType();
-        this->allocated_types.push_back(holder);
-    }
-
-    return type;
+    return Type::from_llvm_type(ty);
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {

@@ -87,6 +87,7 @@ public:
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);
 
+    static std::vector<Type*> ALLOCATED_TYPES;
 protected:
     Type(Value value, size_t size);
 
@@ -104,5 +105,17 @@ static Type* LongLongType = Type::create(Type::LongLong, 64);
 static Type* DoubleType = Type::create(Type::Double, 64);
 static Type* FloatType = Type::create(Type::Float, 32);
 static Type* BooleanType = Type::create(Type::Boolean, 8);
+
+static std::vector<Type*> BUILTIN_TYPES = {
+    VoidType,
+    ShortType,
+    CharType,
+    IntegerType,
+    LongType,
+    LongLongType,
+    DoubleType,
+    FloatType,
+    BooleanType
+};
 
 #endif

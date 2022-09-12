@@ -122,13 +122,35 @@ Namespace::Namespace(std::string name) : name(name) {
     this->structs = {};
     this->functions = {};
     this->namespaces = {};
-    this->locals = {};
+    this->constants = {};
+}
+
+// Enums
+
+Enum::Enum(std::string name, llvm::Type* type) : name(name), type(type) {}
+
+void Enum::add_field(std::string name, llvm::Constant* value) {
+    this->fields[name] = value;
+}
+
+bool Enum::has_field(std::string name) {
+    return this->fields.find(name) != this->fields.end();
+}
+
+llvm::Constant* Enum::get_field(std::string name) {
+    return this->fields[name];
 }
 
 // Values
 
 Value::Value(
-    llvm::Value* value, bool is_constant, llvm::Value* parent, Function* function, Struct* structure, Namespace* ns
+    llvm::Value* value, 
+    bool is_constant, 
+    llvm::Value* parent, 
+    Function* function, 
+    Struct* structure, 
+    Namespace* ns,
+    Enum* enumeration
 ) {
     this->value = value;
     this->is_constant = is_constant;
@@ -136,6 +158,7 @@ Value::Value(
     this->function = function;
     this->structure = structure;
     this->ns = ns;
+    this->enumeration = enumeration;
 }
 
 llvm::Value* Value::unwrap(Location location) {
@@ -166,4 +189,8 @@ Value Value::with_struct(Struct* structure) {
 
 Value Value::with_namespace(Namespace* ns) {
     return Value(nullptr, false, nullptr, nullptr, nullptr, ns);
+}
+
+Value Value::with_enum(Enum* enumeration) {
+    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, enumeration);
 }

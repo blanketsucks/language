@@ -1,5 +1,4 @@
 #include "parser/parser.h"
-#include "parser/ast.h"
 
 #include <string>
 #include <cstring>
@@ -42,16 +41,12 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
 }
 
 void Parser::free() {
-    for (auto pair : this->types) {
-        if (pair.second) {
-            delete pair.second;
-        }
+    for (auto type : Type::ALLOCATED_TYPES) {
+        delete type;
     }
 
-    for (auto type : this->_allocated_types) {
-        if (type) {
-            delete type;
-        }
+    for (auto type : BUILTIN_TYPES) {
+        delete type;
     }
 }
 
@@ -132,7 +127,6 @@ Type* Parser::parse_type(std::string name, bool should_error) {
         }
 
         type = FunctionType::create(args, return_type, false)->getPointerTo();
-        this->_allocated_types.push_back(type);
     } else if (this->current == TokenKind::LParen) {
         this->next();
         if (this->current == TokenKind::RParen) {
@@ -159,7 +153,6 @@ Type* Parser::parse_type(std::string name, bool should_error) {
             TupleType* tuple = TupleType::create(types);
             this->tuples[tuple->hash()] = tuple;
 
-            this->_allocated_types.push_back(tuple);
             type = tuple;
         }
     } else if (this->current == TokenKind::LBracket) {
@@ -171,8 +164,6 @@ Type* Parser::parse_type(std::string name, bool should_error) {
 
         this->expect(TokenKind::RBracket, "]");
         type = ArrayType::create(result, element);
-
-        this->_allocated_types.push_back(type);
     } else {
         bool skip_token = true;
         if (this->peek() == TokenKind::DoubleColon) {
@@ -210,8 +201,6 @@ Type* Parser::parse_type(std::string name, bool should_error) {
 
     while (this->current == TokenKind::Mul) {
         type = type->getPointerTo();
-        this->_allocated_types.push_back(type);
-
         this->next();
     }
 
@@ -647,6 +636,41 @@ utils::Ref<ast::Expr> Parser::parse_extern_block() {
     return this->parse_extern(linkage);
 }
 
+utils::Ref<ast::EnumExpr> Parser::parse_enum() {
+    Location start = this->current.start;
+    std::string name = this->expect(TokenKind::Identifier, "enum name").value;
+
+    Type* type = IntegerType;
+    if (this->current == TokenKind::Colon) {
+        this->next();
+        type = this->parse_type(this->current.value);
+    }
+
+    this->expect(TokenKind::LBrace, "{");
+
+    std::vector<ast::EnumField> fields;
+    while (this->current != TokenKind::RBrace) {
+        std::string field = this->expect(TokenKind::Identifier, "enum field name").value;
+        utils::Ref<ast::Expr> value = nullptr;
+
+        if (this->current == TokenKind::Assign) {
+            this->next();
+            value = this->expr(false);
+        }
+
+        fields.push_back({field, std::move(value)});
+        if (this->current != TokenKind::Comma) {
+            break;
+        }
+
+        this->next();
+    }
+
+    Location end = this->expect(TokenKind::RBrace, "}").end;
+    return utils::make_ref<ast::EnumExpr>(start, end, name, type, std::move(fields));
+
+}
+
 std::vector<utils::Ref<ast::Expr>> Parser::parse() {
     return this->statements();
 }
@@ -860,6 +884,9 @@ utils::Ref<ast::Expr> Parser::statement() {
 
                 auto expr = this->expr();
                 return utils::make_ref<ast::DeferExpr>(start, this->current.end, std::move(expr));
+            } else if (this->current.value == "enum") {
+                this->next();
+                return this->parse_enum();
             } else {
                 ERROR(this->current.start, "Expected an expression"); exit(1);
             }
