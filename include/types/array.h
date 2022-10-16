@@ -8,8 +8,7 @@
 class ArrayType : public Type {
 public:
     static ArrayType* create(size_t length, Type* element);
-    ~ArrayType() override;
-
+    
     static ArrayType* from_llvm_type(llvm::ArrayType* type);
     llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
 

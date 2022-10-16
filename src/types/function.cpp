@@ -9,17 +9,9 @@ FunctionType::FunctionType(
     std::vector<Type*> args, Type* return_type, bool has_varargs
 ) : Type(Type::Function, 0), args(args), return_type(return_type), has_varargs(has_varargs) {}
 
-FunctionType::~FunctionType() {
-    // for (auto argument : this->args) {
-    //     delete argument;
-    // }
-
-    // delete this->return_type;
-}
-
 FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, bool has_varargs) {
     auto type = new FunctionType(args, return_type, has_varargs);
-    Type::ALLOCATED_TYPES.push_back(type);
+    Type::push(type);
 
     return type;
 }
@@ -49,16 +41,6 @@ FunctionType* FunctionType::copy() {
     }
 
     return FunctionType::create(args, this->return_type->copy(), this->has_varargs);
-}
-
-uint32_t FunctionType::hash() {
-    uint32_t hash = 0;
-    for (auto& arg : this->args) {
-        hash |= arg->hash();
-    }
-
-    hash |= this->return_type->hash();
-    return hash;
 }
 
 std::string FunctionType::str() {

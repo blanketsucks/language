@@ -10,6 +10,7 @@
 
 class Visitor;
 struct Struct;
+struct Scope;
 
 struct Branch {
     std::string name;
@@ -26,6 +27,12 @@ struct Branch {
     bool has_jump() { return this->has_return || this->has_break || this->has_continue; }
 };
 
+struct FunctionReturn {
+    llvm::Type* type;
+    llvm::AllocaInst* value;
+    llvm::BasicBlock* block;
+};
+
 struct Function {
     std::string name;
     llvm::Type* ret;
@@ -33,17 +40,21 @@ struct Function {
     llvm::Function* value;
     std::vector<llvm::Type*> args;
     std::map<int, llvm::Value*> defaults;
-    std::map<std::string, llvm::AllocaInst*> locals;
-    std::map<std::string, llvm::GlobalVariable*> constants;
+
+    Scope* scope;
 
     std::vector<Branch*> branches;
     Branch* branch;
 
     llvm::AllocaInst* return_value;
     llvm::BasicBlock* return_block;
+    llvm::BasicBlock* current_block;
 
     std::vector<Function*> calls;
     std::vector<ast::Expr*> defers;
+
+    Location start;
+    Location end;
 
     // Structure related attributes
     Struct* parent;
@@ -51,15 +62,31 @@ struct Function {
 
     ast::Attributes attrs;
 
+    bool is_entry;
     bool is_intrinsic;
+    bool is_anonymous;
     bool used;
 
-    Function(std::string name, std::vector<llvm::Type*> args, llvm::Type* ret, bool is_intrinsic, ast::Attributes attrs);
+    Function(
+        std::string name,
+        std::vector<llvm::Type*> args, 
+        llvm::Type* ret,
+        llvm::Function* value,
+        bool is_entry,
+        bool is_intrinsic,
+        bool is_anonymous, 
+        ast::Attributes attrs
+    );
 
     Branch* create_branch(std::string name, llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
     bool has_return();
 
     void defer(Visitor& visitor);
+};
+
+struct FunctionCall {
+    llvm::Function* function;
+    std::vector<llvm::Value*> args;
 };
 
 struct StructField {
@@ -83,6 +110,9 @@ struct Struct {
     std::vector<Struct*> parents;
     std::vector<Struct*> children;
 
+    Location start;
+    Location end;
+
     bool opaque;
 
     Struct(std::string name, bool opaque, llvm::StructType* type, std::map<std::string, StructField> fields);
@@ -92,7 +122,7 @@ struct Struct {
 
     std::vector<StructField> get_fields(bool with_private = false);
 
-    bool has_method(const std::string& name);
+    bool has_method(std::string name);
     llvm::Value* get_variable(std::string name);
 
     std::vector<Struct*> expand();
@@ -102,24 +132,78 @@ struct Enum {
     std::string name;
     llvm::Type* type;
 
-    std::map<std::string, llvm::Constant*> fields;
+    Location start;
+    Location end;
+
+    Scope* scope;
 
     Enum(std::string name, llvm::Type* type);
 
     void add_field(std::string name, llvm::Constant* value);
     bool has_field(std::string name);
-    llvm::Constant* get_field(std::string name);
+    llvm::Value* get_field(std::string name);
 };
 
 struct Namespace {
     std::string name;
 
-    std::map<std::string, Struct*> structs;
-    std::map<std::string, Function*> functions;
-    std::map<std::string, Namespace*> namespaces;
-    std::map<std::string, llvm::Constant*> constants;
+    Scope* scope;
 
-    Namespace(std::string name);
+    Location start;
+    Location end;
+
+    Namespace(std::string name) : name(name) {};
+};
+
+enum class ScopeType {
+    Global,
+    Function,
+    Anonymous,
+    Struct,
+    Enum,
+    Namespace
+};
+
+struct Scope {
+    using Local = std::pair<llvm::Value*, bool>;
+
+    std::string name;
+    ScopeType type;
+
+    Scope* parent;
+    std::vector<Scope*> children;
+
+    std::map<std::string, llvm::Value*> variables;
+    std::map<std::string, llvm::Value*> constants;
+    std::map<std::string, Function*> functions;
+    std::map<std::string, Struct*> structs;
+    std::map<std::string, Enum*> enums;
+    std::map<std::string, Namespace*> namespaces;
+
+    Scope(std::string name, ScopeType type, Scope* parent = nullptr);
+
+    Local get_local(std::string name);
+
+    bool has_variable(std::string name);
+    bool has_constant(std::string name);
+    bool has_function(std::string name);
+    bool has_struct(std::string name);
+    bool has_enum(std::string name);
+    bool has_namespace(std::string name);
+
+    llvm::Value* get_variable(std::string name);
+    llvm::Value* get_constant(std::string name);
+    Function* get_function(std::string name);
+    Struct* get_struct(std::string name);
+    Enum* get_enum(std::string name);
+    Namespace* get_namespace(std::string name);
+
+    std::vector<Function*> get_functions();
+    std::vector<Struct*> get_structs();
+    std::vector<Enum*> get_enums();
+    std::vector<Namespace*> get_namespaces();
+
+    void exit(Visitor* visitor);
 };
 
 struct Value {

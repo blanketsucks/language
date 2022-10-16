@@ -5,14 +5,18 @@
 #include <iostream>
 #include <stdint.h>
 
-ArrayType::ArrayType(size_t length, Type* element) : Type(Type::Array, length * element->getSize()), element(element), length(length) {}
-
-ArrayType::~ArrayType() {
-    // delete this->element;
+ArrayType::ArrayType(
+    size_t length, Type* element
+) : Type(Type::Array, length * element->getSize()) {
+    this->length = length;
+    this->element = element;
 }
 
 ArrayType* ArrayType::create(size_t length, Type* element) {
-    return new ArrayType(length, element);
+    auto type = new ArrayType(length, element);
+    Type::push(type);
+
+    return type;
 }
 
 ArrayType* ArrayType::from_llvm_type(llvm::ArrayType* type) {

@@ -2,17 +2,22 @@
 #define _COMPILER_H
 
 #include "preprocessor.h"
+#include "utils.h"
+
+#include "llvm/Support/FormatVariadic.h"
 
 #include <map>
 #include <vector>
 #include <string>
+#include <chrono>
 
 enum class OutputFormat {
     Object,
     LLVM, // Refers to LLVM IR
     Bitcode, // Refers to LLVM Bitcode
     Assembly,
-    Executable
+    Executable,
+    SharedLibrary
 };
 
 static std::map<OutputFormat, const char*> OUTPUT_FORMATS_TO_STR = {
@@ -21,6 +26,7 @@ static std::map<OutputFormat, const char*> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Bitcode, "LLVM Bitcode"},
     {OutputFormat::Assembly, "Assembly"},
     {OutputFormat::Executable, "Executable"},
+    {OutputFormat::SharedLibrary, "Shared Library"}
 };
 
 enum class OptimizationLevel {
@@ -40,8 +46,23 @@ struct CompilerError {
 
 class Compiler {
 public:
+    using TimePoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
+
+    static TimePoint now();
+    static double duration(TimePoint start, TimePoint end);
+    static void log_duration(const char* message, TimePoint start);
+
     static void init();
-    [[noreturn]] static void error(const std::string& str, ...);
+
+    template<typename... Ts> [[noreturn]] static void error(const std::string& str, Ts&&... values) {
+        std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
+        std::string message = FORMAT(
+            "{0} {1}: {2}", utils::color(WHITE, "proton:"), utils::color(RED, "error:"), fmt
+        );
+
+        std::cout << message << std::endl;
+        exit(1);
+    }
 
     void add_library(std::string name);
     void add_library_path(std::string path);
@@ -57,6 +78,10 @@ public:
 
     void set_input_file(std::string file);
     void set_entry_point(std::string entry);
+
+    void set_target(std::string target);
+
+    void set_verbose(bool verbose);
 
     void set_linker(std::string linker);
 
@@ -76,9 +101,12 @@ private:
     OutputFormat format = OutputFormat::Executable;
     OptimizationLevel opt;
 
+    bool verbose = false;
+
     std::string output;
     std::string input;
     std::string entry;
+    std::string target;
 
     std::string linker = "cc";
     std::vector<std::pair<std::string, std::string>> extras;

@@ -18,6 +18,7 @@ namespace ast {
 
 enum class ExternLinkageSpecifier {
     None,
+    Unspecified,
     C,
 };
 
@@ -55,7 +56,8 @@ enum class ExprKind {
     NamespaceAttribute,
     Using,
     Tuple,
-    Enum
+    Enum,
+    Where
 };
 
 struct Attributes {
@@ -235,20 +237,29 @@ class PrototypeExpr : public ExprMixin<ExprKind::Prototype> {
 public:
     std::string name;
     std::vector<Argument> args;
-    bool has_varargs;
+    bool is_variadic;
     Type* return_type;
-    ExternLinkageSpecifier linkage_specifier = ExternLinkageSpecifier::None;
+    ExternLinkageSpecifier linkage;
 
-    PrototypeExpr(Location start, Location end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs);
+    PrototypeExpr(
+        Location start, 
+        Location end, 
+        std::string name, 
+        std::vector<Argument> args, 
+        bool is_variadic,
+        Type* return_type, 
+        ExternLinkageSpecifier linkage
+    );
+
     Value accept(Visitor& visitor) override;
 };
 
 class FunctionExpr : public ExprMixin<ExprKind::Function> {
 public:
     utils::Ref<PrototypeExpr> prototype;
-    utils::Ref<BlockExpr> body;
+    utils::Ref<Expr> body;
     
-    FunctionExpr(Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<BlockExpr> body);
+    FunctionExpr(Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<Expr> body);
     Value accept(Visitor& visitor) override;
 };
 
@@ -313,7 +324,6 @@ public:
 struct StructField {
     std::string name;
     Type* type;
-
     uint32_t index;
     bool is_private = false;
 };
@@ -396,9 +406,12 @@ public:
 class NamespaceExpr : public ExprMixin<ExprKind::Namespace> {
 public:
     std::string name;
+    std::deque<std::string> parents;
     std::vector<utils::Ref<Expr>> members;
 
-    NamespaceExpr(Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> members);
+    NamespaceExpr(
+        Location start, Location end, std::string name, std::deque<std::string> parents, std::vector<utils::Ref<Expr>> members
+    );
     Value accept(Visitor& visitor) override;
 };
 
@@ -440,6 +453,14 @@ public:
     std::vector<EnumField> fields;
 
     EnumExpr(Location start, Location end, std::string name, Type* type, std::vector<EnumField> fields);
+    Value accept(Visitor& visitor) override;
+};
+
+class WhereExpr : public ExprMixin<ExprKind::Where> {
+public:
+    utils::Ref<Expr> expr;
+
+    WhereExpr(Location start, Location end, utils::Ref<Expr> expr);
     Value accept(Visitor& visitor) override;
 };
 

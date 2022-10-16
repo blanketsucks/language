@@ -1,21 +1,19 @@
 #include "compiler.h"
 #include "include.h"
 #include "utils.h"
-#include <system_error>
-
-#define _DEBUG_MODULE 0
-
 
 struct Arguments {
     std::string filename;
     std::string output;
     std::string entry;
+    std::string target;
 
     std::vector<std::string> includes;
     Libraries libraries;
 
     OutputFormat format;
     bool optimize = true;
+    bool verbose = false;
 };
 
 utils::argparse::ArgumentParser create_argument_parser() {
@@ -100,6 +98,22 @@ utils::argparse::ArgumentParser create_argument_parser() {
         "dir"
     );
 
+    parser.add_argument(
+        "--verbose",
+        utils::argparse::NoArguments,
+        "-v"
+    );
+
+    parser.add_argument(
+        "-shared",
+        utils::argparse::NoArguments
+    );
+
+    parser.add_argument(
+        "--target",
+        utils::argparse::Required
+    );
+
     return parser;
 }
 
@@ -126,10 +140,7 @@ Arguments parse_arguments(int argc, char** argv) {
 
     std::vector<std::string> filenames = parser.parse(argc, argv);
     if (filenames.empty()) {
-        std::string fmt = utils::fmt::format("{bold|white} {bold|red} No input files specified.", "proton:", "error:");
-        std::cerr << fmt << std::endl;
-
-        exit(1);
+        Compiler::error("No input files provided");
     }
 
     std::string filename = filenames.back();
@@ -143,14 +154,17 @@ Arguments parse_arguments(int argc, char** argv) {
         args.format = OutputFormat::Assembly;
     } else if (parser.get("emit-llvm-bc", false)) {
         args.format = OutputFormat::Bitcode;
+    } else if (parser.get("shared", false)) {
+        args.format = OutputFormat::SharedLibrary;
     } else {
         args.format = OutputFormat::Executable;
     }
 
     args.optimize = !parser.get("O0", false);
+    args.verbose = parser.get("verbose", false);
     args.filename = filename;
 
-    if (!parser.has_value("output")) {
+    if (!parser.has("output")) {
         args.output = utils::filesystem::replace_extension(filename, "o");
         switch (args.format) {
             case OutputFormat::LLVM:
@@ -159,6 +173,12 @@ Arguments parse_arguments(int argc, char** argv) {
                 args.output = utils::filesystem::replace_extension(args.output, "bc"); break;
             case OutputFormat::Assembly:
                 args.output = utils::filesystem::replace_extension(args.output, "s"); break;
+            case OutputFormat::SharedLibrary:
+            #if _WIN32 || _WIN64
+                args.output = utils::filesystem::replace_extension(args.output, "lib"); break;
+            #else
+                args.output = utils::filesystem::replace_extension(args.output, "so"); break;
+            #endif
             case OutputFormat::Executable:
             #if _WIN32 || _WIN64
                 args.output = utils::filesystem::replace_extension(args.output, "exe"); break;
@@ -172,10 +192,14 @@ Arguments parse_arguments(int argc, char** argv) {
         args.output = parser.get<char*>("output");
     }
 
+    if (parser.has("target")) {
+        args.target = parser.get<char*>("target");
+    }
+
     args.libraries.names = get_string_vector(parser, "library");
     args.libraries.paths = get_string_vector(parser, "L");
-
     args.includes = get_string_vector(parser, "I");
+
     return args;
 }
 
@@ -194,6 +218,8 @@ int main(int argc, char** argv) {
     compiler.set_input_file(args.filename);
     compiler.set_output_file(args.output);
     compiler.set_output_format(args.format);
+    compiler.set_target(args.target);
+    compiler.set_verbose(args.verbose);
 
     compiler.set_optimization_level(args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug );
     
@@ -202,7 +228,7 @@ int main(int argc, char** argv) {
         if (!inc.exists()) {
             Compiler::error("Could not find include path '{s}'", include);
         }
-
+        
         if (!inc.isdir()) {
             Compiler::error("Include path must be a directory");
         }
@@ -232,5 +258,6 @@ int main(int argc, char** argv) {
         return error.code;
     }
 
+    llvm::llvm_shutdown();
     return 0;
 }

@@ -120,6 +120,7 @@ extern "C" {
     func atexit(f: func() -> void);
     
     func strerror(err: int) -> char*;
+    func perror(s: char*);
 
     func __errno_location() -> int*;
     func __h_errno_location() -> int*;

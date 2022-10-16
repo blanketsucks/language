@@ -8,7 +8,6 @@
 class FunctionType : public Type {
 public:
     static FunctionType* create(std::vector<Type*> args, Type* return_type, bool has_varargs);
-    ~FunctionType() override;
 
     static FunctionType* from_llvm_type(llvm::FunctionType* type);
     llvm::FunctionType* to_llvm_type(llvm::LLVMContext& context) override;
@@ -16,8 +15,6 @@ public:
     FunctionType* copy() override;
 
     std::string str() override;
-
-    uint32_t hash() override;
 
     std::vector<Type*> arguments() { return this->args; }
     Type* getReturnType() { return this->return_type; }

@@ -4,11 +4,9 @@
 
 TupleType::TupleType(std::vector<Type*> types) : Type(Type::Tuple, 0), types(types) {}
 
-TupleType::~TupleType() {}
-
 TupleType* TupleType::create(std::vector<Type*> types) {
     auto type = new TupleType(types);
-    Type::ALLOCATED_TYPES.push_back(type);
+    Type::push(type);
 
     return type;
 };
@@ -38,7 +36,7 @@ std::vector<Type*> TupleType::getElementTypes() {
 uint32_t TupleType::getHashFromTypes(std::vector<Type*> types) {
     uint32_t hash = 0;
     for (auto& type : types) {
-        hash |= type->hash();
+        hash |= type->getValue();
     }
 
     return hash;
@@ -46,14 +44,6 @@ uint32_t TupleType::getHashFromTypes(std::vector<Type*> types) {
 
 uint32_t TupleType::hash() {
     return TupleType::getHashFromTypes(this->types);
-}
-
-bool TupleType::has(Type::Value value) {
-    return bool(this->hash() & value);
-} 
-
-bool TupleType::has(Type* type) {
-    return this->has(type->getValue());
 }
 
 std::string TupleType::str() {

@@ -2,7 +2,9 @@
 .clangd
 
 proton
+proton-jit
 *.o
 main
 test.*
 test
+leakcheck.hpp

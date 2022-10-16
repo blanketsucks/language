@@ -11,7 +11,6 @@
 class TupleType : public Type {
 public:
     static TupleType* create(std::vector<Type*> types);
-    ~TupleType() override;
 
     static TupleType* from_llvm_type(llvm::StructType* type);
     llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
@@ -19,10 +18,7 @@ public:
     std::vector<Type*> getElementTypes();
 
     static uint32_t getHashFromTypes(std::vector<Type*> types);
-    uint32_t hash() override;
-    
-    bool has(Type::Value value);
-    bool has(Type* type);
+    uint32_t hash();
 
     std::string str() override;
 

@@ -1,17 +1,18 @@
 #include "visitor.h"
+#include "parser/ast.h"
 #include "utils.h"
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Transforms/Scalar.h"
+#include "llvm/IR/DerivedTypes.h"
+
+#include <string>
 
 Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->name = name;
     this->entry = entry;
     this->with_optimizations = with_optimizations;
 
-    this->module = utils::make_ref<llvm::Module>(name, this->context);
-    this->builder = utils::make_ref<llvm::IRBuilder<>>(this->context);
+    this->context = utils::make_ref<llvm::LLVMContext>();
+    this->module = utils::make_ref<llvm::Module>(name, *this->context);
+    this->builder = utils::make_ref<llvm::IRBuilder<>>(*this->context);
     this->fpm = utils::make_ref<llvm::legacy::FunctionPassManager>(this->module.get());
 
     this->fpm->add(llvm::createPromoteMemoryToRegisterPass());
@@ -20,23 +21,22 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->fpm->add(llvm::createGVNPass());
     this->fpm->add(llvm::createCFGSimplificationPass());
     this->fpm->add(llvm::createDeadStoreEliminationPass());
-    this->fpm->add(llvm::createAggressiveDCEPass());
-    
+
     this->fpm->doInitialization();
 
-    this->constants = {
-        {"null", llvm::ConstantInt::getNullValue(llvm::Type::getInt1PtrTy(this->context))},
-        {"nullptr", llvm::ConstantPointerNull::get(llvm::Type::getInt1PtrTy(this->context))}
-    };
+    this->global_scope = new Scope(name, ScopeType::Global);
+    this->scope = this->global_scope;
 
     this->functions = {};
     this->structs = {};
     this->namespaces = {};
 }
 
-void Visitor::cleanup() {
+void Visitor::free() {
+    this->fpm->doFinalization();
+
     auto remove = [this](Function* func) {
-        if (!func->used) {
+        if (!func->used && !func->is_entry && !func->is_anonymous) {
             for (auto call : func->calls) {
                 if (call) call->used = false;
             }
@@ -50,74 +50,84 @@ void Visitor::cleanup() {
                 function->eraseFromParent();
             }
         }
-
-        for (auto branch : func->branches) {
-            delete branch;
-        }
-
+        
+        for (auto branch : func->branches) delete branch;
         delete func;
     };
 
-    Function* entry = this->functions[this->entry];
-    entry->used = true;
-
-    for (auto pair : this->functions) {
-        if (!pair.second) {
-            continue;
-        }
-
-        remove(pair.second);
-    }
-
-    for (auto pair : this->structs) {
-        for (auto method : pair.second->methods) {
-            if (!method.second) {
-                continue;
-            }
-
-            remove(method.second);
-        }
-    }
-
-    // TODO: segfault involving `using` expr. Maybe copy objects?
-    for (auto pair : this->namespaces) {
-        for (auto func : pair.second->functions) {
-            if (!func.second) {
-                continue;
-            }
-
+    for (auto& scope : this->scope->children) {
+        for (auto& func : scope->functions) {
             remove(func.second);
         }
-    }
-}
 
-void Visitor::free() {
-    for (auto pair : this->structs) { 
-        delete pair.second;
+        for (auto pair : scope->structs) {
+            for (auto method : pair.second->methods) {
+                if (!method.second) {
+                    continue;
+                }
+
+                remove(method.second);
+            }
+
+            delete pair.second;
+        }
+
+        for (auto pair : scope->namespaces) {
+            delete pair.second;
+        }
+
+        for (auto pair : scope->enums) {
+            delete pair.second;
+        }
+
+        delete scope;
     }
 
-    for (auto pair : this->namespaces) {
-        delete pair.second;
-    }
 
-    for (auto pair : this->enums) {
-        delete pair.second;
-    }
+    // TODO: segfault involving `using` expr. Maybe copy objects?
+    // for (auto pair : this->namespaces) {
+    //     for (auto func : pair.second->functions) {
+    //         if (!func.second) {
+    //             continue;
+    //         }
 
-    this->structs.clear();
-    this->namespaces.clear();
-    this->enums.clear();
+    //         remove(func.second);
+    //     }
+
+    //     delete pair.second;
+    // }
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
     this->module->print(stream, nullptr);
 }
 
-std::pair<std::string, bool> Visitor::is_intrinsic(std::string name) {
+void Visitor::set_insert_point(llvm::BasicBlock* block, bool push) {
+    if (this->current_function) {
+        Function* func = this->current_function;
+        func->current_block = block;
+
+        if (push) {
+            func->value->getBasicBlockList().push_back(block);
+        }
+    }
+
+    this->builder->SetInsertPoint(block);
+}
+
+Scope* Visitor::create_scope(std::string name, ScopeType type) {
+    Scope* scope = new Scope(name, type, this->scope);
+    this->scope->children.push_back(scope);
+
+    this->scope = scope;
+    return scope;
+}
+
+std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name) {
     bool is_intrinsic = false;
-    if (name.substr(0, 12) == "__intrinsic_") {
+    if (name.substr(0, 17) == "__llvm_intrinsic_") {
         is_intrinsic = true;
-        name = name.substr(12);
+        name = name.substr(17);
         for (size_t i = 0; i < name.size(); i++) {
             if (name[i] == '_') {
                 name[i] = '.';
@@ -129,111 +139,64 @@ std::pair<std::string, bool> Visitor::is_intrinsic(std::string name) {
 }
 
 std::string Visitor::format_name(std::string name) {
-    if (this->current_namespace) { name = this->current_namespace->name + "." + name; }
-    if (this->current_struct) { name = this->current_struct->name + "." + name; }
+    if (this->current_namespace) { name = this->current_namespace->name + "::" + name; }
+    if (this->current_struct) { name = this->current_struct->name + "::" + name; }
 
     return name;
 }
 
-llvm::AllocaInst* Visitor::create_alloca(llvm::Function* function, llvm::Type* type) {
+llvm::AllocaInst* Visitor::create_alloca(llvm::Type* type) {
+    llvm::BasicBlock* block = this->builder->GetInsertBlock();
+    llvm::Function* function = block->getParent();
+
+    assert(function && "`create_alloca` cannot be called from a global scope");
+
     llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
     return tmp.CreateAlloca(type, nullptr);
 }
 
-llvm::Type* Visitor::get_llvm_type(Type* type) {
-    std::string name = type->name();
-    if (this->structs.find(name) != this->structs.end()) {
-        Struct* structure = this->structs[name];
-        llvm::Type* ty = structure->type;
-
-        while (type->isPointer()) {
-            ty = ty->getPointerTo();
-            type = type->getPointerElementType();
-        }
-        
-        return ty;
-    } else if (type->isTuple()) { // TODO: pointers to tuples
-        TupleType* tuple = type->cast<TupleType>();
-        uint32_t hash = tuple->hash();
-        
-        llvm::StructType* structure;
-        if (this->tuples.find(hash) != this->tuples.end()) {
-            structure = this->tuples[hash];
-        } else {
-            structure = tuple->to_llvm_type(this->context);
-            this->tuples[hash] = structure;
-        }
-
-        return structure;
+llvm::Value* Visitor::load(llvm::Value* value, llvm::Type* type) {
+    if (type) {
+        return this->builder->CreateLoad(type, value);
     }
 
-    return type->to_llvm_type(this->context);
-}
-
-Type* Visitor::from_llvm_type(llvm::Type* ty) {
-    return Type::from_llvm_type(ty);
-}
-
-llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {
-    return this->cast(value, type->to_llvm_type(this->context));
-}
-
-llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
-    if (value->getType() == type) {
-        return value;
-    }
-
-    if (value->getType()->isIntegerTy() && type->isIntegerTy()) {
-        return this->builder->CreateIntCast(value, type, false);
-    } else if (value->getType()->isPointerTy() && type->isIntegerTy()) {
-        return this->builder->CreatePtrToInt(value, type);
-    }
-
-    return this->builder->CreateBitCast(value, type);
-}
-
-llvm::Value* Visitor::load(llvm::Type* type, llvm::Value* value) {
-    if (type->isAggregateType()) {
-        return value;
-    }
-
-    return this->builder->CreateLoad(type, value);
-}
-
-llvm::Value* Visitor::load(llvm::Value* value) {
-    llvm::Type* type = value->getType();
+    type = value->getType();
     if (type->isPointerTy()) {
         type = type->getNonOpaquePointerElementType();
-        if (type->isAggregateType()) {
-            return this->builder->CreateLoad(type, value);
-        }
+        return this->builder->CreateLoad(type, value);
     }
 
     return value;
 }
 
-std::vector<llvm::Value*> Visitor::unpack(Location location, llvm::Value* value, uint32_t n) {
+std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Location location) {
     llvm::Type* type = value->getType();
     if (!type->isPointerTy()) {
         if (!type->isStructTy()) {
-            std::string name = Type::from_llvm_type(type)->name();
-            ERROR(location, "Cannot unpack value of type '{s}'", name);
+            ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
         }
 
         llvm::StringRef name = type->getStructName();
         if (!name.startswith("__tuple")) {
-            ERROR(location, "Cannot unpack value of type '{s}'", name);
+            ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
         }
 
         uint32_t elements = type->getStructNumElements();
         if (n > elements) {
-            ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+            ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
         }
 
         std::vector<llvm::Value*> values;
-        for (uint32_t i = 0; i < n; i++) {
-            llvm::Value* val = this->builder->CreateExtractValue(value, i);
-            values.push_back(val);
+        if (llvm::isa<llvm::ConstantStruct>(value)) {
+            llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(value);
+            for (uint32_t i = 0; i < n; i++) {
+                values.push_back(constant->getAggregateElement(i));
+            }
+        } else {
+            for (uint32_t i = 0; i < n; i++) {
+                llvm::Value* val = this->builder->CreateExtractValue(value, i);
+                values.push_back(val);
+            }
         }
 
         return values;
@@ -241,14 +204,13 @@ std::vector<llvm::Value*> Visitor::unpack(Location location, llvm::Value* value,
 
     type = type->getNonOpaquePointerElementType();
     if (!type->isAggregateType()) {
-        std::string name = Type::from_llvm_type(type)->name();
-        ERROR(location, "Cannot unpack value of type '{s}'", name);
+        ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
     }
 
     if (type->isArrayTy()) {
         uint32_t elements = type->getArrayNumElements();
         if (n > elements) {
-            ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+            ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
         }
 
         llvm::Type* ty = type->getArrayElementType();
@@ -267,12 +229,12 @@ std::vector<llvm::Value*> Visitor::unpack(Location location, llvm::Value* value,
     llvm::StringRef name = type->getStructName();
     // Maybe i should allow it either way??
     if (!name.startswith("__tuple")) {
-        ERROR(location, "Cannot unpack value of type '{s}'", name);
+        ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
     }
 
     uint32_t elements = type->getStructNumElements();
     if (n > elements) {
-        ERROR(location, "Not enough elements to unpack. Expected {i} but got {i}", n, elements);
+        ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
     }
 
     std::vector<llvm::Value*> values;
@@ -286,28 +248,38 @@ std::vector<llvm::Value*> Visitor::unpack(Location location, llvm::Value* value,
     return values;
 }
 
-uint32_t Visitor::getsizeof(llvm::Value* value) {
-    return this->getsizeof(value->getType());
-}
 
-uint32_t Visitor::getallocsize(llvm::Type* type) {
-    llvm::TypeSize tsize = this->module->getDataLayout().getTypeAllocSize(type);
-    return tsize.getFixedSize();
-}
+Scope::Local Visitor::get_pointer_from_expr(utils::Ref<ast::Expr> expr) {
+    if (expr->kind() == ast::ExprKind::Variable) {
+        ast::VariableExpr* var = expr->cast<ast::VariableExpr>();
+        return this->scope->get_local(var->name);
+    } else if (expr->kind() == ast::ExprKind::Element) {
+        ast::ElementExpr* element = expr->cast<ast::ElementExpr>();;
+        return this->get_pointer_from_expr(std::move(element->value));
+    } else if (expr->kind() == ast::ExprKind::Attribute) {
+        ast::AttributeExpr* attr = expr->cast<ast::AttributeExpr>();;
+        llvm::Value* parent = this->get_pointer_from_expr(std::move(attr->parent)).first;
 
-uint32_t Visitor::getsizeof(llvm::Type* type) {
-    if (type->isPointerTy()) {
-        return this->getallocsize(type);
+        if (!parent) {
+            return {nullptr, false};
+        }
+
+        llvm::Type* type = parent->getType()->getNonOpaquePointerElementType();
+        if (!type->isStructTy()) {
+            return {nullptr, false};
+        }
+
+        Struct* structure = this->type_to_struct[type];
+        int index = structure->get_field_index(attr->attribute);
+
+        if (index < 0) {
+            ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attr->attribute, structure->name);
+        }
+
+        return {this->builder->CreateStructGEP(structure->type, parent, index), false};
     }
 
-    if (type->isArrayTy()) {
-        uint32_t tsize = type->getArrayElementType()->getPrimitiveSizeInBits() / 8;
-        return type->getArrayNumElements() * tsize;
-    } else if (type->isStructTy()) {
-        return this->getallocsize(type);
-    }
-
-    return type->getPrimitiveSizeInBits() / 8;
+    return {nullptr, false};
 }
 
 void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
@@ -329,7 +301,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
 
 Value Visitor::visit(ast::FloatExpr* expr) {
     return Value(
-        llvm::ConstantFP::get(this->context, llvm::APFloat(expr->value)), 
+        llvm::ConstantFP::get(*this->context, llvm::APFloat(expr->value)), 
         true
     );
 }
@@ -351,70 +323,38 @@ Value Visitor::visit(ast::BlockExpr* expr) {
     return last;
 }
 
-Value Visitor::visit(ast::CastExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
-
-    llvm::Type* from = value->getType();
-    llvm::Type* to = this->get_llvm_type(expr->to);
-
-    if (from == to) {
-        return value;
-    }
-
-    if (from->isIntegerTy()) {
-        if (to->isFloatingPointTy()) {
-            return this->builder->CreateSIToFP(value, to);
-        } else if (to->isIntegerTy()) {
-            unsigned bits = from->getIntegerBitWidth();
-            if (bits < to->getIntegerBitWidth()) {
-                return this->builder->CreateZExt(value, to);
-            } else if (bits > to->getIntegerBitWidth()) {
-                return this->builder->CreateTrunc(value, to);
-            }
-        } else if (to->isPointerTy()) {
-            return this->builder->CreateIntToPtr(value, to);
-        }
-    } else if (from->isFloatTy()) {
-        if (to->isDoubleTy()) {
-            return this->builder->CreateFPExt(value, to);
-        } else if (to->isIntegerTy()) {
-            return this->builder->CreateFPToSI(value, to);
-        }
-    } else if (from->isPointerTy()) {
-        if (to->isIntegerTy()) {
-            return this->builder->CreatePtrToInt(value, to);
-        }
-    }
-
-    return this->builder->CreateBitCast(value, to);
-}
-
-Value Visitor::visit(ast::SizeofExpr* expr) {
-    uint32_t size;
-    if (expr->value) {
-        llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
-        size = this->getsizeof(value);
-    } else {
-        llvm::Type* type = this->get_llvm_type(expr->type);
-        size = this->getsizeof(type);
-    }
-
-    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(this->context), size);
-}
-
 Value Visitor::visit(ast::OffsetofExpr* expr) {
     Value value = expr->value->accept(*this);
     if (!value.structure) {
-        ERROR(expr->start, "Expected a structure");
+        utils::error(expr->start, "Expected a structure");
     }
 
     Struct* structure = value.structure;
     int index = structure->get_field_index(expr->field);
 
     if (index < 0) {
-        ERROR(expr->start, "Field '{s}' does not exist in struct '{s}'", expr->field, structure->name);
+        ERROR(expr->start, "Field '{1}' does not exist in struct '{0}'", expr->field, structure->name);
     }
 
     StructField field = structure->fields[expr->field];
-    return this->builder->getInt32(field.offset);
+    return Value(this->builder->getInt32(field.offset), true);
+}
+
+Value Visitor::visit(ast::WhereExpr* expr) {
+    Value value = expr->expr->accept(*this);
+    Location location;
+
+    if (value.function) {
+        location = value.function->start;
+    } else if (value.structure) {
+        location = value.structure->start;
+    } else if (value.ns) {
+        location = value.ns->start;
+    } else if (value.enumeration) {
+        location = value.enumeration->start;
+    } else {
+        location = expr->expr->start;
+    }
+
+    return Value(this->builder->CreateGlobalStringPtr(location.format(), ".str"), true);
 }

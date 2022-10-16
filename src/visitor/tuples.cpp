@@ -4,8 +4,12 @@ Value Visitor::visit(ast::TupleExpr* expr) {
     std::vector<Type*> types;
     std::vector<llvm::Value*> elements;
 
+    bool is_const = true;
     for (auto& elem : expr->elements) {
-        llvm::Value* value = elem->accept(*this).unwrap(elem->start);
+        Value val = elem->accept(*this);
+        is_const &= val.is_constant;
+
+        llvm::Value* value = val.unwrap(elem->start);
 
         elements.push_back(value);
         types.push_back(Type::from_llvm_type(value->getType()));
@@ -17,17 +21,11 @@ Value Visitor::visit(ast::TupleExpr* expr) {
         type = this->tuples[hash];
     } else {
         TupleType* tuple = TupleType::create(types);
-        type = tuple->to_llvm_type(this->context);
+        type = tuple->to_llvm_type(*this->context);
 
         this->tuples[hash] = type;
     }
     
-    bool is_const = std::all_of(
-        expr->elements.begin(),
-        expr->elements.end(),
-        [](auto& expr) { return expr->is_constant(); }
-    );
-
     if (is_const) {
         std::vector<llvm::Constant*> constants;
         for (auto& element : elements) {
@@ -38,12 +36,10 @@ Value Visitor::visit(ast::TupleExpr* expr) {
     }
 
     if (!this->current_function) {
-        ERROR(expr->start, "Tuple literals cannot contain non-constant elements");
+        utils::error(expr->start, "Tuple literals cannot contain non-constant elements");
     }
 
-    llvm::Function* function = this->builder->GetInsertBlock()->getParent();
-    llvm::AllocaInst* inst = this->create_alloca(function, type);
-
+    llvm::AllocaInst* inst = this->create_alloca(type);
     uint32_t index = 0;
     for (auto& element : elements) {
         llvm::Value* ptr = this->builder->CreateStructGEP(type, inst, index);

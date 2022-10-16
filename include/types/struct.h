@@ -8,16 +8,13 @@
 class StructType : public Type {
 public:
     static StructType* create(std::string name, std::vector<Type*> fields);
-    ~StructType() override;
-
+    
     static StructType* from_llvm_type(llvm::StructType* type);
     llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
 
     StructType* copy() override;
 
     std::string str() override;
-
-    uint32_t hash() override;
 
     void setFields(std::vector<Type*> fields) { this->fields = fields; }
 

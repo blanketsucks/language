@@ -1,47 +1,62 @@
+#include "utils.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::EnumExpr* expr) {
-    llvm::Type* type = expr->type->to_llvm_type(this->context);
+    llvm::Type* type = expr->type->to_llvm_type(*this->context);
     Enum* enumeration = new Enum(expr->name, type);
 
-    if (expr->type->isInteger()) {
-        int value = 0;
+    enumeration->start = expr->start;
+    enumeration->end = expr->end;
+
+    enumeration->scope = new Scope(expr->name, ScopeType::Enum, this->scope);
+    this->scope->enums[expr->name] = enumeration;
+
+    this->scope = enumeration->scope;
+    if (type->isIntegerTy()) {
+        int64_t counter = 0;
         for (auto& field : expr->fields) {
+            llvm::Constant* constant = nullptr;
             if (field.value) {
-                if (!field.value->is_constant()) {
-                    ERROR(field.value->start, "Enum fields must be constant values");
+                llvm::Value* value = field.value->accept(*this).unwrap(field.value->start);
+                if (!llvm::isa<llvm::ConstantInt>(value)) {
+                    utils::error(field.value->start, "Expected a constant integer");
                 }
 
-                if (field.value->kind() != ast::ExprKind::Integer) {
-                    ERROR(field.value->start, "Expected an integer");
+                llvm::ConstantInt* val = llvm::cast<llvm::ConstantInt>(value);
+                if (val->getBitWidth() > type->getIntegerBitWidth()) {
+                    val = static_cast<llvm::ConstantInt*>(
+                        llvm::ConstantInt::get(type, val->getSExtValue(), true)
+                    );
                 }
 
-                int val = field.value->cast<ast::IntegerExpr>()->value;
-                value = val;
+                counter = val->getSExtValue();
+                constant = val;
+            } else {
+                constant = llvm::ConstantInt::get(type, counter, true);
             }
 
-            llvm::Constant* constant = this->builder->getInt32(value);
             enumeration->add_field(field.name, constant);
+            counter++;
         }
 
-        this->enums[expr->name] = enumeration;
+        this->scope->exit(this);
         return nullptr;
     }
 
     for (auto& field : expr->fields) {
         if (!field.value) {
-            ERROR(expr->start, "Expected a value");
+            utils::error(expr->start, "Expected a value");
         }
 
         Value value = field.value->accept(*this);
         if (!value.is_constant) {
-            ERROR(field.value->start, "Expected a constant value");
+            utils::error(field.value->start, "Expected a constant value");
         }
 
         llvm::Constant* constant = llvm::cast<llvm::Constant>(value.unwrap(field.value->start));
         enumeration->add_field(field.name, constant);
     }
 
-    this->enums[expr->name] = enumeration;
+    this->scope->exit(this);
     return nullptr;
 }

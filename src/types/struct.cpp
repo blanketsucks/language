@@ -4,15 +4,9 @@
 
 StructType::StructType(std::string name, std::vector<Type*> fields) : Type(Type::Struct, 0), name(name), fields(fields) {}
 
-StructType::~StructType() {
-    // for (auto field : this->fields) {
-    //     delete field;
-    // }
-}
-
 StructType* StructType::create(std::string name, std::vector<Type*> fields) {
     auto type = new StructType(name, fields);
-    Type::ALLOCATED_TYPES.push_back(type);
+    Type::push(type);
 
     return type;
 }
@@ -37,15 +31,6 @@ llvm::StructType* StructType::to_llvm_type(llvm::LLVMContext& context) {
 
 StructType* StructType::copy() {
     return StructType::create(this->name, this->fields);
-}
-
-uint32_t StructType::hash() {
-    uint32_t hash = 0;
-    for (auto& field : this->fields) {
-        hash |= field->hash();
-    }
-
-    return hash;
 }
 
 std::string StructType::str() {

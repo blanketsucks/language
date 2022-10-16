@@ -5,7 +5,7 @@ Small language made for fun.
 ## Example
 
 ```
-extern "C" func printf(fmt: str, ...) -> int;
+extern "C" func printf(fmt: char*, ...) -> int;
 
 func main() {
     printf("Hello, world!\n");
@@ -20,7 +20,7 @@ func main() {
 }
 ```
 
-You can run these examples like the following
+And then:
 
 ```console
 $ ./proton hello.pr
@@ -38,6 +38,23 @@ $ cd language
 $ make 
 ```
 
+## Building/Running the JIT
+
+Proton has a built-in JIT Compiler, you can build this compiler using the following commands
+
+```console
+$ git clone https://github.com/blanketsucks/language.git
+$ cd language
+$ make jit
+```
+
+After the build, you'll have a `proton-jit` executable in the same directory.
+
+```console
+$ ./proton-jit hello.pr
+Hello, World!
+```
+
 ## Goals
 
 - [x] ~~For/while loops. The parsing for while loops is done, but something goes wrong in the code generation.~~ Done.
@@ -46,6 +63,5 @@ $ make
 - [ ] Better errors.
 - [ ] Rewrite include system and maybe implement modules?
 - [ ] Fix memory leaks.
-- [ ] Name mangling.
 - [ ] Self-hosted.
 - [ ] Generics.

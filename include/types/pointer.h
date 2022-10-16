@@ -6,7 +6,6 @@
 class PointerType : public Type {
 public:
     static PointerType* create(Type* type);
-    ~PointerType() override;
 
     static PointerType* from_llvm_type(llvm::Type* type);
     llvm::PointerType* to_llvm_type(llvm::LLVMContext& context) override;

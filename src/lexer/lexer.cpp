@@ -52,7 +52,7 @@ Lexer::Lexer(FILE* file, std::string filename) {
 
 char Lexer::next() {
     if (this->index == UINT32_MAX) {
-        ERROR(this->loc(), "Lexer index overflow.");
+        utils::error(this->loc(), "Lexer index overflow.");
     }
 
     this->current = this->source[this->index];
@@ -65,7 +65,7 @@ char Lexer::next() {
 
     this->column++;
     if (this->column == UINT32_MAX) {
-        ERROR(this->loc(), "Lexer column overflow.");
+        utils::error(this->loc(), "Lexer column overflow.");
     }
 
     return this->current;
@@ -152,15 +152,13 @@ char Lexer::escape(char current) {
         return (char)(hex[0] * 16 + hex[1]);
     }
 
-    ERROR(this->loc(), "Invalid escape sequence");
+    utils::error(this->loc(), "Invalid escape sequence"); exit(1);
 }
 
 void Lexer::skip_comment() {
     while (this->current != '\n' && this->current != 0) {
         this->next();
     }
-
-    this->next();
 }
 
 Token Lexer::parse_identifier() {
@@ -179,7 +177,7 @@ Token Lexer::parse_identifier() {
         return this->create_token(TokenKind::Keyword, start, value);
     } else {
         if (value[0] == '$') {
-            ERROR(start, "Identifiers starting with '$' are reserved for keywords.");
+            utils::error(start, "Identifiers starting with '$' are reserved for keywords.");
         }
 
         return this->create_token(TokenKind::Identifier, start, value);
@@ -205,7 +203,7 @@ Token Lexer::parse_string() {
     }
 
     if (this->current != '"') {
-        ERROR(this->loc(), "Expected end of string.");
+        utils::error(this->loc(), "Expected end of string.");
     }
     
     Token token = this->create_token(TokenKind::String, start, value);
@@ -250,7 +248,7 @@ Token Lexer::parse_number() {
     
         if (this->current != '.') {
             if (std::isdigit(this->peek()) ) {
-                ERROR(start, "Leading zeros on integer constants are not allowed");
+                utils::error(start, "Leading zeros on integer constants are not allowed");
             }
 
             return this->create_token(TokenKind::Integer, start, "0");
@@ -288,7 +286,7 @@ std::vector<Token> Lexer::lex() {
 
         if (this->current == '\n') {
             if (this->line == UINT32_MAX) {
-                ERROR(this->loc(), "Lexer line overflow. Too many lines in file.");
+                utils::error(this->loc(), "Lexer line overflow. Too many lines in file.");
             }
 
             this->line++;

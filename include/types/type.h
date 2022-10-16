@@ -38,8 +38,6 @@ public:
         Tuple    = (1 << 13)
     };
 
-    virtual ~Type() = default;
-
     bool operator==(Value other);
 
     static Type* create(Value value, size_t size);
@@ -53,8 +51,6 @@ public:
 
     size_t getSize() { return this->size; }
     Value getValue() { return this->value; }
-
-    virtual uint32_t hash() { return this->getValue(); }
 
     Type* getPointerTo();
     virtual std::string str();
@@ -87,7 +83,7 @@ public:
     virtual bool is_compatible(Type* other);
     virtual bool is_compatible(llvm::Type* type);
 
-    static std::vector<Type*> ALLOCATED_TYPES;
+    static void push(Type* type);
 protected:
     Type(Value value, size_t size);
 
@@ -106,16 +102,6 @@ static Type* DoubleType = Type::create(Type::Double, 64);
 static Type* FloatType = Type::create(Type::Float, 32);
 static Type* BooleanType = Type::create(Type::Boolean, 8);
 
-static std::vector<Type*> BUILTIN_TYPES = {
-    VoidType,
-    ShortType,
-    CharType,
-    IntegerType,
-    LongType,
-    LongLongType,
-    DoubleType,
-    FloatType,
-    BooleanType
-};
+static std::vector<Type*> ALLOCATED_TYPES = {0};
 
 #endif

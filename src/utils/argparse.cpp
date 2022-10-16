@@ -116,19 +116,6 @@ void ArgumentParser::display_help() {
     }
 }
 
-void ArgumentParser::error(const std::string& message, ...) {
-    va_list args;
-    va_start(args, message);
-
-    std::string msg = utils::fmt::format(message, args);
-    va_end(args);
-
-    std::cerr << utils::fmt::format("{bold|white}: {bold|red}: {s}\n", this->name.c_str(), "error", msg);
-    if (this->exit_on_error) {
-        exit(1);
-    }
-}
-
 Argument ArgumentParser::add_argument(
     std::string name, 
     ArgumentValueType type, 
@@ -144,7 +131,7 @@ Argument ArgumentParser::add_argument(
 
 Argument ArgumentParser::add_argument(Argument arg) {
     if (this->arguments.find(arg.name) != this->arguments.end()) {
-        this->error("Argument '{}' already exists.", arg.name);
+        this->error("Argument '{0}' already exists.", arg.name);
     }
 
     this->arguments[arg.name] = arg;
@@ -165,7 +152,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             i++;
 
             if (name[0] == '-') {
-                this->error("Unrecognized command line argument -- '{s}'", name);
+                this->error("Unrecognized command line argument -- '{0}'", name);
                 continue;
             }
 
@@ -176,8 +163,8 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
         Argument argument = this->arguments[name];
         i++;
 
-        if (this->has_value(argument) && argument.type != ArgumentValueType::Many) {
-            this->error("Argument is '{s}' already specified.", argument.name);
+        if (this->has(argument) && argument.type != ArgumentValueType::Many) {
+            this->error("Argument is '{0}' already specified.", argument.name);
 
             continue;
         }
@@ -193,7 +180,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             i++;
         } else if (argument.type == ArgumentValueType::Many) {
             std::vector<llvm::Any> values;
-            if (this->has_value(argument)) {
+            if (this->has(argument)) {
                 values = this->get<std::vector<llvm::Any>>(argument.get_clean_name());
             }
 
@@ -209,7 +196,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             this->set_value(argument, values);
         } else {
             if (i >= argc) {
-                this->error("Argument '{s}' requires a value.", argument.name);
+                this->error("Argument '{0}' requires a value.", argument.name);
                 continue;
             }
 
@@ -221,12 +208,12 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
     return rest;
 }
 
-bool ArgumentParser::has_value(std::string name) { 
+bool ArgumentParser::has(std::string name) { 
     return this->values.find(name) != this->values.end(); 
 }
 
-bool ArgumentParser::has_value(Argument arg) { 
-    return this->has_value(arg.get_clean_name()); 
+bool ArgumentParser::has(Argument arg) { 
+    return this->has(arg.get_clean_name()); 
 }
 
 void ArgumentParser::set_value(Argument arg, llvm::Any value) {

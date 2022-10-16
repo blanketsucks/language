@@ -76,6 +76,8 @@ struct Location {
     Location update(uint32_t column, uint32_t index);
 
     std::string format();
+
+    static Location dummy() { return Location { 0, 0, 0, "" }; }
 };
 
 struct Token {
@@ -118,6 +120,7 @@ static std::vector<std::string> KEYWORDS = {
     "defer",
     "private",
     "enum",
+    "where",
 
     // Preprocessor keywords
     "$define",

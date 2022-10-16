@@ -6,13 +6,9 @@
 
 PointerType::PointerType(Type* type) : Type(Type::Pointer, LONG_SIZE), type(type) {}
 
-PointerType::~PointerType() {
-    // delete this->type;
-}
-
 PointerType* PointerType::create(Type* ty) {
     auto type = new PointerType(ty);
-    Type::ALLOCATED_TYPES.push_back(type);
+    Type::push(type);
 
     return type;
 }

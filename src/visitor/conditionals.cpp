@@ -6,11 +6,11 @@ Value Visitor::visit(ast::IfExpr* expr) {
     Function* func = this->current_function;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
-    llvm::BasicBlock* then = llvm::BasicBlock::Create(this->context, "", function);
-    llvm::BasicBlock* else_ = llvm::BasicBlock::Create(this->context);
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
+    llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
 
     this->builder->CreateCondBr(this->cast(condition, BooleanType), then, else_);
-    this->builder->SetInsertPoint(then);
+    this->set_insert_point(then, false);
 
     Branch* branch = func->branch;
     func->branch = func->create_branch("if.then", branch->loop, branch->end);
@@ -41,52 +41,43 @@ Value Visitor::visit(ast::IfExpr* expr) {
     if (!expr->ebody) {
         if (!func->branch->has_jump()) {
             this->builder->CreateBr(else_);
-
-            function->getBasicBlockList().push_back(else_);
-            this->builder->SetInsertPoint(else_);
+            this->set_insert_point(else_);
 
             func->branch = branch;
             return nullptr; 
         } else {
-            function->getBasicBlockList().push_back(else_);
-            this->builder->SetInsertPoint(else_);
-        
+            this->set_insert_point(else_);
             func->branch = branch;
+
             return nullptr;
         }
     }
 
     if (func->branch->has_jump()) {
-        function->getBasicBlockList().push_back(else_);
-        this->builder->SetInsertPoint(else_);
-
+        this->set_insert_point(else_);
         expr->ebody->accept(*this);
-        func->branch = branch;
 
+        func->branch = branch;
         return nullptr;
     }
 
-    llvm::BasicBlock* merge = llvm::BasicBlock::Create(this->context);
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context);
     this->builder->CreateBr(merge);
 
-    function->getBasicBlockList().push_back(else_);
-    this->builder->SetInsertPoint(else_);
+    this->set_insert_point(else_);
     
     func->branch = func->create_branch("if.else", branch->loop, branch->end);
     expr->ebody->accept(*this);
 
     if (func->branch->has_jump()) {
-        function->getBasicBlockList().push_back(merge);
-        this->builder->SetInsertPoint(merge);
-
+        this->set_insert_point(merge);
         func->branch = branch;
+
         return nullptr;
     }
 
     this->builder->CreateBr(merge);
-
-    function->getBasicBlockList().push_back(merge);
-    this->builder->SetInsertPoint(merge);
+    this->set_insert_point(merge);
 
     func->branch = branch;
     return nullptr;

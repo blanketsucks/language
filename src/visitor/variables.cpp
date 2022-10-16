@@ -1,84 +1,37 @@
+#include "utils.h"
 #include "visitor.h"
 
-void Visitor::store_tuple(Location location, Function *func, llvm::Value *value, std::vector<std::string> names) {
-    std::vector<llvm::Value*> values = this->unpack(location, value, names.size());
+void Visitor::store_tuple(Location location, Function* func, llvm::Value* value, std::vector<std::string> names) {
+    std::vector<llvm::Value*> values = this->unpack(value, names.size(), location);
     for (auto& pair : utils::zip(names, values)) {
-        llvm::AllocaInst* inst = this->create_alloca(func->value, pair.second->getType());
+        llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
         this->builder->CreateStore(pair.second, inst);
 
-        func->locals[pair.first] = inst;
+        func->scope->variables[pair.first] = inst;
     }
-}
-
-std::pair<llvm::Value*, bool> Visitor::get_variable(std::string name) {
-    if (this->current_function) {
-        llvm::Value* value = this->current_function->locals[name];
-        if (value) {
-            return std::make_pair(value, false);
-        }
-
-        value = this->current_function->constants[name];
-        if (value) {
-            return std::make_pair(value, true);
-        }
-    }
-
-    return std::make_pair(nullptr, false);
 }
 
 Value Visitor::visit(ast::VariableExpr* expr) {
-    if (this->structs.find(expr->name) != this->structs.end()) {
-        return Value::with_struct(this->structs[expr->name]);
-    } else if (this->namespaces.find(expr->name) != this->namespaces.end()) {
-        return Value::with_namespace(this->namespaces[expr->name]);
-    } else if (this->enums.find(expr->name) != this->enums.end()) {
-        return Value::with_enum(this->enums[expr->name]);
+    Scope* scope = this->scope;
+    if (scope->has_struct(expr->name)) {
+        return Value::with_struct(scope->get_struct(expr->name));
+    } else if (scope->has_namespace(expr->name)) {
+        return Value::with_namespace(scope->get_namespace(expr->name));
+    } else if (scope->has_enum(expr->name)) {
+        return Value::with_enum(scope->get_enum(expr->name));
+    } else if (scope->has_function(expr->name)) {
+        return Value::with_function(scope->get_function(expr->name));
     }
 
-    if (this->current_function) {
-        llvm::AllocaInst* variable = this->current_function->locals[expr->name];
-        if (variable) { return this->load(variable->getAllocatedType(), variable); }
-
-        llvm::GlobalVariable* constant = this->current_function->constants[expr->name];
-        if (constant) { return Value(this->load(constant->getValueType(), constant), true); }
+    auto local = scope->get_local(expr->name);
+    if (local.first) {
+        return Value(this->load(local.first), local.second);
     }
 
-    if (this->current_struct) {
-        llvm::Value* value = this->current_struct->locals[expr->name];
-        if (value) { return value; }
-    }
-
-    if (this->current_namespace) {
-        llvm::Constant* constant = this->current_namespace->constants[expr->name];
-        if (constant) { return Value(constant, true); }
-    }
-
-    if (expr->name == "null" || expr->name == "nullptr") {
+    if (expr->name == "null") {
         llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
-        if (expr->name == "nullptr") {
-            if (!type->isPointerTy()) {
-                ERROR(expr->start, "Cannot use nullptr with non-pointer types");
-            }
-
-            return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
-        }
-
         return llvm::Constant::getNullValue(type);
     }
-
-    llvm::Constant* constant = this->constants[expr->name];
-    if (constant) {
-        llvm::GlobalVariable* global = this->module->getGlobalVariable(constant->getName());
-        if (global) { 
-            llvm::Type* type = global->getValueType();
-            return Value(this->load(type, global), true); 
-        }
-
-        return Value(constant, true);
-    }
-
-    Value val = this->get_function(expr->name);
-    if (val.function) { return val; }
 
     ERROR(expr->start, "Undefined variable '{s}'", expr->name); exit(1);
 }
@@ -98,6 +51,8 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     llvm::Value* value = nullptr;
+    bool is_constant = false;
+
     if (!expr->value) {
         type = this->get_llvm_type(expr->type);
         if (type->isAggregateType()) {
@@ -107,29 +62,72 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         } else {
             value = llvm::Constant::getNullValue(type);
         }
+
+        is_constant = true;
     } else {
         if (expr->type) {
             type = this->get_llvm_type(expr->type);
             this->ctx = type;
         }
 
-        value = expr->value->accept(*this).unwrap(expr->start);
+        Value val = expr->value->accept(*this); is_constant = val.is_constant;
+        value = val.unwrap(expr->value->start);
         if (!expr->type) {
             type = value->getType();
         }
-    
-        Type* ty = Type::from_llvm_type(type);
-        if (!ty->is_compatible(value->getType())) {
-            ERROR(expr->value->start, "Expected value of type '{t}' but got '{t}'", ty, Type::from_llvm_type(value->getType()));
+
+        if (type->isVoidTy()) {
+            utils::error(expr->value->start, "Cannot store value of type 'void'");
+        }
+        
+        if (!this->is_compatible(value->getType(), type)) {
+            ERROR(
+                expr->value->start, 
+                "Expected expression of type '{0}' but got '{1}' instead", 
+                this->get_type_name(type), this->get_type_name(value->getType())
+            );
         }
     }
 
-    llvm::Function* func = this->builder->GetInsertBlock()->getParent();
     if (!expr->is_multiple_variables) {
-        llvm::AllocaInst* alloca_inst = this->create_alloca(func, type);
-        if (value) { this->builder->CreateStore(value, alloca_inst); }
+        if (!this->current_function) {
+            if (!is_constant) {
+                utils::error(expr->start, "Cannot store non-constant value in global scope");
+            }
 
-        this->current_function->locals[expr->names[0]] = alloca_inst;
+            std::string name = FORMAT("__global.{0}", expr->names[0]);
+            this->module->getOrInsertGlobal(name, type);
+
+            llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
+
+            global->setLinkage(llvm::GlobalValue::PrivateLinkage);
+            global->setInitializer(llvm::cast<llvm::Constant>(value));
+
+            this->scope->variables[expr->names[0]] = global;
+            return value;
+        }
+
+        llvm::AllocaInst* inst = this->create_alloca(type);
+        if (is_constant && type->isAggregateType()) {
+            std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, expr->names[0]);
+            this->module->getOrInsertGlobal(name, type);
+
+            llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
+            
+            global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
+            global->setInitializer(llvm::cast<llvm::Constant>(value));
+
+            this->builder->CreateMemCpy(
+                inst, llvm::MaybeAlign(0),
+                global, llvm::MaybeAlign(0),
+                this->getsizeof(type)
+            );
+        } else {
+            if (value) { this->builder->CreateStore(value, inst); }
+        }
+
+        this->scope->variables[expr->names[0]] = inst;
+
     } else {
         this->store_tuple(expr->start, this->current_function, value, expr->names);
     }
@@ -154,22 +152,17 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         name = this->current_function->name + "." + name;
     }
 
-    if (this->current_namespace) {
-        this->current_namespace->constants[expr->name] = (llvm::Constant*)value;
-        return nullptr;
-    }
+    llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
 
     name = "__const." + name;
+
     this->module->getOrInsertGlobal(name, type);
-
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);
-    global->setInitializer((llvm::Constant*)value);
 
-    if (this->current_function) {
-        this->current_function->constants[expr->name] = global;
-    } else {
-        this->constants[expr->name] = global;
-    }
+    global->setInitializer(constant);
+    global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
+    global->setConstant(true);
 
-    return global;
+    this->scope->constants[expr->name] = global;
+    return constant;
 }

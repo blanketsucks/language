@@ -81,7 +81,7 @@ std::vector<Token> Preprocessor::process() {
                 std::string name = this->current.value;
 
                 if (!this->is_macro(name)) {
-                    ERROR(this->current.start, "Undefined macro '{s}'", name); exit(1);
+                    ERROR(this->current.start, "Undefined macro '{0}'", name); exit(1);
                 }
 
                 this->macros.erase(name);
@@ -120,7 +120,7 @@ std::vector<Token> Preprocessor::process() {
                 this->next();
             } else if (this->current.value == "$else") {
                 if (!this->has_if_directive) {
-                    ERROR(this->current.start, "Unexpected '$else'"); exit(1);
+                    utils::error(this->current.start, "Unexpected '$else'");
                 }
 
                 this->next();
@@ -129,7 +129,7 @@ std::vector<Token> Preprocessor::process() {
                 }
             } else if (this->current.value == "$endif") {
                 if (!this->has_if_directive) {
-                    ERROR(this->current.start, "Unexpected '$endif'"); exit(1);
+                    utils::error(this->current.start, "Unexpected '$endif'");
                 }
 
                 this->next();
@@ -152,7 +152,7 @@ std::vector<Token> Preprocessor::process() {
     }
 
     if (this->has_if_directive) {
-        ERROR(this->if_directive_location, "Unterminated if directive"); exit(1);
+        utils::error(this->if_directive_location, "Unterminated if directive");
     }
     
     this->processed.push_back(this->current);
@@ -161,7 +161,7 @@ std::vector<Token> Preprocessor::process() {
 
 Macro Preprocessor::parse_macro_definition() {
     if (this->current != TokenKind::Identifier) {
-        ERROR(this->current.start, "Expected identifier"); exit(1);
+        utils::error(this->current.start, "Expected identifier");
     }
  
     std::string name = this->current.value;
@@ -173,7 +173,7 @@ Macro Preprocessor::parse_macro_definition() {
 
         while (this->current != TokenKind::RParen) {
             if (this->current != TokenKind::Identifier) {
-                ERROR(this->current.start, "Expected identifier"); exit(1);
+                utils::error(this->current.start, "Expected identifier");
             }
 
             args.push_back(this->current.value);
@@ -203,7 +203,7 @@ std::fstream Preprocessor::search_include_paths(std::string filename) {
     utils::filesystem::Path path(filename);
     if (path.exists()) {
         if (!path.isfile()) {
-            ERROR(this->current.start, "'{s}' is not a file", filename);
+            ERROR(this->current.start, "'{0}' is not a file", filename);
         }
 
         return path.open();
@@ -213,14 +213,14 @@ std::fstream Preprocessor::search_include_paths(std::string filename) {
         path = utils::filesystem::Path(search).join(filename);
         if (path.exists()) {
             if (!path.isfile()) {
-                ERROR(this->current.start, "'{s}' is not a file", path.name);
+                ERROR(this->current.start, "'{0}' is not a file", path.name);
             }
 
             return path.open();
         }
     }
 
-    ERROR(this->current.start, "Could not find file '{s}'", filename);
+    ERROR(this->current.start, "Could not find file '{0}'", filename);
 }
 
 void Preprocessor::parse_include(std::string path) {
@@ -228,7 +228,7 @@ void Preprocessor::parse_include(std::string path) {
     if (this->includes.find(path) != this->includes.end()) {
         Include inc = this->includes[path];
         if (inc.state != IncludeState::Processed) {
-            ERROR(this->current.start, "Circluar dependency detected in include path '{s}'", path);
+            ERROR(this->current.start, "Circluar dependency detected in include path '{0}'", path);
         }
 
         this->next();
@@ -272,7 +272,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
     if (macro.is_callable()) {
         this->next();
         if (this->current != TokenKind::LParen) {
-            ERROR(this->current.start, "Expected '('"); exit(1);
+            utils::error(this->current.start, "Expected '('");
         }
 
         this->next();
@@ -283,8 +283,8 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
             if (index >= macro.args.size()) {
                 utils::error(this->current.start, "Too many arguments passed to macro call", false);
 
-                std::string message = utils::fmt::format(
-                    "'{s}' macro expects {i} arguments but got {i}", macro.name, macro.args.size(), index + 1
+                std::string message = FORMAT(
+                    "'{0}' macro expects {1} arguments but got {2}", macro.name, macro.args.size(), index + 1
                 );
                 utils::note(this->current.start, message);
 
@@ -303,7 +303,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         }
 
         if (this->current != TokenKind::RParen) {
-            ERROR(this->current.start, "Expected ')'"); exit(1);
+            utils::error(this->current.start, "Expected ')'");
         }
 
         if (index < macro.args.size() - 1) {
@@ -344,7 +344,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
 int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token left) {
     if (right == TokenKind::String) {
         if (left != right.type) {
-            ERROR(left.start, "Expected left hand side of expression to be a string");
+            utils::error(left.start, "Expected left hand side of expression to be a string");
         }
 
         switch (op) {
@@ -354,7 +354,7 @@ int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token lef
                 return right.value != left.value;
             default:
                 std::string name = Token::getTokenTypeValue(op);
-                ERROR(right.start, "Unsupported binary operator '{s}' for types 'char*' and 'char*'", name);
+                ERROR(right.start, "Unsupported binary operator '{0}' for types 'char*' and 'char*'", name);
         }
 
 
@@ -362,7 +362,7 @@ int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token lef
 
     }
     
-    ERROR(right.start, "Expected an integer or a string expression");
+    utils::error(right.start, "Expected an integer or a string expression"); exit(1);
 }
 
 std::vector<Token> Preprocessor::run(std::vector<Token> tokens) {

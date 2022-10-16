@@ -2,21 +2,21 @@
 
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
+    llvm::Type* type = value->getType();
 
-    bool is_floating_point = value->getType()->isFloatingPointTy();
-    bool is_numeric = value->getType()->isIntegerTy() || is_floating_point;
+    bool is_floating_point = type->isFloatingPointTy();
+    bool is_numeric = type->isIntegerTy() || is_floating_point;
 
-    std::string name = Type::from_llvm_type(value->getType())->name();
     switch (expr->op) {
         case TokenKind::Add:
             if (!is_numeric) {
-                ERROR(expr->start, "Unsupported unary operator '+' for type: '{s}'", name);
+                ERROR(expr->start, "Unsupported unary operator '+' for type '{0}'", this->get_type_name(type));
             }
 
             return value;
         case TokenKind::Minus:
             if (!is_numeric) {
-                ERROR(expr->start, "Unsupported unary operator '-' for type: '{s}'", name);
+                ERROR(expr->start, "Unsupported unary operator '-' for type '{0}'", this->get_type_name(type));
             }
 
             if (is_floating_point) {
@@ -29,26 +29,19 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
         case TokenKind::BinaryNot:
             return this->builder->CreateNot(value);
         case TokenKind::Mul: {
-            if (!value->getType()->isPointerTy()) {
-                ERROR(expr->start, "Unsupported unary operator '*' for type: '{s}'", name);
+            if (!type->isPointerTy()) {
+                ERROR(expr->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
             }
 
             llvm::Type* type = value->getType()->getNonOpaquePointerElementType();
-            // if (type->isAggregateType()) {
-            //     ERROR(expr->start, "Unsupported unary operator '*' for type: '{s}'", name);
-            // }
-
             return this->builder->CreateLoad(type, value);
         }
         case TokenKind::BinaryAnd: {
-            llvm::AllocaInst* alloca_inst = this->builder->CreateAlloca(value->getType());
-            this->builder->CreateStore(value, alloca_inst);
-
-            return alloca_inst;
+            return this->get_pointer_from_expr(std::move(expr->value)).first;
         }
         case TokenKind::Inc: {
             if (!is_numeric) {
-                ERROR(expr->start, "Unsupported unary operator '++' for type: '{s}'", name);
+                ERROR(expr->start, "Unsupported unary operator '++' for type '{0}'", this->get_type_name(type));
             }
 
             llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
@@ -59,7 +52,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
         }
         case TokenKind::Dec: {
             if (!is_numeric) {
-                ERROR(expr->start, "Unsupported unary operator '--' for type: '{s}'", name);
+                ERROR(expr->start, "Unsupported unary operator '--' for type '{0}'", this->get_type_name(type));
             }
 
             llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
@@ -76,43 +69,31 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     // Assingment is a special case.
     if (expr->op == TokenKind::Assign) {
         if (expr->left->kind() == ast::ExprKind::Attribute) {
-            auto pair = this->get_struct_field(expr->left->cast<ast::AttributeExpr>());
-
-            llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
-            if (pair.second < 0) {
-                this->builder->CreateStore(value, pair.first);
-            } else {
-                this->builder->CreateInsertValue(pair.first, value, pair.second);
-            }
-
-            return value;
+            this->store_struct_field(expr->left->cast<ast::AttributeExpr>(), std::move(expr->right));
+            return nullptr;
         } else if (expr->left->kind() == ast::ExprKind::Element) {
-            auto pair = this->get_array_element(expr->left->cast<ast::ElementExpr>());
-
-            llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
-            if (pair.second < 0) {
-                this->builder->CreateStore(value, pair.first);
-            } else {
-                this->builder->CreateInsertValue(pair.first, value, pair.second);
-            }
-
-            return value;
+            this->store_array_element(expr->left->cast<ast::ElementExpr>(), std::move(expr->right));
+            return nullptr;
         }
 
-        // We directly use `dynamic_cast` to avoid the assert in Expr::cast.
-        ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->left.get());
-        if (!variable) {
-            ERROR(expr->start, "Left side of assignment must be a variable");
+        auto local = this->get_pointer_from_expr(std::move(expr->left));
+        if (local.second) {
+            utils::error(expr->start, "Cannot assign to constant");
         }
 
-        auto pair = this->get_variable(variable->name);
-        if (pair.second) {
-            ERROR(expr->start, "Cannot assign to constant");
-        }
-
+        llvm::Value* inst = local.first;
         llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
-        this->builder->CreateStore(value, pair.first);
 
+        llvm::Type* type = inst->getType()->getNonOpaquePointerElementType();
+        if (!this->is_compatible(value->getType(), type)) {
+            ERROR(
+                expr->start, 
+                "Cannot assign variable of type '{0}' to value of type '{1}'", 
+                this->get_type_name(type), this->get_type_name(value->getType())
+            );
+        }
+
+        this->builder->CreateStore(value, inst);
         return value;
     }
 
@@ -127,23 +108,14 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
 
-    if (ltype != rtype) {
-        Type* lhst = Type::from_llvm_type(ltype);
-        Type* rhst = Type::from_llvm_type(rtype);
-
-        if (!(lhst->isPointer() && rhst->isInteger())) {
-            if (lhst->is_compatible(rtype)) {
-                right = this->cast(right, ltype);
-            } else {
-                std::string lname = lhst->name();
-                std::string rname = rhst->name();
-
-                std::string operation = Token::getTokenTypeValue(expr->op);
-                ERROR(expr->start, "Unsupported binary operator '{s}' for types '{s}' and '{s}'", operation, lname, rname);
-            }
-        } else {
-            left = this->builder->CreatePtrToInt(left, rtype);
-        }
+    if (!this->is_compatible(ltype, rtype)) {
+        ERROR(
+            expr->start, "Unsupported binary operator '{s}' between types '{s}' and '{s}'.", 
+            Token::getTokenTypeValue(expr->op),
+            this->get_type_name(ltype), this->get_type_name(rtype)
+        );
+    } else {
+        right = this->cast(right, ltype);
     }
 
     bool is_floating_point = ltype->isFloatingPointTy();
@@ -240,52 +212,30 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 }
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
-    llvm::Value* parent = nullptr;
-    int index = -1;
-
-    if (expr->left->kind() == ast::ExprKind::Attribute) { 
-        auto pair = this->get_struct_field(expr->left->cast<ast::AttributeExpr>());
-        parent = pair.first; index = pair.second;
-    } else if (expr->left->kind() == ast::ExprKind::Element) {
-        auto pair = this->get_array_element(expr->left->cast<ast::ElementExpr>());
-        parent = pair.first; index = pair.second;
-    } else {
-        ast::VariableExpr* variable = dynamic_cast<ast::VariableExpr*>(expr->left.get());
-        if (!variable) {
-            ERROR(expr->start, "Left side of assignment must be a variable");
-        }
-
-        auto pair = this->get_variable(variable->name);
-        if (pair.second) {
-            ERROR(expr->start, "Cannot assign to constant");
-        }
-
-        parent = pair.first;
-    }
-
-    llvm::Value* lhs = expr->left->accept(*this).unwrap(expr->start);
     llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->start);
 
-    llvm::Value* value;
+    auto local = this->get_pointer_from_expr(std::move(expr->left));
+    if (local.second) {
+        utils::error(expr->start, "Cannot assign to constant");
+    }
+
+    llvm::Value* parent = local.first;
+    llvm::Value* lhs = this->load(parent);
+
+    llvm::Value* result = nullptr;
     switch (expr->op) {
         case TokenKind::Add:
-            value = this->builder->CreateAdd(lhs, rhs); break;
+            result = this->builder->CreateAdd(lhs, rhs); break;
         case TokenKind::Minus:
-            value = this->builder->CreateSub(lhs, rhs); break;
+            result = this->builder->CreateSub(lhs, rhs); break;
         case TokenKind::Mul:
-            value = this->builder->CreateMul(lhs, rhs); break;
+            result = this->builder->CreateMul(lhs, rhs); break;
         case TokenKind::Div:
-            value = this->builder->CreateSDiv(lhs, rhs); break;
+            result = this->builder->CreateSDiv(lhs, rhs); break;
         default:
             _UNREACHABLE
     }
 
-
-    if (index >= 0) {
-        this->builder->CreateInsertValue(parent, value, index);
-    } else {
-        this->builder->CreateStore(value, parent);
-    }
-
-    return value;
+    this->builder->CreateStore(result, parent);
+    return result;
 }

@@ -137,8 +137,14 @@ Value ReturnExpr::accept(Visitor& visitor) {
 }
 
 PrototypeExpr::PrototypeExpr(
-    Location start, Location end, std::string name, Type* return_type, std::vector<Argument> args, bool has_varargs
-) : ExprMixin(start, end), name(name), return_type(return_type), has_varargs(has_varargs) {
+    Location start, 
+    Location end, 
+    std::string name, 
+    std::vector<Argument> args, 
+    bool is_variadic,
+    Type* return_type, 
+    ExternLinkageSpecifier linkage
+) : ExprMixin(start, end), name(name), is_variadic(is_variadic), return_type(return_type), linkage(linkage) {
     this->args = std::move(args);
 }
 
@@ -147,7 +153,7 @@ Value PrototypeExpr::accept(Visitor& visitor) {
 }
 
 FunctionExpr::FunctionExpr(
-    Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<BlockExpr> body
+    Location start, Location end, utils::Ref<PrototypeExpr> prototype, utils::Ref<Expr> body
 ) : ExprMixin(start, end) {
     this->prototype = std::move(prototype);
     this->body = std::move(body);
@@ -301,8 +307,8 @@ Value OffsetofExpr::accept(Visitor& visitor) {
 }
 
 NamespaceExpr::NamespaceExpr(
-    Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> members
-) : ExprMixin(start, end), name(name) {
+    Location start, Location end, std::string name, std::deque<std::string> parents, std::vector<utils::Ref<Expr>> members
+) : ExprMixin(start, end), name(name), parents(parents) {
     this->members = std::move(members);
 }
 
@@ -347,5 +353,15 @@ EnumExpr::EnumExpr(
 }
 
 Value EnumExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+WhereExpr::WhereExpr(
+    Location start, Location end, utils::Ref<Expr> expr
+) : ExprMixin(start, end) {
+    this->expr = std::move(expr);
+}
+
+Value WhereExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

@@ -27,7 +27,7 @@ public:
         T result = 0;
         bool error = llvm::StringRef(str).getAsInteger(0, result);
         if (error) {
-            ERROR(this->current.start, "Invalid {} integer literal.", type);
+            ERROR(this->current.start, "Invalid {0} integer literal.", type);
         }
 
         return result;
@@ -46,7 +46,7 @@ public:
     std::map<std::string, Type*> get_types() { return this->types; }
 
     utils::Ref<ast::BlockExpr> parse_block();
-    utils::Ref<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage);
+    utils::Ref<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage, bool with_name);
     utils::Ref<ast::Expr> parse_function_definition(
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None
     );
@@ -82,7 +82,7 @@ private:
     bool is_inside_loop = false;
 
     StructType* current_struct = nullptr;
-    llvm::Optional<std::string> current_namespace;
+    std::string current_namespace;
 
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
