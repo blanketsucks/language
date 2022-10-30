@@ -1,3 +1,4 @@
+#include "objects.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::NamespaceExpr* expr) {
@@ -8,28 +9,32 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
         Namespace* ns;
         ns = this->scope->namespaces[name];
         if (!ns) {
-            ns = new Namespace(name);
+            ns = new Namespace(name, this->format_name(name));
 
             this->scope->namespaces[name] = ns;
             ns->scope = this->create_scope(name, ScopeType::Namespace);
         } else {
             this->scope = ns->scope;
         }
+
+        this->current_namespace = ns;
     }
 
-    std::string name = this->format_name(expr->name);
-    if (this->scope->namespaces.find(name) != this->scope->namespaces.end()) {
-        this->scope = this->scope->namespaces[name]->scope;
+    Namespace* ns = nullptr;
+    if (this->scope->namespaces.find(expr->name) != this->scope->namespaces.end()) {
+        ns = this->scope->namespaces[expr->name];
+        this->scope = ns->scope;
     } else {
-        Namespace* ns = new Namespace(name);
+        ns = new Namespace(name, this->format_name(expr->name));
         
         ns->start = expr->start;
         ns->end = expr->end;
 
-        this->scope->namespaces[name] = ns;
+        this->scope->namespaces[expr->name] = ns;
         ns->scope = this->create_scope(name, ScopeType::Namespace);
     }
 
+    this->current_namespace = ns;
     for (auto& member : expr->members) {
         member->accept(*this);
     }
@@ -42,21 +47,11 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
 
 Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     Value value = expr->parent->accept(*this);
-    if (!value.ns && !value.structure && !value.enumeration) {
-        utils::error(expr->start, "Expected a namespace, struct or an enum");
+    if (!value.ns && !value.structure && !value.enumeration && !value.module) {
+        ERROR(expr->start, "Expected a namespace, struct, enum or module");
     }
 
-    if (value.structure) {
-        if (value.structure->has_method(expr->attribute)) {
-            Function* function = value.structure->methods[expr->attribute];
-            function->used = true;
-
-            return Value::with_function(function);
-        }
-
-        std::string name = value.structure->name;
-        ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", expr->attribute, name);
-    } else if (value.enumeration) {
+    if (value.enumeration) {
         if (value.enumeration->has_field(expr->attribute)) {
             return value.enumeration->get_field(expr->attribute);
         }
@@ -65,7 +60,15 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
         ERROR(expr->start, "Field '{0}' does not exist in enum '{1}'", expr->attribute, name);
     }
 
-    Scope* scope = value.ns->scope;
+    Scope* scope;
+    if (value.ns) {
+        scope = value.ns->scope;
+    } else if (value.structure) {
+        scope = value.structure->scope;
+    } else {
+        scope = value.module->scope;
+    }
+
     if (scope->structs.find(expr->attribute) != scope->structs.end()) {
         return Value::with_struct(scope->structs[expr->attribute]);
     } else if (scope->functions.find(expr->attribute) != scope->functions.end()) {
@@ -76,16 +79,20 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     } else if (scope->namespaces.find(expr->attribute) != scope->namespaces.end()) {
         return Value::with_namespace(scope->namespaces[expr->attribute]);
     } else if (scope->constants.find(expr->attribute) != scope->constants.end()) {
-        return Value(scope->constants[expr->attribute], true);
+        return Value(this->load(scope->constants[expr->attribute]), true);
+    } else if (scope->enums.find(expr->attribute) != scope->enums.end()) {
+        return Value::with_enum(scope->enums[expr->attribute]);
+    } else if (scope->modules.find(expr->attribute) != scope->modules.end()) {
+        return Value::with_module(scope->modules[expr->attribute]);
     } else {
-        ERROR(expr->start, "Member '{0}' does not exist in namespace '{1}'", expr->attribute, scope->name);
+        ERROR(expr->start, "Member '{0}' does not exist in named scope '{1}'", expr->attribute, scope->name);
     }
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {
    Value parent = expr->parent->accept(*this);
    if (!parent.ns) {
-        utils::error(expr->start, "Expected a namespace");
+        ERROR(expr->start, "Expected a namespace");
    }
 
    Scope* scope = parent.ns->scope;

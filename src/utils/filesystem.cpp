@@ -24,6 +24,24 @@ filesystem::Path::Path(const std::string& name) {
     this->name = name;
 }
 
+filesystem::Path filesystem::Path::empty() {
+    return Path("");
+}
+
+filesystem::Path filesystem::Path::cwd() {
+#if _WIN32 || _WIN64
+    char buffer[MAX_PATH];
+    GetCurrentDirectoryA(MAX_PATH, buffer);
+
+    return Path(buffer);
+#else
+    char buffer[FILENAME_MAX];
+    getcwd(buffer, FILENAME_MAX);
+
+    return Path(buffer);
+#endif
+}
+
 bool filesystem::Path::exists() const {
     struct stat buffer;
     return (stat(this->name.c_str(), &buffer) == 0);
@@ -41,6 +59,10 @@ bool filesystem::Path::isdir() const {
     stat(this->name.c_str(), &buffer);
 
     return S_ISDIR(buffer.st_mode);
+}
+
+bool filesystem::Path::isempty() const {
+    return this->name.empty();
 }
 
 std::string filesystem::Path::filename() {

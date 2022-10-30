@@ -1,6 +1,5 @@
 #include "visitor.h"
-#include "parser/ast.h"
-#include "utils.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 
 #include <string>
@@ -55,20 +54,12 @@ void Visitor::free() {
         delete func;
     };
 
-    for (auto& scope : this->scope->children) {
+    std::function<void(Scope*)> remove_scope = [&](Scope* scope) {
         for (auto& func : scope->functions) {
             remove(func.second);
         }
 
         for (auto pair : scope->structs) {
-            for (auto method : pair.second->methods) {
-                if (!method.second) {
-                    continue;
-                }
-
-                remove(method.second);
-            }
-
             delete pair.second;
         }
 
@@ -80,22 +71,14 @@ void Visitor::free() {
             delete pair.second;
         }
 
+        for (auto child : scope->children) {
+            remove_scope(child);
+        }
+
         delete scope;
-    }
+    };
 
-
-    // TODO: segfault involving `using` expr. Maybe copy objects?
-    // for (auto pair : this->namespaces) {
-    //     for (auto func : pair.second->functions) {
-    //         if (!func.second) {
-    //             continue;
-    //         }
-
-    //         remove(func.second);
-    //     }
-
-    //     delete pair.second;
-    // }
+    remove_scope(this->global_scope);
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -139,9 +122,9 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
 }
 
 std::string Visitor::format_name(std::string name) {
-    if (this->current_namespace) { name = this->current_namespace->name + "::" + name; }
-    if (this->current_struct) { name = this->current_struct->name + "::" + name; }
-
+    if (this->current_module) { name = this->current_module->qualified_name + "." + name; }
+    if (this->current_namespace) { name = this->current_namespace->qualified_name + "." + name; }
+    
     return name;
 }
 
@@ -249,16 +232,16 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
 }
 
 
-Scope::Local Visitor::get_pointer_from_expr(utils::Ref<ast::Expr> expr) {
+Scope::Local Visitor::get_pointer_from_expr(ast::Expr* expr) {
     if (expr->kind() == ast::ExprKind::Variable) {
         ast::VariableExpr* var = expr->cast<ast::VariableExpr>();
         return this->scope->get_local(var->name);
     } else if (expr->kind() == ast::ExprKind::Element) {
         ast::ElementExpr* element = expr->cast<ast::ElementExpr>();;
-        return this->get_pointer_from_expr(std::move(element->value));
+        return this->get_pointer_from_expr(element->value.get());
     } else if (expr->kind() == ast::ExprKind::Attribute) {
         ast::AttributeExpr* attr = expr->cast<ast::AttributeExpr>();;
-        llvm::Value* parent = this->get_pointer_from_expr(std::move(attr->parent)).first;
+        llvm::Value* parent = this->get_pointer_from_expr(attr->parent.get()).first;
 
         if (!parent) {
             return {nullptr, false};
@@ -269,9 +252,10 @@ Scope::Local Visitor::get_pointer_from_expr(utils::Ref<ast::Expr> expr) {
             return {nullptr, false};
         }
 
-        Struct* structure = this->type_to_struct[type];
-        int index = structure->get_field_index(attr->attribute);
+        std::string name = type->getStructName().str();
+        Struct* structure = this->structs[name];
 
+        int index = structure->get_field_index(attr->attribute);
         if (index < 0) {
             ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attr->attribute, structure->name);
         }
@@ -280,6 +264,54 @@ Scope::Local Visitor::get_pointer_from_expr(utils::Ref<ast::Expr> expr) {
     }
 
     return {nullptr, false};
+}
+
+void Visitor::create_global_initializers() {
+    if (this->initializers.empty()) {
+        return;
+    }
+
+    llvm::Function* function = this->create_function(
+        "__global_variable_initializer", 
+        this->builder->getVoidTy(),
+        {},
+        false,
+        llvm::Function::LinkageTypes::InternalLinkage
+    );
+
+    function->setSection(".text.startup");
+
+    this->builder->SetInsertPoint(llvm::BasicBlock::Create(*this->context, "", function));
+
+    for (auto call : this->initializers) {
+        llvm::Value* value = this->call(
+            call->function, call->args, false, nullptr, nullptr, call->start
+        );
+
+        this->builder->CreateStore(value, call->store);
+        delete call;
+    }
+
+    this->builder->CreateRetVoid();
+
+    llvm::StructType* type = llvm::StructType::create(
+        {this->builder->getInt32Ty(), function->getType(), this->builder->getInt8PtrTy()}
+    );
+    llvm::Constant* init = llvm::ConstantStruct::get(
+        type, {
+            this->builder->getInt32(65535), 
+            function, 
+            llvm::ConstantPointerNull::get(this->builder->getInt8PtrTy())
+        }
+    );
+
+    llvm::ArrayType* array = llvm::ArrayType::get(type, 1);
+    this->module->getOrInsertGlobal( "llvm.global_ctors", array);
+
+    llvm::GlobalVariable* global = this->module->getNamedGlobal("llvm.global_ctors");
+
+    global->setInitializer(llvm::ConstantArray::get(array, init));
+    global->setLinkage(llvm::GlobalValue::AppendingLinkage);
 }
 
 void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
@@ -300,14 +332,22 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
 }
 
 Value Visitor::visit(ast::FloatExpr* expr) {
-    return Value(
-        llvm::ConstantFP::get(*this->context, llvm::APFloat(expr->value)), 
-        true
-    );
+    llvm::Type* type = nullptr;
+    if (expr->is_double) {
+        type = this->builder->getDoubleTy();
+    } else {
+        type = this->builder->getFloatTy();
+    }
+
+
+    return Value(llvm::ConstantFP::get(type, expr->value), true);
 }
 
 Value Visitor::visit(ast::StringExpr* expr) {
-    return Value(this->builder->CreateGlobalStringPtr(expr->value, ".str"), true);
+    return Value(
+        this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get()),
+        true
+    );
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
@@ -326,7 +366,7 @@ Value Visitor::visit(ast::BlockExpr* expr) {
 Value Visitor::visit(ast::OffsetofExpr* expr) {
     Value value = expr->value->accept(*this);
     if (!value.structure) {
-        utils::error(expr->start, "Expected a structure");
+        ERROR(expr->start, "Expected a structure");
     }
 
     Struct* structure = value.structure;

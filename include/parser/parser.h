@@ -33,6 +33,16 @@ public:
         return result;
     }
 
+    double ftoa(const std::string& str) {
+        double result = 0;
+        bool error = llvm::StringRef(str).getAsDouble(result);
+        if (error) {
+            ERROR(this->current.start, "Invalid float literal.");
+        }
+
+        return result;
+    }
+
     void end();
 
     Token next();

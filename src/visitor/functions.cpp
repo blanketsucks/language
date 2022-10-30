@@ -1,7 +1,6 @@
+#include "objects.h"
+#include "parser/ast.h"
 #include "visitor.h"
-
-#include <stdint.h>
-#include "llvm/IR/InstIterator.h"
 
 llvm::Function* Visitor::create_function(
     std::string name, 
@@ -46,7 +45,7 @@ std::vector<llvm::Value*> Visitor::typecheck_function_call(
                     name, this->get_type_name(value->getType()), this->get_type_name(argument->getType()), fn
                 );
             } else {
-                args[start] = this->cast(value, argument->getType());
+                value = this->cast(value, argument->getType());
             }
         }
 
@@ -120,17 +119,23 @@ llvm::Value* Visitor::call(
 
 Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (!this->current_struct && expr->attributes.has("private")) {
-        utils::error(expr->start, "Cannot declare private function outside of a struct");
+        ERROR(expr->start, "Cannot declare private function outside of a struct");
     }
 
     std::string name;
     bool is_anonymous = false;
 
     if (expr->name.empty()) {
-        name = FORMAT("__anon.{0}", this->id++);
+        name = FORMAT("__anon.{0}", this->id);
+        this->id++;
+
         is_anonymous = true;
     } else {
-        name = this->format_name(expr->name);
+        if (expr->linkage == ast::ExternLinkageSpecifier::C) {
+            name = expr->name;
+        } else {
+            name = this->format_name(expr->name);
+        }
     }
 
     auto pair = this->format_intrinsic_function(name);
@@ -143,7 +148,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     llvm::Type* ret = this->get_llvm_type(expr->return_type);
     if (name == this->entry) {
         if (!ret->isVoidTy() && !ret->isIntegerTy()) {
-            utils::error(expr->start, "Entry point function must either return void or an integer");
+            ERROR(expr->start, "Entry point function must either return void or an integer");
         }
 
         if (ret->isVoidTy()) {
@@ -151,9 +156,23 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         }
     }
 
-    std::vector<llvm::Type*> args;
+    std::vector<FunctionArgument> args;
+    std::map<std::string, FunctionArgument> kwargs;
+
+    std::vector<llvm::Type*> llvm_args;
     for (auto& arg : expr->args) {
-        args.push_back(this->get_llvm_type(arg.type));
+        auto type = this->get_llvm_type(arg.type);
+        if (arg.is_reference) {
+            type = type->getPointerTo();
+        }
+
+        if (arg.is_kwarg) {
+            kwargs[arg.name] = {arg.name, type, arg.is_reference, true};
+        } else {
+            args.push_back({arg.name, type, arg.is_reference, false});
+        }
+
+        llvm_args.push_back(type);
     }
 
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
@@ -161,18 +180,26 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         linkage = llvm::Function::LinkageTypes::InternalLinkage;
     }
 
-    llvm::Function* function = this->create_function(
-        pair.first, ret, args, expr->is_variadic, linkage
-    );
-
-    int i = 0;
-    for (auto& arg : function->args()) {
-        arg.setName(expr->args[i++].name);
+    if (expr->linkage != ast::ExternLinkageSpecifier::C && pair.first != this->entry) {
+        pair.first = Mangler::mangle(
+            expr->name, 
+            llvm_args, 
+            expr->is_variadic, 
+            ret, 
+            this->current_namespace, 
+            this->current_struct, 
+            this->current_module
+        );
     }
+
+    llvm::Function* function = this->create_function(
+        pair.first, ret, llvm_args, expr->is_variadic, linkage
+    );
 
     Function* func = new Function(
         pair.first, 
-        args, 
+        args,
+        kwargs,
         ret, 
         function,
         (name == this->entry), 
@@ -184,7 +211,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     func->start = expr->start;
     func->end = expr->end;
 
-    this->scope->functions[expr->name] = func; 
+    this->scope->functions[expr->name] = func;
     return function;
 }
 
@@ -218,28 +245,25 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     }
 
     func->return_block = llvm::BasicBlock::Create(*this->context);
-
-    func->scope = new Scope(func->name, ScopeType::Function, this->scope);
-    this->scope = func->scope;
+    func->scope = this->create_scope(func->name, ScopeType::Function);
 
     uint32_t i = 0;
-    for (auto& arg : function->args()) {
-        std::string name = arg.getName().str();
-        llvm::Type* type = func->args[i];
+    for (auto& arg : func->get_all_args()) {
+        llvm::Argument* argument = function->getArg(i);
+        argument->setName(arg.name);
 
-        llvm::AllocaInst* inst = this->create_alloca(type);
-        if (type->isStructTy() && arg.getType()->isIntegerTy(64)) {
-            llvm::Value* cast = this->builder->CreateBitCast(inst, this->builder->getInt32Ty()->getPointerTo());
-            this->builder->CreateStore(&arg, cast);
+        if (!arg.is_reference) {
+            llvm::AllocaInst* inst = this->create_alloca(arg.type);
+            this->builder->CreateStore(argument, inst);
+
+            func->scope->variables[arg.name] = inst;
         } else {
-            this->builder->CreateStore(&arg, inst);
+            func->scope->variables[arg.name] = argument;
         }
 
-        func->scope->variables[name] = inst;
         i++;
     }
     
-
     Function* outer = this->current_function;
     this->current_function = func;
 
@@ -300,7 +324,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
     Function* func = this->current_function;
     if (expr->value) {
         if (func->ret->isVoidTy()) {
-            utils::error(expr->start, "Cannot return a value from void function");
+            ERROR(expr->start, "Cannot return a value from void function");
         }
 
         this->ctx = func->ret;
@@ -342,7 +366,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 Value Visitor::visit(ast::DeferExpr* expr) {
     Function* func = this->current_function;
     if (!func) {
-        utils::error(expr->start, "Defer statement outside of function");
+        ERROR(expr->start, "Defer statement outside of function");
     }
 
     func->defers.push_back(expr->expr.release());
@@ -353,7 +377,13 @@ Value Visitor::visit(ast::CallExpr* expr) {
     Value callable = expr->callee->accept(*this);
     Function* func = callable.function;
 
-    size_t argc = expr->args.size();
+    if (!func && !expr->kwargs.empty()) {
+        ERROR(expr->start, "Keyword arguments are not allowed in this context");
+    }
+
+    if (func) func->used = true;
+
+    size_t argc = expr->args.size() + expr->kwargs.size();
     bool is_constructor = false;
 
     llvm::Type* type = nullptr;
@@ -363,10 +393,10 @@ Value Visitor::visit(ast::CallExpr* expr) {
         llvm::AllocaInst* instance = this->builder->CreateAlloca(structure->type);
         callable.parent = instance; // `self` parameter for the constructor
     
-        func = structure->methods["constructor"];
+        func = structure->scope->functions["constructor"];
         func->used = true;
 
-        callable.value = this->module->getFunction(func->name);
+        callable.value = func->value;
         is_constructor = true;
 
         type = func->value->getFunctionType();
@@ -375,11 +405,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
         if (type->isPointerTy()) {
             type = type->getNonOpaquePointerElementType();
             if (!type->isFunctionTy()) {
-                utils::error(expr->start, "Cannot call non-function");
+                ERROR(expr->start, "Cannot call non-function");
             }
         } else {
             if (!callable.function) {
-                utils::error(expr->start, "Cannot call non-function");
+                ERROR(expr->start, "Cannot call non-function");
             }
         }
     }
@@ -392,7 +422,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     std::string name = function->getName().str();
     if (function->getName() == this->entry) {
-        utils::error(expr->start, "Cannot call the main entry function");
+        ERROR(expr->start, "Cannot call the main entry function");
     }
 
     llvm::FunctionType* ftype = nullptr;
@@ -403,7 +433,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         if (type->isFunctionTy()) {
             ftype = llvm::cast<llvm::FunctionType>(type);
         } else {
-            utils::error(expr->start, "Cannot call non-function");
+            ERROR(expr->start, "Cannot call non-function");
         }
     }
 
@@ -436,16 +466,59 @@ Value Visitor::visit(ast::CallExpr* expr) {
     std::vector<llvm::Value*> args;
     uint32_t i = 0;
 
-    for (auto& arg : expr->args) {
-        // Only case where this can be false is with variadic functions
-        if (i < argc) {
-            this->ctx = ftype->getParamType(i);
+    auto visit = [&](ast::Expr* expr, bool is_reference = false) {
+        if (i < argc) this->ctx = ftype->getParamType(i);
+
+        if (is_reference) {
+            // TODO: check null and raise error
+            args.push_back(this->get_pointer_from_expr(expr).first);
+        } else {
+            args.push_back(expr->accept(*this).unwrap(expr->start));
         }
 
-        args.push_back(arg->accept(*this).unwrap(arg->start));
         this->ctx = nullptr;
-
         i++;
+    };
+
+    if (func) {
+        auto all_args = func->get_all_args();
+        for (auto& arg : expr->args) {
+            bool is_reference = false;
+            if (i < all_args.size()) {
+                is_reference = all_args[i].is_reference;
+            }
+
+            visit(arg.get(), is_reference);
+        }
+
+        for (auto& kwarg : expr->kwargs) {
+            if (!func->has_kwarg(kwarg.first)) {
+                ERROR(kwarg.second->start, "Function '{0}' does not have a keyword argument '{1}'", name, kwarg.first);
+            }
+
+            bool is_reference = false;
+            if (i < all_args.size()) {
+                is_reference = all_args[i].is_reference;
+            }
+
+            visit(kwarg.second.get(), is_reference);
+        }        
+    } else {
+        for (auto& arg : expr->args) {
+            visit(arg.get());
+        }
+    }
+
+    if (!this->current_function) {
+        FunctionCall* call = new FunctionCall;
+
+        call->function = function;
+        call->args = args;
+        call->store = nullptr;
+        call->start = expr->start;
+        call->end = expr->end;
+
+        return Value::as_call(call);
     }
 
     return this->call(

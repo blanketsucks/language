@@ -1,4 +1,4 @@
-$include "libc/include.pr"
+import libc;
 
 enum MyEnum {
     A,

@@ -115,12 +115,14 @@ static std::vector<std::string> KEYWORDS = {
     "as",
     "sizeof",
     "offsetof",
+    "typeof",
     "using",
     "from",
     "defer",
     "private",
     "enum",
     "where",
+    "import",
 
     // Preprocessor keywords
     "$define",

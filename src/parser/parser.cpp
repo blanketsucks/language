@@ -43,17 +43,17 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
 }
 
 void Parser::free() {
-    for (auto type : ALLOCATED_TYPES) {
+    for (auto type : Type::ALLOCATED_TYPES) {
         delete type;
     }
 
-    ALLOCATED_TYPES.clear();
+    Type::ALLOCATED_TYPES.clear();
 }
 
 void Parser::end() {
     if (this->current != TokenKind::SemiColon) {
         Token last = this->tokens[this->index - 1];
-        utils::error(last.end, "Expected ';'");
+        ERROR(last.end, "Expected ';'");
     }
 
     this->next();
@@ -130,7 +130,7 @@ Type* Parser::parse_type(std::string name, bool should_error) {
     } else if (this->current == TokenKind::LParen) {
         this->next();
         if (this->current == TokenKind::RParen) {
-            utils::error(this->current.start, "Tuple type literals must atleast have a single element");
+            ERROR(this->current.start, "Tuple type literals must atleast have a single element");
         }
 
         std::vector<Type*> types;
@@ -238,27 +238,44 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
     this->expect(TokenKind::LParen, "(");
 
     std::vector<ast::Argument> args;
+
+    bool has_kwargs = false;
     bool is_variadic = false;
 
     while (this->current != TokenKind::RParen) {
         std::string value = this->current.value;
-        if (this->current != TokenKind::Identifier && this->current != TokenKind::Ellipsis) {
-            utils::error(this->current.start, "Expected identifier");
+        if (
+            this->current != TokenKind::Identifier && this->current != TokenKind::Ellipsis && this->current != TokenKind::Mul
+        ) {
+            ERROR(this->current.start, "Expected identifier");
         }
 
         if (this->current == TokenKind::Ellipsis) {
             if (is_variadic) {
-                utils::error(this->current.start, "Cannot have multiple variadic arguments");
+                ERROR(this->current.start, "Cannot have multiple variadic arguments");
             }
 
             is_variadic = true;
             this->next();
 
             break;
+        } else if (this->current == TokenKind::Mul) {
+            if (has_kwargs) {
+                ERROR(this->current.start, "Only one '*' seperator is allowed in a function prototype");
+            }
+
+            has_kwargs = true;
+            this->next();
+
+            this->expect(TokenKind::Comma, ",");
+            continue;
         }
+
 
         Type* type;
         std::string argument;
+        bool is_reference = false;
+
         if (value == "self") {
             if (this->current_struct) {
                 argument = "self";
@@ -269,6 +286,11 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
                 this->next();
                 this->expect(TokenKind::Colon, ":");
 
+                if (this->current == TokenKind::BinaryAnd) {
+                    is_reference = true;
+                    this->next();
+                }
+
                 type = this->parse_type(this->current.value);
                 argument = value;
             }
@@ -277,13 +299,18 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             if (!type) {
                 this->next();
                 this->expect(TokenKind::Colon, ":");
+        
+                if (this->current == TokenKind::BinaryAnd) {
+                    is_reference = true;
+                    this->next();
+                }
 
                 type = this->parse_type(this->current.value);
                 argument = value;
             }
         }
 
-        args.push_back({argument, type});
+        args.push_back({argument, type, is_reference, has_kwargs});
         if (this->current != TokenKind::Comma) {
             break;
         }
@@ -409,7 +436,7 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
         }
 
         if (this->current != TokenKind::Identifier && !this->current.match(TokenKind::Keyword, "func")) {
-            utils::error(this->current.start, "Expected field name or function definition");
+            ERROR(this->current.start, "Expected field name or function definition");
         }
 
         if (this->current.value == "func") {
@@ -470,7 +497,7 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
 
         this->expect(TokenKind::RParen, ")");
         if (names.empty()) {
-            utils::error(start, "Expected atleast a single variable name");
+            ERROR(start, "Expected atleast a single variable name");
         }
 
         is_multiple_variables = true;
@@ -491,7 +518,7 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         end = this->expect(TokenKind::SemiColon, ";").end;
 
         if (!type) {
-            utils::error(this->current.start, "Un-initialized variables must have an inferred type");
+            ERROR(this->current.start, "Un-initialized variables must have an inferred type");
         }
     } else {
         this->next();
@@ -502,12 +529,12 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     };
 
     if (names.size() > 1 && !expr) {
-        utils::error(expr->start, "Expected an expression when using multiple named assignments");
+        ERROR(expr->start, "Expected an expression when using multiple named assignments");
     }
     
     if (is_const) {
         if (!expr) {
-            utils::error(this->current.start, "Constants must have an initializer");
+            ERROR(this->current.start, "Constants must have an initializer");
         }
 
         return utils::make_ref<ast::ConstExpr>(start, end, names[0], type, std::move(expr));
@@ -553,7 +580,7 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
         ast::Attributes attrs = this->parse_attributes();
 
         if (!this->current.match(TokenKind::Keyword, NAMESPACE_ALLOWED_KEYWORDS)) {
-            utils::error(this->current.start, "Expected function, extern, struct, const, type, or namespace definition");
+            ERROR(this->current.start, "Expected function, extern, struct, const, type, or namespace definition");
         }
 
         utils::Ref<ast::Expr> member;
@@ -619,7 +646,7 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
         definition = utils::make_ref<ast::VariableAssignmentExpr>(start, end, names, type, std::move(expr), true, false);
     } else {
         if (this->current != TokenKind::Keyword && this->current.value != "func") {
-            utils::error(this->current.start, "Expected function");
+            ERROR(this->current.start, "Expected function");
         }
 
         this->next();
@@ -636,18 +663,14 @@ utils::Ref<ast::Expr> Parser::parse_extern_block() {
 
     if (this->current == TokenKind::String) {
         if (this->current.value != "C") {
-            utils::error(this->current.start, "Unknown extern linkage specifier");
+            ERROR(this->current.start, "Unknown extern linkage specifier");
         }
 
-        // TODO: Name mangling.
-
-        // For now just ignore if "C" is used because from what I know if it's used like 
-        // `extern "C" void foo();` in C++, the name of the function doesn't get mangled unlike if used without the "C".
-        // Right now, I don't do name mangling so I'll just ignore it.
         this->next();
         linkage = ast::ExternLinkageSpecifier::C;
     }
 
+    // TODO: Allow const/let defitnitions
     if (this->current == TokenKind::LBrace) {
         std::vector<utils::Ref<ast::Expr>> definitions;
         this->next();
@@ -730,7 +753,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 return this->parse_function_definition();
             } else if (this->current.value == "return") {
                 if (!this->is_inside_function) {
-                    utils::error(this->current.start, "Return statement outside of function");
+                    ERROR(this->current.start, "Return statement outside of function");
                 }
 
                 this->next();
@@ -746,7 +769,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 return utils::make_ref<ast::ReturnExpr>(start, end, std::move(expr));
             } else if (this->current.value == "if") {
                 if (!this->is_inside_function) {
-                    utils::error(this->current.start, "If statement outside of function");
+                    ERROR(this->current.start, "If statement outside of function");
                 }
 
                 this->next();
@@ -759,7 +782,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 return this->parse_variable_definition(true);
             } else if (this->current.value == "struct") {
                 if (this->is_inside_function) {
-                    utils::error(this->current.start, "Struct definition inside function");
+                    ERROR(this->current.start, "Struct definition inside function");
                 }
 
                 this->next();
@@ -822,7 +845,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 );
             } else if (this->current.value == "break") {
                 if (!this->is_inside_loop) {
-                    utils::error(this->current.start, "Break statement outside of loop");
+                    ERROR(this->current.start, "Break statement outside of loop");
                 }
 
                 Location start = this->current.start;
@@ -832,7 +855,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 return utils::make_ref<ast::BreakExpr>(start, end);
             } else if (this->current.value == "continue") {
                 if (!this->is_inside_loop) {
-                    utils::error(this->current.start, "Continue statement outside of loop");
+                    ERROR(this->current.start, "Continue statement outside of loop");
                 }
 
                 Location start = this->current.start;
@@ -861,7 +884,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 }
 
                 if (this->current != TokenKind::Keyword && this->current.value != "from") {
-                    utils::error(this->current.start, "Expected 'from' keyword.");
+                    ERROR(this->current.start, "Expected 'from' keyword.");
                 }
 
                 this->next();
@@ -870,7 +893,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 return utils::make_ref<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
             } else if (this->current.value == "defer") {
                 if (!this->is_inside_function) {
-                    utils::error(this->current.start, "Defer statement outside of function");
+                    ERROR(this->current.start, "Defer statement outside of function");
                 }
 
                 Location start = this->current.start;
@@ -881,8 +904,40 @@ utils::Ref<ast::Expr> Parser::statement() {
             } else if (this->current.value == "enum") {
                 this->next();
                 return this->parse_enum();
+            } else if (this->current.value == "import") {
+                Location start = this->current.start;
+                this->next();
+
+                std::string name = this->expect(TokenKind::Identifier, "module name").value;
+                bool is_wildcard = false;
+
+                std::deque<std::string> parents;
+                while (this->current == TokenKind::DoubleColon) {
+                    this->next();
+
+                    if (this->current == TokenKind::Mul) {
+                        is_wildcard = true;
+                        this->next();
+
+                        break;
+                    }
+
+                    std::string parent = this->expect(TokenKind::Identifier, "module name").value;
+                    parents.push_back(parent);
+                }
+
+                if (!parents.empty()) {
+                    std::string back = parents.back();
+                    parents.pop_back();
+
+                    parents.push_back(name);
+                    name = back;
+                }
+
+                Location end = this->expect(TokenKind::SemiColon, ";").end;
+                return utils::make_ref<ast::ImportExpr>(start, end, name, parents, is_wildcard);
             } else {
-                utils::error(this->current.start, "Expected an expression");
+                ERROR(this->current.start, "Expected an expression");
             }
 
             break;
@@ -893,14 +948,14 @@ utils::Ref<ast::Expr> Parser::statement() {
             return this->expr();
     }
 
-    utils::error(this->current.start, "Unreachable");
+    ERROR(this->current.start, "Unreachable");
     return nullptr;
 }
 
 utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op) {
     if (left->kind() == ast::ExprKind::String) {
         if (right->kind() != ast::ExprKind::String) {
-            utils::error(this->current.start, "Expected string.");
+            ERROR(this->current.start, "Expected string.");
         }
 
         ast::StringExpr* lhs = left->cast<ast::StringExpr>();
@@ -947,7 +1002,7 @@ utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> ri
                 op, this->current.start, "float", lhs->value, rhs->value
             );
 
-            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result);
+            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result, false);
         }
     } else {
         ast::FloatExpr* lhs = left->cast<ast::FloatExpr>();
@@ -964,7 +1019,7 @@ utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> ri
                 op, this->current.start, "float", lhs->value, rhs->value
             );
 
-            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result);
+            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result, false);
         }
     }
 }
@@ -1005,9 +1060,9 @@ utils::Ref<ast::Expr> Parser::parse_immediate_unary_op(utils::Ref<ast::Expr> exp
         case TokenKind::Add:
             result = lhs->value; break;
         case TokenKind::Mul:
-            utils::error(expr->start, "Unsupported unary operator '*' for type 'int'");
+            ERROR(expr->start, "Unsupported unary operator '*' for type 'int'"); exit(1);
         case TokenKind::And:
-            utils::error(expr->start, "Unsupported unary operator '&' for type 'int'");
+            ERROR(expr->start, "Unsupported unary operator '&' for type 'int'");
     }
 
     return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
@@ -1106,12 +1161,29 @@ utils::Ref<ast::Expr> Parser::call() {
     auto expr = this->factor();
     while (this->current == TokenKind::LParen) {
         this->next();
-        std::vector<utils::Ref<ast::Expr>> args;
 
+        std::vector<utils::Ref<ast::Expr>> args;
+        std::map<std::string, utils::Ref<ast::Expr>> kwargs;
+
+        bool has_kwargs = false;
         if (this->current != TokenKind::RParen) {
             while (true) {
-                auto arg = this->expr(false);
-                args.push_back(std::move(arg));
+                if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Assign) {
+                    std::string name = this->current.value;
+                    this->next(); this->next();
+
+                    auto value = this->expr(false);
+                    kwargs[name] = std::move(value);
+
+                    has_kwargs = true;
+                } else {
+                    if (has_kwargs) {
+                        ERROR(this->current.start, "Positional arguments must come before keyword arguments");
+                    }
+
+                    auto value = this->expr(false);
+                    args.push_back(std::move(value));
+                }
 
                 if (this->current != TokenKind::Comma) {
                     break;
@@ -1122,7 +1194,9 @@ utils::Ref<ast::Expr> Parser::call() {
         }
         
         this->expect(TokenKind::RParen, ")");
-        expr = utils::make_ref<ast::CallExpr>(start, this->current.end, std::move(expr), std::move(args));
+        expr = utils::make_ref<ast::CallExpr>(
+            start, this->current.end, std::move(expr), std::move(args), std::move(kwargs)
+        );
     }
 
     if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
@@ -1136,18 +1210,16 @@ utils::Ref<ast::Expr> Parser::call() {
 
         bool previous_is_named_field = true;
         while (this->current != TokenKind::RBrace) {
-
             std::string name;
-            if (this->current == TokenKind::Identifier) {
+            if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
                 if (!previous_is_named_field) {
-                    utils::error(this->current.start, "Expected a field name.");
+                    ERROR(this->current.start, "Expected a field name.");
                 }
 
                 previous_is_named_field = true;
                 name = this->current.value;
 
-                this->next();
-                this->expect(TokenKind::Colon, ":");
+                this->next(); this->next();
             } else {
                 previous_is_named_field = false;
             }
@@ -1229,21 +1301,25 @@ utils::Ref<ast::Expr> Parser::factor() {
                 return utils::make_ref<ast::IntegerExpr>(
                     start, this->current.start, this->itoa<char>(number, "char"), 8
                 );
-
-                this->next();
-            }
-            
-            if (this->current.match(TokenKind::Identifier, "i16")) {
+            } else if (this->current.match(TokenKind::Identifier, "i16")) {
                 this->next();
                 return utils::make_ref<ast::IntegerExpr>(
                     start, this->current.start, this->itoa<short>(number, "short"), 16
                 );
-            } 
-            
-            if (this->current.match(TokenKind::Identifier, "i64")) {
+            } else if (this->current.match(TokenKind::Identifier, "i64")) {
                 this->next();
                 return utils::make_ref<ast::IntegerExpr>(
                     start, this->current.start, this->itoa<long>(number, "long"), 64
+                );
+            } else if (this->current.match(TokenKind::Identifier, "f")) {
+                this->next();
+                return utils::make_ref<ast::FloatExpr>(start, this->current.start, this->ftoa(number), false);
+            } else if (this->current.match(TokenKind::Identifier, "d")) {
+                this->next();
+                return utils::make_ref<ast::FloatExpr>(start, this->current.start, this->ftoa(number), true);
+            } else {
+                return utils::make_ref<ast::IntegerExpr>(
+                    start, this->current.start, this->itoa<int>(number, "int"), 32
                 );
             }
 
@@ -1263,16 +1339,17 @@ utils::Ref<ast::Expr> Parser::factor() {
             return utils::make_ref<ast::IntegerExpr>(start, this->current.start, c, 8);
         }
         case TokenKind::Float: {
-            double number;
-            bool error = llvm::StringRef(this->current.value).getAsDouble(number);
-            if (error) {
-                utils::error(this->current.start, "Invalid floating point number.");
-            }
-
+            double value = this->ftoa(this->current.value);
             this->next();
 
+            bool is_double = false;
+            if (this->current.match(TokenKind::Identifier, "d")) {
+                this->next();
+                is_double = true;
+            }
+
             // Same case again.
-            return utils::make_ref<ast::FloatExpr>(start, this->current.start, number);
+            return utils::make_ref<ast::FloatExpr>(start, this->current.start, value, is_double);
         }
         case TokenKind::String: {
             std::string value = this->current.value;
@@ -1342,7 +1419,7 @@ utils::Ref<ast::Expr> Parser::factor() {
                 this->is_inside_function = outer;
                 return utils::make_ref<ast::FunctionExpr>(start, this->current.start, std::move(prototype), std::move(body));
             } else {
-                utils::error(this->current.start, "Unexpected keyword.");
+                ERROR(this->current.start, "Unexpected keyword."); exit(1);
             }
         }
         case TokenKind::LParen: {

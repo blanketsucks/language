@@ -1,4 +1,4 @@
-$include "libc/include.pr"
+import libc;
 
 func fib(n: int) -> int {
     if (n == 0) {

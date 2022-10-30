@@ -1,11 +1,12 @@
-$define NULL 0
+# $define NULL 0
 
-$define SEEK_END 2
-$define SEEK_SET 0
-
-namespace libc {
+# $define SEEK_END 2
+# $define SEEK_SET 0
 
 type FILE = int;
+
+const SEEK_END = 2;
+const SEEK_SET = 0;
     
 extern "C" {
     func fopen(path: char*, mode: char*) -> FILE*;
@@ -124,6 +125,4 @@ extern "C" {
 
     func __errno_location() -> int*;
     func __h_errno_location() -> int*;
-}
-
 }

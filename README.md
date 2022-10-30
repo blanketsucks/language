@@ -2,18 +2,8 @@
 
 Small language made for fun.
 
-## Example
-
 ```
-extern "C" func printf(fmt: char*, ...) -> int;
-
-func main() {
-    printf("Hello, world!\n");
-}
-```
-Or:
-```
-$include "libc/include.pr"
+import libc;
 
 func main() {
     libc::printf("Hello, world!\n");
@@ -54,14 +44,3 @@ After the build, you'll have a `proton-jit` executable in the same directory.
 $ ./proton-jit hello.pr
 Hello, World!
 ```
-
-## Goals
-
-- [x] ~~For/while loops. The parsing for while loops is done, but something goes wrong in the code generation.~~ Done.
-- [x] ~~return inside if statements. Already works if we make LLVM shut up.~~ Solved.
-- [ ] More preprocessor directives.
-- [ ] Better errors.
-- [ ] Rewrite include system and maybe implement modules?
-- [ ] Fix memory leaks.
-- [ ] Self-hosted.
-- [ ] Generics.

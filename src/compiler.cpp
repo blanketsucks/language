@@ -91,46 +91,45 @@ void Compiler::set_verbose(bool verbose) {
 void Compiler::dump() {
     std::stringstream stream;
 
-    // stream << utils::fmt::format("Input file: '{s}'", this->input) << '\n';
-    // stream << utils::fmt::format("Output file: '{s}'", this->output) << '\n';
-    // stream << utils::fmt::format("Program entry point: '{s}'", this->entry) << '\n';
+    stream << FORMAT("Input file: '{0}'", this->input) << '\n';
+    stream << FORMAT("Output file: '{0}'", this->output) << '\n';
+    stream << FORMAT("Program entry point: '{0}'", this->entry) << '\n';
 
-    // const char* opt = this->opt == OptimizationLevel::Debug ? "Debug" : "Release";
-    // stream << utils::fmt::format("Optimization level: '{}'", opt) << '\n';
+    const char* opt = this->opt == OptimizationLevel::Debug ? "Debug" : "Release";
+    stream << FORMAT("Optimization level: '{0}'", opt) << '\n';
 
-    // const char* format = OUTPUT_FORMATS_TO_STR[this->format];
-    // stream << utils::fmt::format("Output format: '{}'", format) << '\n';
+    const char* format = OUTPUT_FORMATS_TO_STR[this->format];
+    stream << FORMAT("Output format: '{0}'", format) << '\n';
 
-    // if (!this->target.empty()) {
-    //     stream << utils::fmt::format("Target: '{s}'", this->target) << '\n';
-    // }
+    if (!this->target.empty()) {
+        stream << FORMAT("Target: '{0}'", this->target) << '\n';
+    }
 
-    // if (!this->includes.empty()) {
-    //     std::string includes = utils::fmt::join(", ", this->includes);
-    //     stream << utils::fmt::format("Include paths: {s}", includes) << '\n';
-    // }
+    if (!this->includes.empty()) {
+        stream << FORMAT("Include paths: {0}", llvm::make_range(this->includes.begin(), this->includes.end())) << '\n';
+    }
 
-    // if (!this->libraries.names.empty() || !this->libraries.paths.empty()) {
-    //     stream << "Libraries:" << '\n';
-    //     if (!this->libraries.names.empty()) {
-    //         std::string libnames = utils::fmt::join(", ", this->libraries.names);
-    //         stream << "    " << utils::fmt::format("Library names: {s}", libnames) << '\n';
-    //     }
+    if (!this->libraries.names.empty() || !this->libraries.paths.empty()) {
+        stream << "Libraries:" << '\n';
+        if (!this->libraries.names.empty()) {
+            auto libnames = llvm::make_range(this->libraries.names.begin(), this->libraries.names.end());
+            stream << "    " << FORMAT("Library names: {0}", libnames) << '\n';
+        }
         
-    //     if (!this->libraries.paths.empty()) {
-    //         std::string libpaths = utils::fmt::join(", ", this->libraries.paths);
-    //         stream << "    " << utils::fmt::format("Library paths: {s}", libpaths) << '\n';
-    //     }
-    // }
+        if (!this->libraries.paths.empty()) {
+            auto libpaths = llvm::make_range(this->libraries.paths.begin(), this->libraries.paths.end());
+            stream << "    " << FORMAT("Library paths: {0}", libpaths) << '\n';
+        }
+    }
 
-    // stream << utils::fmt::format("Linker: '{s}'", this->linker) << '\n';
-    // if (!this->extras.empty()) {
-    //     stream << "Extra linker options: " << '\n';
-    //     for (auto& pair : this->extras) {
-    //         stream << "    " << pair.first << " " << pair.second << '\n'; 
-    //     }
+    stream << FORMAT("Linker: '{0}'", this->linker) << '\n';
+    if (!this->extras.empty()) {
+        stream << "Extra linker options: " << '\n';
+        for (auto& pair : this->extras) {
+            stream << "    " << pair.first << " " << pair.second << '\n'; 
+        }
 
-    // }
+    }
 
     std::cout << stream.str();
     return;
@@ -203,7 +202,7 @@ CompilerError Compiler::compile() {
 
     tokens = preprocessor.process();
     if (this->verbose) {
-        Compiler::log_duration("The Lexer and Preprocessor", start);
+        Compiler::log_duration("Lexing and Preprocessing", start);
     }
 
     Parser parser(tokens);
@@ -213,7 +212,7 @@ CompilerError Compiler::compile() {
 
     auto ast = parser.parse();
     if (this->verbose) {
-        Compiler::log_duration("The Parser", start);
+        Compiler::log_duration("Parsing", start);
     }
 
     Visitor visitor(this->input, this->entry, bool(this->opt));
@@ -223,9 +222,11 @@ CompilerError Compiler::compile() {
 
     visitor.visit(std::move(ast));
     if (this->verbose) {
-        Compiler::log_duration("The Visitor", start);
+        Compiler::log_duration("Visiting the AST and generating LLVM IR", start);
         std::cout << '\n';
     }
+
+    visitor.create_global_initializers();
 
     visitor.free();
     parser.free();

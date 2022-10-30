@@ -34,10 +34,14 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             }
 
             llvm::Type* type = value->getType()->getNonOpaquePointerElementType();
+            if (type->isVoidTy()) {
+                ERROR(expr->start, "Cannot dereference a void pointer");
+            }
+
             return this->builder->CreateLoad(type, value);
         }
         case TokenKind::BinaryAnd: {
-            return this->get_pointer_from_expr(std::move(expr->value)).first;
+            return this->get_pointer_from_expr(expr->value.get()).first;
         }
         case TokenKind::Inc: {
             if (!is_numeric) {
@@ -76,9 +80,9 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             return nullptr;
         }
 
-        auto local = this->get_pointer_from_expr(std::move(expr->left));
+        auto local = this->get_pointer_from_expr(expr->left.get());
         if (local.second) {
-            utils::error(expr->start, "Cannot assign to constant");
+            ERROR(expr->start, "Cannot assign to constant");
         }
 
         llvm::Value* inst = local.first;
@@ -213,10 +217,9 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->start);
-
-    auto local = this->get_pointer_from_expr(std::move(expr->left));
+    auto local = this->get_pointer_from_expr(expr->left.get());
     if (local.second) {
-        utils::error(expr->start, "Cannot assign to constant");
+        ERROR(expr->start, "Cannot assign to constant");
     }
 
     llvm::Value* parent = local.first;

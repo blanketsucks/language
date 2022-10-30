@@ -36,7 +36,7 @@ Value Visitor::visit(ast::TupleExpr* expr) {
     }
 
     if (!this->current_function) {
-        utils::error(expr->start, "Tuple literals cannot contain non-constant elements");
+        ERROR(expr->start, "Tuple literals cannot contain non-constant elements");
     }
 
     llvm::AllocaInst* inst = this->create_alloca(type);

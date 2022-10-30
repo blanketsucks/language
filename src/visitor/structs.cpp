@@ -5,10 +5,11 @@
 
 Value Visitor::visit(ast::StructExpr* expr) {
     if (expr->opaque) {
-        llvm::StructType* type = llvm::StructType::create(*this->context, expr->name);
+        std::string name = this->format_name(expr->name);
+        llvm::StructType* type = llvm::StructType::create(*this->context, name);
         
-        this->scope->structs[expr->name] = new Struct(expr->name, true, type, {});
-        return this->constants["null"];
+        this->scope->structs[expr->name] = new Struct(expr->name, name, true, type, {});
+        return nullptr;
     }
 
     std::vector<Struct*> parents;
@@ -19,14 +20,11 @@ Value Visitor::visit(ast::StructExpr* expr) {
     bool exists = this->scope->structs.find(expr->name) != this->scope->structs.end();
 
     if (!exists) {
-        // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
         std::string name = this->format_name(expr->name);
-        llvm::StructType* type = llvm::StructType::create(*this->context, {}, name, expr->attributes.has("packed"));
-        
-        
-        structure = new Struct(expr->name, false, type, {});
 
-        this->type_to_struct[type] = structure;
+        // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
+        llvm::StructType* type = llvm::StructType::create(*this->context, {}, name, expr->attributes.has("packed"));
+        structure = new Struct(expr->name, name, false, type, {});
 
         structure->start = expr->start;
         structure->end = expr->end;
@@ -34,10 +32,11 @@ Value Visitor::visit(ast::StructExpr* expr) {
         this->scope->structs[expr->name] = structure;
         this->structs[name] = structure;
 
+        structure->scope = this->create_scope(name, ScopeType::Struct);
         for (auto& parent : expr->parents) {
             Value value = parent->accept(*this);
             if (!value.structure) {
-                utils::error(parent->start, "Expected a structure");
+                ERROR(parent->start, "Expected a structure");
             }
 
             std::vector<Struct*> expanded = value.structure->expand();
@@ -53,8 +52,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
                 fields[pair.first] = pair.second;
             }
 
-            for (auto& pair : parent->methods) {
-                structure->methods[pair.first] = pair.second;
+            for (auto& pair : parent->scope->functions) {
+                structure->scope->functions[pair.first] = pair.second;
             }
         }
         
@@ -72,7 +71,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
         for (auto& field : struct_fields) {
             llvm::Type* ty = this->get_llvm_type(field.type);
             if (ty == type) {
-                utils::error(expr->start, "Cannot have a field of the same type as the struct itself");
+                ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
             }
 
             types.push_back(this->get_llvm_type(field.type));
@@ -90,14 +89,15 @@ Value Visitor::visit(ast::StructExpr* expr) {
         structure->fields = fields;
     } else {
         if (expr->fields.size()) {
-            utils::error(expr->start, "Re-definitions of structures must not define extra fields");
+            ERROR(expr->start, "Re-definitions of structures must not define extra fields");
         }
 
         if (expr->parents.size()) {
-            utils::error(expr->start, "Re-defintions of structures must not add new inheritance");
+            ERROR(expr->start, "Re-defintions of structures must not add new inheritance");
         }
 
         structure = this->scope->structs[expr->name];
+        this->scope = structure->scope;
     }
     
     this->current_struct = structure;
@@ -106,6 +106,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
     }
 
     this->current_struct = nullptr;
+    this->scope->exit(this);
+
     return nullptr;
 }
 
@@ -135,16 +137,16 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
 
     type = type->getNonOpaquePointerElementType();
     if (!type->isStructTy()) {
-        utils::error(expr->parent->start, "Expected a structure");
+        ERROR(expr->parent->start, "Expected a structure");
     }
 
     std::string name = type->getStructName().str();
     Struct* structure = this->structs[name];
 
-    if (structure->has_method(expr->attribute)) {
-        Function* function = structure->methods[expr->attribute];
+    if (structure->scope->has_function(expr->attribute)) {
+        Function* function = structure->scope->functions[expr->attribute];
         if (!value->getType()->isPointerTy()) {
-            value = this->get_pointer_from_expr(std::move(expr->parent)).first;
+            value = this->get_pointer_from_expr(expr->parent.get()).first;
         }
 
         if (this->current_struct != structure && function->is_private) {
@@ -172,7 +174,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     
     if (is_constant) {
         if (!llvm::isa<llvm::ConstantStruct>(value)) {
-            utils::error(expr->start, "Expected a constant structure");
+            ERROR(expr->start, "Expected a constant structure");
         } 
 
         llvm::ConstantStruct* structure = llvm::cast<llvm::ConstantStruct>(value);
@@ -186,7 +188,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
 Value Visitor::visit(ast::ConstructorExpr* expr) {
     Value parent = expr->parent->accept(*this);
     if (!parent.structure) {
-        utils::error(expr->start, "Expected a struct");
+        ERROR(expr->start, "Expected a struct");
     }
 
     Struct* structure = parent.structure;
@@ -269,16 +271,21 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
 }
 
 void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->get_pointer_from_expr(std::move(expr->parent)).first;
+    llvm::Value* parent = this->get_pointer_from_expr(expr->parent.get()).first;
     llvm::Type* type = parent->getType();
 
     if (!type->isPointerTy()) {
-        utils::error(expr->start, "Attribute access on non-structure type");
+        ERROR(expr->start, "Attribute access on non-structure type");
     }
 
     type = type->getNonOpaquePointerElementType();
+    if (type->isPointerTy()) {
+        type = type->getNonOpaquePointerElementType();
+        parent = this->load(parent);
+    }
+
     if (!type->isStructTy()) {
-        utils::error(expr->start, "Attribute access on non-structure type");
+        ERROR(expr->start, "Attribute access on non-structure type");
     }
 
     std::string name = type->getStructName().str();

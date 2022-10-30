@@ -8,10 +8,9 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     enumeration->start = expr->start;
     enumeration->end = expr->end;
 
-    enumeration->scope = new Scope(expr->name, ScopeType::Enum, this->scope);
     this->scope->enums[expr->name] = enumeration;
+    enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
 
-    this->scope = enumeration->scope;
     if (type->isIntegerTy()) {
         int64_t counter = 0;
         for (auto& field : expr->fields) {
@@ -19,7 +18,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
             if (field.value) {
                 llvm::Value* value = field.value->accept(*this).unwrap(field.value->start);
                 if (!llvm::isa<llvm::ConstantInt>(value)) {
-                    utils::error(field.value->start, "Expected a constant integer");
+                    ERROR(field.value->start, "Expected a constant integer");
                 }
 
                 llvm::ConstantInt* val = llvm::cast<llvm::ConstantInt>(value);
@@ -45,12 +44,12 @@ Value Visitor::visit(ast::EnumExpr* expr) {
 
     for (auto& field : expr->fields) {
         if (!field.value) {
-            utils::error(expr->start, "Expected a value");
+            ERROR(expr->start, "Expected a value");
         }
 
         Value value = field.value->accept(*this);
         if (!value.is_constant) {
-            utils::error(field.value->start, "Expected a constant value");
+            ERROR(field.value->start, "Expected a constant value");
         }
 
         llvm::Constant* constant = llvm::cast<llvm::Constant>(value.unwrap(field.value->start));

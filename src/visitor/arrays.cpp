@@ -23,7 +23,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         }
 
         if (!this->ctx->isArrayTy()) {
-            utils::error(expr->start, "Expected an array type");
+            ERROR(expr->start, "Expected an array type");
         }
 
         return llvm::ConstantAggregateZero::get(this->ctx);
@@ -34,7 +34,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     for (size_t i = 1; i < elements.size(); i++) {
         llvm::Value* element = elements[i];
         if (!this->is_compatible(element->getType(), etype)) {
-            utils::error(expr->start, "All elements of an array must be of the same type");
+            ERROR(expr->start, "All elements of an array must be of the same type");
         } else {
             elements[i] = this->cast(element, etype);
         }
@@ -67,24 +67,24 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     if (type->isStructTy()) {
         llvm::StringRef name = type->getStructName();
         if (!name.startswith("__tuple")) {
-            utils::error(expr->value->start, "Expected a pointer, array or tuple");
+            ERROR(expr->value->start, "Expected a pointer, array or tuple");
         }
 
         llvm::Value* val = expr->index->accept(*this).unwrap(expr->index->start);
         if (!llvm::isa<llvm::ConstantInt>(val)) {
-            utils::error(expr->index->start, "Tuple indices must be integer constants");
+            ERROR(expr->index->start, "Tuple indices must be integer constants");
         }
 
         llvm::ConstantInt* index = llvm::cast<llvm::ConstantInt>(val);
         int64_t idx = index->getSExtValue();
 
         if (idx < 0) {
-            utils::error(expr->index->start, "Tuple indices must be a positive integer");
+            ERROR(expr->index->start, "Tuple indices must be a positive integer");
         }
 
         uint32_t elements = type->getStructNumElements();
         if (idx > elements) {
-            utils::error(expr->index->start, "Element index out of bounds");
+            ERROR(expr->index->start, "Element index out of bounds");
         }
 
         if (is_const) {
@@ -98,19 +98,19 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->start);
     if (!index->getType()->isIntegerTy()) {
-        utils::error(expr->index->start, "Indicies must be integers");
+        ERROR(expr->index->start, "Indicies must be integers");
     }
 
     if (is_const) {
         if (!llvm::isa<llvm::ConstantInt>(index)) {
-            utils::error(expr->index->start, "Expected a constant integer as the array index");
+            ERROR(expr->index->start, "Expected a constant integer as the array index");
         }
 
         llvm::ConstantInt* idx = llvm::cast<llvm::ConstantInt>(index);
         llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(value);
 
         if (idx->getSExtValue() > int64_t(array->getType()->getArrayNumElements() - 1)) {
-            utils::error(expr->index->start, "Element index out of bounds");
+            ERROR(expr->index->start, "Element index out of bounds");
         }
 
         return Value(array->getAggregateElement(idx->getSExtValue()), true);
@@ -128,8 +128,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         ptr = this->builder->CreateGEP(element, value, index);
     } else {
         // ExtractValue doesn't take a Value so i'm kinda forced to do this.
-        value = this->get_pointer_from_expr(std::move(expr->value)).first;
-
+        value = this->get_pointer_from_expr(expr->value.get()).first;
         ptr = this->builder->CreateGEP(type, value, {this->builder->getInt32(0), index});
     }
     
@@ -137,7 +136,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 }
 
 void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->get_pointer_from_expr(std::move(expr->value)).first;
+    llvm::Value* parent = this->get_pointer_from_expr(expr->value.get()).first;
     llvm::Type* type = parent->getType();
 
     if (!type->isPointerTy()) {
@@ -151,7 +150,7 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->start);
     if (!index->getType()->isIntegerTy()) {
-        utils::error(expr->index->start, "Indices must be integers");
+        ERROR(expr->index->start, "Indices must be integers");
     }
 
     llvm::Value* element = value->accept(*this).unwrap(value->start);

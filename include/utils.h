@@ -35,10 +35,14 @@
 
 #define COLOR(color, s) utils::color(color, s)
 
-#define ERROR(loc, fmt, ...) utils::error(loc, llvm::formatv(fmt, __VA_ARGS__)); exit(1)
+#define ERROR(loc, ...) utils::error(loc, llvm::formatv(__VA_ARGS__)); exit(1)
 #define NOTE(loc, fmt, ...) utils::note(loc, FORMAT(fmt, __VA_ARGS__))
 
-#define TODO(x) std::cout << "TODO: " << "(" << __FILE__ << ":" << __LINE__ << ") " << x << '\n'; exit(1)
+#define TODO(x) \
+    std::cout << FORMAT("{0}:{1} in {2}: '{3}'\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, x); \
+    exit(1)
+
+
 #define UNUSED(x) (void)x
 
 namespace utils {
@@ -57,9 +61,13 @@ namespace filesystem {
 
         Path(const std::string& name);
 
+        static Path empty();
+        static Path cwd();
+
         bool exists() const;
         bool isfile() const;
         bool isdir() const;
+        bool isempty() const;
 
         std::string filename();
 
@@ -188,6 +196,7 @@ bool has_color_support();
 
 std::string join(std::string sep, std::vector<std::string> strings);
 std::vector<std::string> split(std::string str, char delimiter);
+std::string replace(std::string str, std::string from, std::string to);
 
 void error(Location location, const std::string& message, bool fatal = true);
 void note(Location location, const std::string& message);

@@ -8,8 +8,10 @@
 #include "types/array.h"
 #include "types/tuple.h"
 
+std::vector<Type*> Type::ALLOCATED_TYPES = {0};
+
 void Type::push(Type* type) {
-    ALLOCATED_TYPES.push_back(type);
+    Type::ALLOCATED_TYPES.push_back(type);
 }
 
 Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
@@ -20,7 +22,7 @@ bool Type::operator==(Type::Value other) {
 
 Type* Type::create(Type::Value value, size_t size) {
     auto type = new Type(value, size);
-    Type::push(type);
+    Type::ALLOCATED_TYPES.push_back(type);
 
     return type;
 }

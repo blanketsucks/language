@@ -6,6 +6,10 @@
 #include "parser/parser.h"
 #include "llvm.h"
 #include "objects.h"
+#include "mangler.h"
+
+#include "llvm/ADT/Optional.h"
+#include "llvm/IR/DerivedTypes.h"
 
 #include <map>
 #include <stdint.h>
@@ -27,7 +31,7 @@ public:
     bool with_optimizations;
 
     uint64_t id = 0;
-
+    
     utils::Ref<llvm::LLVMContext> context;
     utils::Ref<llvm::Module> module;
     utils::Ref<llvm::IRBuilder<>> builder;
@@ -39,8 +43,9 @@ public:
     std::map<std::string, Namespace*> namespaces;
     std::map<std::string, Enum*> enums;
 
-    std::map<llvm::Type*, Struct*> type_to_struct;
-    std::map<uint32_t, llvm::StructType*> tuples; 
+    std::map<uint32_t, llvm::StructType*> tuples;
+
+    std::vector<FunctionCall*> initializers;
 
     Scope* global_scope;
     Scope* scope;
@@ -49,6 +54,7 @@ public:
     Struct* current_struct = nullptr;
     Namespace* current_namespace = nullptr;
     Enum* current_enum = nullptr;
+    Module* current_module = nullptr;
 
     llvm::Type* ctx;
 
@@ -114,10 +120,12 @@ public:
         Location location = Location::dummy()
     );
 
+    void create_global_initializers();
+
     static std::string get_type_name(llvm::Type* type);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
 
-    Scope::Local get_pointer_from_expr(utils::Ref<ast::Expr> expr);
+    Scope::Local get_pointer_from_expr(ast::Expr* expr);
 
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
@@ -168,7 +176,8 @@ public:
     Value visit(ast::EnumExpr* expr);
 
     Value visit(ast::WhereExpr* expr);
-};
 
+    Value visit(ast::ImportExpr* expr);
+};
 
 #endif

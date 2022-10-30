@@ -120,7 +120,7 @@ std::vector<Token> Preprocessor::process() {
                 this->next();
             } else if (this->current.value == "$else") {
                 if (!this->has_if_directive) {
-                    utils::error(this->current.start, "Unexpected '$else'");
+                    ERROR(this->current.start, "Unexpected '$else'");
                 }
 
                 this->next();
@@ -129,7 +129,7 @@ std::vector<Token> Preprocessor::process() {
                 }
             } else if (this->current.value == "$endif") {
                 if (!this->has_if_directive) {
-                    utils::error(this->current.start, "Unexpected '$endif'");
+                    ERROR(this->current.start, "Unexpected '$endif'");
                 }
 
                 this->next();
@@ -152,7 +152,7 @@ std::vector<Token> Preprocessor::process() {
     }
 
     if (this->has_if_directive) {
-        utils::error(this->if_directive_location, "Unterminated if directive");
+        ERROR(this->if_directive_location, "Unterminated if directive");
     }
     
     this->processed.push_back(this->current);
@@ -161,7 +161,7 @@ std::vector<Token> Preprocessor::process() {
 
 Macro Preprocessor::parse_macro_definition() {
     if (this->current != TokenKind::Identifier) {
-        utils::error(this->current.start, "Expected identifier");
+        ERROR(this->current.start, "Expected identifier");
     }
  
     std::string name = this->current.value;
@@ -173,7 +173,7 @@ Macro Preprocessor::parse_macro_definition() {
 
         while (this->current != TokenKind::RParen) {
             if (this->current != TokenKind::Identifier) {
-                utils::error(this->current.start, "Expected identifier");
+                ERROR(this->current.start, "Expected identifier");
             }
 
             args.push_back(this->current.value);
@@ -272,7 +272,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
     if (macro.is_callable()) {
         this->next();
         if (this->current != TokenKind::LParen) {
-            utils::error(this->current.start, "Expected '('");
+            ERROR(this->current.start, "Expected '('");
         }
 
         this->next();
@@ -281,7 +281,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         size_t index = 0;
         while (this->current != TokenKind::RParen) {
             if (index >= macro.args.size()) {
-                utils::error(this->current.start, "Too many arguments passed to macro call", false);
+                ERROR(this->current.start, "Too many arguments passed to macro call", false);
 
                 std::string message = FORMAT(
                     "'{0}' macro expects {1} arguments but got {2}", macro.name, macro.args.size(), index + 1
@@ -303,11 +303,11 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         }
 
         if (this->current != TokenKind::RParen) {
-            utils::error(this->current.start, "Expected ')'");
+            ERROR(this->current.start, "Expected ')'");
         }
 
         if (index < macro.args.size() - 1) {
-            utils::error(this->current.start, "Too few arguments passed to macro call", false);
+            ERROR(this->current.start, "Too few arguments passed to macro call", false);
             NOTE(this->current.start, "'{s}' macro expects {i} arguments but got {i}", macro.name, macro.args.size(), index + 1);
             
             exit(1);
@@ -344,7 +344,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
 int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token left) {
     if (right == TokenKind::String) {
         if (left != right.type) {
-            utils::error(left.start, "Expected left hand side of expression to be a string");
+            ERROR(left.start, "Expected left hand side of expression to be a string");
         }
 
         switch (op) {
@@ -362,7 +362,7 @@ int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token lef
 
     }
     
-    utils::error(right.start, "Expected an integer or a string expression"); exit(1);
+    ERROR(right.start, "Expected an integer or a string expression"); exit(1);
 }
 
 std::vector<Token> Preprocessor::run(std::vector<Token> tokens) {

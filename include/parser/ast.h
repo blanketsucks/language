@@ -57,7 +57,8 @@ enum class ExprKind {
     Using,
     Tuple,
     Enum,
-    Where
+    Where,
+    Import
 };
 
 struct Attributes {
@@ -97,7 +98,7 @@ private:
 };
 
 // Designed after wabt's expression style
-// Source: https://github.com/WebAssembly/wabt/blob/main/src/ir.h
+// Source: https://github.com/WebAssembly/wabt/blob/main/include/wabt/ir.h
 template<ExprKind Kind> class ExprMixin : public Expr {
 public:
     static bool classof(const Expr* expr) { return expr->kind() == Kind; }
@@ -107,6 +108,8 @@ public:
 struct Argument {
     std::string name;
     Type* type;
+    bool is_reference;
+    bool is_kwarg;
 };
 
 class BlockExpr : public ExprMixin<ExprKind::Block> {
@@ -128,9 +131,10 @@ public:
 
 class FloatExpr : public ExprMixin<ExprKind::Float> {
 public:
-    float value;
+    double value;
+    bool is_double;
 
-    FloatExpr(Location start, Location end, float value);
+    FloatExpr(Location start, Location end, double value, bool is_double);
     Value accept(Visitor& visitor) override;
 };
 
@@ -219,9 +223,18 @@ public:
 class CallExpr : public ExprMixin<ExprKind::Call> {
 public:
     utils::Ref<ast::Expr> callee;
-    std::vector<utils::Ref<Expr>> args;
 
-    CallExpr(Location start, Location end, utils::Ref<ast::Expr> callee, std::vector<utils::Ref<Expr>> args);
+    std::vector<utils::Ref<Expr>> args;
+    std::map<std::string, utils::Ref<Expr>> kwargs;
+
+    CallExpr(
+        Location start, 
+        Location end, 
+        utils::Ref<ast::Expr> callee, 
+        std::vector<utils::Ref<Expr>> args,
+        std::map<std::string, utils::Ref<Expr>> kwargs
+    );
+
     Value accept(Visitor& visitor) override;
 };
 
@@ -461,6 +474,19 @@ public:
     utils::Ref<Expr> expr;
 
     WhereExpr(Location start, Location end, utils::Ref<Expr> expr);
+    Value accept(Visitor& visitor) override;
+};
+
+class ImportExpr : public ExprMixin<ExprKind::Import> {
+public:
+    std::string name;
+    std::deque<std::string> parents;
+    bool is_wildcard;
+
+    ImportExpr(
+        Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard
+    );
+
     Value accept(Visitor& visitor) override;
 };
 

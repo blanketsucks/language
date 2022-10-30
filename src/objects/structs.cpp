@@ -2,16 +2,14 @@
 
 Struct::Struct(
     std::string name,
+    std::string qualified_name,
     bool opaque,
     llvm::StructType* type,
     std::map<std::string, StructField> fields
-) : name(name), type(type), fields(fields), opaque(opaque) {
-    this->methods = {};
-    this->locals = {};
-}
+) : name(name), qualified_name(qualified_name), type(type), fields(fields), opaque(opaque) {}
 
 bool Struct::has_method(std::string name) { 
-    return this->methods.find(name) != this->methods.end(); 
+    return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
 int Struct::get_field_index(std::string name) {
@@ -42,15 +40,6 @@ std::vector<StructField> Struct::get_fields(bool with_private) {
     }
 
     return fields;
-}
-
-llvm::Value* Struct::get_variable(std::string name) {
-    auto iter = this->locals.find(name);
-    if (iter == this->locals.end()) {
-        return nullptr;
-    }
-
-    return iter->second;
 }
 
 std::vector<Struct*> Struct::expand() {

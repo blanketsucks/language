@@ -7,6 +7,8 @@ Scope::Scope(std::string name, ScopeType type, Scope* parent) : name(name), type
     this->functions = {};
     this->constants = {};
     this->enums = {};
+    this->variables = {};
+    this->modules = {};
 }
 
 // Really repetitive code here. Not sure how to make it better.
@@ -75,6 +77,18 @@ bool Scope::has_variable(std::string name) {
     if (this->variables.find(name) == this->variables.end()) {
         if (this->parent) {
             return this->parent->has_variable(name);
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
+bool Scope::has_module(std::string name) {
+    if (this->modules.find(name) == this->modules.end()) {
+        if (this->parent) {
+            return this->parent->has_module(name);
         }
 
         return false;
@@ -164,6 +178,18 @@ Namespace* Scope::get_namespace(std::string name) {
 
     if (this->parent) {
         return this->parent->get_namespace(name);
+    } else {
+        return nullptr;
+    }
+}
+
+Module* Scope::get_module(std::string name) {
+    if (this->modules.find(name) != this->modules.end()) {
+        return this->modules[name];
+    }
+
+    if (this->parent) {
+        return this->parent->get_module(name);
     } else {
         return nullptr;
     }

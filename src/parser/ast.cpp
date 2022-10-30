@@ -26,8 +26,8 @@ Value IntegerExpr::accept(Visitor& visitor) {
 }
 
 FloatExpr::FloatExpr(
-    Location start, Location end, float value
-) : ExprMixin(start, end), value(value) {}
+    Location start, Location end, double value, bool is_double
+) : ExprMixin(start, end), value(value), is_double(is_double) {}
 
 Value FloatExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
@@ -118,10 +118,15 @@ Value InplaceBinaryOpExpr::accept(Visitor& visitor) {
 }
 
 CallExpr::CallExpr(
-    Location start, Location end, utils::Ref<ast::Expr> callee, std::vector<utils::Ref<Expr>> args
+    Location start, 
+    Location end, 
+    utils::Ref<ast::Expr> callee, 
+    std::vector<utils::Ref<Expr>> args, 
+    std::map<std::string, utils::Ref<Expr>> kwargs
 ) : ExprMixin(start, end) {
     this->callee = std::move(callee);
     this->args = std::move(args);
+    this->kwargs = std::move(kwargs);
 }
 
 Value CallExpr::accept(Visitor& visitor) {
@@ -363,5 +368,13 @@ WhereExpr::WhereExpr(
 }
 
 Value WhereExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ImportExpr::ImportExpr(
+    Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard
+) : ExprMixin(start, end), name(name), parents(parents), is_wildcard(is_wildcard) {}
+
+Value ImportExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

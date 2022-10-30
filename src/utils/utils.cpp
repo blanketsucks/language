@@ -30,6 +30,16 @@ std::vector<std::string> utils::split(std::string str, char delimiter) {
     return result;
 }
 
+std::string utils::replace(std::string str, std::string from, std::string to) {
+    size_t start = 0;
+    while ((start = str.find(from, start)) != std::string::npos) {
+        str.replace(start, from.length(), to);
+        start += to.length();
+    }
+
+    return str;
+}
+
 
 bool utils::has_color_support() {
     return isatty(fileno(stdout));
