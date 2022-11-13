@@ -3,6 +3,7 @@
 
 #include "parser/ast.h"
 #include "llvm.h"
+#include "utils.h"
 
 #include <string>
 #include <vector>
@@ -41,6 +42,11 @@ struct FunctionArgument {
 
 };
 
+struct FunctionDefer {
+    utils::Ref<ast::Expr> expr;
+    bool ignore_noreturn_calls;
+};
+
 struct Function {
     std::string name;
     llvm::Type* ret;
@@ -60,8 +66,8 @@ struct Function {
     llvm::BasicBlock* return_block;
     llvm::BasicBlock* current_block;
 
-    std::vector<Function*> calls;
-    std::vector<ast::Expr*> defers;
+    std::vector<utils::Shared<Function>> calls;
+    std::vector<FunctionDefer> defers;
 
     Location start;
     Location end;
@@ -76,6 +82,7 @@ struct Function {
     bool is_intrinsic;
     bool is_anonymous;
     bool used;
+    bool noreturn;
 
     Function(
         std::string name,
@@ -95,7 +102,7 @@ struct Function {
     bool has_kwarg(std::string name);
     std::vector<FunctionArgument> get_all_args();
 
-    void defer(Visitor& visitor);
+    void defer(Visitor& visitor, bool is_noreturn = false);
 };
 
 struct FunctionCall {
@@ -126,8 +133,8 @@ struct Struct {
     std::map<std::string, StructField> fields;
     Scope* scope;
 
-    std::vector<Struct*> parents;
-    std::vector<Struct*> children;
+    std::vector<utils::Shared<Struct>> parents;
+    std::vector<utils::Shared<Struct>> children;
 
     Location start;
     Location end;
@@ -148,7 +155,7 @@ struct Struct {
 
     bool has_method(std::string name);
 
-    std::vector<Struct*> expand();
+    std::vector<utils::Shared<Struct>> expand();
 };
 
 struct Enum {
@@ -169,7 +176,7 @@ struct Enum {
 
 struct Namespace {
     std::string name;
-    std::string qualified_name; // Used for mangling
+    std::string qualified_name;
 
     Scope* scope;
 
@@ -194,11 +201,13 @@ struct Module {
     std::string qualified_name;
     std::string path;
 
+    bool is_ready;
+
     Scope* scope;
 
     Module(
         std::string name, std::string qualified_name, std::string path
-    ) : name(name), qualified_name(qualified_name), path(path) {};
+    ) : name(name), qualified_name(qualified_name), path(path), is_ready(false) {};
 };
 
 struct Scope {
@@ -212,11 +221,11 @@ struct Scope {
 
     std::map<std::string, llvm::Value*> variables;
     std::map<std::string, llvm::Value*> constants;
-    std::map<std::string, Function*> functions;
-    std::map<std::string, Struct*> structs;
-    std::map<std::string, Enum*> enums;
-    std::map<std::string, Namespace*> namespaces;
-    std::map<std::string, Module*> modules;
+    std::map<std::string, utils::Shared<Function>> functions;
+    std::map<std::string, utils::Shared<Struct>> structs;
+    std::map<std::string, utils::Shared<Enum>> enums;
+    std::map<std::string, utils::Shared<Namespace>> namespaces;
+    std::map<std::string, utils::Shared<Module>> modules;
 
     Scope(std::string name, ScopeType type, Scope* parent = nullptr);
 
@@ -232,16 +241,12 @@ struct Scope {
 
     llvm::Value* get_variable(std::string name);
     llvm::Value* get_constant(std::string name);
-    Function* get_function(std::string name);
-    Struct* get_struct(std::string name);
-    Enum* get_enum(std::string name);
-    Namespace* get_namespace(std::string name);
-    Module* get_module(std::string name);
 
-    std::vector<Function*> get_functions();
-    std::vector<Struct*> get_structs();
-    std::vector<Enum*> get_enums();
-    std::vector<Namespace*> get_namespaces();
+    utils::Shared<Function> get_function(std::string name);
+    utils::Shared<Struct> get_struct(std::string name);
+    utils::Shared<Enum> get_enum(std::string name);
+    utils::Shared<Namespace> get_namespace(std::string name);
+    utils::Shared<Module> get_module(std::string name);
 
     void exit(Visitor* visitor);
 };
@@ -252,11 +257,11 @@ struct Value {
 
     bool is_constant;
 
-    Function* function;
-    Struct* structure;
-    Namespace* ns;
-    Enum* enumeration;
-    Module* module;
+    utils::Shared<Function> function;
+    utils::Shared<Struct> structure;
+    utils::Shared<Enum> enumeration;
+    utils::Shared<Namespace> namespace_;
+    utils::Shared<Module> module;
 
     FunctionCall* call;
 
@@ -264,11 +269,11 @@ struct Value {
         llvm::Value* value,
         bool is_constant = false,
         llvm::Value* parent = nullptr,
-        Function* function = nullptr,
-        Struct* structure = nullptr, 
-        Namespace* ns = nullptr,
-        Enum* enumeration = nullptr,
-        Module* module = nullptr,
+        utils::Shared<Function> function = nullptr,
+        utils::Shared<Struct> structure = nullptr,
+        utils::Shared<Enum> enumeration = nullptr,
+        utils::Shared<Namespace> namespace_ = nullptr,
+        utils::Shared<Module> module = nullptr,
         FunctionCall* call = nullptr
     );
 
@@ -277,11 +282,11 @@ struct Value {
     llvm::Type* type();
     std::string name();
 
-    static Value with_function(Function* function);
-    static Value with_struct(Struct* structure);
-    static Value with_namespace(Namespace* ns);
-    static Value with_enum(Enum* enumeration);
-    static Value with_module(Module* module);
+    static Value with_function(utils::Shared<Function> function);
+    static Value with_struct(utils::Shared<Struct> structure);
+    static Value with_enum(utils::Shared<Enum> enumeration);
+    static Value with_namespace(utils::Shared<Namespace> namespace_);
+    static Value with_module(utils::Shared<Module> module);
 
     static Value as_call(FunctionCall* call);
 };

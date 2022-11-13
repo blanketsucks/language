@@ -13,7 +13,7 @@ public:
     static TupleType* create(std::vector<Type*> types);
 
     static TupleType* from_llvm_type(llvm::StructType* type);
-    llvm::StructType* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::Type* to_llvm_type(Visitor& visitor) override;
 
     std::vector<Type*> getElementTypes();
 

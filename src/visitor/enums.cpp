@@ -2,8 +2,8 @@
 #include "visitor.h"
 
 Value Visitor::visit(ast::EnumExpr* expr) {
-    llvm::Type* type = expr->type->to_llvm_type(*this->context);
-    Enum* enumeration = new Enum(expr->name, type);
+    llvm::Type* type = this->get_llvm_type(expr->type);
+    auto enumeration = utils::make_shared<Enum>(expr->name, type);
 
     enumeration->start = expr->start;
     enumeration->end = expr->end;

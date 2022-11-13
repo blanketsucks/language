@@ -4,33 +4,38 @@
 #include "llvm/IR/Constants.h"
 
 Value Visitor::visit(ast::StructExpr* expr) {
+    std::map<std::string, StructField> fields;
     if (expr->opaque) {
         std::string name = this->format_name(expr->name);
         llvm::StructType* type = llvm::StructType::create(*this->context, name);
         
-        this->scope->structs[expr->name] = new Struct(expr->name, name, true, type, {});
+        this->scope->structs[expr->name] = utils::make_shared<Struct>(
+            expr->name, name, true, type, fields
+        );
+
         return nullptr;
     }
 
-    std::vector<Struct*> parents;
+    std::vector<utils::Shared<Struct>> parents;
     std::vector<llvm::Type*> types;
-    std::map<std::string, StructField> fields;
+    utils::Shared<Struct> structure = nullptr;
 
-    Struct* structure = nullptr;
     bool exists = this->scope->structs.find(expr->name) != this->scope->structs.end();
-
     if (!exists) {
         std::string name = this->format_name(expr->name);
 
         // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
         llvm::StructType* type = llvm::StructType::create(*this->context, {}, name, expr->attributes.has("packed"));
-        structure = new Struct(expr->name, name, false, type, {});
+        structure = utils::make_shared<Struct>(
+            expr->name, name, false, type, fields
+        );
 
         structure->start = expr->start;
         structure->end = expr->end;
 
         this->scope->structs[expr->name] = structure;
         this->structs[name] = structure;
+        this->typeids[expr->type->getID()] = type;
 
         structure->scope = this->create_scope(name, ScopeType::Struct);
         for (auto& parent : expr->parents) {
@@ -39,7 +44,9 @@ Value Visitor::visit(ast::StructExpr* expr) {
                 ERROR(parent->start, "Expected a structure");
             }
 
-            std::vector<Struct*> expanded = value.structure->expand();
+            auto expanded = value.structure->expand();
+            expanded.insert(expanded.begin(), value.structure);
+
             parents.insert(parents.end(), expanded.begin(), expanded.end());
 
             structure->parents.push_back(value.structure);
@@ -118,44 +125,32 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     llvm::Value* value = parent.unwrap(expr->parent->start);
     llvm::Type* type = value->getType();
 
+    std::string name;
+    bool is_pointer = false;
+
     if (type->isStructTy()) {
-        std::string name = type->getStructName().str();
-        Struct* structure = this->structs[name];
-
-        int index = structure->get_field_index(expr->attribute);
-        if (index < 0) {
-            ERROR(expr->parent->start, "Field '{0}' does not exist in struct '{1}'", expr->attribute, name);
+        name = type->getStructName().str();
+    } else if (type->isPointerTy()) {
+        llvm::Type* element = type->getNonOpaquePointerElementType();
+        if (element->isStructTy()) {
+            name = element->getStructName().str();
+            is_pointer = true;
         }
-
-        StructField field = structure->fields.at(expr->attribute);
-        if (this->current_struct != structure && field.is_private) {
-            ERROR(expr->parent->start, "Cannot access private field '{0}'", expr->attribute);
-        }
-        
-        return this->builder->CreateExtractValue(value, index);
     }
 
-    type = type->getNonOpaquePointerElementType();
-    if (!type->isStructTy()) {
-        ERROR(expr->parent->start, "Expected a structure");
+    if (name.empty()) {
+        ERROR(expr->start, "Cannot access attributes of non-struct types");
     }
 
-    std::string name = type->getStructName().str();
-    Struct* structure = this->structs[name];
-
+    auto structure = this->structs[name];
     if (structure->scope->has_function(expr->attribute)) {
-        Function* function = structure->scope->functions[expr->attribute];
-        if (!value->getType()->isPointerTy()) {
+        auto function = structure->scope->functions[expr->attribute];
+        if (!is_pointer) {
             value = this->get_pointer_from_expr(expr->parent.get()).first;
         }
 
         if (this->current_struct != structure && function->is_private) {
             ERROR(expr->parent->start, "Cannot access private method '{0}'", expr->attribute);
-        }
-
-        if (function->parent != structure) {
-            Struct* parent = function->parent;
-            value = this->builder->CreateBitCast(value, parent->type->getPointerTo());
         }
         
         function->used = true;
@@ -178,10 +173,12 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         } 
 
         llvm::ConstantStruct* structure = llvm::cast<llvm::ConstantStruct>(value);
-        return Value(structure->getAggregateElement(index), true, nullptr);
+        return Value(structure->getAggregateElement(index), true);
+    } else if (!is_pointer) {
+        return this->builder->CreateExtractValue(value, index);
     }
 
-    llvm::Value* ptr = this->builder->CreateStructGEP(type, value, index);
+    llvm::Value* ptr = this->builder->CreateStructGEP(type->getNonOpaquePointerElementType(), value, index);
     return this->load(ptr);
 }
 
@@ -191,8 +188,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         ERROR(expr->start, "Expected a struct");
     }
 
-    Struct* structure = parent.structure;
-
+    auto structure = parent.structure;
     bool all_private = std::all_of(structure->fields.begin(), structure->fields.end(), [&](auto& pair) {
         return pair.second.is_private;
     });
@@ -200,7 +196,6 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     if (all_private && this->current_struct != structure) {
         ERROR(expr->start, "No public default constructor for struct '{0}'", structure->name);
     }
-
 
     std::map<int, llvm::Value*> args;
     int index = 0;
@@ -289,7 +284,7 @@ void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr>
     }
 
     std::string name = type->getStructName().str();
-    Struct* structure = this->structs[name];
+    auto structure = this->structs[name];
 
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {

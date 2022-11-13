@@ -1,7 +1,10 @@
 #include "visitor.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/ValueSymbolTable.h"
 
 Value Visitor::visit(ast::TupleExpr* expr) {
-    std::vector<Type*> types;
+    std::vector<llvm::Type*> types;
     std::vector<llvm::Value*> elements;
 
     bool is_const = true;
@@ -12,18 +15,17 @@ Value Visitor::visit(ast::TupleExpr* expr) {
         llvm::Value* value = val.unwrap(elem->start);
 
         elements.push_back(value);
-        types.push_back(Type::from_llvm_type(value->getType()));
+        types.push_back(value->getType());
     }
 
-    uint32_t hash = TupleType::getHashFromTypes(types);
+    TupleKey key = TupleKey::create(types);
     llvm::StructType* type = nullptr;
-    if (this->tuples.find(hash) != this->tuples.end()) {
-        type = this->tuples[hash];
-    } else {
-        TupleType* tuple = TupleType::create(types);
-        type = tuple->to_llvm_type(*this->context);
 
-        this->tuples[hash] = type;
+    if (this->tuples.find(key) != this->tuples.end()) {
+        type = this->tuples[key];
+    } else {
+        type = llvm::StructType::create(*this->context, types, "__tuple");
+        this->tuples[key] = type;
     }
     
     if (is_const) {

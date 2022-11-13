@@ -2,14 +2,14 @@
 #include "visitor.h"
 
 Value Visitor::visit(ast::NamespaceExpr* expr) {
+    utils::Shared<Namespace> ns = nullptr;
     while (!expr->parents.empty()) {
         std::string name = expr->parents.front();
         expr->parents.pop_front();
 
-        Namespace* ns;
         ns = this->scope->namespaces[name];
         if (!ns) {
-            ns = new Namespace(name, this->format_name(name));
+            ns = utils::make_shared<Namespace>(name, this->format_name(name));
 
             this->scope->namespaces[name] = ns;
             ns->scope = this->create_scope(name, ScopeType::Namespace);
@@ -20,12 +20,11 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
         this->current_namespace = ns;
     }
 
-    Namespace* ns = nullptr;
     if (this->scope->namespaces.find(expr->name) != this->scope->namespaces.end()) {
         ns = this->scope->namespaces[expr->name];
         this->scope = ns->scope;
     } else {
-        ns = new Namespace(name, this->format_name(expr->name));
+        ns =  utils::make_shared<Namespace>(name, this->format_name(expr->name));
         
         ns->start = expr->start;
         ns->end = expr->end;
@@ -47,7 +46,7 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
 
 Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     Value value = expr->parent->accept(*this);
-    if (!value.ns && !value.structure && !value.enumeration && !value.module) {
+    if (!value.namespace_ && !value.structure && !value.enumeration && !value.module) {
         ERROR(expr->start, "Expected a namespace, struct, enum or module");
     }
 
@@ -61,8 +60,8 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     }
 
     Scope* scope;
-    if (value.ns) {
-        scope = value.ns->scope;
+    if (value.namespace_) {
+        scope = value.namespace_->scope;
     } else if (value.structure) {
         scope = value.structure->scope;
     } else {
@@ -72,7 +71,7 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     if (scope->structs.find(expr->attribute) != scope->structs.end()) {
         return Value::with_struct(scope->structs[expr->attribute]);
     } else if (scope->functions.find(expr->attribute) != scope->functions.end()) {
-        Function* func = scope->functions[expr->attribute];
+        auto func = scope->functions[expr->attribute];
         func->used = true;
 
         return Value::with_function(func);
@@ -90,23 +89,30 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {
-   Value parent = expr->parent->accept(*this);
-   if (!parent.ns) {
-        ERROR(expr->start, "Expected a namespace");
-   }
+    Value parent = expr->parent->accept(*this);
+    if (!parent.namespace_ && !parent.module) {
+        ERROR(expr->start, "Expected a namespace or module");
+    }
 
-   Scope* scope = parent.ns->scope;
-   for (auto member : expr->members) {
-       if (scope->structs.find(member) != scope->structs.end()) {
-           this->structs[member] = scope->structs[member];
-       } else if (scope->functions.find(member) != scope->functions.end()) {
-           this->functions[member] = scope->functions[member];
-       } else if (scope->namespaces.find(member) != scope->namespaces.end()) {
-           this->namespaces[member] = scope->namespaces[member];
-       } else {
-           ERROR(expr->start, "Member '{0}' does not exist in namespace '{1}'", member, scope->name);
-       }
-   }
 
-   return nullptr;
+    Scope* scope = nullptr;
+    if (parent.namespace_) {
+        scope = parent.namespace_->scope;
+    } else {
+        scope = parent.module->scope;
+    }
+
+    for (auto member : expr->members) {
+        if (scope->structs.find(member) != scope->structs.end()) {
+            this->scope->structs[member] = scope->structs[member];
+        } else if (scope->functions.find(member) != scope->functions.end()) {
+            this->scope->functions[member] = scope->functions[member];
+        } else if (scope->namespaces.find(member) != scope->namespaces.end()) {
+            this->scope->namespaces[member] = scope->namespaces[member];
+        } else {
+            ERROR(expr->start, "Member '{0}' does not exist in namespace '{1}'", member, scope->name);
+        }
+    }
+
+    return nullptr;
 }

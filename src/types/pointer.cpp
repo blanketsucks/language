@@ -17,8 +17,8 @@ PointerType* PointerType::from_llvm_type(llvm::Type* type) {
     return PointerType::create(Type::from_llvm_type(type->getNonOpaquePointerElementType()));
 }
 
-llvm::PointerType* PointerType::to_llvm_type(llvm::LLVMContext& context) {
-    return llvm::PointerType::get(this->type->to_llvm_type(context), 0);
+llvm::PointerType* PointerType::to_llvm_type(Visitor& visitor) {
+    return this->type->to_llvm_type(visitor)->getPointerTo();
 }
 
 PointerType* PointerType::copy() {

@@ -27,9 +27,7 @@ utils::filesystem::Path search_file_paths(utils::filesystem::Path path) {
 
 Value Visitor::visit(ast::ImportExpr* expr) {
     Scope* scope = this->scope;
-    Module* outer = this->current_module;
-
-    std::string full_path = construct_full_file_path(expr->name, expr->parents);
+    auto outer = this->current_module;
 
     std::string current_path;
     while (!expr->parents.empty()) {
@@ -38,7 +36,13 @@ Value Visitor::visit(ast::ImportExpr* expr) {
 
         utils::filesystem::Path path(current_path);
         if (!path.exists()) {
-            ERROR(expr->start, "Could not find module '{0}'", name);
+            path = search_file_paths(current_path);
+            if (path.isempty()) {
+                ERROR(expr->start, "Could not find module '{0}'", current_path);
+            }
+
+            current_path = current_path.substr(0, current_path.size() - name.size());
+            current_path += path.name;
         }
 
         if (!path.isdir()) {
@@ -52,11 +56,12 @@ Value Visitor::visit(ast::ImportExpr* expr) {
             }
         }
 
-        Module* module = this->scope->modules[name];
+        auto module = this->scope->modules[name];
         if (!module) {
-            module = new Module(name, this->format_name(name), current_path);
+            module = utils::make_shared<Module>(name, this->format_name(name), current_path);
             module->scope = new Scope(name, ScopeType::Module);
 
+            this->scope->children.push_back(module->scope);
             this->scope->modules[name] = module;
         }
 
@@ -66,13 +71,13 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         current_path += "/";
     }
 
-    utils::filesystem::Path path(full_path + ".pr");
+    utils::filesystem::Path path(current_path + expr->name + ".pr");
     std::string path_name = path.name;
 
     if (!path.exists()) {
         utils::filesystem::Path dir = path.with_extension();
         if (!dir.exists()) {
-            dir = search_file_paths(full_path);
+            dir = search_file_paths(dir);
             if (dir.isempty()) {
                 ERROR(expr->start, "Could not find module '{0}'", expr->name);
             }
@@ -86,10 +91,12 @@ Value Visitor::visit(ast::ImportExpr* expr) {
 
         path = dir.join("module.pr");
         if (!path.exists()) {
-            Module* module = new Module(expr->name, this->format_name(expr->name), dir.name);
+            auto module = utils::make_shared<Module>(expr->name, this->format_name(expr->name), dir.name);
             module->scope = new Scope(expr->name, ScopeType::Module);
 
+            this->scope->children.push_back(module->scope);
             this->scope->modules[expr->name] = module;
+
             return nullptr;
         }
 
@@ -97,6 +104,11 @@ Value Visitor::visit(ast::ImportExpr* expr) {
             ERROR(expr->start, "Expected a file, got a directory");
         }
         
+    }
+
+    if (this->modules.find(path_name) != this->modules.end()) {
+        this->scope->modules[expr->name] = this->modules[path_name];
+        return nullptr;
     }
 
     std::fstream file = path.open();
@@ -108,18 +120,19 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     Parser parser(tokens);
     auto ast = parser.parse();
 
-    Module* module = new Module(expr->name, this->format_name(expr->name), path_name);
+    auto module = utils::make_shared<Module>(expr->name, this->format_name(expr->name), path_name);
+    
     this->scope->modules[expr->name] = module;
+    this->modules[path_name] = module;
 
-    module->scope = this->create_scope(expr->name, ScopeType::Module);\
+    module->scope = this->create_scope(expr->name, ScopeType::Module);
     this->current_module = module;
 
     this->visit(std::move(ast));
-
     this->scope = scope;
 
     if (expr->is_wildcard) {
-        TODO("Wildcard imports");
+        
     }
 
     this->current_module = outer;

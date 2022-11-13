@@ -10,7 +10,7 @@ public:
     static ArrayType* create(size_t length, Type* element);
     
     static ArrayType* from_llvm_type(llvm::ArrayType* type);
-    llvm::Type* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::Type* to_llvm_type(Visitor& visitor) override;
 
     ArrayType* copy() override;
 

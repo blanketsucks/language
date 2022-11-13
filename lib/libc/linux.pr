@@ -1,0 +1,7 @@
+
+extern "C" {
+    func mmap(addr: void*, size: long, prot: int, flags: int, fd: int, offset: long) -> void*;
+    func munmap(addr: void*, size: long) -> int;
+
+    func syscall(number: long, ...) -> long;
+}

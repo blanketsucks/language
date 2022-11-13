@@ -4,11 +4,11 @@ Value::Value(
     llvm::Value* value, 
     bool is_constant, 
     llvm::Value* parent, 
-    Function* function, 
-    Struct* structure, 
-    Namespace* ns,
-    Enum* enumeration,
-    Module* module,
+    utils::Shared<Function> function,
+    utils::Shared<Struct> structure,
+    utils::Shared<Enum> enumeration,
+    utils::Shared<Namespace> namespace_,
+    utils::Shared<Module> module,
     FunctionCall* call
 ) {
     this->value = value;
@@ -16,7 +16,7 @@ Value::Value(
     this->parent = parent;
     this->function = function;
     this->structure = structure;
-    this->ns = ns;
+    this->namespace_ = namespace_;
     this->enumeration = enumeration;
     this->module = module;
     this->call = call;
@@ -40,24 +40,24 @@ std::string Value::name() {
     return this->value->getName().str();
 }
 
-Value Value::with_function(Function* function) {
+Value Value::with_function(utils::Shared<Function> function) {
     function->used = true;
     return Value(function->value, false, nullptr, function);
 }
 
-Value Value::with_struct(Struct* structure) {
+Value Value::with_struct(utils::Shared<Struct> structure) {
     return Value(nullptr, false, nullptr, nullptr, structure);
 }
 
-Value Value::with_namespace(Namespace* ns) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, ns);
+Value Value::with_namespace(utils::Shared<Namespace> ns) {
+    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, ns);
 }
 
-Value Value::with_enum(Enum* enumeration) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, enumeration);
+Value Value::with_enum(utils::Shared<Enum> enumeration) {
+    return Value(nullptr, false, nullptr, nullptr, nullptr, enumeration);
 }
 
-Value Value::with_module(Module* module) {
+Value Value::with_module(utils::Shared<Module> module) {
     return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, module);
 }
 

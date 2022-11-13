@@ -271,16 +271,18 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             continue;
         }
 
-
         Type* type;
         std::string argument;
+
         bool is_reference = false;
+        bool is_self = false;
 
         if (value == "self") {
             if (this->current_struct) {
                 argument = "self";
-                type = this->current_struct->getPointerTo();
+                type = this->current_struct;
 
+                is_self = true;
                 this->next();
             } else {
                 this->next();
@@ -310,7 +312,7 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             }
         }
 
-        args.push_back({argument, type, is_reference, has_kwargs});
+        args.push_back({argument, type, is_reference, is_self, has_kwargs});
         if (this->current != TokenKind::Comma) {
             break;
         }
@@ -392,14 +394,20 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
         formatted = FORMAT("{0}::{1}", this->current_namespace, formatted);
     }
 
+    std::map<std::string, ast::StructField> fields;
+    std::vector<utils::Ref<ast::Expr>> methods;
+    std::vector<utils::Ref<ast::Expr>> parents;
+
     if (this->current == TokenKind::SemiColon) {
         this->next();
+        auto type = StructType::create(name, {});
 
-        this->types[formatted] = StructType::create(name, {});
-        return utils::make_ref<ast::StructExpr>(start, this->current.end, name, true);
+        this->types[formatted] = type;
+        return utils::make_ref<ast::StructExpr>(
+            start, this->current.end, name, true, std::move(parents), fields, std::move(methods), type
+        );
     }
 
-    std::vector<utils::Ref<ast::Expr>> parents;
 
     if (this->current == TokenKind::LParen) {
         this->next();
@@ -417,8 +425,6 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
     this->expect(TokenKind::LBrace, "{");
 
-    std::map<std::string, ast::StructField> fields;
-    std::vector<utils::Ref<ast::Expr>> methods;
     std::vector<Type*> types;
 
     StructType* structure = StructType::create(name, {});
@@ -471,7 +477,7 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
     this->current_struct = nullptr;
     return utils::make_ref<ast::StructExpr>(
-        start, end, name, false, std::move(parents), std::move(fields), std::move(methods)
+        start, end, name, false, std::move(parents), std::move(fields), std::move(methods), structure
     );    
 }
 
@@ -578,7 +584,6 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
     std::vector<utils::Ref<ast::Expr>> members;
     while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
-
         if (!this->current.match(TokenKind::Keyword, NAMESPACE_ALLOWED_KEYWORDS)) {
             ERROR(this->current.start, "Expected function, extern, struct, const, type, or namespace definition");
         }
@@ -1244,12 +1249,28 @@ utils::Ref<ast::Expr> Parser::call() {
         expr = this->element(start, std::move(expr));
     }
 
-    if (this->current.value == "as") {
+    if (this->current.match(TokenKind::Keyword, "as")) {
         this->next();
         Location end = this->current.end;
 
         Type* to = this->parse_type(this->current.value);
         expr = utils::make_ref<ast::CastExpr>(start, end, std::move(expr), to);   
+    }
+
+    if (this->current.match(TokenKind::Keyword, "if")) {
+        this->next();
+        auto condition = this->expr(false);
+
+        if (!this->current.match(TokenKind::Keyword, "else")) {
+            ERROR(this->current.start, "Expected 'else' after 'if' in ternary expression");
+        }
+
+        this->next();
+        auto else_expr = this->expr(false);
+
+        expr = utils::make_ref<ast::TernaryExpr>(
+            start, this->current.end, std::move(condition), std::move(expr), std::move(else_expr)
+        );
     }
 
     return expr;

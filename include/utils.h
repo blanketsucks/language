@@ -222,6 +222,11 @@ template<typename T, typename ...Args> Ref<T> make_ref(Args&& ...args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
+template<typename T> using Shared = std::shared_ptr<T>;
+template<typename T, typename ...Args> Shared<T> make_shared(Args&& ...args) {
+    return std::make_shared<T>(std::forward<Args>(args)...);
+}
+
 template<typename K, typename V> std::vector<V> values(std::map<K, V> map) {
     std::vector<V> result;
     result.reserve(map.size());

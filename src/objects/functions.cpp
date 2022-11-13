@@ -14,10 +14,10 @@ Function::Function(
     is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous) {
     this->used = false;
     this->is_private = attrs.has("private");
+    this->noreturn = attrs.has("noreturn");
     this->attrs = attrs;
     
     this->calls = {};
-    this->defers = {};
 }
 
 Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::BasicBlock* end) {
@@ -40,9 +40,13 @@ bool Function::has_return() {
     return false;
 }
 
-void Function::defer(Visitor& visitor) {
-    for (auto& expr : this->defers) {
-        expr->accept(visitor);
+void Function::defer(Visitor& visitor, bool is_noreturn) {
+    for (auto& defer : this->defers) {
+        if (defer.ignore_noreturn_calls && is_noreturn) {
+            continue;
+        }
+
+        defer.expr->accept(visitor);
     }
 }
 

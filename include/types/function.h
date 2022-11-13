@@ -7,10 +7,10 @@
 
 class FunctionType : public Type {
 public:
-    static FunctionType* create(std::vector<Type*> args, Type* return_type, bool has_varargs);
+    static FunctionType* create(std::vector<Type*> args, Type* return_type, bool is_variadic);
 
     static FunctionType* from_llvm_type(llvm::FunctionType* type);
-    llvm::FunctionType* to_llvm_type(llvm::LLVMContext& context) override;
+    llvm::FunctionType* to_llvm_type(Visitor& visitor) override;
 
     FunctionType* copy() override;
 
@@ -18,17 +18,17 @@ public:
 
     std::vector<Type*> arguments() { return this->args; }
     Type* getReturnType() { return this->return_type; }
-    bool isVarargs() { return this->has_varargs; }
+    bool isVariadic() { return this->is_variadic; }
 
     bool is_compatible(Type* other) override;
     bool is_compatible(llvm::Type* type) override;
 
 private:
-    FunctionType(std::vector<Type*> args, Type* return_type, bool has_varargs);
+    FunctionType(std::vector<Type*> args, Type* return_type, bool is_variadic);
 
     std::vector<Type*> args;
     Type* return_type;
-    bool has_varargs;
+    bool is_variadic;
 };
 
 #endif

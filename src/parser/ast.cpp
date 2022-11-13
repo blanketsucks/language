@@ -238,8 +238,9 @@ StructExpr::StructExpr(
     bool opaque, 
     std::vector<utils::Ref<Expr>> parents,
     std::map<std::string, StructField> fields, 
-    std::vector<utils::Ref<Expr>> methods
-) : ExprMixin(start, end), name(name), opaque(opaque) {
+    std::vector<utils::Ref<Expr>> methods,
+    StructType* type
+) : ExprMixin(start, end), name(name), opaque(opaque), type(type) {
     this->fields = std::move(fields);
     this->methods = std::move(methods);
     this->parents = std::move(parents);
@@ -376,5 +377,17 @@ ImportExpr::ImportExpr(
 ) : ExprMixin(start, end), name(name), parents(parents), is_wildcard(is_wildcard) {}
 
 Value ImportExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+TernaryExpr::TernaryExpr(
+    Location start, Location end, utils::Ref<Expr> condition, utils::Ref<Expr> true_expr, utils::Ref<Expr> false_expr
+) : ExprMixin(start, end) {
+    this->condition = std::move(condition);
+    this->true_expr = std::move(true_expr);
+    this->false_expr = std::move(false_expr);
+}
+
+Value TernaryExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

@@ -15,12 +15,12 @@ func read_from_filename(filename: char*) -> char* {
         libc::exit(1);
     }
 
+    defer libc::fclose(file);
     libc::fseek(file, 0, libc::SEEK_END);
-    let size = libc::ftell(file);
 
+    let size = libc::ftell(file);
     if (size == 0) { # Empty file
-        libc::fclose(file);
-        return "";
+        return null;
     }
 
     libc::fseek(file, 0, libc::SEEK_SET);
@@ -39,7 +39,6 @@ func read_from_filename(filename: char*) -> char* {
         libc::exit(1);
     }
 
-    libc::fclose(file);
     return buffer;
 }
 
@@ -53,8 +52,10 @@ func main(argc: int, argv: char**) -> int {
         let filename = argv[i];
         let buffer = read_from_filename(filename);
 
-        libc::printf("%s\n", buffer);
-        libc::free(buffer);
+        if (buffer) {
+            libc::printf("%s\n", buffer);
+            libc::free(buffer);
+        }
     }
     
     return 0;

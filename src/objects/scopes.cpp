@@ -135,7 +135,7 @@ llvm::Value* Scope::get_constant(std::string name) {
     }
 }
 
-Function* Scope::get_function(std::string name) {
+utils::Shared<Function> Scope::get_function(std::string name) {
     if (this->functions.find(name) != this->functions.end()) {
         return this->functions[name];
     }
@@ -147,7 +147,7 @@ Function* Scope::get_function(std::string name) {
     }
 }
 
-Struct* Scope::get_struct(std::string name) {
+utils::Shared<Struct> Scope::get_struct(std::string name) {
     if (this->structs.find(name) != this->structs.end()) {
         return this->structs[name];
     }
@@ -159,7 +159,7 @@ Struct* Scope::get_struct(std::string name) {
     }
 }
 
-Enum* Scope::get_enum(std::string name) {
+utils::Shared<Enum> Scope::get_enum(std::string name) {
     if (this->enums.find(name) != this->enums.end()) {
         return this->enums[name];
     }
@@ -171,25 +171,25 @@ Enum* Scope::get_enum(std::string name) {
     }
 }
 
-Namespace* Scope::get_namespace(std::string name) {
-    if (this->namespaces.find(name) != this->namespaces.end()) {
-        return this->namespaces[name];
-    }
-
-    if (this->parent) {
-        return this->parent->get_namespace(name);
-    } else {
-        return nullptr;
-    }
-}
-
-Module* Scope::get_module(std::string name) {
+utils::Shared<Module> Scope::get_module(std::string name) {
     if (this->modules.find(name) != this->modules.end()) {
         return this->modules[name];
     }
 
     if (this->parent) {
         return this->parent->get_module(name);
+    } else {
+        return nullptr;
+    }
+}
+
+utils::Shared<Namespace> Scope::get_namespace(std::string name) {
+    if (this->namespaces.find(name) != this->namespaces.end()) {
+        return this->namespaces[name];
+    }
+
+    if (this->parent) {
+        return this->parent->get_namespace(name);
     } else {
         return nullptr;
     }

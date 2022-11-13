@@ -6,11 +6,11 @@
 #include <stdint.h>
 
 FunctionType::FunctionType(
-    std::vector<Type*> args, Type* return_type, bool has_varargs
-) : Type(Type::Function, 0), args(args), return_type(return_type), has_varargs(has_varargs) {}
+    std::vector<Type*> args, Type* return_type, bool is_variadic
+) : Type(Type::Function, 0), args(args), return_type(return_type), is_variadic(is_variadic) {}
 
-FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, bool has_varargs) {
-    auto type = new FunctionType(args, return_type, has_varargs);
+FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, bool is_variadic) {
+    auto type = new FunctionType(args, return_type, is_variadic);
     Type::push(type);
 
     return type;
@@ -25,13 +25,15 @@ FunctionType* FunctionType::from_llvm_type(llvm::FunctionType* type) {
     return FunctionType::create(args, Type::from_llvm_type(type->getReturnType()), type->isVarArg());
 }
 
-llvm::FunctionType* FunctionType::to_llvm_type(llvm::LLVMContext& context) {
-    std::vector<llvm::Type*> types;
-    for (auto& arg : this->args) {
-        types.push_back(arg->to_llvm_type(context));
+llvm::FunctionType* FunctionType::to_llvm_type(Visitor& visitor) {
+    std::vector<llvm::Type*> args;
+    for (auto arg : this->args) {
+        args.push_back(arg->to_llvm_type(visitor));
     }
 
-    return llvm::FunctionType::get(this->return_type->to_llvm_type(context), types, this->has_varargs);
+    return llvm::FunctionType::get(
+        this->return_type->to_llvm_type(visitor), args, this->is_variadic
+    );
 }
 
 FunctionType* FunctionType::copy() {
@@ -40,7 +42,7 @@ FunctionType* FunctionType::copy() {
         args.push_back(arg->copy());
     }
 
-    return FunctionType::create(args, this->return_type->copy(), this->has_varargs);
+    return FunctionType::create(args, this->return_type->copy(), this->is_variadic);
 }
 
 std::string FunctionType::str() {

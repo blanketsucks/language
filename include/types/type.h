@@ -19,30 +19,31 @@
 
 #include <string>
 
+class Visitor;
+
 class Type {
 public:
     enum Value {
-        Void     = (1 << 0),
-        Short    = (1 << 1),
-        Char     = (1 << 2),
-        Integer  = (1 << 3),
-        Long     = (1 << 4),
-        LongLong = (1 << 5),
-        Double   = (1 << 6),
-        Float    = (1 << 7),
-        Boolean  = (1 << 8),
-        Array    = (1 << 9),
-        Struct   = (1 << 10),
-        Function = (1 << 11),
-        Pointer  = (1 << 12),
-        Tuple    = (1 << 13)
+        Void,
+        Short,
+        Char,
+        Integer,
+        Long,
+        Double,
+        Float,
+        Boolean,
+        Array,
+        Struct,
+        Function,
+        Pointer,
+        Tuple
     };
 
     bool operator==(Value other);
 
     static Type* create(Value value, size_t size);
     static Type* from_llvm_type(llvm::Type* type);
-    virtual llvm::Type* to_llvm_type(llvm::LLVMContext& context);
+    virtual llvm::Type* to_llvm_type(Visitor& visitor);
 
     virtual std::string name() { return this->str(); }
     virtual Type* copy();
@@ -63,7 +64,6 @@ public:
     bool isChar() { return this->value == Char; }
     bool isInt() { return this->value == Integer; }
     bool isLong() { return this->value == Long; }
-    bool isLongLong() { return this->value == LongLong; }
     bool isDouble() { return this->value == Double; }
     bool isFloat() { return this->value == Float; }
     bool isBoolean() { return this->value == Boolean; }
@@ -74,7 +74,7 @@ public:
     bool isPointer() { return this->value == Pointer; }
     bool isTuple() { return this->value == Tuple; }
     bool isFloatingPoint() { return this->isFloat() || this->isDouble(); }
-    bool isInteger() { return this->isBoolean() || this->isShort() || this->isInt() || this->isLong() || this->isLongLong() || this->isChar();  }
+    bool isInteger() { return this->isBoolean() || this->isShort() || this->isInt() || this->isLong() || this->isChar();  }
     bool isNumeric() { return this->isInteger() || this->isFloatingPoint(); }
 
     bool hasContainedType() { return this->isArray() || this->isPointer(); }
@@ -99,7 +99,6 @@ static Type* ShortType = Type::create(Type::Short, 16);
 static Type* CharType = Type::create(Type::Char, 8);
 static Type* IntegerType = Type::create(Type::Integer, 32);
 static Type* LongType = Type::create(Type::Long, LONG_SIZE);
-static Type* LongLongType = Type::create(Type::LongLong, 64);
 static Type* DoubleType = Type::create(Type::Double, 64);
 static Type* FloatType = Type::create(Type::Float, 32);
 static Type* BooleanType = Type::create(Type::Boolean, 8);

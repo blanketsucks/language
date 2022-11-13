@@ -83,6 +83,10 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         auto local = this->get_pointer_from_expr(expr->left.get());
         if (local.second) {
             ERROR(expr->start, "Cannot assign to constant");
+        } 
+
+        if (!local.first) {
+            ERROR(expr->left->start, "Left hand side of assignment must be a variable, struct field or array element");
         }
 
         llvm::Value* inst = local.first;

@@ -58,7 +58,8 @@ enum class ExprKind {
     Tuple,
     Enum,
     Where,
-    Import
+    Import,
+    Ternary
 };
 
 struct Attributes {
@@ -109,6 +110,7 @@ struct Argument {
     std::string name;
     Type* type;
     bool is_reference;
+    bool is_self;
     bool is_kwarg;
 };
 
@@ -348,6 +350,7 @@ public:
     std::vector<utils::Ref<Expr>> parents;
     std::map<std::string, StructField> fields;
     std::vector<utils::Ref<Expr>> methods;
+    StructType* type;
 
     StructExpr(
         Location start, 
@@ -356,7 +359,8 @@ public:
         bool opaque, 
         std::vector<utils::Ref<Expr>> parents = {}, 
         std::map<std::string, StructField> fields = {}, 
-        std::vector<utils::Ref<Expr>> methods = {}
+        std::vector<utils::Ref<Expr>> methods = {},
+        StructType* type = nullptr
     );
 
     Value accept(Visitor& visitor) override;
@@ -487,6 +491,16 @@ public:
         Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard
     );
 
+    Value accept(Visitor& visitor) override;
+};
+
+class TernaryExpr : public ExprMixin<ExprKind::Ternary> {
+public:
+    utils::Ref<Expr> condition;
+    utils::Ref<Expr> true_expr;
+    utils::Ref<Expr> false_expr;
+
+    TernaryExpr(Location start, Location end, utils::Ref<Expr> condition, utils::Ref<Expr> true_expr, utils::Ref<Expr> false_expr);
     Value accept(Visitor& visitor) override;
 };
 

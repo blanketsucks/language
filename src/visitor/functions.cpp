@@ -75,7 +75,7 @@ llvm::Value* Visitor::call(
     }
 
     for (auto& value : args) {
-        if ((function->isVarArg() && i == 0) || !function->isVarArg()) {
+        if ((function->isVarArg() && i == 0) || (!function->isVarArg() && i < type->getNumParams())) {
             llvm::Argument* argument = function->getArg(i);
             if (!this->is_compatible(value->getType(), argument->getType())) {
                 std::string name = argument->getName().str();
@@ -162,7 +162,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::vector<llvm::Type*> llvm_args;
     for (auto& arg : expr->args) {
         auto type = this->get_llvm_type(arg.type);
-        if (arg.is_reference) {
+        if (arg.is_reference || arg.is_self) {
             type = type->getPointerTo();
         }
 
@@ -196,7 +196,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         pair.first, ret, llvm_args, expr->is_variadic, linkage
     );
 
-    Function* func = new Function(
+    auto func = utils::make_shared<Function>(
         pair.first, 
         args,
         kwargs,
@@ -207,7 +207,15 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         is_anonymous,
         expr->attributes
     );
-    
+
+    if (func->noreturn) {
+        function->addFnAttr(llvm::Attribute::NoReturn);
+    }
+
+    if (func->attrs.has("sanitize")) {
+        function->addFnAttr(llvm::Attribute::SanitizeMemory);
+    }
+      
     func->start = expr->start;
     func->end = expr->end;
 
@@ -222,7 +230,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         function = llvm::cast<llvm::Function>(expr->prototype->accept(*this).value);
     }
 
-    Function* func = this->scope->functions[expr->prototype->name];
+    auto func = this->scope->functions[expr->prototype->name];
     if (!function->empty()) {
         NOTE(func->start, "Function '{0}' was previously defined here", name);
         ERROR(expr->start, "Function '{0}' is already defined", name);
@@ -264,7 +272,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         i++;
     }
     
-    Function* outer = this->current_function;
+    auto outer = this->current_function;
     this->current_function = func;
 
     if (!expr->body) {
@@ -299,10 +307,6 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         }
     }
 
-    for (auto defer : func->defers) {
-        delete defer;
-    }
-    
     bool error = llvm::verifyFunction(*function, &llvm::errs());
     assert((!error) && "Error while verifying function IR. Most likely a compiler bug.");
 
@@ -321,7 +325,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 }
 
 Value Visitor::visit(ast::ReturnExpr* expr) {
-    Function* func = this->current_function;
+    auto func = this->current_function;
     if (expr->value) {
         if (func->ret->isVoidTy()) {
             ERROR(expr->start, "Cannot return a value from void function");
@@ -331,8 +335,6 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
         if (!this->is_compatible(value->getType(), func->ret)) {
-            func->ret->dump();
-
             ERROR(
                 expr->start, "Cannot return value of type '{0}' from function expecting '{1}'", 
                 this->get_type_name(value->getType()), this->get_type_name(func->ret)
@@ -364,18 +366,18 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 }
 
 Value Visitor::visit(ast::DeferExpr* expr) {
-    Function* func = this->current_function;
+    auto func = this->current_function;
     if (!func) {
         ERROR(expr->start, "Defer statement outside of function");
     }
 
-    func->defers.push_back(expr->expr.release());
+    func->defers.push_back({std::move(expr->expr), expr->attributes.has("ignore_noreturn")});
     return nullptr;
 }
 
 Value Visitor::visit(ast::CallExpr* expr) {
     Value callable = expr->callee->accept(*this);
-    Function* func = callable.function;
+    auto func = callable.function;
 
     if (!func && !expr->kwargs.empty()) {
         ERROR(expr->start, "Keyword arguments are not allowed in this context");
@@ -388,7 +390,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     llvm::Type* type = nullptr;
     if (callable.structure) {
-        Struct* structure = callable.structure;
+        auto structure = callable.structure;
         
         llvm::AllocaInst* instance = this->builder->CreateAlloca(structure->type);
         callable.parent = instance; // `self` parameter for the constructor
@@ -464,8 +466,9 @@ Value Visitor::visit(ast::CallExpr* expr) {
     }
 
     std::vector<llvm::Value*> args;
-    uint32_t i = 0;
+    args.reserve(argc);
 
+    uint32_t i = 0;
     auto visit = [&](ast::Expr* expr, bool is_reference = false) {
         if (i < argc) this->ctx = ftype->getParamType(i);
 
@@ -481,6 +484,14 @@ Value Visitor::visit(ast::CallExpr* expr) {
     };
 
     if (func) {
+        if (func->noreturn && !this->current_function) {
+            ERROR(expr->start, "Cannot call a noreturn function from top level code");
+        }
+
+        if (func->noreturn) {
+            this->current_function->defer(*this, true);
+        }
+
         auto all_args = func->get_all_args();
         for (auto& arg : expr->args) {
             bool is_reference = false;

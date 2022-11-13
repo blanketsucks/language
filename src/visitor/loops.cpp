@@ -4,7 +4,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
-    Function* func = this->current_function;
+    auto func = this->current_function;
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* end = llvm::BasicBlock::Create(*this->context);
@@ -35,7 +35,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
 
 Value Visitor::visit(ast::ForExpr* expr) {
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
-    Function* func = this->current_function;
+    auto func = this->current_function;
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* stop = llvm::BasicBlock::Create(*this->context);
@@ -71,7 +71,7 @@ Value Visitor::visit(ast::ForExpr* expr) {
 Value Visitor::visit(ast::BreakExpr* expr) {
     UNUSED(expr);
 
-    Function* func = this->current_function;
+    auto func = this->current_function;
     func->branch->has_break = true;
 
     this->builder->CreateBr(func->branch->end);
@@ -81,7 +81,7 @@ Value Visitor::visit(ast::BreakExpr* expr) {
 Value Visitor::visit(ast::ContinueExpr* expr) {
     UNUSED(expr);
 
-    Function* func = this->current_function;
+    auto func = this->current_function;
     func->branch->has_continue = true;
 
     this->builder->CreateBr(func->branch->loop);

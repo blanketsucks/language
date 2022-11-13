@@ -26,9 +26,10 @@ ArrayType* ArrayType::from_llvm_type(llvm::ArrayType* type) {
     return ArrayType::create(length, element);
 }
 
-llvm::Type* ArrayType::to_llvm_type(llvm::LLVMContext& context) {
-    llvm::Type* element = this->element->to_llvm_type(context);
-    return llvm::ArrayType::get(element, this->length);
+llvm::Type* ArrayType::to_llvm_type(Visitor& visitor) {
+    return llvm::ArrayType::get(
+        this->element->to_llvm_type(visitor), this->length
+    );
 }
 
 ArrayType* ArrayType::copy() {

@@ -1,5 +1,6 @@
 #include "visitor.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/IR/DerivedTypes.h"
 
 #include <string>
@@ -26,49 +27,28 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->global_scope = new Scope(name, ScopeType::Global);
     this->scope = this->global_scope;
 
-    this->functions = {};
     this->structs = {};
-    this->namespaces = {};
 }
 
 void Visitor::free() {
     this->fpm->doFinalization();
 
-    auto remove = [this](Function* func) {
-        if (!func->used && !func->is_entry && !func->is_anonymous) {
-            for (auto call : func->calls) {
-                if (call) call->used = false;
-            }
-
-            if (func->attrs.has("allow_dead_code")) {
-                return;
-            }
-
-            llvm::Function* function = this->module->getFunction(func->name);
-            if (function) {
-                function->eraseFromParent();
-            }
-        }
-        
-        for (auto branch : func->branches) delete branch;
-        delete func;
-    };
-
     std::function<void(Scope*)> remove_scope = [&](Scope* scope) {
-        for (auto& func : scope->functions) {
-            remove(func.second);
-        }
+        for (auto& entry : scope->functions) {
+            auto func = entry.second;
+            if (!func->used && !func->is_entry && !func->is_anonymous) {
+                for (auto call : func->calls) {
+                    if (call) call->used = false;
+                }
 
-        for (auto pair : scope->structs) {
-            delete pair.second;
-        }
+                if (func->attrs.has("allow_dead_code")) {
+                    continue;
+                }
 
-        for (auto pair : scope->namespaces) {
-            delete pair.second;
-        }
-
-        for (auto pair : scope->enums) {
-            delete pair.second;
+                func->value->eraseFromParent();
+            }
+            
+            for (auto branch : func->branches) delete branch;
         }
 
         for (auto child : scope->children) {
@@ -87,11 +67,11 @@ void Visitor::dump(llvm::raw_ostream& stream) {
 
 void Visitor::set_insert_point(llvm::BasicBlock* block, bool push) {
     if (this->current_function) {
-        Function* func = this->current_function;
-        func->current_block = block;
+        auto function = this->current_function;
+        function->current_block = block;
 
         if (push) {
-            func->value->getBasicBlockList().push_back(block);
+            function->value->getBasicBlockList().push_back(block);
         }
     }
 
@@ -170,6 +150,8 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
         }
 
         std::vector<llvm::Value*> values;
+        values.reserve(n);
+
         if (llvm::isa<llvm::ConstantStruct>(value)) {
             llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(value);
             for (uint32_t i = 0; i < n; i++) {
@@ -197,7 +179,10 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
         }
 
         llvm::Type* ty = type->getArrayElementType();
+
         std::vector<llvm::Value*> values;
+        values.reserve(n);
+
         for (uint32_t i = 0; i < n; i++) {
             std::vector<llvm::Value*> idx = {this->builder->getInt32(0), this->builder->getInt32(i)};
             llvm::Value* ptr = this->builder->CreateGEP(type, value, idx);
@@ -221,6 +206,8 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
     }
 
     std::vector<llvm::Value*> values;
+    values.reserve(n);
+
     for (uint32_t i = 0; i < n; i++) {
         llvm::Value* ptr = this->builder->CreateStructGEP(type, value, i);
         llvm::Value* val = this->builder->CreateLoad(type->getStructElementType(i), ptr);
@@ -253,7 +240,7 @@ Scope::Local Visitor::get_pointer_from_expr(ast::Expr* expr) {
         }
 
         std::string name = type->getStructName().str();
-        Struct* structure = this->structs[name];
+        auto structure = this->structs[name];
 
         int index = structure->get_field_index(attr->attribute);
         if (index < 0) {
@@ -339,7 +326,6 @@ Value Visitor::visit(ast::FloatExpr* expr) {
         type = this->builder->getFloatTy();
     }
 
-
     return Value(llvm::ConstantFP::get(type, expr->value), true);
 }
 
@@ -369,7 +355,7 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
         ERROR(expr->start, "Expected a structure");
     }
 
-    Struct* structure = value.structure;
+    auto structure = value.structure;
     int index = structure->get_field_index(expr->field);
 
     if (index < 0) {
@@ -388,13 +374,17 @@ Value Visitor::visit(ast::WhereExpr* expr) {
         location = value.function->start;
     } else if (value.structure) {
         location = value.structure->start;
-    } else if (value.ns) {
-        location = value.ns->start;
+    } else if (value.namespace_) {
+        location = value.namespace_->start;
     } else if (value.enumeration) {
         location = value.enumeration->start;
     } else {
         location = expr->expr->start;
     }
 
-    return Value(this->builder->CreateGlobalStringPtr(location.format(), ".str"), true);
+    llvm::Value* str = this->builder->CreateGlobalStringPtr(
+        location.format(), ".str", 0, this->module.get()
+    );
+    
+    return Value(str, true);
 }

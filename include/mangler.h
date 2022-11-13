@@ -21,9 +21,9 @@ public:
         std::vector<llvm::Type*> args, 
         bool is_variadic = false,
         llvm::Type* ret = nullptr,
-        Namespace* ns = nullptr, 
-        Struct* structure = nullptr, 
-        Module* module = nullptr
+        utils::Shared<Namespace> ns = nullptr, 
+        utils::Shared<Struct> structure = nullptr, 
+        utils::Shared<Module> module = nullptr
     );
 
     static std::string demangle_type(std::string name);

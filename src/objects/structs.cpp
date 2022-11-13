@@ -42,14 +42,12 @@ std::vector<StructField> Struct::get_fields(bool with_private) {
     return fields;
 }
 
-std::vector<Struct*> Struct::expand() {
-   std::vector<Struct*> parents;
-
-    parents.push_back(this);
-    for (Struct* parent : this->parents) {
+std::vector<utils::Shared<Struct>> Struct::expand() {
+   std::vector<utils::Shared<Struct>> parents;
+    for (auto parent : this->parents) {
         parents.push_back(parent);
 
-        std::vector<Struct*> expanded = parent->expand();
+        auto expanded = parent->expand();
         parents.insert(parents.end(), expanded.begin(), expanded.end());
     }
 

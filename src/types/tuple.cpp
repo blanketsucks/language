@@ -1,4 +1,6 @@
 #include "types/tuple.h"
+#include "visitor.h"
+#include "llvm/IR/DerivedTypes.h"
 
 #include <sstream>
 
@@ -20,13 +22,23 @@ TupleType* TupleType::from_llvm_type(llvm::StructType* type) {
     return TupleType::create(types);
 }
 
-llvm::StructType* TupleType::to_llvm_type(llvm::LLVMContext& context) {
+llvm::Type* TupleType::to_llvm_type(Visitor& visitor) {
     std::vector<llvm::Type*> types;
-    for (auto& type : this->types) {
-        types.push_back(type->to_llvm_type(context));
+    for (auto& ty : this->types) {
+        types.push_back(ty->to_llvm_type(visitor));
     }
 
-    return llvm::StructType::create(types, "__tuple");
+    TupleKey key = TupleKey::create(types);
+    llvm::StructType* type = nullptr;
+
+    if (visitor.tuples.find(key) != visitor.tuples.end()) {
+        type = visitor.tuples[key];
+    } else {
+        type = llvm::StructType::create(*visitor.context, types, "__tuple");
+        visitor.tuples[key] = type;
+    }
+
+    return type;
 }
 
 std::vector<Type*> TupleType::getElementTypes() {

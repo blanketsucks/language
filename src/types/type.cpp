@@ -1,4 +1,5 @@
 #include "types/type.h"
+#include "visitor.h"
 
 #include <iostream>
 
@@ -61,30 +62,26 @@ Type* Type::from_llvm_type(llvm::Type* type) {
     }
 }
 
-llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) {
+llvm::Type* Type::to_llvm_type(Visitor& visitor) {
     switch (this->value) {
         case Type::Short:
-            return llvm::Type::getInt16Ty(context);
+            return visitor.builder->getInt16Ty();
         case Type::Integer:
-            return llvm::Type::getInt32Ty(context);
+            return visitor.builder->getInt32Ty();
         case Type::Long:
-            if (LONG_SIZE == 32) {
-                return llvm::Type::getInt32Ty(context);
-            } else {
-                return llvm::Type::getInt64Ty(context);
-            }
+            return visitor.builder->getIntNTy(LONG_SIZE);
         case Type::LongLong:
-            return llvm::Type::getInt64Ty(context);
+            return visitor.builder->getInt64Ty();
         case Type::Double:
-            return llvm::Type::getDoubleTy(context);
+            return visitor.builder->getDoubleTy();
         case Type::Float:
-            return llvm::Type::getFloatTy(context);
+            return visitor.builder->getFloatTy();
         case Type::Char:
-            return llvm::Type::getInt8Ty(context);
+            return visitor.builder->getInt8Ty();
         case Type::Boolean:
-            return llvm::Type::getInt1Ty(context);
+            return visitor.builder->getInt1Ty();
         default:
-            return llvm::Type::getVoidTy(context);
+            return visitor.builder->getVoidTy();
     }
 }
 

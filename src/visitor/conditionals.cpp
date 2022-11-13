@@ -3,7 +3,7 @@
 Value Visitor::visit(ast::IfExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
 
-    Function* func = this->current_function;
+    auto func = this->current_function;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
@@ -81,4 +81,23 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     func->branch = branch;
     return nullptr;
+}
+
+Value Visitor::visit(ast::TernaryExpr* expr) {
+    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
+    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->start);
+    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->start);
+
+    if (!this->is_compatible(condition->getType(), this->builder->getInt1Ty())) {
+        ERROR(expr->condition->start, "Expected a boolean expression in the condition of a ternary expression");
+    }
+
+    if (!this->is_compatible(true_value->getType(), false_value->getType())) {
+        ERROR(expr->start, "The true and false expressions of a ternary expression must have the same type");
+    }
+
+    false_value = this->cast(false_value, true_value->getType());
+    return this->builder->CreateSelect(
+        this->cast(condition, BooleanType), true_value, false_value
+    );
 }

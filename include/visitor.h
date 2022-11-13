@@ -7,10 +7,12 @@
 #include "llvm.h"
 #include "objects.h"
 #include "mangler.h"
+#include "utils.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/IR/DerivedTypes.h"
 
+#include <functional>
 #include <map>
 #include <stdint.h>
 #include <string>
@@ -24,40 +26,32 @@
     #define _UNREACHABLE
 #endif
 
+// Key value struct for tuples
+struct TupleKey {
+    std::vector<llvm::Type*> types;
+
+    static TupleKey create(std::vector<llvm::Type*> types) {
+        return {types};
+    }
+
+    bool operator==(const TupleKey& other) const {
+        if (this->types.size() != other.types.size()) {
+            return false;
+        }
+        
+        for (size_t i = 0; i < this->types.size(); i++) {
+            if (this->types[i] != other.types[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+};
+
+
 class Visitor {
 public:
-    std::string name;
-    std::string entry;
-    bool with_optimizations;
-
-    uint64_t id = 0;
-    
-    utils::Ref<llvm::LLVMContext> context;
-    utils::Ref<llvm::Module> module;
-    utils::Ref<llvm::IRBuilder<>> builder;
-    utils::Ref<llvm::legacy::FunctionPassManager> fpm;
-
-    std::map<std::string, Function*> functions;
-    std::map<std::string, llvm::Constant*> constants;
-    std::map<std::string, Struct*> structs;
-    std::map<std::string, Namespace*> namespaces;
-    std::map<std::string, Enum*> enums;
-
-    std::map<uint32_t, llvm::StructType*> tuples;
-
-    std::vector<FunctionCall*> initializers;
-
-    Scope* global_scope;
-    Scope* scope;
-
-    Function* current_function = nullptr;
-    Struct* current_struct = nullptr;
-    Namespace* current_namespace = nullptr;
-    Enum* current_enum = nullptr;
-    Module* current_module = nullptr;
-
-    llvm::Type* ctx;
-
     Visitor(std::string name, std::string entry, bool with_optimizations = true);
 
     void free();
@@ -89,7 +83,7 @@ public:
 
     void store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value);
     void store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value);
-    void store_tuple(Location location, Function* func, llvm::Value* value, std::vector<std::string> names);
+    void store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names);
 
     llvm::Type* get_llvm_type(Type* name);
     Type* from_llvm_type(llvm::Type* type);
@@ -150,6 +144,7 @@ public:
     Value visit(ast::CallExpr* expr);
 
     Value visit(ast::IfExpr* expr);
+    Value visit(ast::TernaryExpr* expr);
 
     Value visit(ast::WhileExpr* expr);
     Value visit(ast::ForExpr* expr);
@@ -178,6 +173,35 @@ public:
     Value visit(ast::WhereExpr* expr);
 
     Value visit(ast::ImportExpr* expr);
+
+    std::string name;
+    std::string entry;
+    bool with_optimizations;
+
+    uint64_t id = 0;
+    
+    utils::Ref<llvm::LLVMContext> context;
+    utils::Ref<llvm::Module> module;
+    utils::Ref<llvm::IRBuilder<>> builder;
+    utils::Ref<llvm::legacy::FunctionPassManager> fpm;
+
+    std::map<std::string, utils::Shared<Struct>> structs;
+    std::map<std::string, utils::Shared<Module>> modules;
+
+    std::map<TupleKey, llvm::StructType*, std::equal_to<TupleKey>> tuples;
+    std::map<uint32_t, llvm::Type*> typeids;
+
+    std::vector<FunctionCall*> initializers;
+
+    Scope* global_scope;
+    Scope* scope;
+
+    utils::Shared<Function> current_function = nullptr;
+    utils::Shared<Struct> current_struct = nullptr;
+    utils::Shared<Namespace> current_namespace = nullptr;
+    utils::Shared<Module> current_module = nullptr;
+
+    llvm::Type* ctx;
 };
 
 #endif

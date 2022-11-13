@@ -48,9 +48,9 @@ std::string Mangler::mangle(
     std::vector<llvm::Type*> args,
     bool is_variadic,
     llvm::Type* ret,
-    Namespace* ns, 
-    Struct* structure, 
-    Module* module
+    utils::Shared<Namespace> ns,
+    utils::Shared<Struct> structure,
+    utils::Shared<Module> module
 ) {
     std::stringstream stream; stream << '_' << Mangler::PREFIX;
 
@@ -125,6 +125,10 @@ std::string Mangler::demangle_type(std::string name) {
 }
 
 std::string Mangler::demangle(std::string name) {
+    if (name[0] != Mangler::PREFIX && name[1] != '_') {
+        return name;
+    }
+
     name = name.substr(2);
     std::stringstream stream;
 

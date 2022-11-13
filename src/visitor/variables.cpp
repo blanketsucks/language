@@ -3,7 +3,7 @@
 #include "visitor.h"
 #include "llvm/IR/GlobalVariable.h"
 
-void Visitor::store_tuple(Location location, Function* func, llvm::Value* value, std::vector<std::string> names) {
+void Visitor::store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names) {
     std::vector<llvm::Value*> values = this->unpack(value, names.size(), location);
     for (auto& pair : utils::zip(names, values)) {
         llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
@@ -37,7 +37,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return llvm::Constant::getNullValue(type);
     }
 
-    ERROR(expr->start, "Undefined variable '{0}'", expr->name); exit(1);
+    ERROR(expr->start, "Undefined variable '{0}'", expr->name);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {

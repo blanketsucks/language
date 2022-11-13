@@ -124,37 +124,11 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
 }
 
 llvm::Type* Visitor::get_llvm_type(Type* type) {
-    std::string name = type->name();
-    if (this->structs.find(name) != this->structs.end()) {
-        Struct* structure = this->structs[name];
-        llvm::Type* ty = structure->type;
-
-        while (type->isPointer()) {
-            ty = ty->getPointerTo();
-            type = type->getPointerElementType();
-        }
-        
-        return ty;
-    } else if (type->isTuple()) { // TODO: pointers to tuples
-        TupleType* tuple = type->cast<TupleType>();
-        uint32_t hash = tuple->hash();
-        
-        llvm::StructType* structure;
-        if (this->tuples.find(hash) != this->tuples.end()) {
-            structure = this->tuples[hash];
-        } else {
-            structure = tuple->to_llvm_type(*this->context);
-            this->tuples[hash] = structure;
-        }
-
-        return structure;
-    }
-
-    return type->to_llvm_type(*this->context);
+    return type->to_llvm_type(*this);
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, Type* type) {
-    return this->cast(value, type->to_llvm_type(*this->context));
+    return this->cast(value, this->get_llvm_type(type));
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {

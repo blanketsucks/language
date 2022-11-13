@@ -1,0 +1,19 @@
+import libc;
+
+const STDOUT = libc::fdopen(1, "w");
+
+struct Writer {
+    private handle: int*;
+
+    func new(handle: int*) -> Writer {
+        return Writer{handle: handle};
+    }
+
+    func fileno(self) -> int {
+        return libc::fileno(self.handle);
+    }
+
+    func write(self, buffer: char*) -> int {
+        return libc::fwrite(buffer, 1, libc::strlen(buffer), self.handle);
+    }
+}

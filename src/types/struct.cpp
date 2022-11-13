@@ -1,8 +1,13 @@
 #include "types/struct.h"
+#include "visitor.h"
 
 #include "utils.h"
 
-StructType::StructType(std::string name, std::vector<Type*> fields) : Type(Type::Struct, 0), name(name), fields(fields) {}
+uint32_t StructType::ID = 0;
+
+StructType::StructType(
+    std::string name, std::vector<Type*> fields
+) : Type(Type::Struct, 0), name(name), fields(fields), id(StructType::ID++) {}
 
 StructType* StructType::create(std::string name, std::vector<Type*> fields) {
     auto type = new StructType(name, fields);
@@ -20,13 +25,8 @@ StructType* StructType::from_llvm_type(llvm::StructType* type) {
     return StructType::create(type->getName().str(), fields);
 }
 
-llvm::StructType* StructType::to_llvm_type(llvm::LLVMContext& context) {
-    std::vector<llvm::Type*> types;
-    for (auto& field : this->fields) {
-        types.push_back(field->to_llvm_type(context));
-    }
-
-    return llvm::StructType::get(context, types);
+llvm::Type* StructType::to_llvm_type(Visitor& visitor) {
+    return visitor.typeids[this->getID()];
 }
 
 StructType* StructType::copy() {
