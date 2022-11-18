@@ -152,7 +152,7 @@ std::vector<std::string> ArgumentParser::parse(int argc, char** argv) {
             i++;
 
             if (name[0] == '-') {
-                this->error("Unrecognized command line argument -- '{0}'", name);
+                this->error("Unrecognised command line argument -- '{0}'", name);
                 continue;
             }
 
