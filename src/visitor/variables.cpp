@@ -94,6 +94,8 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 "Expected expression of type '{0}' but got '{1}' instead", 
                 this->get_type_name(type), this->get_type_name(value->getType())
             );
+        } else {
+            value = this->cast(value, type);
         }
     }
 

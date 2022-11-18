@@ -24,19 +24,21 @@ std::string Visitor::get_type_name(llvm::Type* type) {
     if (type->isVoidTy()) {
         return "void";
     } else if (type->isFloatTy()) {
-        return "float";
+        return "f32";
     } else if (type->isDoubleTy()) {
-        return "double";
+        return "f64";
     } else if (type->isIntegerTy(1)) {
         return "bool";
     } else if (type->isIntegerTy(8)) {
-        return "char";
+        return "i8";
     } else if (type->isIntegerTy(16)) {
-        return "short";
+        return "i16";
     } else if (type->isIntegerTy(32)) {
-        return "int";
-    } else if (type->isIntegerTy(LONG_SIZE)) {
-        return "long";
+        return "i32";
+    } else if (type->isIntegerTy(64)) {
+        return "i64";
+    } else if (type->isIntegerTy(128)) {
+        return "i128";
     } else if (type->isPointerTy()) {
         return Visitor::get_type_name(type->getNonOpaquePointerElementType()) + "*";
     } else if (type->isArrayTy()) {
