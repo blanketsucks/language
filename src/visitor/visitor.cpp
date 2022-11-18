@@ -1,9 +1,4 @@
 #include "visitor.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/ValueSymbolTable.h"
-#include "llvm/IR/DerivedTypes.h"
-
-#include <string>
 
 Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->name = name;
@@ -30,35 +25,32 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->structs = {};
 }
 
-void Visitor::free() {
+void Visitor::finalize() {
     this->fpm->doFinalization();
 
-    std::function<void(Scope*)> remove_scope = [&](Scope* scope) {
-        for (auto& entry : scope->functions) {
-            auto func = entry.second;
-            if (!func->used && !func->is_entry && !func->is_anonymous) {
-                for (auto call : func->calls) {
-                    if (call) call->used = false;
-                }
+    this->global_scope->finalize();
+    delete this->global_scope;
 
-                if (func->attrs.has("allow_dead_code")) {
-                    continue;
-                }
-
-                func->value->eraseFromParent();
-            }
-            
-            for (auto branch : func->branches) delete branch;
+    auto& globals = this->module->getGlobalList();
+    for (auto it = globals.begin(); it != globals.end();) {
+        if (it->getName().startswith("llvm.")) {
+            it++; continue;
         }
 
-        for (auto child : scope->children) {
-            remove_scope(child);
+        if (it->use_empty()) {
+            it = globals.erase(it);
+        } else {
+            it++;
         }
+    }
+    
+    for (auto& entry : this->finalizers) {
+        entry(*this);
+    }
+}
 
-        delete scope;
-    };
-
-    remove_scope(this->global_scope);
+void Visitor::add_finalizer(Visitor::Finalizer finalizer) {
+    this->finalizers.push_back(finalizer);
 }
 
 void Visitor::dump(llvm::raw_ostream& stream) {
@@ -96,6 +88,8 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
                 name[i] = '.';
             }
         }
+
+        name = "llvm." + name;
     }
 
     return std::make_pair(name, is_intrinsic);

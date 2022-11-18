@@ -30,10 +30,8 @@
 struct TupleKey {
     std::vector<llvm::Type*> types;
 
-    static TupleKey create(std::vector<llvm::Type*> types) {
-        return {types};
-    }
-
+    TupleKey(std::vector<llvm::Type*> types) : types(types) {}
+    
     bool operator==(const TupleKey& other) const {
         if (this->types.size() != other.types.size()) {
             return false;
@@ -52,9 +50,12 @@ struct TupleKey {
 
 class Visitor {
 public:
-    Visitor(std::string name, std::string entry, bool with_optimizations = true);
+    using Finalizer = std::function<void(Visitor&)>;
 
-    void free();
+    Visitor(std::string name, std::string entry, bool with_optimizations = true);
+    void finalize();
+
+    void add_finalizer(Finalizer finalizer);
 
     void dump(llvm::raw_ostream& stream);
 
@@ -98,7 +99,7 @@ public:
         llvm::Function::LinkageTypes linkage
     );
 
-    std::vector<llvm::Value*> typecheck_function_call(
+    void typecheck_function_call(
         llvm::Function* function,
         std::vector<llvm::Value*>& args,
         uint32_t start = 0, 
@@ -158,6 +159,13 @@ public:
     Value visit(ast::ArrayExpr* expr);
     Value visit(ast::ElementExpr* expr);
 
+    Value visit(ast::BuiltinTypeExpr* expr);
+    Value visit(ast::NamedTypeExpr* expr);
+    Value visit(ast::TupleTypeExpr* expr);
+    Value visit(ast::ArrayTypeExpr* expr);
+    Value visit(ast::PointerTypeExpr* expr);
+    Value visit(ast::FunctionTypeExpr* expr);
+
     Value visit(ast::CastExpr* expr);
     Value visit(ast::SizeofExpr* expr);
     Value visit(ast::OffsetofExpr* expr);
@@ -202,6 +210,8 @@ public:
     utils::Shared<Module> current_module = nullptr;
 
     llvm::Type* ctx;
+
+    std::vector<Finalizer> finalizers;
 };
 
 #endif

@@ -8,8 +8,6 @@ TupleType::TupleType(std::vector<Type*> types) : Type(Type::Tuple, 0), types(typ
 
 TupleType* TupleType::create(std::vector<Type*> types) {
     auto type = new TupleType(types);
-    Type::push(type);
-
     return type;
 };
 
@@ -28,7 +26,7 @@ llvm::Type* TupleType::to_llvm_type(Visitor& visitor) {
         types.push_back(ty->to_llvm_type(visitor));
     }
 
-    TupleKey key = TupleKey::create(types);
+    TupleKey key(types);
     llvm::StructType* type = nullptr;
 
     if (visitor.tuples.find(key) != visitor.tuples.end()) {

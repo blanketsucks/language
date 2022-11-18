@@ -7,7 +7,7 @@ enum MyEnum {
     D
 }
 
-enum CharEnum : char {
+enum CharEnum : i8 {
     A = 'a',
     B,
     Y = 'y',
@@ -15,7 +15,7 @@ enum CharEnum : char {
 }
 
 # When using types that aren't integer types, you have to provide a value for each field
-enum TupleEnum : (int, int) {
+enum TupleEnum : (i32, i32) {
     A = (1, 2),
     B = (2, 3),
 }

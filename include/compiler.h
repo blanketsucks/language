@@ -40,8 +40,10 @@ struct Libraries {
 };
 
 struct CompilerError {
-    int code;
+    uint32_t code;
     std::string message;
+
+    void unwrap();
 };
 
 class Compiler {
@@ -54,18 +56,20 @@ public:
 
     static void init();
 
-    template<typename... Ts> [[noreturn]] static void error(const std::string& str, Ts&&... values) {
+    template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
         std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
         std::string message = FORMAT(
             "{0} {1}: {2}", utils::color(WHITE, "proton:"), utils::color(RED, "error:"), fmt
         );
 
         std::cout << message << std::endl;
-        exit(1);
     }
 
     void add_library(std::string name);
     void add_library_path(std::string path);
+
+    void set_libraries(std::vector<std::string> names);
+    void set_library_paths(std::vector<std::string> paths);
 
     void add_include_path(std::string path);
     void define_preprocessor_macro(std::string name, int value);
@@ -113,7 +117,6 @@ private:
 
     std::vector<Macro> macros;
 };
-
 
 
 #endif

@@ -1,7 +1,4 @@
 #include "visitor.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/ValueSymbolTable.h"
 
 Value Visitor::visit(ast::TupleExpr* expr) {
     std::vector<llvm::Type*> types;
@@ -18,7 +15,7 @@ Value Visitor::visit(ast::TupleExpr* expr) {
         types.push_back(value->getType());
     }
 
-    TupleKey key = TupleKey::create(types);
+    TupleKey key(types);
     llvm::StructType* type = nullptr;
 
     if (this->tuples.find(key) != this->tuples.end()) {

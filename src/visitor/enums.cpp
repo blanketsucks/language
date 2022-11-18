@@ -1,8 +1,13 @@
-#include "utils.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::EnumExpr* expr) {
-    llvm::Type* type = this->get_llvm_type(expr->type);
+    llvm::Type* type = nullptr;
+    if (!expr->type) {
+        type = this->builder->getInt64Ty();
+    } else {
+        type = expr->type->accept(*this).type;
+    }
+
     auto enumeration = utils::make_shared<Enum>(expr->name, type);
 
     enumeration->start = expr->start;

@@ -93,7 +93,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
 
         llvm::Type* type = inst->getType()->getNonOpaquePointerElementType();
-        if (!this->is_compatible(value->getType(), type)) {
+        if (!this->is_compatible(type, value->getType())) {
             ERROR(
                 expr->start, 
                 "Cannot assign variable of type '{0}' to value of type '{1}'", 
@@ -116,9 +116,32 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
 
+    if (ltype->isStructTy()) {
+        std::string name = ltype->getStructName().str();
+        auto structure = this->structs[name];
+
+        if (STRUCT_OP_MAPPING.find(expr->op) == STRUCT_OP_MAPPING.end()) {
+            TODO("Not implemented");
+        }
+
+        auto method = structure->scope->functions[STRUCT_OP_MAPPING[expr->op]];
+        if (!method) {
+            ERROR(
+                expr->start, "Unsupported binary operation '{0}' between types '{1}' and '{2}'.", 
+                Token::getTokenTypeValue(expr->op),
+                this->get_type_name(ltype), this->get_type_name(rtype)
+            );
+        }
+
+        llvm::Value* parent = this->get_pointer_from_expr(expr->left.get()).first;
+
+        method->used = true;
+        return this->call(method->value, { right }, false, parent);
+    }
+
     if (!this->is_compatible(ltype, rtype)) {
         ERROR(
-            expr->start, "Unsupported binary operator '{s}' between types '{s}' and '{s}'.", 
+            expr->start, "Unsupported binary operation '{0}' between types '{1}' and '{2}'.", 
             Token::getTokenTypeValue(expr->op),
             this->get_type_name(ltype), this->get_type_name(rtype)
         );
@@ -197,10 +220,16 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                 result = this->builder->CreateICmpSLE(left, right); break;
             }
         case TokenKind::And:
-            result = this->builder->CreateAnd(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            result = this->builder->CreateAnd(
+                this->cast(left, this->builder->getInt1Ty()), 
+                this->cast(right, this->builder->getInt1Ty())
+            );
             break;
         case TokenKind::Or:
-            result = this->builder->CreateOr(this->cast(left, BooleanType), this->cast(right, BooleanType));
+            result = this->builder->CreateOr(
+                this->cast(left, this->builder->getInt1Ty()), 
+                this->cast(right, this->builder->getInt1Ty())
+            );
             break;
         case TokenKind::BinaryAnd:
             result = this->builder->CreateAnd(left, right); break;

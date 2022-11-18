@@ -1,17 +1,24 @@
 #include "compiler.h"
-
 #include "utils.h"
 #include "llvm.h"
 #include "visitor.h"
 #include "preprocessor.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include "llvm/MC/TargetRegistry.h"
+
+#include "llvm/Passes/PassBuilder.h"
 
 #include <ratio>
 #include <sstream>
 #include <vector>
 #include <iomanip>
+
+void CompilerError::unwrap() {
+    if (this->code != 0) {
+        Compiler::error(this->message);
+        exit(this->code);
+    }
+}
 
 Compiler::TimePoint Compiler::now() {
     return std::chrono::high_resolution_clock::now();
@@ -40,6 +47,14 @@ void Compiler::add_library(std::string name) {
 
 void Compiler::add_library_path(std::string path) {
     this->libraries.paths.push_back(path);
+}
+
+void Compiler::set_libraries(std::vector<std::string> names) {
+    this->libraries.names = names;
+}
+
+void Compiler::set_library_paths(std::vector<std::string> paths) {
+    this->libraries.paths = paths;
 }
 
 void Compiler::add_include_path(std::string path) {
@@ -228,8 +243,8 @@ CompilerError Compiler::compile() {
 
     visitor.create_global_initializers();
 
-    visitor.free();
     parser.free();
+    visitor.finalize();
 
     if (this->verbose) {
         start = Compiler::now();
@@ -257,11 +272,11 @@ CompilerError Compiler::compile() {
     llvm::TargetOptions options;
     auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
-    llvm::TargetMachine* target_machine = target->createTargetMachine(
-        target_triple, "generic", "", options, reloc, llvm::None, llvm::CodeGenOpt::Aggressive
+    utils::Ref<llvm::TargetMachine> machine(
+        target->createTargetMachine(target_triple, "generic", "", options, reloc)
     );
 
-    visitor.module->setDataLayout(target_machine->createDataLayout());
+    visitor.module->setDataLayout(machine->createDataLayout());
     visitor.module->setTargetTriple(target_triple);
 
     visitor.module->setPICLevel(llvm::PICLevel::BigPIC);
@@ -283,25 +298,21 @@ CompilerError Compiler::compile() {
 
     if (this->format == OutputFormat::LLVM) {
         visitor.module->print(dest, nullptr);
-        delete target_machine;
-
         if (this->verbose) {
             Compiler::log_duration("LLVM", start);
         }
 
-        return {0, ""};
+        return {};
     } else if (this->format == OutputFormat::Bitcode) {
         llvm::BitcodeWriterPass pass(dest);
         llvm::ModuleAnalysisManager manager;
 
         pass.run(*visitor.module, manager);
-
-        delete target_machine;
         if (this->verbose) {
             Compiler::log_duration("LLVM", start);
         }
         
-        return {0, ""};
+        return {};
     }
 
     llvm::legacy::PassManager pass;
@@ -311,7 +322,7 @@ CompilerError Compiler::compile() {
         type = llvm::CodeGenFileType::CGFT_AssemblyFile;
     }
 
-    if (target_machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
+    if (machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
         return {1, "Target machine can't emit a file of this type"};
     }
 
@@ -323,9 +334,8 @@ CompilerError Compiler::compile() {
         std::cout << '\n';
     }
 
-    delete target_machine;
     if (this->format != OutputFormat::Executable && this->format != OutputFormat::SharedLibrary) {
-        return {0, ""};
+        return {};
     }
 
     std::vector<std::string> args = this->get_linker_arguments();
@@ -336,10 +346,14 @@ CompilerError Compiler::compile() {
         start = Compiler::now();
     }
 
-    CompilerError com_error = {std::system(command.c_str()), ""};
+    uint32_t code = std::system(command.c_str());
     if (this->verbose) {
         Compiler::log_duration("Linking", start);
     }
 
-    return com_error;
+    if (code != 0) {
+        return {code, FORMAT("Linker exited with code {0}", code)};
+    }
+
+    return {};
 }

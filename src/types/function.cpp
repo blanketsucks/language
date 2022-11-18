@@ -11,8 +11,6 @@ FunctionType::FunctionType(
 
 FunctionType* FunctionType::create(std::vector<Type*> args, Type* return_type, bool is_variadic) {
     auto type = new FunctionType(args, return_type, is_variadic);
-    Type::push(type);
-
     return type;
 }
 

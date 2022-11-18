@@ -59,19 +59,73 @@ enum class ExprKind {
     Enum,
     Where,
     Import,
-    Ternary
+    Ternary,
+    Type
+};
+
+enum class TypeKind {
+    Builtin,
+    Named,
+    Tuple,
+    Array,
+    Pointer,
+    Function
+};
+
+enum class BuiltinType {
+    Bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    f32,
+    f64,
+    Void
+};
+
+enum class AttributeValueType {
+    Empty,
+    String,
+    Integer,
+    Identifier
+};
+
+struct Attribute {
+    AttributeValueType type;
+    std::string name;
+    std::string value;
 };
 
 struct Attributes {
-    std::vector<std::string> names;
+    std::map<std::string, Attribute> values;
 
-    Attributes() { this->names = {}; }
-    Attributes(std::vector<std::string> names) : names(names) {}
+    void add(const Attribute& attr) {
+        values[attr.name] = attr;
+    }
 
-    void add(std::string name) { this->names.push_back(name); }
-    void update(Attributes other) { this->names.insert(this->names.end(), other.names.begin(), other.names.end()); }
-    bool has(std::string name) { return std::find(this->names.begin(), this->names.end(), name) != this->names.end(); }
+    void add(
+        const std::string& name,
+        AttributeValueType type = AttributeValueType::Empty, 
+        const std::string& value = ""
+    ) {
+        this->add({ type, name, value });
+    }
+
+    bool has(const std::string& name) const {
+        return this->values.find(name) != values.end();
+    }
+
+    Attribute get(const std::string& name) const {
+        return this->values.at(name);
+    }
+
+    void update(const Attributes& other) {
+        this->values.insert(other.values.begin(), other.values.end());
+    }
 };
+
+class TypeExpr;
 
 class Expr {
 public:
@@ -79,7 +133,9 @@ public:
     Location end;
     Attributes attributes;
 
-    Expr(Location start, Location end, ExprKind kind) : start(start), end(end), _kind(kind) {}
+    Expr(Location start, Location end, ExprKind kind) : start(start), end(end), _kind(kind) {
+        this->attributes = Attributes();
+    }
 
     ExprKind kind() const { return this->_kind; }
     bool is_constant() { 
@@ -108,7 +164,7 @@ public:
 
 struct Argument {
     std::string name;
-    Type* type;
+    utils::Ref<TypeExpr> type;
     bool is_reference;
     bool is_self;
     bool is_kwarg;
@@ -159,7 +215,7 @@ public:
 class VariableAssignmentExpr : public ExprMixin<ExprKind::VariableAssignment> {
 public:
     std::vector<std::string> names;
-    Type* type;
+    utils::Ref<TypeExpr> type;
     utils::Ref<Expr> value;
     bool external;
     bool is_multiple_variables;
@@ -168,7 +224,7 @@ public:
         Location start, 
         Location end, 
         std::vector<std::string> names, 
-        Type* type, 
+        utils::Ref<TypeExpr> type, 
         utils::Ref<Expr> value, 
         bool external = false,
         bool is_multiple_variables = false
@@ -180,10 +236,10 @@ public:
 class ConstExpr : public ExprMixin<ExprKind::Const> {
 public:
     std::string name;
-    Type* type;
+    utils::Ref<TypeExpr> type;
     utils::Ref<Expr> value;
 
-    ConstExpr(Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value);
+    ConstExpr(Location start, Location end, std::string name, utils::Ref<TypeExpr> type, utils::Ref<Expr> value);
     Value accept(Visitor& visitor) override;
 };
 
@@ -253,7 +309,7 @@ public:
     std::string name;
     std::vector<Argument> args;
     bool is_variadic;
-    Type* return_type;
+    utils::Ref<TypeExpr> return_type;
     ExternLinkageSpecifier linkage;
 
     PrototypeExpr(
@@ -262,7 +318,7 @@ public:
         std::string name, 
         std::vector<Argument> args, 
         bool is_variadic,
-        Type* return_type, 
+        utils::Ref<TypeExpr> return_type, 
         ExternLinkageSpecifier linkage
     );
 
@@ -338,7 +394,7 @@ public:
 
 struct StructField {
     std::string name;
-    Type* type;
+    utils::Ref<TypeExpr> type;
     uint32_t index;
     bool is_private = false;
 };
@@ -350,7 +406,6 @@ public:
     std::vector<utils::Ref<Expr>> parents;
     std::map<std::string, StructField> fields;
     std::vector<utils::Ref<Expr>> methods;
-    StructType* type;
 
     StructExpr(
         Location start, 
@@ -359,19 +414,23 @@ public:
         bool opaque, 
         std::vector<utils::Ref<Expr>> parents = {}, 
         std::map<std::string, StructField> fields = {}, 
-        std::vector<utils::Ref<Expr>> methods = {},
-        StructType* type = nullptr
+        std::vector<utils::Ref<Expr>> methods = {}
     );
 
     Value accept(Visitor& visitor) override;
 };
 
+struct ConstructorField {
+    std::string name;
+    utils::Ref<Expr> value;
+};
+
 class ConstructorExpr : public ExprMixin<ExprKind::Constructor> {
 public:
     utils::Ref<Expr> parent;
-    std::map<std::string, utils::Ref<Expr>> fields;
+    std::vector<ConstructorField> fields;
 
-    ConstructorExpr(Location start, Location end, utils::Ref<Expr> parent, std::map<std::string, utils::Ref<Expr>> fields);
+    ConstructorExpr(Location start, Location end, utils::Ref<Expr> parent, std::vector<ConstructorField> fields);
     Value accept(Visitor& visitor) override;
 };
 
@@ -396,18 +455,18 @@ public:
 class CastExpr : public ExprMixin<ExprKind::Cast> {
 public:
     utils::Ref<Expr> value;
-    Type* to;
+    utils::Ref<TypeExpr> to;
 
-    CastExpr(Location start, Location end, utils::Ref<Expr> value, Type* to);
+    CastExpr(Location start, Location end, utils::Ref<Expr> value, utils::Ref<TypeExpr> to);
     Value accept(Visitor& visitor) override;
 };
 
 class SizeofExpr : public ExprMixin<ExprKind::Sizeof> {
 public:
-    Type* type;
+    utils::Ref<TypeExpr> type;
     utils::Ref<Expr> value;
 
-    SizeofExpr(Location start, Location end, Type* type, utils::Ref<Expr> value = nullptr);
+    SizeofExpr(Location start, Location end, utils::Ref<TypeExpr> type, utils::Ref<Expr> value = nullptr);
     Value accept(Visitor& visitor) override;
 };
 
@@ -466,10 +525,10 @@ struct EnumField {
 class EnumExpr : public ExprMixin<ExprKind::Enum> {
 public:
     std::string name;
-    Type* type;
+    utils::Ref<TypeExpr> type;
     std::vector<EnumField> fields;
 
-    EnumExpr(Location start, Location end, std::string name, Type* type, std::vector<EnumField> fields);
+    EnumExpr(Location start, Location end, std::string name, utils::Ref<TypeExpr> type, std::vector<EnumField> fields);
     Value accept(Visitor& visitor) override;
 };
 
@@ -504,6 +563,64 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-}
+class TypeExpr : public ExprMixin<ExprKind::Type> {
+public:
+    TypeKind type;
+    TypeExpr(Location start, Location end, TypeKind type) : ExprMixin(start, end), type(type) {}
+};
+
+class BuiltinTypeExpr : public TypeExpr {
+public:
+    BuiltinType value;
+
+    BuiltinTypeExpr(Location start, Location end, BuiltinType value);
+    Value accept(Visitor& visitor) override;
+};
+
+class NamedTypeExpr : public TypeExpr {
+public:
+    std::string name;
+    std::deque<std::string> parents;
+
+    NamedTypeExpr(Location start, Location end, std::string name, std::deque<std::string> parents);
+    Value accept(Visitor& visitor) override;
+};
+
+class TupleTypeExpr : public TypeExpr {
+public:
+    std::vector<utils::Ref<TypeExpr>> elements;
+
+    TupleTypeExpr(Location start, Location end, std::vector<utils::Ref<TypeExpr>> elements);
+    Value accept(Visitor& visitor) override;
+};
+
+class ArrayTypeExpr : public TypeExpr {
+public:
+    utils::Ref<TypeExpr> element;
+    utils::Ref<Expr> size;
+
+    ArrayTypeExpr(Location start, Location end, utils::Ref<TypeExpr> element, utils::Ref<Expr> size);
+    Value accept(Visitor& visitor) override;
+};
+
+class PointerTypeExpr : public TypeExpr {
+public:
+    utils::Ref<TypeExpr> element;
+
+    PointerTypeExpr(Location start, Location end, utils::Ref<TypeExpr> element);
+    Value accept(Visitor& visitor) override;
+};
+
+class FunctionTypeExpr : public TypeExpr {
+public:
+    std::vector<utils::Ref<TypeExpr>> args;
+    utils::Ref<TypeExpr> ret;
+
+    FunctionTypeExpr(Location start, Location end, std::vector<utils::Ref<TypeExpr>> args, utils::Ref<TypeExpr> ret);
+    Value accept(Visitor& visitor) override;
+};
+
+
+};
 
 #endif

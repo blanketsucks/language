@@ -14,8 +14,6 @@ ArrayType::ArrayType(
 
 ArrayType* ArrayType::create(size_t length, Type* element) {
     auto type = new ArrayType(length, element);
-    Type::push(type);
-
     return type;
 }
 

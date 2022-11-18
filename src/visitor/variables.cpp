@@ -1,7 +1,4 @@
-#include "objects.h"
-#include "utils.h"
 #include "visitor.h"
-#include "llvm/IR/GlobalVariable.h"
 
 void Visitor::store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names) {
     std::vector<llvm::Value*> values = this->unpack(value, names.size(), location);
@@ -15,6 +12,11 @@ void Visitor::store_tuple(Location location, utils::Shared<Function> func, llvm:
 
 Value Visitor::visit(ast::VariableExpr* expr) {
     Scope* scope = this->scope;
+    auto local = scope->get_local(expr->name);
+    if (local.first) {
+        return Value(this->load(local.first), local.second);
+    }
+
     if (scope->has_struct(expr->name)) {
         return Value::with_struct(scope->get_struct(expr->name));
     } else if (scope->has_namespace(expr->name)) {
@@ -25,11 +27,6 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value::with_function(scope->get_function(expr->name));
     } else if (scope->has_module(expr->name)) {
         return Value::with_module(scope->get_module(expr->name));
-    }
-
-    auto local = scope->get_local(expr->name);
-    if (local.first) {
-        return Value(this->load(local.first), local.second);
     }
 
     if (expr->name == "null") {
@@ -45,7 +42,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     if (expr->external) {
         std::string name = expr->names[0];
 
-        type = this->get_llvm_type(expr->type);
+        type = expr->type->accept(*this).type;
         this->module->getOrInsertGlobal(name, type);
 
         llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -59,7 +56,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
     bool is_constant = false;
     if (!expr->value) {
-        type = this->get_llvm_type(expr->type);
+        type = expr->type->accept(*this).type;
         if (type->isAggregateType()) {
             value = llvm::ConstantAggregateZero::get(type);
         } else if (type->isPointerTy()) {
@@ -71,7 +68,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         is_constant = true;
     } else {
         if (expr->type) {
-            type = this->get_llvm_type(expr->type);
+            type = expr->type->accept(*this).type;
             this->ctx = type;
         }
 
@@ -91,7 +88,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             ERROR(expr->value->start, "Cannot store value of type 'void'");
         }
         
-        if (!this->is_compatible(value->getType(), type)) {
+        if (!this->is_compatible(type, value->getType())) {
             ERROR(
                 expr->value->start, 
                 "Expected expression of type '{0}' but got '{1}' instead", 
@@ -171,7 +168,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         if (!expr->type) {
             type = value->getType();
         } else {
-            type = this->get_llvm_type(expr->type);
+            type = expr->type->accept(*this).type;
         }
     } else {
         type = call->function->getReturnType();

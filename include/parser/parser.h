@@ -52,8 +52,7 @@ public:
 
     int get_token_precendence();
     
-    Type* parse_type(std::string name, bool should_error = true);
-    std::map<std::string, Type*> get_types() { return this->types; }
+    utils::Ref<ast::TypeExpr> parse_type();
 
     utils::Ref<ast::BlockExpr> parse_block();
     utils::Ref<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage, bool with_name);
@@ -90,13 +89,11 @@ private:
 
     bool is_inside_function = false;
     bool is_inside_loop = false;
-
-    StructType* current_struct = nullptr;
-    std::string current_namespace;
+    bool is_inside_struct = false;
 
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
-    std::map<std::string, Type*> types;
+    std::map<std::string, ast::BuiltinType> types;
     std::map<uint32_t, TupleType*> tuples;
 };
 

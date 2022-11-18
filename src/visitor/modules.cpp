@@ -1,20 +1,10 @@
-#include "utils.h"
 #include "visitor.h"
 #include "lexer/lexer.h"
 #include "preprocessor.h"
 
-std::string construct_full_file_path(std::string name, std::deque<std::string> paths) {
-    std::string path = "";
-    for (auto& p : paths) {
-        path += p + "/";
-    }
-
-
-    return path + name;
-}
+static const std::vector<std::string> SEARCH_PATHS = {"lib/"};
 
 utils::filesystem::Path search_file_paths(utils::filesystem::Path path) {
-    static const std::vector<std::string> SEARCH_PATHS = {"lib/"};
     for (auto& p : SEARCH_PATHS) {
         auto full_path = utils::filesystem::Path(p + path.name);
         if (full_path.exists()) {

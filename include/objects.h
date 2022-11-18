@@ -13,6 +13,15 @@ class Visitor;
 struct Struct;
 struct Scope;
 
+static std::map<TokenKind, std::string> STRUCT_OP_MAPPING = {
+    {TokenKind::Add, "add"},
+    {TokenKind::Minus, "sub"},
+    {TokenKind::Mul, "mul"},
+    {TokenKind::Div, "div"},
+    {TokenKind::Mod, "mod"}
+    // TODO: add more
+};
+
 struct Branch {
     std::string name;
 
@@ -83,6 +92,8 @@ struct Function {
     bool is_anonymous;
     bool used;
     bool noreturn;
+
+    bool is_finalized;
 
     Function(
         std::string name,
@@ -249,6 +260,8 @@ struct Scope {
     utils::Shared<Module> get_module(std::string name);
 
     void exit(Visitor* visitor);
+
+    void finalize();
 };
 
 struct Value {
@@ -263,6 +276,8 @@ struct Value {
     utils::Shared<Namespace> namespace_;
     utils::Shared<Module> module;
 
+    llvm::Type* type;
+
     FunctionCall* call;
 
     Value(
@@ -274,12 +289,11 @@ struct Value {
         utils::Shared<Enum> enumeration = nullptr,
         utils::Shared<Namespace> namespace_ = nullptr,
         utils::Shared<Module> module = nullptr,
+        llvm::Type* type = nullptr,
         FunctionCall* call = nullptr
     );
 
     llvm::Value* unwrap(Location location);
-
-    llvm::Type* type();
     std::string name();
 
     static Value with_function(utils::Shared<Function> function);
@@ -287,6 +301,7 @@ struct Value {
     static Value with_enum(utils::Shared<Enum> enumeration);
     static Value with_namespace(utils::Shared<Namespace> namespace_);
     static Value with_module(utils::Shared<Module> module);
+    static Value with_type(llvm::Type* type);
 
     static Value as_call(FunctionCall* call);
 };

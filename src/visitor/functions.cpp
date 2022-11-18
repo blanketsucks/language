@@ -1,5 +1,3 @@
-#include "objects.h"
-#include "parser/ast.h"
 #include "visitor.h"
 
 llvm::Function* Visitor::create_function(
@@ -13,7 +11,7 @@ llvm::Function* Visitor::create_function(
     return llvm::Function::Create(type, linkage, name, this->module.get());
 }
 
-std::vector<llvm::Value*> Visitor::typecheck_function_call(
+void Visitor::typecheck_function_call(
     llvm::Function* function, std::vector<llvm::Value*>& args, uint32_t start, Location location
 ) {
     std::string fn = function->getName().str();
@@ -21,7 +19,7 @@ std::vector<llvm::Value*> Visitor::typecheck_function_call(
     for (auto& value : args) {
         if ((function->isVarArg() && start == 0) || !function->isVarArg()) {
             llvm::Argument* argument = function->getArg(start);
-            if (!this->is_compatible(value->getType(), argument->getType())) {
+            if (!this->is_compatible(argument->getType(), value->getType())) {
                 std::string name = argument->getName().str();
                 if (fn.empty()) {
                     ERROR(
@@ -51,8 +49,6 @@ std::vector<llvm::Value*> Visitor::typecheck_function_call(
 
         start++;
     }
-
-    return args;
 }
 
 llvm::Value* Visitor::call(
@@ -67,47 +63,10 @@ llvm::Value* Visitor::call(
         type = function->getFunctionType();
     }
 
-    uint32_t i = self ? 1 : 0;
-    std::string fn = function->getName().str();
-
+    this->typecheck_function_call(function, args, self ? 1 : 0, location);
     if (self) {
         args.emplace(args.begin(), self);
     }
-
-    for (auto& value : args) {
-        if ((function->isVarArg() && i == 0) || (!function->isVarArg() && i < type->getNumParams())) {
-            llvm::Argument* argument = function->getArg(i);
-            if (!this->is_compatible(value->getType(), argument->getType())) {
-                std::string name = argument->getName().str();
-                if (fn.empty()) {
-                    ERROR(
-                        location, 
-                        "Argument of index {0} of type '{1}' does not match expected type '{2}'",
-                        i, this->get_type_name(value->getType()), this->get_type_name(argument->getType())
-                    );
-                }
-
-                if (name.empty()) {
-                    ERROR(
-                        location, 
-                        "Argument of index {0} of type '{1}' does not match expected type '{2}' in function '{3}'.", 
-                        i, this->get_type_name(value->getType()), this->get_type_name(argument->getType()), fn
-                    );
-                }
-
-                ERROR(
-                    location, 
-                    "Argument '{0}' of type '{1}' does not match expected type '{2}' in function '{3}'.", 
-                    name, this->get_type_name(value->getType()), this->get_type_name(argument->getType()), fn
-                );
-            } else {
-                args[i] = this->cast(value, argument->getType());
-            }
-        }
-
-        i++;
-    }
-
 
     llvm::Value* ret = this->builder->CreateCall({type, function}, args);
     if (is_constructor) {
@@ -141,11 +100,17 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     auto pair = this->format_intrinsic_function(name);
     switch (expr->linkage) {
         case ast::ExternLinkageSpecifier::C:
-            pair.first = expr->name;
+            if (!pair.second) pair.first = expr->name;
         default: break;
     }
 
-    llvm::Type* ret = this->get_llvm_type(expr->return_type);
+    llvm::Type* ret = nullptr;
+    if (!expr->return_type) {
+        ret = this->builder->getVoidTy();
+    } else {
+        ret = expr->return_type->accept(*this).type;
+    }
+
     if (name == this->entry) {
         if (!ret->isVoidTy() && !ret->isIntegerTy()) {
             ERROR(expr->start, "Entry point function must either return void or an integer");
@@ -161,9 +126,14 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 
     std::vector<llvm::Type*> llvm_args;
     for (auto& arg : expr->args) {
-        auto type = this->get_llvm_type(arg.type);
-        if (arg.is_reference || arg.is_self) {
-            type = type->getPointerTo();
+        llvm::Type* type = nullptr;
+        if (arg.is_self) {
+            type = this->current_struct->type->getPointerTo();
+        } else {
+            type = arg.type->accept(*this).type;
+            if (arg.is_reference) {
+                type = type->getPointerTo();
+            }
         }
 
         if (arg.is_kwarg) {
@@ -180,7 +150,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         linkage = llvm::Function::LinkageTypes::InternalLinkage;
     }
 
-    if (expr->linkage != ast::ExternLinkageSpecifier::C && pair.first != this->entry) {
+    if (expr->linkage != ast::ExternLinkageSpecifier::C && pair.first != this->entry && !pair.second) {
         pair.first = Mangler::mangle(
             expr->name, 
             llvm_args, 
@@ -212,10 +182,10 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         function->addFnAttr(llvm::Attribute::NoReturn);
     }
 
-    if (func->attrs.has("sanitize")) {
-        function->addFnAttr(llvm::Attribute::SanitizeMemory);
+    if (func->attrs.has("inline")) {
+        function->addFnAttr(llvm::Attribute::AlwaysInline);
     }
-      
+
     func->start = expr->start;
     func->end = expr->end;
 
@@ -334,7 +304,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         this->ctx = func->ret;
         llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
-        if (!this->is_compatible(value->getType(), func->ret)) {
+        if (!this->is_compatible(func->ret, value->getType())) {
             ERROR(
                 expr->start, "Cannot return value of type '{0}' from function expecting '{1}'", 
                 this->get_type_name(value->getType()), this->get_type_name(func->ret)
@@ -403,15 +373,15 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
         type = func->value->getFunctionType();
     } else {
-        type = callable.type();
+        type = callable.value->getType();
         if (type->isPointerTy()) {
             type = type->getNonOpaquePointerElementType();
             if (!type->isFunctionTy()) {
-                ERROR(expr->start, "Cannot call non-function");
+                ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
             }
         } else {
             if (!callable.function) {
-                ERROR(expr->start, "Cannot call non-function");
+                ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
             }
         }
     }
@@ -435,7 +405,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         if (type->isFunctionTy()) {
             ftype = llvm::cast<llvm::FunctionType>(type);
         } else {
-            ERROR(expr->start, "Cannot call non-function");
+            ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
         }
     }
 

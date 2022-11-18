@@ -9,7 +9,11 @@ Value Visitor::visit(ast::IfExpr* expr) {
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
 
-    this->builder->CreateCondBr(this->cast(condition, BooleanType), then, else_);
+    if (!condition->getType()->isIntegerTy(1)) {
+        condition = this->builder->CreateIsNotNull(condition);
+    }
+
+    this->builder->CreateCondBr(condition, then, else_);
     this->set_insert_point(then, false);
 
     Branch* branch = func->branch;
@@ -88,7 +92,7 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
     llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->start);
     llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->start);
 
-    if (!this->is_compatible(condition->getType(), this->builder->getInt1Ty())) {
+    if (!this->is_compatible(this->builder->getInt1Ty(), condition->getType())) {
         ERROR(expr->condition->start, "Expected a boolean expression in the condition of a ternary expression");
     }
 
@@ -98,6 +102,6 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
 
     false_value = this->cast(false_value, true_value->getType());
     return this->builder->CreateSelect(
-        this->cast(condition, BooleanType), true_value, false_value
+        this->cast(condition, this->builder->getInt1Ty()), true_value, false_value
     );
 }

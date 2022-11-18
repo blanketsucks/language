@@ -11,8 +11,6 @@ StructType::StructType(
 
 StructType* StructType::create(std::string name, std::vector<Type*> fields) {
     auto type = new StructType(name, fields);
-    Type::push(type);
-
     return type;
 }
 

@@ -9,12 +9,6 @@
 #include "types/array.h"
 #include "types/tuple.h"
 
-std::vector<Type*> Type::ALLOCATED_TYPES = {0};
-
-void Type::push(Type* type) {
-    Type::ALLOCATED_TYPES.push_back(type);
-}
-
 Type::Type(Type::Value value, size_t size) : value(value), size(size) {}
 
 bool Type::operator==(Type::Value other) {
@@ -23,43 +17,11 @@ bool Type::operator==(Type::Value other) {
 
 Type* Type::create(Type::Value value, size_t size) {
     auto type = new Type(value, size);
-    Type::ALLOCATED_TYPES.push_back(type);
-
     return type;
 }
 
 Type* Type::from_llvm_type(llvm::Type* type) {
-    if (type->isIntegerTy(1)) {
-        return BooleanType;
-    } else if (type->isIntegerTy(8)) {
-        return CharType;
-    } else if (type->isIntegerTy(16)) {
-        return ShortType;
-    } else if (type->isIntegerTy(32)) {
-        return IntegerType;
-    } else if (type->isIntegerTy(LONG_SIZE)) {
-        return LongType;
-    } else if (type->isIntegerTy(64)) {
-        return LongLongType;
-    } else if (type->isDoubleTy()) {
-        return DoubleType;
-    } else if (type->isFloatTy()) {
-        return FloatType;
-    } else if (type->isStructTy()) {
-        if (type->getStructName().startswith("__tuple")) {
-            return TupleType::from_llvm_type(llvm::cast<llvm::StructType>(type));
-        }
-
-        return StructType::from_llvm_type(llvm::cast<llvm::StructType>(type));
-    } else if (type->isFunctionTy()) {
-        return FunctionType::from_llvm_type(llvm::cast<llvm::FunctionType>(type));
-    } else if (type->isPointerTy()) {
-        return PointerType::from_llvm_type(type);
-    } else if (type->isArrayTy()) {
-        return ArrayType::from_llvm_type(llvm::cast<llvm::ArrayType>(type));
-    } else {
-        return VoidType;
-    }
+    return nullptr;
 }
 
 llvm::Type* Type::to_llvm_type(Visitor& visitor) {
@@ -70,8 +32,6 @@ llvm::Type* Type::to_llvm_type(Visitor& visitor) {
             return visitor.builder->getInt32Ty();
         case Type::Long:
             return visitor.builder->getIntNTy(LONG_SIZE);
-        case Type::LongLong:
-            return visitor.builder->getInt64Ty();
         case Type::Double:
             return visitor.builder->getDoubleTy();
         case Type::Float:
@@ -126,8 +86,6 @@ std::string Type::str() {
             return "int";
         case Type::Long:
             return "long";
-        case Type::LongLong:
-            return "longlong";
         case Type::Double:
             return "double";
         case Type::Float:

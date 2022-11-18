@@ -198,3 +198,27 @@ utils::Shared<Namespace> Scope::get_namespace(std::string name) {
 void Scope::exit(Visitor* visitor) {
     visitor->scope = this->parent;
 }
+
+void Scope::finalize() {
+    for (auto& entry : this->functions) {
+        if (entry.second->is_finalized) {
+            continue;
+        }
+
+        auto func = entry.second;
+        if (!func->has_return()) {
+            delete func->return_block;
+        }
+
+        if (func->value->use_empty() && !func->is_entry) {
+            func->value->eraseFromParent();
+        }
+        
+        for (auto branch : func->branches) delete branch;
+        func->is_finalized = true;
+    }
+
+    for (auto scope : this->children) {
+        scope->finalize(); delete scope;
+    }
+}

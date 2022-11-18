@@ -1,112 +1,110 @@
-type FILE = int;
-
 const SEEK_END = 2;
 const SEEK_SET = 0;
     
 extern "C" {
-    func fopen(path: char*, mode: char*) -> FILE*;
-    func fdopen(fd: int, mode: char*) -> FILE*;
-    func freopen(path: char*, mode: char*, stream: FILE*) -> FILE*;
-    func fclose(stream: FILE*) -> int;
-    func fflush(stream: FILE*) -> int;
+    func fopen(path: i8*, mode: i8*) -> i32*;
+    func fdopen(fd: i32, mode: i8*) -> i32*;
+    func freopen(path: i8*, mode: i8*, stream: i32*) -> i32*;
+    func fclose(stream: i32*) -> i32;
+    func fflush(stream: i32*) -> i32;
 
-    func fgetc(stream: FILE*) -> int;
-    func fgets(buf: char*, n: int, stream: FILE*) -> char*;
-    func getc(stream: FILE*) -> int;
-    func getchar() -> int;
-    func ungetc(c: int, stream: FILE*) -> int;
+    func fgetc(stream: i32*) -> i32;
+    func fgets(buf: i8*, n: i32, stream: i32*) -> i8*;
+    func getc(stream: i32*) -> i32;
+    func getchar() -> i32;
+    func ungetc(c: i32, stream: i32*) -> i32;
 
-    func fputc(c: int, stream: FILE*) -> int;
-    func fputs(s: char*, stream: FILE*) -> int;
-    func putc(c: int, stream: FILE*) -> int;
-    [[allow_dead_code]] func putchar(c: int) -> int;
-    [[allow_dead_code]] func puts(s: char*) -> int;
+    func fputc(c: i32, stream: i32*) -> i32;
+    func fputs(s: i8*, stream: i32*) -> i32;
+    func putc(c: i32, stream: i32*) -> i32;
+    [[allow_dead_code]] func putchar(c: i32) -> i32;
+    [[allow_dead_code]] func puts(s: i8*) -> i32;
 
-    func fread(buf: char*, size: int, n: int, stream: FILE*) -> int;
-    func fwrite(buf: char*, size: int, n: int, stream: FILE*) -> int;
+    func fread(buf: i8*, size: i32, n: i32, stream: i32*) -> i32;
+    func fwrite(buf: i8*, size: i32, n: i32, stream: i32*) -> i32;
 
-    func fseek(stream: FILE*, offset: int, whence: int) -> int;
-    func ftell(stream: FILE*) -> int;
-    func rewind(stream: FILE*);
-    func fgetpos(stream: FILE*, pos: int*) -> int;
-    func fsetpos(stream: FILE*, pos: int*) -> int;
+    func fseek(stream: i32*, offset: i32, whence: i32) -> i32;
+    func ftell(stream: i32*) -> i32;
+    func rewind(stream: i32*);
+    func fgetpos(stream: i32*, pos: i32*) -> i32;
+    func fsetpos(stream: i32*, pos: i32*) -> i32;
 
-    func clearerr(stream: FILE*);
-    func feof(stream: FILE*) -> int;
-    func ferror(stream: FILE*) -> int;
-    func fileno(stream: FILE*) -> int;
+    func clearerr(stream: i32*);
+    func feof(stream: i32*) -> i32;
+    func ferror(stream: i32*) -> i32;
+    func fileno(stream: i32*) -> i32;
 
-    func printf(fmt: char*, ...) -> int;
-    func fprintf(stream: FILE*, fmt: char*, ...) -> int;
-    func dprintf(fd: int, fmt: char*, ...) -> int;
-    func sprintf(buf: char*, fmt: char*, ...) -> int;
-    func snprintf(buf: char*, n: int, fmt: char*, ...) -> int;
+    func printf(fmt: i8*, ...) -> i32;
+    func fprintf(stream: i32*, fmt: i8*, ...) -> i32;
+    func dprintf(fd: i32, fmt: i8*, ...) -> i32;
+    func sprintf(buf: i8*, fmt: i8*, ...) -> i32;
+    func snprintf(buf: i8*, n: i32, fmt: i8*, ...) -> i32;
 
-    func malloc(size: int) -> void*;
-    func calloc(nmemb: int, size: int) -> void*;
-    func realloc(ptr: void*, size: int) -> void*;
-    func reallocarray(ptr: void*, nmemb: int, size: int) -> void*;
+    func malloc(size: i32) -> void*;
+    func calloc(nmemb: i32, size: i32) -> void*;
+    func realloc(ptr: void*, size: i32) -> void*;
+    func reallocarray(ptr: void*, nmemb: i32, size: i32) -> void*;
     func free(ptr: void*);
 
-    func memcpy(dest: void*, src: void*, size: int) -> void*;
-    func memset(dest: void*, c: int, size: int) -> void*;
-    func memmove(dest: void*, src: void*, size: int) -> void*;
-    func memcmp(s1: void*, s2: void*, size: int) -> int;
-    func memchr(s: void*, c: int, size: int) -> void*;
-    func memrchr(s: void*, c: int, size: int) -> void*;
-    func memmem(s: void*, n: int, needle: void*, m: int) -> void*;
+    func memcpy(dest: void*, src: void*, size: i32) -> void*;
+    func memset(dest: void*, c: i32, size: i32) -> void*;
+    func memmove(dest: void*, src: void*, size: i32) -> void*;
+    func memcmp(s1: void*, s2: void*, size: i32) -> i32;
+    func memchr(s: void*, c: i32, size: i32) -> void*;
+    func memrchr(s: void*, c: i32, size: i32) -> void*;
+    func memmem(s: void*, n: i32, needle: void*, m: i32) -> void*;
 
-    func strlen(s: char*) -> int;
-    func strcmp(s1: char*, s2: char*) -> int;
-    func strncmp(s1: char*, s2: char*, n: int) -> int;
-    func strcasecmp(s1: char*, s2: char*) -> int;
-    func strncasecmp(s1: char*, s2: char*, n: int) -> int;
-    func strchr(s: char*, c: int) -> char*;
-    func strrchr(s: char*, c: int) -> char*;
-    func strstr(haystack: char*, needle: char*) -> char*;
-    func strcasestr(haystack: char*, needle: char*) -> char*;
-    func strtok(s: char*, delim: char*) -> char*;
-    func strtok_r(s: char*, delim: char*, save_ptr: char**) -> char*;
-    func strdup(s: char*) -> char*;
-    func strndup(s: char*, n: int) -> char*;
-    func strnlen(s: char*, n: int) -> int;
-    func strspn(s: char*, accept: char*) -> int;
-    func strcspn(s: char*, reject: char*) -> int;
-    func strpbrk(s: char*, accept: char*) -> char*;
-    func strsep(s: char*, delim: char*) -> char*;
-    func strcoll(s1: char*, s2: char*) -> int;
+    func strlen(s: i8*) -> i32;
+    func strcmp(s1: i8*, s2: i8*) -> i32;
+    func strncmp(s1: i8*, s2: i8*, n: i32) -> i32;
+    func strcasecmp(s1: i8*, s2: i8*) -> i32;
+    func strncasecmp(s1: i8*, s2: i8*, n: i32) -> i32;
+    func strchr(s: i8*, c: i32) -> i8*;
+    func strrchr(s: i8*, c: i32) -> i8*;
+    func strstr(haystack: i8*, needle: i8*) -> i8*;
+    func strcasestr(haystack: i8*, needle: i8*) -> i8*;
+    func strtok(s: i8*, delim: i8*) -> i8*;
+    func strtok_r(s: i8*, delim: i8*, save_ptr: i8**) -> i8*;
+    func strdup(s: i8*) -> i8*;
+    func strndup(s: i8*, n: i32) -> i8*;
+    func strnlen(s: i8*, n: i32) -> i32;
+    func strspn(s: i8*, accept: i8*) -> i32;
+    func strcspn(s: i8*, reject: i8*) -> i32;
+    func strpbrk(s: i8*, accept: i8*) -> i8*;
+    func strsep(s: i8*, delim: i8*) -> i8*;
+    func strcoll(s1: i8*, s2: i8*) -> i32;
 
-    func isalnum(c: int) -> int;
-    func isalpha(c: int) -> int;
-    func isblank(c: int) -> int;
-    func iscntrl(c: int) -> int;
-    func isdigit(c: int) -> int;
-    func isgraph(c: int) -> int;
-    func islower(c: int) -> int;
-    func isprint(c: int) -> int;
-    func ispunct(c: int) -> int;
-    func isspace(c: int) -> int;
-    func isupper(c: int) -> int;
-    func isxdigit(c: int) -> int;
+    func isalnum(c: i32) -> i32;
+    func isalpha(c: i32) -> i32;
+    func isblank(c: i32) -> i32;
+    func iscntrl(c: i32) -> i32;
+    func isdigit(c: i32) -> i32;
+    func isgraph(c: i32) -> i32;
+    func islower(c: i32) -> i32;
+    func isprint(c: i32) -> i32;
+    func ispunct(c: i32) -> i32;
+    func isspace(c: i32) -> i32;
+    func isupper(c: i32) -> i32;
+    func isxdigit(c: i32) -> i32;
 
-    func tolower(c: int) -> int;
-    func toupper(c: int) -> int;
-    func toascii(c: int) -> int;
+    func tolower(c: i32) -> i32;
+    func toupper(c: i32) -> i32;
+    func toascii(c: i32) -> i32;
 
-    func atoi(s: char*) -> int;
-    func atol(s: char*) -> long;
-    func atoll(s: char*) -> long;
-    func atof(s: char*) -> double;
+    func atoi(s: i8*) -> i32;
+    func atol(s: i8*) -> i64;
+    func atoll(s: i8*) -> i64;
+    func atof(s: i8*) -> f32;
 
-    func sleep(seconds: int) -> int;
+    func sleep(seconds: i32) -> i32;
 
-    [[noreturn]] func exit(code: int) -> void;
+    [[noreturn]] func exit(code: i32) -> void;
 
     func atexit(f: func() -> void);
     
-    func strerror(err: int) -> char*;
-    func perror(s: char*);
+    func strerror(err: i32) -> i8*;
+    func perror(s: i8*);
 
-    func __errno_location() -> int*;
-    func __h_errno_location() -> int*;
+    func __errno_location() -> i32*;
+    func __h_errno_location() -> i32*;
 }

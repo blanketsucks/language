@@ -1,4 +1,3 @@
-#include "objects.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::NamespaceExpr* expr) {
@@ -109,6 +108,12 @@ Value Visitor::visit(ast::UsingExpr* expr) {
             this->scope->functions[member] = scope->functions[member];
         } else if (scope->namespaces.find(member) != scope->namespaces.end()) {
             this->scope->namespaces[member] = scope->namespaces[member];
+        } else if (scope->constants.find(member) != scope->constants.end()) {
+            this->scope->constants[member] = scope->constants[member];
+        } else if (scope->enums.find(member) != scope->enums.end()) {
+            this->scope->enums[member] = scope->enums[member];
+        } else if (scope->modules.find(member) != scope->modules.end()) {
+            this->scope->modules[member] = scope->modules[member];
         } else {
             ERROR(expr->start, "Member '{0}' does not exist in namespace '{1}'", member, scope->name);
         }

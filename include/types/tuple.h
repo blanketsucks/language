@@ -5,9 +5,8 @@
 
 // The main idea here of tuples is that each tuple type is going to be it's own independent structure.
 // For example if you have a tuple `(int, float, char*)` it's going to be translated into the LLVM IR as
-// `%tuple.0 = type { i32, float, i8* }`, and whenever you reference that same tuple type it's going to use
-// `tuple.0` in the IR.
-// Each tuple type will be identified with a "hash" which is just a bitwise or of all of it's fields.
+// `%__tuple.0 = type { i32, float, i8* }`, and whenever you reference that same tuple type it's going to use
+// `__tuple.0` in the IR.
 class TupleType : public Type {
 public:
     static TupleType* create(std::vector<Type*> types);

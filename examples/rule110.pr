@@ -4,8 +4,8 @@ import libc;
 
 $define SIZE 100
 
-func main() -> int {
-    let state: [int; SIZE]; # Arrays are, by default, zero initialized 
+func main() -> i32 { 
+    let state: [i32; SIZE];
 
     state[SIZE - 2] = 1;
     for (i = 0; i < (SIZE - 2); i += 1) {

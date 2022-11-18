@@ -9,6 +9,7 @@ Value::Value(
     utils::Shared<Enum> enumeration,
     utils::Shared<Namespace> namespace_,
     utils::Shared<Module> module,
+    llvm::Type* type,
     FunctionCall* call
 ) {
     this->value = value;
@@ -19,6 +20,7 @@ Value::Value(
     this->namespace_ = namespace_;
     this->enumeration = enumeration;
     this->module = module;
+    this->type = type;
     this->call = call;
 }
 
@@ -28,11 +30,6 @@ llvm::Value* Value::unwrap(Location location) {
     }
 
     return this->value;
-}
-
-llvm::Type* Value::type() {
-    assert(this->value);
-    return this->value->getType();
 }
 
 std::string Value::name() {
@@ -61,6 +58,10 @@ Value Value::with_module(utils::Shared<Module> module) {
     return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, module);
 }
 
+Value Value::with_type(llvm::Type* type) {
+    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, type);
+}
+
 Value Value::as_call(FunctionCall* call) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, call);
+    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, call);
 }

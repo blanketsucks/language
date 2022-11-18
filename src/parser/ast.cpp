@@ -53,12 +53,13 @@ VariableAssignmentExpr::VariableAssignmentExpr(
     Location start, 
     Location end, 
     std::vector<std::string> names, 
-    Type* type, 
+    utils::Ref<TypeExpr> type, 
     utils::Ref<Expr> value, 
     bool external,
     bool is_multiple_variables
-) : ExprMixin(start, end), names(names), type(type), external(external), is_multiple_variables(is_multiple_variables) {
+) : ExprMixin(start, end), names(names), external(external), is_multiple_variables(is_multiple_variables) {
     this->value = std::move(value);
+    this->type = std::move(type);
 }
 
 Value VariableAssignmentExpr::accept(Visitor& visitor) {
@@ -66,9 +67,10 @@ Value VariableAssignmentExpr::accept(Visitor& visitor) {
 }
 
 ConstExpr::ConstExpr(
-    Location start, Location end, std::string name, Type* type, utils::Ref<Expr> value
-) : ExprMixin(start, end), type(type), name(name) {
+    Location start, Location end, std::string name, utils::Ref<TypeExpr> type, utils::Ref<Expr> value
+) : ExprMixin(start, end), name(name) {
     this->value = std::move(value);
+    this->type = std::move(type);
 }
 
 Value ConstExpr::accept(Visitor& visitor) {
@@ -147,10 +149,11 @@ PrototypeExpr::PrototypeExpr(
     std::string name, 
     std::vector<Argument> args, 
     bool is_variadic,
-    Type* return_type, 
+    utils::Ref<TypeExpr> return_type, 
     ExternLinkageSpecifier linkage
-) : ExprMixin(start, end), name(name), is_variadic(is_variadic), return_type(return_type), linkage(linkage) {
+) : ExprMixin(start, end), name(name), is_variadic(is_variadic), linkage(linkage) {
     this->args = std::move(args);
+    this->return_type = std::move(return_type);
 }
 
 Value PrototypeExpr::accept(Visitor& visitor) {
@@ -238,9 +241,8 @@ StructExpr::StructExpr(
     bool opaque, 
     std::vector<utils::Ref<Expr>> parents,
     std::map<std::string, StructField> fields, 
-    std::vector<utils::Ref<Expr>> methods,
-    StructType* type
-) : ExprMixin(start, end), name(name), opaque(opaque), type(type) {
+    std::vector<utils::Ref<Expr>> methods
+) : ExprMixin(start, end), name(name), opaque(opaque) {
     this->fields = std::move(fields);
     this->methods = std::move(methods);
     this->parents = std::move(parents);
@@ -251,7 +253,7 @@ Value StructExpr::accept(Visitor& visitor) {
 }
 
 ConstructorExpr::ConstructorExpr(
-    Location start, Location end, utils::Ref<Expr> parent, std::map<std::string, utils::Ref<Expr>> fields
+    Location start, Location end, utils::Ref<Expr> parent, std::vector<ConstructorField> fields
 ) : ExprMixin(start, end) {
     this->parent = std::move(parent);
     this->fields = std::move(fields);
@@ -283,9 +285,10 @@ Value ElementExpr::accept(Visitor& visitor) {
 }
 
 CastExpr::CastExpr(
-    Location start, Location end, utils::Ref<Expr> value, Type* to
-) : ExprMixin(start, end), to(to) {
+    Location start, Location end, utils::Ref<Expr> value, utils::Ref<TypeExpr> to
+) : ExprMixin(start, end) {
     this->value = std::move(value);
+    this->to = std::move(to);
 }
 
 Value CastExpr::accept(Visitor& visitor) {
@@ -293,9 +296,10 @@ Value CastExpr::accept(Visitor& visitor) {
 }
 
 SizeofExpr::SizeofExpr(
-    Location start, Location end, Type* type, utils::Ref<Expr> value
-) : ExprMixin(start, end), type(type) {
+    Location start, Location end, utils::Ref<TypeExpr> type, utils::Ref<Expr> value
+) : ExprMixin(start, end) {
     this->value = std::move(value);
+    this->type = std::move(type);
 }
 
 Value SizeofExpr::accept(Visitor& visitor) {
@@ -353,9 +357,10 @@ Value TupleExpr::accept(Visitor& visitor) {
 }
 
 EnumExpr::EnumExpr(
-    Location start, Location end, std::string name, Type* type, std::vector<EnumField> fields
-) : ExprMixin(start, end), name(name), type(type) {
+    Location start, Location end, std::string name, utils::Ref<TypeExpr> type, std::vector<EnumField> fields
+) : ExprMixin(start, end), name(name) {
     this->fields = std::move(fields);
+    this->type = std::move(type);
 }
 
 Value EnumExpr::accept(Visitor &visitor) {
@@ -389,5 +394,63 @@ TernaryExpr::TernaryExpr(
 }
 
 Value TernaryExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+BuiltinTypeExpr::BuiltinTypeExpr(
+    Location start, Location end, BuiltinType value
+) : TypeExpr(start, end, TypeKind::Builtin), value(value) {}
+
+Value BuiltinTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+NamedTypeExpr::NamedTypeExpr(
+    Location start, Location end, std::string name, std::deque<std::string> parents
+) : TypeExpr(start, end, TypeKind::Named), name(name), parents(parents) {}
+
+Value NamedTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+TupleTypeExpr::TupleTypeExpr(
+    Location start, Location end, std::vector<utils::Ref<TypeExpr>> elements
+) : TypeExpr(start, end, TypeKind::Tuple) {
+    this->elements = std::move(elements);
+}
+
+Value TupleTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ArrayTypeExpr::ArrayTypeExpr(
+    Location start, Location end, utils::Ref<TypeExpr> element, utils::Ref<Expr> size
+) : TypeExpr(start, end, TypeKind::Array) {
+    this->element = std::move(element);
+    this->size = std::move(size);
+}
+
+Value ArrayTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+PointerTypeExpr::PointerTypeExpr(
+    Location start, Location end, utils::Ref<TypeExpr> element
+) : TypeExpr(start, end, TypeKind::Pointer) {
+    this->element = std::move(element);
+}
+
+Value PointerTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+FunctionTypeExpr::FunctionTypeExpr(
+    Location start, Location end, std::vector<utils::Ref<TypeExpr>> args, utils::Ref<TypeExpr> ret
+) : TypeExpr(start, end, TypeKind::Function) {
+    this->args = std::move(args);
+    this->ret = std::move(ret);
+}
+
+Value FunctionTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

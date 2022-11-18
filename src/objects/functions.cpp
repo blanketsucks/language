@@ -16,8 +16,9 @@ Function::Function(
     this->is_private = attrs.has("private");
     this->noreturn = attrs.has("noreturn");
     this->attrs = attrs;
-    
+    this->return_block = nullptr;
     this->calls = {};
+    this->is_finalized = false;
 }
 
 Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::BasicBlock* end) {

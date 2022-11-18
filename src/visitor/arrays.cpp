@@ -1,7 +1,4 @@
 #include "visitor.h"
-#include "llvm/ADT/APInt.h"
-
-#include <cstdio>
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
     std::vector<llvm::Value*> elements;
@@ -33,7 +30,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     llvm::Type* etype = elements[0]->getType();
     for (size_t i = 1; i < elements.size(); i++) {
         llvm::Value* element = elements[i];
-        if (!this->is_compatible(element->getType(), etype)) {
+        if (!this->is_compatible(etype, element->getType())) {
             ERROR(expr->start, "All elements of an array must be of the same type");
         } else {
             elements[i] = this->cast(element, etype);

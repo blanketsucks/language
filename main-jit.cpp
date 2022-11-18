@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     Visitor visitor(filename, "main", true);
     visitor.visit(std::move(ast));
 
-    Function* entry = visitor.functions["main"];
+    auto entry = visitor.global_scope->functions["main"];
     if (!entry) {
         Compiler::error("Missing main entry point function");
     }
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         Compiler::error("Main entry point function takes no more than 2 arguments");
     }
 
-    visitor.free();
+    visitor.finalize();
     parser.free();
 
     jit::ProtonJIT jit = jit::ProtonJIT(filename, std::move(visitor.module), std::move(visitor.context));

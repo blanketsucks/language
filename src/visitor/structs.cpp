@@ -1,7 +1,5 @@
-#include "parser/ast.h"
 #include "visitor.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Constants.h"
+#include <stdint.h>
 
 Value Visitor::visit(ast::StructExpr* expr) {
     std::map<std::string, StructField> fields;
@@ -35,7 +33,6 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
         this->scope->structs[expr->name] = structure;
         this->structs[name] = structure;
-        this->typeids[expr->type->getID()] = type;
 
         structure->scope = this->create_scope(name, ScopeType::Struct);
         for (auto& parent : expr->parents) {
@@ -72,27 +69,26 @@ Value Visitor::visit(ast::StructExpr* expr) {
             offset = last.offset + this->getsizeof(last.type);
         }
 
-        std::vector<ast::StructField> struct_fields = utils::values(expr->fields);
-        std::sort(struct_fields.begin(), struct_fields.end(), [](auto& a, auto& b) { return a.index < b.index; });
-        
-        for (auto& field : struct_fields) {
-            llvm::Type* ty = this->get_llvm_type(field.type);
+        std::vector<ast::StructField> sfields;
+        for (auto& entry : expr->fields) {
+            sfields.push_back(std::move(entry.second));
+        }
+
+        std::sort(sfields.begin(), sfields.end(), [](auto& a, auto& b) { return a.index < b.index; });        
+        for (auto& field : sfields) {
+            llvm::Type* ty = field.type->accept(*this).type;
             if (ty == type) {
                 ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
             }
 
-            types.push_back(this->get_llvm_type(field.type));
+            fields[field.name] = {field.name, ty, field.is_private, index, offset};
+            index++;
+
+            offset += this->getsizeof(ty);
+            types.push_back(ty);
         }
 
         type->setBody(types);
-        for (auto& pair : utils::zip(struct_fields, types)) {
-            ast::StructField field = pair.first;
-            fields[field.name] = {field.name, pair.second, field.is_private, index, offset};
-
-            index++;
-            offset += this->getsizeof(pair.second);
-        }
-
         structure->fields = fields;
     } else {
         if (expr->fields.size()) {
@@ -201,31 +197,31 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     int index = 0;
     bool is_const = true;
 
-    for (auto& pair : expr->fields) {
+    for (auto& entry : expr->fields) {
         int i = index;
         StructField field;
 
-        if (!pair.first.empty()) {
-            i = structure->get_field_index(pair.first);
+        if (!entry.name.empty()) {
+            i = structure->get_field_index(entry.name);
             if (i < 0) {
-                ERROR(pair.second->start, "Field '{0}' does not exist in struct '{1}'", pair.first, structure->name);
+                ERROR(entry.value->start, "Field '{0}' does not exist in struct '{1}'", entry.name, structure->name);
             } else if (args.find(i) != args.end()) {
-                ERROR(pair.second->start, "Field '{0}' already initialized", pair.first);
+                ERROR(entry.value->start, "Field '{0}' already initialized", entry.name);
             }
 
-            field = structure->fields.at(pair.first);
+            field = structure->fields.at(entry.name);
             if (this->current_struct != structure && field.is_private) {
-                ERROR(pair.second->start, "Field '{1}' is private and cannot be initialized", pair.first);
+                ERROR(entry.value->start, "Field '{1}' is private and cannot be initialized", entry.name);
             }
         } else {
             field = structure->get_field_at(index);
         }
 
         this->ctx = field.type;
-        Value val = pair.second->accept(*this);
+        Value val = entry.value->accept(*this);
 
         is_const &= val.is_constant;
-        llvm::Value* value = val.unwrap(pair.second->start);
+        llvm::Value* value = val.unwrap(entry.value->start);
 
         args[i] = value;
         index++;
@@ -257,7 +253,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         return llvm::ConstantAggregateZero::get(structure->type);
     }
 
-    llvm::Value* instance = llvm::UndefValue::get(structure->type);
+    llvm::Value* instance = llvm::ConstantAggregateZero::get(structure->type);
     for (auto& arg : args) {
         instance = this->builder->CreateInsertValue(instance, arg.second, arg.first);
     }
@@ -297,7 +293,7 @@ void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr>
     }
 
     llvm::Value* attr = value->accept(*this).unwrap(value->start);
-    if (!this->is_compatible(attr->getType(), field.type)) {
+    if (!this->is_compatible(field.type, attr->getType())) {
         ERROR(
             value->start, 
             "Cannot assign value of type '{0}' to type '{1}' for struct field '{2}'", 

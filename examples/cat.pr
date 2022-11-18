@@ -2,7 +2,7 @@ import libc;
 
 const stderr = libc::fdopen(2, "w");
 
-func read_from_filename(filename: char*) -> char* {
+func read_from_filename(filename: i8*) -> i8* {
     let file = libc::fopen(filename, "r");
     if (!file) {
         # We don't have access to `errno` so we use `__errno_location` instead, we can have `errno` to be a macro
@@ -19,12 +19,12 @@ func read_from_filename(filename: char*) -> char* {
     libc::fseek(file, 0, libc::SEEK_END);
 
     let size = libc::ftell(file);
-    if (size == 0) { # Empty file
+    if (!size) { # Empty file
         return null;
     }
 
     libc::fseek(file, 0, libc::SEEK_SET);
-    let buffer = libc::malloc(size) as char*;
+    let buffer = libc::malloc(size) as i8*;
 
     let n = libc::fread(buffer, 1, size, file);
     if (n != size) {
@@ -42,7 +42,7 @@ func read_from_filename(filename: char*) -> char* {
     return buffer;
 }
 
-func main(argc: int, argv: char**) -> int {
+func main(argc: i32, argv: i8**) -> i32 {
     if (argc < 2) {
         libc::fprintf(stderr, "Usage: %s [filenames...]\n", argv[0]);
         return 1;

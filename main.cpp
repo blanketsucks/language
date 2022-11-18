@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
 
     utils::filesystem::Path path(args.filename);
     if (!path.exists()) {
-        Compiler::error("File not found '{s}'", args.filename);
+        Compiler::error("File not found '{s}'", args.filename); exit(1);
     }
 
     Compiler compiler;
@@ -226,37 +226,25 @@ int main(int argc, char** argv) {
     for (auto& include : args.includes) {
         utils::filesystem::Path inc(include);
         if (!inc.exists()) {
-            Compiler::error("Could not find include path '{s}'", include);
+            Compiler::error("Could not find include path '{s}'", include); exit(1);
         }
         
         if (!inc.isdir()) {
-            Compiler::error("Include path must be a directory");
+            Compiler::error("Include path must be a directory"); exit(1);
         }
 
         compiler.add_include_path(include);
     }
 
-    for (auto& library : args.libraries.names) {
-        compiler.add_library(library);
-    }
-
-    for (auto& path : args.libraries.paths) {
-        compiler.add_library_path(path);
-    }
+    compiler.set_libraries(args.libraries.names);
+    compiler.set_library_paths(args.libraries.paths);
 
     compiler.add_library("c");
 
     compiler.add_include_path("lib/");
     compiler.define_preprocessor_macro("__file__", args.filename);
 
-    CompilerError error = compiler.compile();
-    if (error.code > 0) {
-        if (!error.message.empty()) {
-            Compiler::error(error.message);
-        }
-
-        return error.code;
-    }
+    compiler.compile().unwrap();
 
     llvm::llvm_shutdown();
     return 0;

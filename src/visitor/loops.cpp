@@ -11,7 +11,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
 
     Branch* branch = func->branch;
 
-    this->builder->CreateCondBr(this->cast(condition, BooleanType), loop, end);
+    this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
     this->set_insert_point(loop, false);
 
     func->branch = func->create_branch("while.loop", loop, end);
@@ -25,7 +25,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     }
 
     condition = expr->condition->accept(*this).unwrap(expr->condition->start);
-    this->builder->CreateCondBr(this->cast(condition, BooleanType), loop, end);
+    this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
 
     this->set_insert_point(end);
     func->branch = branch;
@@ -45,7 +45,7 @@ Value Visitor::visit(ast::ForExpr* expr) {
     expr->start->accept(*this).unwrap(expr->start->start);
     llvm::Value* end = expr->end->accept(*this).unwrap(expr->end->start);
 
-    this->builder->CreateCondBr(this->cast(end, BooleanType), loop, stop);
+    this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
     this->set_insert_point(loop, false);
 
     func->branch = func->create_branch("for.loop", loop, stop); 
@@ -61,7 +61,7 @@ Value Visitor::visit(ast::ForExpr* expr) {
     expr->step->accept(*this).unwrap(expr->step->start);
     end = expr->end->accept(*this).unwrap(expr->end->start);
 
-    this->builder->CreateCondBr(this->cast(end, BooleanType), loop, stop);
+    this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
     this->set_insert_point(stop);
 
     func->branch = branch;

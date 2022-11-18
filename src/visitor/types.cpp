@@ -1,3 +1,4 @@
+#include "parser/ast.h"
 #include "visitor.h"
 
 uint32_t Visitor::getsizeof(llvm::Value* value) {
@@ -81,12 +82,12 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
 
     if (t1->isPointerTy()) {
         if (!t2->isPointerTy()) { return false; }
-        t2 = t2->getNonOpaquePointerElementType();
-        if (t2->isVoidTy()) {
+
+        t2 = t2->getNonOpaquePointerElementType(); t1 = t1->getNonOpaquePointerElementType(); 
+        if (t2->isVoidTy() || t1->isVoidTy()) {
             return true;
         }
 
-        t1 = t1->getNonOpaquePointerElementType(); 
         return this->is_compatible(t1, t2);
     } else if (t1->isArrayTy()) {
         if (!t2->isArrayTy()) { 
@@ -109,9 +110,7 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
     }
 
     if (t1->isIntegerTy()) {
-        if (t2->isFloatingPointTy()) {
-            return true;
-        } else if (t2->isIntegerTy()) {
+        if (t2->isFloatingPointTy() || t2->isIntegerTy()) {
             return true;
         } else {
             return false;
@@ -136,6 +135,21 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
         return value;
     }
 
+    if (llvm::isa<llvm::Constant>(value)) {
+        llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
+        
+        if (llvm::isa<llvm::ConstantInt>(constant)) {
+            llvm::ConstantInt* cint = llvm::cast<llvm::ConstantInt>(constant);
+            return llvm::ConstantInt::get(type, cint->getZExtValue());
+        } else if (llvm::isa<llvm::ConstantFP>(constant)) {
+            llvm::ConstantFP* cfp = llvm::cast<llvm::ConstantFP>(constant);
+            return llvm::ConstantFP::get(type, cfp->getValueAPF().convertToDouble());
+        }
+
+        constant->dump();
+        return constant;
+    }
+
     if (value->getType()->isIntegerTy() && type->isIntegerTy()) {
         return this->builder->CreateIntCast(value, type, true);
     } else if (value->getType()->isPointerTy() && type->isIntegerTy()) {
@@ -149,7 +163,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
     llvm::Type* from = value->getType();
-    llvm::Type* to = this->get_llvm_type(expr->to);
+    llvm::Type* to = expr->to->accept(*this).type;
 
     if (from == to) {
         return value;
@@ -160,9 +174,9 @@ Value Visitor::visit(ast::CastExpr* expr) {
         this->get_type_name(from), this->get_type_name(to)
     );
     
-    if (from->isPointerTy() && !to->isIntegerTy(LONG_SIZE)) {
-        if (!to->isPointerTy()) {
-            NOTE(expr->end, "Pointer memory addresses are of type 'long' not '{s}'", this->get_type_name(to));
+    if (from->isPointerTy() && (to->isPointerTy() || to->isIntegerTy())) {
+        if (!to->isPointerTy() && to->getIntegerBitWidth() < 64) {
+            NOTE(expr->end, "Pointer memory addresses are of type 'i64' not '{s}'", this->get_type_name(to));
         }
     } else if (from->isPointerTy() && !to->isPointerTy()) {
         utils::error(expr->end, err);
@@ -204,9 +218,101 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
         llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
         size = this->getsizeof(value);
     } else {
-        llvm::Type* type = this->get_llvm_type(expr->type);
+        llvm::Type* type = expr->accept(*this).type;
         size = this->getsizeof(type);
     }
 
     return Value(this->builder->getInt32(size), true);
+}
+
+Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
+    switch (expr->value) {
+        case ast::BuiltinType::Void:
+            return Value::with_type(this->builder->getVoidTy());
+        case ast::BuiltinType::Bool:
+            return Value::with_type(this->builder->getInt1Ty());
+        case ast::BuiltinType::i8:
+            return Value::with_type(this->builder->getInt8Ty());
+        case ast::BuiltinType::i16:
+            return Value::with_type(this->builder->getInt16Ty());
+        case ast::BuiltinType::i32:
+            return Value::with_type(this->builder->getInt32Ty());
+        case ast::BuiltinType::i64:
+            return Value::with_type(this->builder->getInt64Ty());
+        case ast::BuiltinType::i128:
+            return Value::with_type(this->builder->getIntNTy(128));
+        case ast::BuiltinType::f32:
+            return Value::with_type(this->builder->getFloatTy());
+        case ast::BuiltinType::f64:
+            return Value::with_type(this->builder->getDoubleTy());
+        default:
+            _UNREACHABLE
+    }
+}
+
+Value Visitor::visit(ast::NamedTypeExpr* expr) {
+    Scope* scope = this->scope;
+    while (!expr->parents.empty()) {
+        std::string name = expr->parents.front();
+        expr->parents.pop_front();
+
+        if (this->scope->has_namespace(name)) {
+            scope = this->scope->get_namespace(name)->scope;
+        } else if (this->scope->has_module(name)) {
+            scope = this->scope->get_module(name)->scope;
+        } else {
+            ERROR(expr->start, "Unrecognised namespace '{0}'", name);
+        }
+    }
+
+    if (!scope->has_struct(expr->name)) {
+        ERROR(expr->start, "Unrecognised type '{0}'", expr->name);
+    }
+
+    auto structure = scope->get_struct(expr->name);
+    return Value::with_type(structure->type);
+}
+
+Value Visitor::visit(ast::PointerTypeExpr* expr) {
+    Value ret = expr->element->accept(*this);
+    return Value::with_type(ret.type->getPointerTo());
+}
+
+Value Visitor::visit(ast::ArrayTypeExpr* expr) {
+    llvm::Type* element = expr->element->accept(*this).type;
+    llvm::Value* size = expr->size->accept(*this).unwrap(expr->start);
+    if (!llvm::isa<llvm::ConstantInt>(size)) {
+        ERROR(expr->size->start, "Array size must be a constant integer");
+    }
+
+    llvm::ConstantInt* csize = llvm::cast<llvm::ConstantInt>(size);
+    return Value::with_type(llvm::ArrayType::get(element, csize->getZExtValue()));
+}
+
+Value Visitor::visit(ast::TupleTypeExpr* expr) {
+    std::vector<llvm::Type*> types;
+    for (auto& element : expr->elements) {
+        types.push_back(element->accept(*this).type);
+    }
+
+    TupleKey key(types);
+    llvm::StructType* type = nullptr;
+
+    if (this->tuples.find(key) == this->tuples.end()) {
+        type = llvm::StructType::create(*this->context, types, "__tuple");
+    } else {
+        type = this->tuples[key];
+    }
+
+    return Value::with_type(type);
+}
+
+Value Visitor::visit(ast::FunctionTypeExpr* expr) {
+    llvm::Type* ret = expr->ret->accept(*this).type;
+    std::vector<llvm::Type*> types;
+    for (auto& param : expr->args) {
+        types.push_back(param->accept(*this).type);
+    }
+
+    return Value::with_type(llvm::FunctionType::get(ret, types, false));
 }

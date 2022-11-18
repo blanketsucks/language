@@ -8,8 +8,6 @@ PointerType::PointerType(Type* type) : Type(Type::Pointer, LONG_SIZE), type(type
 
 PointerType* PointerType::create(Type* ty) {
     auto type = new PointerType(ty);
-    Type::push(type);
-
     return type;
 }
 
