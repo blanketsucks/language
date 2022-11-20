@@ -241,7 +241,7 @@ CompilerError Compiler::compile() {
         std::cout << '\n';
     }
 
-    visitor.create_global_initializers();
+    visitor.create_global_constructors();
 
     parser.free();
     visitor.finalize();

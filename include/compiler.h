@@ -59,7 +59,7 @@ public:
     template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
         std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
         std::string message = FORMAT(
-            "{0} {1}: {2}", utils::color(WHITE, "proton:"), utils::color(RED, "error:"), fmt
+            "{0} {1} {2}", utils::color(WHITE, "proton:"), utils::color(RED, "error:"), fmt
         );
 
         std::cout << message << std::endl;

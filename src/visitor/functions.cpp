@@ -54,8 +54,8 @@ void Visitor::typecheck_function_call(
 llvm::Value* Visitor::call(
     llvm::Function* function, 
     std::vector<llvm::Value*> args, 
-    bool is_constructor,
     llvm::Value* self, 
+    bool is_constructor,
     llvm::FunctionType* type,
     Location location
 ) {
@@ -109,6 +109,9 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         ret = this->builder->getVoidTy();
     } else {
         ret = expr->return_type->accept(*this).type;
+        if (ret->isVoidTy()) {
+            NOTE(expr->return_type->start, "Redundant return type. Function return types default to 'void'");
+        }
     }
 
     if (name == this->entry) {
@@ -125,6 +128,8 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::map<std::string, FunctionArgument> kwargs;
 
     std::vector<llvm::Type*> llvm_args;
+
+    uint32_t index = 0;
     for (auto& arg : expr->args) {
         llvm::Type* type = nullptr;
         if (arg.is_self) {
@@ -136,13 +141,31 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
             }
         }
 
-        if (arg.is_kwarg) {
-            kwargs[arg.name] = {arg.name, type, arg.is_reference, true};
-        } else {
-            args.push_back({arg.name, type, arg.is_reference, false});
+        llvm::Value* default_value = nullptr;
+        if (arg.default_value) {
+            default_value = arg.default_value->accept(*this).unwrap(arg.default_value->start);
+            if (!llvm::isa<llvm::Constant>(default_value)) {
+                ERROR(arg.default_value->start, "Default values must be constants");
+            }
+
+            if (!this->is_compatible(type, default_value->getType())) {
+                ERROR(
+                    arg.default_value->start, 
+                    "Default value of type '{0}' does not match expected type '{1}'",
+                    this->get_type_name(default_value->getType()), this->get_type_name(type)
+                );
+            }
+
+            default_value = this->cast(default_value, type);
         }
 
-        llvm_args.push_back(type);
+        if (arg.is_kwarg) {
+            kwargs[arg.name] = {arg.name, type, default_value, index, arg.is_reference, false};
+        } else {
+            args.push_back({arg.name, type, default_value, index, arg.is_reference, false});
+        }
+
+        llvm_args.push_back(type); index++;
     }
 
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
@@ -194,13 +217,13 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 }
 
 Value Visitor::visit(ast::FunctionExpr* expr) {
-    std::string name = this->format_name(expr->prototype->name);
-    llvm::Function* function = this->module->getFunction(name);
-    if (!function) {
-        function = llvm::cast<llvm::Function>(expr->prototype->accept(*this).value);
+    auto func = this->scope->functions[expr->prototype->name];
+    if (!func) {
+        expr->prototype->accept(*this);
+        func = this->scope->functions[expr->prototype->name];
     }
 
-    auto func = this->scope->functions[expr->prototype->name];
+    llvm::Function* function = func->value;
     if (!function->empty()) {
         NOTE(func->start, "Function '{0}' was previously defined here", name);
         ERROR(expr->start, "Function '{0}' is already defined", name);
@@ -226,7 +249,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     func->scope = this->create_scope(func->name, ScopeType::Function);
 
     uint32_t i = 0;
-    for (auto& arg : func->get_all_args()) {
+    for (auto& arg : func->params()) {
         llvm::Argument* argument = function->getArg(i);
         argument->setName(arg.name);
 
@@ -462,11 +485,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
             this->current_function->defer(*this, true);
         }
 
-        auto all_args = func->get_all_args();
+        auto params = func->params();
         for (auto& arg : expr->args) {
             bool is_reference = false;
-            if (i < all_args.size()) {
-                is_reference = all_args[i].is_reference;
+            if (i < params.size()) {
+                is_reference = params[i].is_reference;
             }
 
             visit(arg.get(), is_reference);
@@ -478,12 +501,14 @@ Value Visitor::visit(ast::CallExpr* expr) {
             }
 
             bool is_reference = false;
-            if (i < all_args.size()) {
-                is_reference = all_args[i].is_reference;
+            if (i < params.size()) {
+                is_reference = params[i].is_reference;
             }
 
             visit(kwarg.second.get(), is_reference);
-        }        
+        }
+
+        // TODO: sort arguments and handle default values
     } else {
         for (auto& arg : expr->args) {
             visit(arg.get());
@@ -503,6 +528,6 @@ Value Visitor::visit(ast::CallExpr* expr) {
     }
 
     return this->call(
-        function, args, is_constructor, callable.parent, ftype, expr->start
+        function, args, callable.parent, is_constructor, ftype, expr->start
     );
 }

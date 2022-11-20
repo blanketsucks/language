@@ -18,10 +18,16 @@ Value BlockExpr::accept(Visitor& visitor) {
 }
 
 IntegerExpr::IntegerExpr(
-    Location start, Location end, int value, int bits
-) : ExprMixin(start, end), value(value), bits(bits) {}
+    Location start, Location end, std::string value, int bits, bool is_float
+) : ExprMixin(start, end), value(value), bits(bits), is_float(is_float) {}
 
 Value IntegerExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+CharExpr::CharExpr(Location start, Location end, char value) : ExprMixin(start, end), value(value) {}
+
+Value CharExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -55,9 +61,10 @@ VariableAssignmentExpr::VariableAssignmentExpr(
     std::vector<std::string> names, 
     utils::Ref<TypeExpr> type, 
     utils::Ref<Expr> value, 
+    std::string consume_rest,
     bool external,
     bool is_multiple_variables
-) : ExprMixin(start, end), names(names), external(external), is_multiple_variables(is_multiple_variables) {
+) : ExprMixin(start, end), names(names), external(external), is_multiple_variables(is_multiple_variables), consume_rest(consume_rest) {
     this->value = std::move(value);
     this->type = std::move(type);
 }
@@ -296,10 +303,9 @@ Value CastExpr::accept(Visitor& visitor) {
 }
 
 SizeofExpr::SizeofExpr(
-    Location start, Location end, utils::Ref<TypeExpr> type, utils::Ref<Expr> value
+    Location start, Location end, utils::Ref<Expr> value
 ) : ExprMixin(start, end) {
     this->value = std::move(value);
-    this->type = std::move(type);
 }
 
 Value SizeofExpr::accept(Visitor& visitor) {
@@ -452,5 +458,27 @@ FunctionTypeExpr::FunctionTypeExpr(
 }
 
 Value FunctionTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ForeachExpr::ForeachExpr(
+    Location start, Location end, std::string name, utils::Ref<Expr> iterable, utils::Ref<Expr> body
+) : ExprMixin(start, end), name(name) {
+    this->iterable = std::move(iterable);
+    this->body = std::move(body);
+}   
+
+Value ForeachExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ArrayFillExpr::ArrayFillExpr(
+    Location start, Location end, utils::Ref<Expr> element, utils::Ref<Expr> count
+) : ExprMixin(start, end) {
+    this->element = std::move(element);
+    this->count = std::move(count);
+}
+
+Value ArrayFillExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

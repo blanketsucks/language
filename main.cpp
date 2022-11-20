@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
 
     utils::filesystem::Path path(args.filename);
     if (!path.exists()) {
-        Compiler::error("File not found '{s}'", args.filename); exit(1);
+        Compiler::error("File not found '{0}'", args.filename); exit(1);
     }
 
     Compiler compiler;

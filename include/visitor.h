@@ -16,40 +16,21 @@
 #include <map>
 #include <stdint.h>
 #include <string>
+#include <unordered_map>
 #include <memory>
 
 #ifdef __GNUC__
     #define _UNREACHABLE __builtin_unreachable();
 #elif _MSC_VER
+    #undef alloca
     #define _UNREACHABLE __assume(false);
 #else
     #define _UNREACHABLE
 #endif
 
-// Key value struct for tuples
-struct TupleKey {
-    std::vector<llvm::Type*> types;
-
-    TupleKey(std::vector<llvm::Type*> types) : types(types) {}
-    
-    bool operator==(const TupleKey& other) const {
-        if (this->types.size() != other.types.size()) {
-            return false;
-        }
-        
-        for (size_t i = 0; i < this->types.size(); i++) {
-            if (this->types[i] != other.types[i]) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-};
-
-
 class Visitor {
 public:
+    using TupleKey = std::vector<llvm::Type*>;
     using Finalizer = std::function<void(Visitor&)>;
 
     Visitor(std::string name, std::string entry, bool with_optimizations = true);
@@ -78,13 +59,21 @@ public:
     uint32_t getsizeof(llvm::Value* value);
     uint32_t getsizeof(llvm::Type* type);
 
+    llvm::StructType* create_tuple_type(std::vector<llvm::Type*> types);
+    void store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names, std::string consume_rest);
+    llvm::Value* make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type = nullptr);
     std::vector<llvm::Value*> unpack(
         llvm::Value* value, uint32_t n, Location location = Location::dummy()
     );
 
     void store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value);
     void store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value);
-    void store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names);
+
+    bool is_struct(llvm::Value* value);
+    bool is_struct(llvm::Type* type);
+
+    utils::Shared<Struct> get_struct(llvm::Value* value);
+    utils::Shared<Struct> get_struct(llvm::Type* type);
 
     llvm::Type* get_llvm_type(Type* name);
     Type* from_llvm_type(llvm::Type* type);
@@ -109,13 +98,15 @@ public:
     llvm::Value* call(
         llvm::Function* function, 
         std::vector<llvm::Value*> args, 
+        llvm::Value* self = nullptr,
         bool is_constructor = false,
-        llvm::Value* self = nullptr, 
         llvm::FunctionType* type = nullptr,
         Location location = Location::dummy()
     );
 
-    void create_global_initializers();
+    llvm::Type* get_pointer_element_type(llvm::Value* value);
+
+    void create_global_constructors();
 
     static std::string get_type_name(llvm::Type* type);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
@@ -127,6 +118,7 @@ public:
     Value visit(ast::BlockExpr* expr);
 
     Value visit(ast::IntegerExpr* expr);
+    Value visit(ast::CharExpr* expr);
     Value visit(ast::FloatExpr* expr);
     Value visit(ast::StringExpr* expr);
 
@@ -151,12 +143,14 @@ public:
     Value visit(ast::ForExpr* expr);
     Value visit(ast::BreakExpr* expr);
     Value visit(ast::ContinueExpr* expr);
+    Value visit(ast::ForeachExpr* expr);
 
     Value visit(ast::StructExpr* expr);
     Value visit(ast::ConstructorExpr* expr);
     Value visit(ast::AttributeExpr* expr);
 
     Value visit(ast::ArrayExpr* expr);
+    Value visit(ast::ArrayFillExpr* expr);
     Value visit(ast::ElementExpr* expr);
 
     Value visit(ast::BuiltinTypeExpr* expr);
@@ -196,10 +190,10 @@ public:
     std::map<std::string, utils::Shared<Struct>> structs;
     std::map<std::string, utils::Shared<Module>> modules;
 
-    std::map<TupleKey, llvm::StructType*, std::equal_to<TupleKey>> tuples;
+    std::map<TupleKey, llvm::StructType*> tuples;
     std::map<uint32_t, llvm::Type*> typeids;
 
-    std::vector<FunctionCall*> initializers;
+    std::vector<FunctionCall*> constructors;
 
     Scope* global_scope;
     Scope* scope;

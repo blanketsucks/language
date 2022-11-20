@@ -55,11 +55,11 @@ bool Function::has_kwarg(std::string name) {
     return this->kwargs.find(name) != this->kwargs.end();
 }
 
-std::vector<FunctionArgument> Function::get_all_args() {
-    std::vector<FunctionArgument> all_args = this->args;
+std::vector<FunctionArgument> Function::params() {
+    auto params = this->args;
     for (auto& kwarg : this->kwargs) {
-        all_args.push_back(kwarg.second);
+        params.push_back(kwarg.second);
     }
 
-    return all_args;
+    return params;
 }

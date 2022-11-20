@@ -123,6 +123,8 @@ static std::vector<std::string> KEYWORDS = {
     "enum",
     "where",
     "import",
+    "foreach",
+    "in",
 
     // Preprocessor keywords
     "$define",

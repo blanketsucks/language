@@ -203,12 +203,11 @@ Token Lexer::parse_string() {
     }
 
     if (this->current != '"') {
+        NOTE(start, "Unterminated string literal.");
         ERROR(this->loc(), "Expected end of string.");
     }
     
-    Token token = this->create_token(TokenKind::String, start, value);
-    this->next();
-
+    Token token = this->create_token(TokenKind::String, start, value); this->next();
     return token;
 }
 
@@ -223,24 +222,17 @@ Token Lexer::parse_number() {
 
     if (value == "0") {
         if (next == 'x' || next == 'b') {
-            value += this->current;
+            value += next; this->next();
             if (next == 'x') {
                 while (std::isxdigit(this->current)) {
                     value += this->current;
                     this->next();
                 }
-
-                // Kind of funky, but eh
-                long val = std::stol(value, nullptr, 16);
-                value = std::to_string(val);
             } else {
                 while (this->current == '0' || this->current == '1') {
                     value += this->current;
                     this->next();
                 }
-
-                long val = std::stol(value, nullptr, 2);
-                value = std::to_string(val);
             }
 
             return this->create_token(TokenKind::Integer, start, value);

@@ -46,6 +46,8 @@ struct FunctionReturn {
 struct FunctionArgument {
     std::string name;
     llvm::Type* type;
+    llvm::Value* default_value;
+    uint32_t index;
     bool is_reference;
     bool is_kwarg;
 
@@ -110,8 +112,9 @@ struct Function {
     Branch* create_branch(std::string name, llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
     bool has_return();
 
+    bool has_any_default_value();
     bool has_kwarg(std::string name);
-    std::vector<FunctionArgument> get_all_args();
+    std::vector<FunctionArgument> params();
 
     void defer(Visitor& visitor, bool is_noreturn = false);
 };
@@ -123,6 +126,8 @@ struct FunctionCall {
 
     Location start;
     Location end;
+
+    bool empty() { return this->function == nullptr; }
 };
 
 struct StructField {
@@ -165,6 +170,7 @@ struct Struct {
     std::vector<StructField> get_fields(bool with_private = false);
 
     bool has_method(std::string name);
+    utils::Shared<Function> get_method(std::string name);
 
     std::vector<utils::Shared<Struct>> expand();
 };

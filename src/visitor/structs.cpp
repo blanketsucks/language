@@ -1,5 +1,46 @@
+#include "utils.h"
 #include "visitor.h"
 #include <stdint.h>
+
+bool Visitor::is_struct(llvm::Value* value) {
+    return this->is_struct(value->getType());
+}
+
+bool Visitor::is_struct(llvm::Type* type) {
+    if (!type->isStructTy()) {
+        if (!type->isPointerTy()) {
+            return false;
+        }
+
+        type = type->getNonOpaquePointerElementType();
+        if (!type->isStructTy()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+utils::Shared<Struct> Visitor::get_struct(llvm::Value* value) {
+    return this->get_struct(value->getType());
+}
+
+utils::Shared<Struct> Visitor::get_struct(llvm::Type* type) {
+    if (!this->is_struct(type)) {
+        return nullptr;
+    }
+
+    if (type->isPointerTy()) {
+        type = type->getNonOpaquePointerElementType();
+    }
+
+    auto name = type->getStructName();
+    if (name.empty()) {
+        return nullptr;
+    }
+
+    return this->structs[name.str()];
+}
 
 Value Visitor::visit(ast::StructExpr* expr) {
     std::map<std::string, StructField> fields;

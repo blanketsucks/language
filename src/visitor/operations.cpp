@@ -33,7 +33,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
             }
 
-            llvm::Type* type = value->getType()->getNonOpaquePointerElementType();
+            llvm::Type* type = this->get_pointer_element_type(value);
             if (type->isVoidTy()) {
                 ERROR(expr->start, "Cannot dereference a void pointer");
             }
@@ -116,10 +116,8 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
 
-    if (ltype->isStructTy()) {
-        std::string name = ltype->getStructName().str();
-        auto structure = this->structs[name];
-
+    if (this->is_struct(ltype)) {
+        auto structure = this->get_struct(ltype);
         if (STRUCT_OP_MAPPING.find(expr->op) == STRUCT_OP_MAPPING.end()) {
             TODO("Not implemented");
         }
@@ -133,10 +131,12 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             );
         }
 
-        llvm::Value* parent = this->get_pointer_from_expr(expr->left.get()).first;
+        llvm::Value* self = left;
+        if (!ltype->isPointerTy()) {
+            self = this->get_pointer_from_expr(expr->left.get()).first;
+        }
 
-        method->used = true;
-        return this->call(method->value, { right }, false, parent);
+        return this->call(method->value, { right }, self);
     }
 
     if (!this->is_compatible(ltype, rtype)) {

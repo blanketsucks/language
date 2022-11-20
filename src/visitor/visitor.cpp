@@ -1,4 +1,6 @@
 #include "visitor.h"
+#include "parser/ast.h"
+#include "llvm/IR/Constant.h"
 
 Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
     this->name = name;
@@ -247,13 +249,13 @@ Scope::Local Visitor::get_pointer_from_expr(ast::Expr* expr) {
     return {nullptr, false};
 }
 
-void Visitor::create_global_initializers() {
-    if (this->initializers.empty()) {
+void Visitor::create_global_constructors() {
+    if (this->constructors.empty()) {
         return;
     }
 
     llvm::Function* function = this->create_function(
-        "__global_variable_initializer", 
+        "__global_constructors",
         this->builder->getVoidTy(),
         {},
         false,
@@ -263,14 +265,17 @@ void Visitor::create_global_initializers() {
     function->setSection(".text.startup");
 
     this->builder->SetInsertPoint(llvm::BasicBlock::Create(*this->context, "", function));
-
-    for (auto call : this->initializers) {
+    for (auto& call : this->constructors) {
         llvm::Value* value = this->call(
-            call->function, call->args, false, nullptr, nullptr, call->start
+            call->function, 
+            call->args, 
+            nullptr,
+            false,
+            nullptr, 
+            call->start
         );
 
         this->builder->CreateStore(value, call->store);
-        delete call;
     }
 
     this->builder->CreateRetVoid();
@@ -295,7 +300,7 @@ void Visitor::create_global_initializers() {
     global->setLinkage(llvm::GlobalValue::AppendingLinkage);
 }
 
-void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
+void Visitor::visit(std::vector<utils::Ref<ast::Expr>> statements) {
     for (auto& stmt : statements) {
         if (!stmt) {
             continue;
@@ -306,10 +311,28 @@ void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
 }
 
 Value Visitor::visit(ast::IntegerExpr* expr) {
-    return Value(
-        this->builder->getInt(llvm::APInt(expr->bits, expr->value, true)),
-        true
-    );
+    llvm::Constant* constant = nullptr;
+    llvm::StringRef str(expr->value);
+
+    int radix = 10;
+    if (str.startswith("0x")) {
+        str = str.drop_front(2); radix = 16;
+    } else if (str.startswith("0b")) {
+        str = str.drop_front(2); radix = 2;
+    }
+
+    if (expr->is_float) {
+        llvm::Type* type = expr->bits == 32 ? this->builder->getFloatTy() : this->builder->getDoubleTy();
+        constant = llvm::ConstantFP::get(type, expr->value);
+    } else {
+        constant = this->builder->getInt(llvm::APInt(expr->bits, str, radix));
+    }
+
+    return Value(constant, true);
+}
+
+Value Visitor::visit(ast::CharExpr* expr) {
+    return Value(this->builder->getInt8(expr->value), true);
 }
 
 Value Visitor::visit(ast::FloatExpr* expr) {

@@ -12,6 +12,10 @@ bool Struct::has_method(std::string name) {
     return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
+utils::Shared<Function> Struct::get_method(std::string name) { 
+    return this->scope->functions[name]; 
+}
+
 int Struct::get_field_index(std::string name) {
     if (this->fields.find(name) == this->fields.end()) {
         return -1;

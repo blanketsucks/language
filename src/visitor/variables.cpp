@@ -1,15 +1,5 @@
 #include "visitor.h"
 
-void Visitor::store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names) {
-    std::vector<llvm::Value*> values = this->unpack(value, names.size(), location);
-    for (auto& pair : utils::zip(names, values)) {
-        llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
-        this->builder->CreateStore(pair.second, inst);
-
-        func->scope->variables[pair.first] = inst;
-    }
-}
-
 Value Visitor::visit(ast::VariableExpr* expr) {
     Scope* scope = this->scope;
     auto local = scope->get_local(expr->name);
@@ -118,7 +108,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 global->setInitializer(llvm::Constant::getNullValue(type));
 
                 call->store = global;
-                this->initializers.push_back(call);
+                this->constructors.push_back(call);
             }
 
             this->scope->variables[expr->names[0]] = global;
@@ -145,14 +135,14 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
             if (call) {
                 call->store = inst;
-                this->initializers.push_back(call);
+                this->constructors.push_back(call);
             }
         }
 
         this->scope->variables[expr->names[0]] = inst;
 
     } else {
-        this->store_tuple(expr->start, this->current_function, value, expr->names);
+        this->store_tuple(expr->start, this->current_function, value, expr->names, expr->consume_rest);
     }
     
     return value;
@@ -196,7 +186,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         global->setInitializer(llvm::Constant::getNullValue(type));
 
         call->store = global;
-        this->initializers.push_back(call);
+        this->constructors.push_back(call);
     }
 
     this->scope->constants[expr->name] = global;

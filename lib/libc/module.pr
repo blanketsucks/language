@@ -98,7 +98,7 @@ extern "C" {
 
     func sleep(seconds: i32) -> i32;
 
-    [[noreturn]] func exit(code: i32) -> void;
+    [[noreturn]] func exit(code: i32);
 
     func atexit(f: func() -> void);
     

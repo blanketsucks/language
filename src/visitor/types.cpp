@@ -1,5 +1,7 @@
 #include "parser/ast.h"
 #include "visitor.h"
+#include "llvm/IR/Instructions.h"
+#include <functional>
 
 uint32_t Visitor::getsizeof(llvm::Value* value) {
     return this->getsizeof(value->getType());
@@ -148,7 +150,6 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
             return llvm::ConstantFP::get(type, cfp->getValueAPF().convertToDouble());
         }
 
-        constant->dump();
         return constant;
     }
 
@@ -159,6 +160,28 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     }
 
     return this->builder->CreateBitCast(value, type);
+}
+
+llvm::Type* Visitor::get_pointer_element_type(llvm::Value *value) {
+#if LLVM_VERSION_MAJOR >= 15
+    if (llvm::isa<llvm::AllocaInst>(value)) {
+        llvm::AllocaInst* alloca = llvm::cast<llvm::AllocaInst>(value);
+        return alloca->getAllocatedType();
+    } else if (llvm::isa<llvm::GlobalVariable>(value)) {
+        llvm::GlobalVariable* global = llvm::cast<llvm::GlobalVariable>(value);
+        return global->getValueType();
+    } else if (llvm::isa<llvm::Argument>(value)) {
+        llvm::Argument* arg = llvm::cast<llvm::Argument>(value);
+        return arg->getType();
+    } else if (llvm::isa<llvm::GetElementPtrInst>(value)) {
+        llvm::GetElementPtrInst* gep = llvm::cast<llvm::GetElementPtrInst>(value);
+        return gep->getSourceElementType();
+    }
+
+    return nullptr;
+#else
+    return value->getType()->getPointerElementType();
+#endif
 }
 
 Value Visitor::visit(ast::CastExpr* expr) {
@@ -282,6 +305,10 @@ Value Visitor::visit(ast::PointerTypeExpr* expr) {
 
 Value Visitor::visit(ast::ArrayTypeExpr* expr) {
     llvm::Type* element = expr->element->accept(*this).type;
+    if (element->isVoidTy()) {
+        ERROR(expr->start, "Cannot create an array of type 'void'");
+    }
+
     llvm::Value* size = expr->size->accept(*this).unwrap(expr->start);
     if (!llvm::isa<llvm::ConstantInt>(size)) {
         ERROR(expr->size->start, "Array size must be a constant integer");
@@ -294,26 +321,27 @@ Value Visitor::visit(ast::ArrayTypeExpr* expr) {
 Value Visitor::visit(ast::TupleTypeExpr* expr) {
     std::vector<llvm::Type*> types;
     for (auto& element : expr->elements) {
-        types.push_back(element->accept(*this).type);
+        llvm::Type* type = element->accept(*this).type;
+        if (type->isVoidTy()) {
+            ERROR(element->start, "Cannot create a tuple with a 'void' element");
+        }
+
+        types.push_back(type);
     }
 
-    TupleKey key(types);
-    llvm::StructType* type = nullptr;
-
-    if (this->tuples.find(key) == this->tuples.end()) {
-        type = llvm::StructType::create(*this->context, types, "__tuple");
-    } else {
-        type = this->tuples[key];
-    }
-
-    return Value::with_type(type);
+    return Value::with_type(this->create_tuple_type(types));
 }
 
 Value Visitor::visit(ast::FunctionTypeExpr* expr) {
     llvm::Type* ret = expr->ret->accept(*this).type;
     std::vector<llvm::Type*> types;
     for (auto& param : expr->args) {
-        types.push_back(param->accept(*this).type);
+        llvm::Type* ty = param->accept(*this).type;
+        if (ty->isVoidTy()) {
+            ERROR(param->start, "Function parameter type cannot be of type 'void'");
+        }
+
+        types.push_back(ty);
     }
 
     return Value::with_type(llvm::FunctionType::get(ret, types, false));

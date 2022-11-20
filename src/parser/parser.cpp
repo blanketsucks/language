@@ -211,6 +211,7 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
     std::vector<ast::Argument> args;
 
     bool has_kwargs = false;
+    bool has_default_values = false;
     bool is_variadic = false;
 
     while (this->current != TokenKind::RParen) {
@@ -274,7 +275,19 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             argument = value;
         }
 
-        args.push_back({argument, std::move(type), is_reference, is_self, has_kwargs});
+        utils::Ref<ast::Expr> default_value = nullptr;
+        if (this->current == TokenKind::Assign) {
+            has_default_values = true;
+            this->next();
+
+            default_value = this->expr(false);
+        } else {
+            if (has_default_values) {
+                ERROR(this->current.start, "Cannot have non-default arguments follow default arguments");
+            }
+        }
+
+        args.push_back({argument, std::move(type), is_reference, is_self, has_kwargs, std::move(default_value)});
         if (this->current != TokenKind::Comma) {
             break;
         }
@@ -427,12 +440,26 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
 
     std::vector<std::string> names;
     bool is_multiple_variables = false;
+    bool has_consume_rest = false;
+
+    std::string consume_rest;
     if (this->current == TokenKind::LParen) {
         this->next();
 
         while (this->current != TokenKind::RParen) {
-            std::string name = this->expect(TokenKind::Identifier, "variable name").value;
-            names.push_back(name);
+            if (this->current == TokenKind::Mul) {
+                if (has_consume_rest) {
+                    ERROR(this->current.start, "Cannot consume rest of the arguments more than once");
+                }
+
+                this->next();
+                has_consume_rest = true;
+
+                consume_rest = this->expect(TokenKind::Identifier, "consume rest name").value;
+                names.push_back(consume_rest);
+            } else {
+                names.push_back(this->expect(TokenKind::Identifier, "variable name").value);
+            }
 
             if (this->current != TokenKind::Comma) {
                 break;
@@ -485,7 +512,7 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         return utils::make_ref<ast::ConstExpr>(start, end, names[0], std::move(type), std::move(expr));
     } else {
         return utils::make_ref<ast::VariableAssignmentExpr>(
-            start, end, names, std::move(type), std::move(expr), false, is_multiple_variables
+            start, end, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables
         );
     }
 }
@@ -552,6 +579,8 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
     ast::Attributes attrs = this->parse_attributes();
     if (this->current == TokenKind::Identifier) {
         std::string name = this->current.value;
+        std::string consume_rest;
+
         this->next();
 
         this->expect(TokenKind::Colon, ":");
@@ -565,7 +594,7 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
         Location end = this->expect(TokenKind::SemiColon, ";").end;
 
         std::vector<std::string> names = {name,};
-        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, end, names, std::move(type), std::move(expr), true, false);
+        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, end, names, std::move(type), std::move(expr), consume_rest, true, false);
     } else {
         if (this->current != TokenKind::Keyword && this->current.value != "func") {
             ERROR(this->current.start, "Expected function");
@@ -847,6 +876,19 @@ utils::Ref<ast::Expr> Parser::statement() {
 
                 Location end = this->expect(TokenKind::SemiColon, ";").end;
                 return utils::make_ref<ast::ImportExpr>(start, end, name, parents, is_wildcard);
+            } else if (this->current.value == "foreach") {
+                Location start = this->current.start;
+                this->next(); this->expect(TokenKind::LParen, "(");
+
+                // TODO: foreach ((x, y) in foo)
+                auto variable = this->expect(TokenKind::Identifier, "identifier").value;
+                this->expect(TokenKind::Keyword, "in");
+
+                auto expr = this->expr(false);
+                this->expect(TokenKind::RParen, ")");
+
+                auto body = this->expr(false);
+                return utils::make_ref<ast::ForeachExpr>(start, body->end, variable, std::move(expr), std::move(body));
             } else {
                 ERROR(this->current.start, "Expected an expression");
             }
@@ -861,100 +903,6 @@ utils::Ref<ast::Expr> Parser::statement() {
 
     ERROR(this->current.start, "Unreachable");
     return nullptr;
-}
-
-utils::Ref<ast::Expr> Parser::parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op) {
-    if (left->kind() == ast::ExprKind::String) {
-        if (right->kind() != ast::ExprKind::String) {
-            ERROR(this->current.start, "Expected string.");
-        }
-
-        ast::StringExpr* lhs = left->cast<ast::StringExpr>();
-        ast::StringExpr* rhs = right->cast<ast::StringExpr>();
-
-        std::string result;
-
-        switch (op) {
-            case TokenKind::Add:
-                result = lhs->value + rhs->value; break;
-            case TokenKind::Eq: 
-                return utils::make_ref<ast::IntegerExpr>(
-                    this->current.start, this->current.end, lhs->value == rhs->value, 1
-                );
-            case TokenKind::Neq: {
-                return utils::make_ref<ast::IntegerExpr>(
-                    this->current.start, this->current.end, lhs->value != rhs->value, 1
-                );
-            }
-            default:
-                ERROR(
-                    this->current.start, 
-                    "Unsupported binary operator '{0}' for types 'char*' and 'char*'.",
-                    Token::getTokenTypeValue(op)
-                );
-        }
-
-        return utils::make_ref<ast::StringExpr>(this->current.start, this->current.end, result);
-    }
-
-    if (left->kind() == ast::ExprKind::Integer) {
-        ast::IntegerExpr* lhs = left->cast<ast::IntegerExpr>();
-
-        if (right->kind() == ast::ExprKind::Integer) {
-            ast::IntegerExpr* rhs = right->cast<ast::IntegerExpr>();
-            int result = utils::evaluate_integral_expression(
-                op, this->current.start, "int", lhs->value, rhs->value
-            );
-
-            return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
-        } else {
-            ast::FloatExpr* rhs = right->cast<ast::FloatExpr>();
-            double result = utils::evaluate_integral_expression(
-                op, this->current.start, "float", lhs->value, rhs->value
-            );
-
-            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result, false);
-        }
-    } else {
-        ast::FloatExpr* lhs = left->cast<ast::FloatExpr>();
-        if (right->kind() == ast::ExprKind::Integer) {
-            ast::IntegerExpr* rhs = right->cast<ast::IntegerExpr>();
-            int result = utils::evaluate_integral_expression(
-                op, this->current.start, "int", lhs->value, rhs->value
-            );
-
-            return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
-        } else {
-            ast::FloatExpr* rhs = right->cast<ast::FloatExpr>();
-            double result = utils::evaluate_integral_expression(
-                op, this->current.start, "float", lhs->value, rhs->value
-            );
-
-            return utils::make_ref<ast::FloatExpr>(this->current.start, this->current.end, result, false);
-        }
-    }
-}
-
-utils::Ref<ast::Expr> Parser::parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op) {
-    ast::IntegerExpr* lhs = (ast::IntegerExpr*)expr.get();
-    long result = 0;
-
-    switch (op) {
-        case TokenKind::Not:
-            result = !lhs->value; break;
-        case TokenKind::BinaryNot:
-            result = ~lhs->value; break;
-        case TokenKind::Minus:
-            result = -lhs->value; break;
-        case TokenKind::Add:
-            result = lhs->value; break;
-        case TokenKind::Mul:
-            ERROR(expr->start, "Unsupported unary operator '*' for type 'int'"); exit(1);
-        case TokenKind::BinaryAnd:
-            ERROR(expr->start, "Unsupported unary operator '&' for type 'int'");
-    }
-
-    return utils::make_ref<ast::IntegerExpr>(this->current.start, this->current.end, result);
 }
 
 ast::Attributes Parser::parse_attributes() {
@@ -1026,6 +974,8 @@ utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
             return left;
         }
 
+        // let foo: int(2) = 2;
+
         TokenKind op = this->current.type;
         this->next();
 
@@ -1035,17 +985,13 @@ utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
         if (precedence < next) {
             right = this->binary(precedence + 1, std::move(right));
         }
-
-        if (utils::in(NUMERIC_KINDS, right->kind()) && utils::in(NUMERIC_KINDS, left->kind())) {
-            left = this->parse_immediate_binary_op(std::move(right), std::move(left), op);
+       
+        if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
+            left = utils::make_ref<ast::InplaceBinaryOpExpr>(
+                start, this->current.end, INPLACE_OPERATORS[op], std::move(left), std::move(right)
+            );
         } else {
-            if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
-                left = utils::make_ref<ast::InplaceBinaryOpExpr>(
-                    start, this->current.end, INPLACE_OPERATORS[op], std::move(left), std::move(right)
-                );
-            } else {
-                left = utils::make_ref<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
-            }
+            left = utils::make_ref<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
         }
     }
 }
@@ -1061,11 +1007,7 @@ utils::Ref<ast::Expr> Parser::unary() {
     this->next();
 
     auto value = this->call();
-    if (utils::in(NUMERIC_KINDS, value->kind()) && (op == TokenKind::Mul || op == TokenKind::BinaryAnd)) {
-        return this->parse_immediate_unary_op(std::move(value), op);
-    }
-
-    return utils::make_ref<ast::UnaryOpExpr>(start, this->current.end, op, std::move(value));
+    return utils::make_ref<ast::UnaryOpExpr>(start, value->end, op, std::move(value));
 }
 
 utils::Ref<ast::Expr> Parser::call() {
@@ -1218,51 +1160,34 @@ utils::Ref<ast::Expr> Parser::factor() {
     Location start = this->current.start;
     switch (this->current.type) {
         case TokenKind::Integer: {
-
-            std::string number = this->current.value;
+            std::string value = this->current.value;
             this->next();
+
+            int bits = 32;
+            bool is_float = false;
 
             if (this->current.match(TokenKind::Identifier, "i8")) {
-                this->next();
-                return utils::make_ref<ast::IntegerExpr>(
-                    start, this->current.start, this->itoa<char>(number, "char"), 8
-                );
+                bits = 8; this->next();
             } else if (this->current.match(TokenKind::Identifier, "i16")) {
-                this->next();
-                return utils::make_ref<ast::IntegerExpr>(
-                    start, this->current.start, this->itoa<short>(number, "short"), 16
-                );
+                bits = 16; this->next();
+            } else if (this->current.match(TokenKind::Identifier, "i32")) {
+                bits = 32; this->next();
             } else if (this->current.match(TokenKind::Identifier, "i64")) {
-                this->next();
-                return utils::make_ref<ast::IntegerExpr>(
-                    start, this->current.start, this->itoa<long>(number, "long"), 64
-                );
-            } else if (this->current.match(TokenKind::Identifier, "f")) {
-                this->next();
-                return utils::make_ref<ast::FloatExpr>(start, this->current.start, this->ftoa(number), false);
-            } else if (this->current.match(TokenKind::Identifier, "d")) {
-                this->next();
-                return utils::make_ref<ast::FloatExpr>(start, this->current.start, this->ftoa(number), true);
-            } else {
-                return utils::make_ref<ast::IntegerExpr>(
-                    start, this->current.start, this->itoa<int>(number, "int"), 32
-                );
+                bits = 64; this->next();
+            } else if (this->current.match(TokenKind::Identifier, "i128")) {
+                bits = 128; this->next();
+            } else if (this->current.match(TokenKind::Identifier, "f32")) {
+                bits = 32; is_float = true; this->next();
+            } else if (this->current.match(TokenKind::Identifier, "f64")) {
+                bits = 64; is_float = true; this->next();
             }
 
-
-            if (this->current.match(TokenKind::Identifier, "i32")) {
-                this->next();
-            }
-        
             // Integers are not callable nor indexable so we can safely return from this function.
-            return utils::make_ref<ast::IntegerExpr>(start, this->current.start, this->itoa<int>(number, "int"), 32);
+            return utils::make_ref<ast::IntegerExpr>(start, this->current.end, value, bits, is_float);
         }
         case TokenKind::Char: {
-            char c = this->current.value[0];
-            this->next();
-
-            // Same case for chars.
-            return utils::make_ref<ast::IntegerExpr>(start, this->current.start, c, 8);
+            std::string value = this->current.value; this->next();
+            return utils::make_ref<ast::CharExpr>(start, this->current.start, value[0]);
         }
         case TokenKind::Float: {
             double value = this->ftoa(this->current.value);
@@ -1274,7 +1199,6 @@ utils::Ref<ast::Expr> Parser::factor() {
                 is_double = true;
             }
 
-            // Same case again.
             return utils::make_ref<ast::FloatExpr>(start, this->current.start, value, is_double);
         }
         case TokenKind::String: {
@@ -1290,9 +1214,9 @@ utils::Ref<ast::Expr> Parser::factor() {
 
             this->next();
             if (name == "true") {
-                return utils::make_ref<ast::IntegerExpr>(start, end, 1, 1);
+                return utils::make_ref<ast::IntegerExpr>(start, end, "1", 1);
             } else if (name == "false") {
-                return utils::make_ref<ast::IntegerExpr>(start, end, 0, 1);
+                return utils::make_ref<ast::IntegerExpr>(start, end, "0", 1);
             }
 
             expr = utils::make_ref<ast::VariableExpr>(start, this->current.start, name);
@@ -1308,7 +1232,7 @@ utils::Ref<ast::Expr> Parser::factor() {
                 Location end = this->expect(TokenKind::RParen, ")").end;
 
                 // TODO: sizeof for types
-                return utils::make_ref<ast::SizeofExpr>(start, end, nullptr, std::move(expr));
+                return utils::make_ref<ast::SizeofExpr>(start, end, std::move(expr));
             } else if (this->current.value == "offsetof") {
                 Location start = this->current.start;
                 this->next();
@@ -1374,8 +1298,21 @@ utils::Ref<ast::Expr> Parser::factor() {
         }
         case TokenKind::LBracket: {
             this->next();
-
             std::vector<utils::Ref<ast::Expr>> elements;
+
+            if (this->current != TokenKind::RBracket) {
+                auto element = this->expr(false);
+                if (this->current == TokenKind::SemiColon) {
+                    this->next();
+                    auto size = this->expr(false);
+
+                    this->expect(TokenKind::RBracket, "]");
+                    return utils::make_ref<ast::ArrayFillExpr>(start, this->current.start, std::move(element), std::move(size));
+                }
+
+                elements.push_back(std::move(element));
+            }
+
             while (this->current != TokenKind::RBracket) {
                 auto element = this->expr(false);
                 elements.push_back(std::move(element));

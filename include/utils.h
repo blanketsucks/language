@@ -36,7 +36,7 @@
 #define COLOR(color, s) utils::color(color, s)
 
 #define ERROR(loc, ...) utils::error(loc, llvm::formatv(__VA_ARGS__)); exit(1)
-#define NOTE(loc, fmt, ...) utils::note(loc, FORMAT(fmt, __VA_ARGS__))
+#define NOTE(loc, ...) utils::note(loc, llvm::formatv(__VA_ARGS__))
 
 #define TODO(x) \
     std::cout << FORMAT("{0}:{1} in {2}: '{3}'\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, x); \

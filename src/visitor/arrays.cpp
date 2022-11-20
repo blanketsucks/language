@@ -1,3 +1,4 @@
+#include "parser/ast.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
@@ -50,6 +51,29 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     llvm::Value* array = llvm::ConstantAggregateZero::get(type);
     for (uint32_t i = 0; i < elements.size(); i++) {
         array = this->builder->CreateInsertValue(array, elements[i], {0, i});
+    }
+
+    return array;
+}
+
+Value Visitor::visit(ast::ArrayFillExpr* expr) {
+    llvm::Value* element = expr->element->accept(*this).unwrap(expr->element->start);
+    llvm::Value* count = expr->count->accept(*this).unwrap(expr->count->start);
+
+    if (!llvm::isa<llvm::ConstantInt>(count)) {
+        ERROR(expr->count->start, "Expected a constant integer");
+    }
+
+    uint32_t size = llvm::cast<llvm::ConstantInt>(count)->getZExtValue();
+    llvm::ArrayType* type = llvm::ArrayType::get(element->getType(), size);
+
+    if (llvm::isa<llvm::Constant>(element)) {
+        return llvm::ConstantArray::get(type, std::vector<llvm::Constant*>(size, llvm::cast<llvm::Constant>(element)));
+    }
+
+    llvm::Value* array = llvm::ConstantAggregateZero::get(type);
+    for (uint32_t i = 0; i < size; i++) {
+        array = this->builder->CreateInsertValue(array, element, {0, i});
     }
 
     return array;

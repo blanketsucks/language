@@ -25,6 +25,7 @@ enum class ExternLinkageSpecifier {
 enum class ExprKind {
     Block,
     Integer,
+    Char,
     Float,
     String,
     Variable,
@@ -60,7 +61,9 @@ enum class ExprKind {
     Where,
     Import,
     Ternary,
-    Type
+    Foreach,
+    Type,
+    ArrayFill,
 };
 
 enum class TypeKind {
@@ -168,6 +171,7 @@ struct Argument {
     bool is_reference;
     bool is_self;
     bool is_kwarg;
+    utils::Ref<Expr> default_value;
 };
 
 class BlockExpr : public ExprMixin<ExprKind::Block> {
@@ -180,10 +184,19 @@ public:
 
 class IntegerExpr : public ExprMixin<ExprKind::Integer> {
 public:
-    int value;
+    std::string value;
     int bits;
+    bool is_float;
 
-    IntegerExpr(Location start, Location end, int value, int bits = 32);
+    IntegerExpr(Location start, Location end, std::string value, int bits = 32, bool is_float = false);
+    Value accept(Visitor& visitor) override;
+};
+
+class CharExpr : public ExprMixin<ExprKind::Char> {
+public:
+    char value;
+
+    CharExpr(Location start, Location end, char value);
     Value accept(Visitor& visitor) override;
 };
 
@@ -219,6 +232,7 @@ public:
     utils::Ref<Expr> value;
     bool external;
     bool is_multiple_variables;
+    std::string consume_rest;
 
     VariableAssignmentExpr(
         Location start, 
@@ -226,6 +240,7 @@ public:
         std::vector<std::string> names, 
         utils::Ref<TypeExpr> type, 
         utils::Ref<Expr> value, 
+        std::string cnosume_rest,
         bool external = false,
         bool is_multiple_variables = false
     );
@@ -463,10 +478,9 @@ public:
 
 class SizeofExpr : public ExprMixin<ExprKind::Sizeof> {
 public:
-    utils::Ref<TypeExpr> type;
     utils::Ref<Expr> value;
 
-    SizeofExpr(Location start, Location end, utils::Ref<TypeExpr> type, utils::Ref<Expr> value = nullptr);
+    SizeofExpr(Location start, Location end, utils::Ref<Expr> value = nullptr);
     Value accept(Visitor& visitor) override;
 };
 
@@ -563,6 +577,16 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class ForeachExpr : public ExprMixin<ExprKind::Foreach> {
+public:
+    std::string name;
+    utils::Ref<Expr> iterable;
+    utils::Ref<Expr> body;
+
+    ForeachExpr(Location start, Location end, std::string name, utils::Ref<Expr> iterable, utils::Ref<Expr> body);
+    Value accept(Visitor& visitor) override;
+};
+
 class TypeExpr : public ExprMixin<ExprKind::Type> {
 public:
     TypeKind type;
@@ -617,6 +641,15 @@ public:
     utils::Ref<TypeExpr> ret;
 
     FunctionTypeExpr(Location start, Location end, std::vector<utils::Ref<TypeExpr>> args, utils::Ref<TypeExpr> ret);
+    Value accept(Visitor& visitor) override;
+};
+
+class ArrayFillExpr : public ExprMixin<ExprKind::ArrayFill> {
+public:
+    utils::Ref<Expr> element;
+    utils::Ref<Expr> count;
+
+    ArrayFillExpr(Location start, Location end, utils::Ref<Expr> element, utils::Ref<Expr> count);
     Value accept(Visitor& visitor) override;
 };
 
