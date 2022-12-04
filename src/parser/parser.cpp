@@ -1,5 +1,6 @@
 #include "parser/parser.h"
 #include "parser/ast.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <memory>
 #include <string>
@@ -16,6 +17,12 @@ static std::vector<std::string> NAMESPACE_ALLOWED_KEYWORDS = {
     "struct",
     "namespace",
     "extern",
+    "func",
+    "type",
+    "const"
+};
+
+static std::vector<std::string> STRUCT_ALLOWED_KEYWORDS = {
     "func",
     "type",
     "const"
@@ -42,8 +49,6 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
         {"f64", ast::BuiltinType::f64}
     };
 }
-
-void Parser::free() {}
 
 void Parser::end() {
     if (this->current != TokenKind::SemiColon) {
@@ -194,6 +199,18 @@ utils::Ref<ast::BlockExpr> Parser::parse_block() {
 
     Location end = this->expect(TokenKind::RBrace, "}").end;
     return utils::make_ref<ast::BlockExpr>(start, end, std::move(body));
+}
+
+utils::Ref<ast::TypeAliasExpr> Parser::parse_type_alias() {
+    Location start = this->current.start;
+
+    std::string name = this->expect(TokenKind::Identifier, "identifier").value;
+    this->expect(TokenKind::Assign, "=");
+
+    auto type = this->parse_type();
+    this->end();
+
+    return utils::make_ref<ast::TypeAliasExpr>(start, this->current.end, name, std::move(type));
 }
 
 utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
@@ -396,7 +413,7 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
             this->next();
         }
 
-        if (this->current != TokenKind::Identifier && !this->current.match(TokenKind::Keyword, "func")) {
+        if (this->current != TokenKind::Identifier && !this->current.match(TokenKind::Keyword, STRUCT_ALLOWED_KEYWORDS)) {
             ERROR(this->current.start, "Expected field name or function definition");
         }
 
@@ -410,6 +427,12 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
             definition->attributes.update(attributes);
             methods.push_back(std::move(definition));
+        } else if (this->current.value == "const") {
+            this->next();
+            methods.push_back(this->parse_variable_definition(true));
+        } else if (this->current.value == "type") {
+            this->next();
+            methods.push_back(this->parse_type_alias());
         } else {
             if (index == UINT32_MAX) {
                 ERROR(this->current.start, "Cannot define more than {0} fields inside a structure", UINT32_MAX);
@@ -561,7 +584,8 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
             this->next();
             member = this->parse_namespace();
         } else if (this->current.value == "type") {
-            TODO("Type aliases");
+            this->next();
+            member = this->parse_type_alias();
         }
 
         member->attributes.update(attrs);
@@ -741,7 +765,8 @@ utils::Ref<ast::Expr> Parser::statement() {
                 this->next();
                 return this->parse_namespace();
             } else if (this->current.value == "type") {
-                TODO(FORMAT("{0}: Type aliases", this->current.start.format()));
+                this->next();
+                return this->parse_type_alias();
             } else if (this->current.value == "while") {
                 bool has_outer_loop = this->is_inside_loop;
                 Location start = this->current.start;
@@ -848,6 +873,12 @@ utils::Ref<ast::Expr> Parser::statement() {
                 Location start = this->current.start;
                 this->next();
 
+                bool is_relative = false;
+                if (this->current == TokenKind::DoubleColon) {
+                    is_relative = true;
+                    this->next();
+                }
+
                 std::string name = this->expect(TokenKind::Identifier, "module name").value;
                 bool is_wildcard = false;
 
@@ -875,7 +906,7 @@ utils::Ref<ast::Expr> Parser::statement() {
                 }
 
                 Location end = this->expect(TokenKind::SemiColon, ";").end;
-                return utils::make_ref<ast::ImportExpr>(start, end, name, parents, is_wildcard);
+                return utils::make_ref<ast::ImportExpr>(start, end, name, parents, is_wildcard, is_relative);
             } else if (this->current.value == "foreach") {
                 Location start = this->current.start;
                 this->next(); this->expect(TokenKind::LParen, "(");
@@ -1190,16 +1221,18 @@ utils::Ref<ast::Expr> Parser::factor() {
             return utils::make_ref<ast::CharExpr>(start, this->current.start, value[0]);
         }
         case TokenKind::Float: {
-            double value = this->ftoa(this->current.value);
-            this->next();
+            double result = 0.0;
+            llvm::StringRef(this->current.value).getAsDouble(result);
 
+            this->next();
             bool is_double = false;
+
             if (this->current.match(TokenKind::Identifier, "d")) {
                 this->next();
                 is_double = true;
             }
 
-            return utils::make_ref<ast::FloatExpr>(start, this->current.start, value, is_double);
+            return utils::make_ref<ast::FloatExpr>(start, this->current.start, result, is_double);
         }
         case TokenKind::String: {
             std::string value = this->current.value;

@@ -1,5 +1,6 @@
 #include "visitor.h"
 #include "parser/ast.h"
+#include "utils.h"
 #include "llvm/IR/Constant.h"
 
 Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
@@ -23,8 +24,6 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
 
     this->global_scope = new Scope(name, ScopeType::Global);
     this->scope = this->global_scope;
-
-    this->structs = {};
 }
 
 void Visitor::finalize() {
@@ -100,6 +99,8 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
 std::string Visitor::format_name(std::string name) {
     if (this->current_module) { name = this->current_module->qualified_name + "." + name; }
     if (this->current_namespace) { name = this->current_namespace->qualified_name + "." + name; }
+    if (this->current_struct) { name = this->current_struct->qualified_name + "." + name; }
+    if (this->current_function) { name = this->current_function->name + "." + name; }
     
     return name;
 }
@@ -215,38 +216,67 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
 }
 
 
-Scope::Local Visitor::get_pointer_from_expr(ast::Expr* expr) {
-    if (expr->kind() == ast::ExprKind::Variable) {
-        ast::VariableExpr* var = expr->cast<ast::VariableExpr>();
-        return this->scope->get_local(var->name);
-    } else if (expr->kind() == ast::ExprKind::Element) {
-        ast::ElementExpr* element = expr->cast<ast::ElementExpr>();;
-        return this->get_pointer_from_expr(element->value.get());
-    } else if (expr->kind() == ast::ExprKind::Attribute) {
-        ast::AttributeExpr* attr = expr->cast<ast::AttributeExpr>();;
-        llvm::Value* parent = this->get_pointer_from_expr(attr->parent.get()).first;
-
-        if (!parent) {
-            return {nullptr, false};
+ScopeLocal Visitor::as_reference(ast::Expr* expr) {
+    switch (expr->kind()) {
+        case ast::ExprKind::Variable: {
+            ast::VariableExpr* variable = expr->cast<ast::VariableExpr>();
+            return this->scope->get_local(variable->name);
         }
+        case ast::ExprKind::Element: {
+            ast::ElementExpr* element = expr->cast<ast::ElementExpr>();
 
-        llvm::Type* type = parent->getType()->getNonOpaquePointerElementType();
-        if (!type->isStructTy()) {
-            return {nullptr, false};
+            ScopeLocal parent = this->as_reference(element->value.get());
+            if (!parent.value) return {nullptr, nullptr, false};
+
+            llvm::Type* type = parent.type;
+            if (!type->isPointerTy() && !type->isArrayTy()) {
+                ERROR(element->value->start, "Cannot index into value of type '{0}'", this->get_type_name(type));
+            }
+
+            llvm::Value* index = element->index->accept(*this).unwrap(element->index->start);
+            if (!index->getType()->isIntegerTy()) {
+                ERROR(element->index->start, "Indicies must be integers");
+            }
+
+            llvm::Value* ptr = nullptr;
+            if (type->isArrayTy()) {
+                ptr = this->builder->CreateGEP(type, parent.value, {this->builder->getInt32(0), index});
+            } else {
+                ptr = this->builder->CreateGEP(type, parent.value, index);
+            }
+
+            return { ptr, parent.type, false };
         }
+        case ast::ExprKind::Attribute: {
+            ast::AttributeExpr* attribute = expr->cast<ast::AttributeExpr>();
 
-        std::string name = type->getStructName().str();
-        auto structure = this->structs[name];
+            ScopeLocal parent = this->as_reference(attribute->parent.get());
+            if (!parent.value) return {nullptr, nullptr, false};
+            
+            if (!this->is_struct(parent.type)) {
+                return {nullptr, nullptr, false};
+            }
 
-        int index = structure->get_field_index(attr->attribute);
-        if (index < 0) {
-            ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attr->attribute, structure->name);
+            auto structure = this->get_struct(parent.type);
+            int index = structure->get_field_index(attribute->attribute);
+            if (index < 0) {
+                ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
+            }
+
+            llvm::Value* value = parent.value;
+            if (parent.type->isPointerTy()) {
+                value = this->load(parent.value, parent.type);
+            }
+
+            return {
+                this->builder->CreateStructGEP(structure->type, value, index),
+                structure->type->getStructElementType(index)->getPointerTo(), 
+                false
+            };
         }
-
-        return {this->builder->CreateStructGEP(structure->type, parent, index), false};
+        default:
+            return {nullptr, nullptr, false};
     }
-
-    return {nullptr, false};
 }
 
 void Visitor::create_global_constructors() {
@@ -267,15 +297,16 @@ void Visitor::create_global_constructors() {
     this->builder->SetInsertPoint(llvm::BasicBlock::Create(*this->context, "", function));
     for (auto& call : this->constructors) {
         llvm::Value* value = this->call(
-            call->function, 
-            call->args, 
+            call.function, 
+            call.args, 
             nullptr,
             false,
-            nullptr, 
-            call->start
+            nullptr
         );
 
-        this->builder->CreateStore(value, call->store);
+        if (call.store) {
+            this->builder->CreateStore(value, call.store);
+        }
     }
 
     this->builder->CreateRetVoid();
@@ -292,7 +323,7 @@ void Visitor::create_global_constructors() {
     );
 
     llvm::ArrayType* array = llvm::ArrayType::get(type, 1);
-    this->module->getOrInsertGlobal( "llvm.global_ctors", array);
+    this->module->getOrInsertGlobal("llvm.global_ctors", array);
 
     llvm::GlobalVariable* global = this->module->getNamedGlobal("llvm.global_ctors");
 

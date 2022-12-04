@@ -42,6 +42,14 @@ filesystem::Path filesystem::Path::cwd() {
 #endif
 }
 
+bool filesystem::Path::operator==(const Path& other) const {
+    return this->name == other.name;
+}
+
+bool filesystem::Path::operator==(const std::string& other) const {
+    return this->name == other;
+}
+
 bool filesystem::Path::exists() const {
     struct stat buffer;
     return (stat(this->name.c_str(), &buffer) == 0);
@@ -76,6 +84,19 @@ std::string filesystem::Path::filename() {
     }
 
     return this->name.substr(pos + 1);
+}
+
+std::string filesystem::Path::parent() {
+    if (this->isdir()) {
+        return this->name;
+    }
+
+    auto pos = this->name.find_last_of("/\\");
+    if (pos == std::string::npos) {
+        return this->name;
+    }
+
+    return this->name.substr(0, pos);
 }
 
 std::vector<filesystem::Path> filesystem::Path::listdir() {
@@ -115,6 +136,25 @@ std::vector<filesystem::Path> filesystem::Path::listdir() {
     return paths;
 }
 
+std::vector<filesystem::Path> filesystem::Path::listdir(bool recursive) {
+    std::vector<filesystem::Path> paths;
+
+    for (auto& path : this->listdir()) {
+        if (path.isdir()) {
+            if (recursive) {
+                auto subpaths = path.listdir(true);
+                paths.insert(paths.end(), subpaths.begin(), subpaths.end());
+            } else {
+                paths.push_back(path);
+            }
+        } else {
+            paths.push_back(path);
+        }
+    }
+
+    return paths;
+}
+
 std::fstream filesystem::Path::open(filesystem::OpenMode mode) {
     assert(this->isfile() && "Path is not a file");
 
@@ -127,7 +167,7 @@ std::fstream filesystem::Path::open(filesystem::OpenMode mode) {
 
 filesystem::Path filesystem::Path::join(const std::string& path) {
     std::string name;
-    if (path[0] == '/') {
+    if (path[0] == '/' || this->name.back() == '/') {
         name = this->name + path;
     } else {
         name = this->name + "/" + path;
@@ -138,6 +178,15 @@ filesystem::Path filesystem::Path::join(const std::string& path) {
 
 filesystem::Path filesystem::Path::join(const filesystem::Path& path) {
     return this->join(path.name);
+}
+
+std::string filesystem::Path::extension() {
+    auto pos = this->name.find_last_of(".");
+    if (pos == std::string::npos) {
+        return "";
+    }
+
+    return this->name.substr(pos + 1);
 }
 
 filesystem::Path filesystem::Path::with_extension(const std::string& extension) {

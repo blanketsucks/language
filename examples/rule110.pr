@@ -10,11 +10,7 @@ func main() -> i32 {
     state[SIZE - 2] = 1;
     for (i = 0; i < (SIZE - 2); i += 1) {
         for (j = 0; j < SIZE; j += 1) {
-            if (state[j] == 0) {
-                libc::putchar(' ');
-            } else {
-                libc::putchar('*');
-            }
+            libc::putchar(" *"[state[j]]);
         }
 
         libc::putchar('\n');

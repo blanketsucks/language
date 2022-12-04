@@ -1,7 +1,6 @@
+export extern "C" {
+    func mmap(addr: void*, size: i64, prot: i32, flags: i32, fd: i32, offset: i64) -> void*;
+    func munmap(addr: void*, size: i64) -> i32;
 
-extern "C" {
-    func mmap(addr: void*, size: long, prot: int, flags: int, fd: int, offset: long) -> void*;
-    func munmap(addr: void*, size: long) -> int;
-
-    func syscall(number: long, ...) -> long;
+    func syscall(number: i64, ...) -> i64;
 }

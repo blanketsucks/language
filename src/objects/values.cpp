@@ -2,26 +2,18 @@
 
 Value::Value(
     llvm::Value* value, 
-    bool is_constant, 
+    bool is_constant,
+    bool is_reference,
+    bool is_early_function_call,
     llvm::Value* parent, 
-    utils::Shared<Function> function,
-    utils::Shared<Struct> structure,
-    utils::Shared<Enum> enumeration,
-    utils::Shared<Namespace> namespace_,
-    utils::Shared<Module> module,
-    llvm::Type* type,
-    FunctionCall* call
+    llvm::Type* type
 ) {
     this->value = value;
     this->is_constant = is_constant;
     this->parent = parent;
-    this->function = function;
-    this->structure = structure;
-    this->namespace_ = namespace_;
-    this->enumeration = enumeration;
-    this->module = module;
     this->type = type;
-    this->call = call;
+    this->is_reference = is_reference;
+    this->is_early_function_call = is_early_function_call;
 }
 
 llvm::Value* Value::unwrap(Location location) {
@@ -37,31 +29,45 @@ std::string Value::name() {
     return this->value->getName().str();
 }
 
-Value Value::with_function(utils::Shared<Function> function) {
-    function->used = true;
-    return Value(function->value, false, nullptr, function);
+Value Value::with_function(utils::Shared<Function> function, llvm::Value* parent) {
+    auto value = Value(function->value, false, false, false, parent);
+    value.function = function;
+
+    return value;
 }
 
 Value Value::with_struct(utils::Shared<Struct> structure) {
-    return Value(nullptr, false, nullptr, nullptr, structure);
+    auto value = Value(nullptr);
+    value.structure = structure;
+
+    return value;
 }
 
 Value Value::with_namespace(utils::Shared<Namespace> ns) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, ns);
+    auto value = Value(nullptr);
+    value.namespace_ = ns;
+
+    return value;
 }
 
 Value Value::with_enum(utils::Shared<Enum> enumeration) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, enumeration);
+    auto value = Value(nullptr);
+    value.enumeration = enumeration;
+
+    return value;
 }
 
 Value Value::with_module(utils::Shared<Module> module) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, module);
+    auto value = Value(nullptr);
+    value.module = module;
+
+    return value;
 }
 
 Value Value::with_type(llvm::Type* type) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, type);
+    return Value(nullptr, false, false, false, nullptr, type);
 }
 
-Value Value::as_call(FunctionCall* call) {
-    return Value(nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, call);
+Value Value::as_reference(llvm::Value *value, llvm::Value *parent) {
+    return Value(value, false, true, false, parent);
 }

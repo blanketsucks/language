@@ -12,7 +12,7 @@
 
 class Lexer {
 public:
-    Lexer(std::string source, std::string filename);
+    Lexer(const std::string& source, std::string filename);
     Lexer(std::fstream& file, std::string filename);
     Lexer(FILE* file, std::string filename);
 

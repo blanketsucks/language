@@ -242,8 +242,6 @@ CompilerError Compiler::compile() {
     }
 
     visitor.create_global_constructors();
-
-    parser.free();
     visitor.finalize();
 
     if (this->verbose) {

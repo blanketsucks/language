@@ -9,6 +9,10 @@
 #include <vector>
 #include <map>
 
+#ifdef alloca
+    #undef alloca
+#endif
+
 class Visitor;
 struct Struct;
 struct Scope;
@@ -84,7 +88,7 @@ struct Function {
     Location end;
 
     // Structure related attributes
-    Struct* parent;
+    utils::Shared<Struct> parent;
     bool is_private;
 
     ast::Attributes attrs;
@@ -109,6 +113,8 @@ struct Function {
         ast::Attributes attrs
     );
 
+    std::string get_mangled_name();
+
     Branch* create_branch(std::string name, llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
     bool has_return();
 
@@ -123,11 +129,6 @@ struct FunctionCall {
     llvm::Function* function;
     std::vector<llvm::Value*> args;
     llvm::Value* store;
-
-    Location start;
-    Location end;
-
-    bool empty() { return this->function == nullptr; }
 };
 
 struct StructField {
@@ -216,37 +217,100 @@ enum class ScopeType {
 struct Module {
     std::string name;
     std::string qualified_name;
-    std::string path;
+    utils::filesystem::Path path;
 
     bool is_ready;
 
     Scope* scope;
 
     Module(
-        std::string name, std::string qualified_name, std::string path
+        std::string name, std::string qualified_name, utils::filesystem::Path path
     ) : name(name), qualified_name(qualified_name), path(path), is_ready(false) {};
 };
 
-struct Scope {
-    using Local = std::pair<llvm::Value*, bool>;
+struct Variable {
+    std::string name;
+    llvm::Type* type;
+    llvm::Value* value;
 
+    llvm::Constant* constant;
+    bool is_reference;
+
+    Location start;
+    Location end;
+
+    static Variable from_alloca(
+        std::string name, 
+        llvm::AllocaInst* alloca,
+        Location start = Location(),
+        Location end = Location()
+    );
+
+    static Variable from_value(
+        std::string name,
+        llvm::Value* value,
+        Location start = Location(),
+        Location end = Location()
+    );
+
+    static Variable empty();
+    bool is_empty();
+};
+
+struct Constant {
+    std::string name;
+    llvm::Type* type;
+
+    llvm::Value* store;
+    llvm::Constant* value;
+
+    Location start;
+    Location end;
+
+    static Constant empty();
+    bool is_empty();
+};
+
+struct ScopeLocal {
+    llvm::Value* value;
+    llvm::Type* type;
+    bool is_constant;
+};
+
+struct TypeAlias {
+    std::string name;
+    llvm::Type* type;
+
+    utils::Shared<Enum> enumeration;
+
+    Location start;
+    Location end;
+
+    static TypeAlias from_enum(utils::Shared<Enum> enumeration);
+    static TypeAlias empty();
+
+    bool is_empty();
+};
+
+struct Scope {
     std::string name;
     ScopeType type;
 
     Scope* parent;
     std::vector<Scope*> children;
 
-    std::map<std::string, llvm::Value*> variables;
-    std::map<std::string, llvm::Value*> constants;
+    std::map<std::string, Variable> variables;
+    std::map<std::string, Constant> constants;
     std::map<std::string, utils::Shared<Function>> functions;
     std::map<std::string, utils::Shared<Struct>> structs;
     std::map<std::string, utils::Shared<Enum>> enums;
     std::map<std::string, utils::Shared<Namespace>> namespaces;
     std::map<std::string, utils::Shared<Module>> modules;
+    std::map<std::string, TypeAlias> types;
 
     Scope(std::string name, ScopeType type, Scope* parent = nullptr);
 
-    Local get_local(std::string name);
+    ScopeLocal get_local(std::string name);
 
     bool has_variable(std::string name);
     bool has_constant(std::string name);
@@ -255,15 +319,18 @@ struct Scope {
     bool has_enum(std::string name);
     bool has_namespace(std::string name);
     bool has_module(std::string name);
+    bool has_type(std::string name);
 
-    llvm::Value* get_variable(std::string name);
-    llvm::Value* get_constant(std::string name);
+    Variable get_variable(std::string name);
+    Constant get_constant(std::string name);
 
     utils::Shared<Function> get_function(std::string name);
     utils::Shared<Struct> get_struct(std::string name);
     utils::Shared<Enum> get_enum(std::string name);
     utils::Shared<Namespace> get_namespace(std::string name);
     utils::Shared<Module> get_module(std::string name);
+
+    TypeAlias get_type(std::string name);
 
     void exit(Visitor* visitor);
 
@@ -283,33 +350,29 @@ struct Value {
     utils::Shared<Module> module;
 
     llvm::Type* type;
-
-    FunctionCall* call;
+    bool is_early_function_call;
+    bool is_reference;
 
     Value(
         llvm::Value* value,
         bool is_constant = false,
+        bool is_reference = false,
+        bool is_early_function_call = false,
         llvm::Value* parent = nullptr,
-        utils::Shared<Function> function = nullptr,
-        utils::Shared<Struct> structure = nullptr,
-        utils::Shared<Enum> enumeration = nullptr,
-        utils::Shared<Namespace> namespace_ = nullptr,
-        utils::Shared<Module> module = nullptr,
-        llvm::Type* type = nullptr,
-        FunctionCall* call = nullptr
+        llvm::Type* type = nullptr
     );
 
     llvm::Value* unwrap(Location location);
     std::string name();
 
-    static Value with_function(utils::Shared<Function> function);
+    static Value with_function(utils::Shared<Function> function, llvm::Value* parent = nullptr);
     static Value with_struct(utils::Shared<Struct> structure);
     static Value with_enum(utils::Shared<Enum> enumeration);
     static Value with_namespace(utils::Shared<Namespace> namespace_);
     static Value with_module(utils::Shared<Module> module);
     static Value with_type(llvm::Type* type);
 
-    static Value as_call(FunctionCall* call);
+    static Value as_reference(llvm::Value* value, llvm::Value* parent = nullptr);
 };
 
 #endif

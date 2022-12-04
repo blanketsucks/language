@@ -14,6 +14,8 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     enumeration->end = expr->end;
 
     this->scope->enums[expr->name] = enumeration;
+    this->scope->types[expr->name] = TypeAlias::from_enum(enumeration);
+
     enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
 
     if (type->isIntegerTy()) {

@@ -1,6 +1,6 @@
 #include "visitor.h"
 
-llvm::StructType* Visitor::create_tuple_type(std::vector<llvm::Type *> types) {
+llvm::StructType* Visitor::create_tuple_type(std::vector<llvm::Type*> types) {
     llvm::StructType* type = nullptr;
     if (this->tuples.find(types) == this->tuples.end()) {
         type = llvm::StructType::create(*this->context, types, "__tuple");
@@ -76,8 +76,21 @@ void Visitor::store_tuple(
             llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
             this->builder->CreateStore(pair.second, inst);
 
-            func->scope->variables[pair.first] = inst;
+            func->scope->variables[pair.first] = Variable {
+                name, pair.second->getType(), inst, nullptr, false, location, location
+            };
         }
+
+        return;
+    }
+
+    if (!consume_rest.empty() && names.size() == 1) {
+        llvm::AllocaInst* inst = this->create_alloca(value->getType());
+        this->builder->CreateStore(value, inst);
+
+        func->scope->variables[consume_rest] = Variable {
+            consume_rest, value->getType(), inst, nullptr, false, location, location
+        };
 
         return;
     }
@@ -141,11 +154,16 @@ void Visitor::store_tuple(
         this->builder->CreateStore(values[i], ptr);
     }
 
-    func->scope->variables[consume_rest] = alloca;
+    func->scope->variables[consume_rest] = Variable {
+        consume_rest, type, alloca, nullptr, false, location, location
+    };
+
     for (auto& pair : finals) {
         llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
         this->builder->CreateStore(pair.second, inst);
 
-        func->scope->variables[pair.first] = inst;
+        func->scope->variables[pair.first] = Variable {
+            pair.first, pair.second->getType(), inst, nullptr, false, location, location
+        };
     }
 }

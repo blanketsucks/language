@@ -1,6 +1,0 @@
-#include "array.h"
-#include "function.h"
-#include "struct.h"
-#include "pointer.h"
-#include "tuple.h"
-#include "type.h"

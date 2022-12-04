@@ -61,6 +61,9 @@ namespace filesystem {
 
         Path(const std::string& name);
 
+        bool operator==(const Path& other) const;
+        bool operator==(const std::string& other) const;
+
         static Path empty();
         static Path cwd();
 
@@ -70,14 +73,17 @@ namespace filesystem {
         bool isempty() const;
 
         std::string filename();
+        std::string parent();
 
         std::vector<Path> listdir();
+        std::vector<Path> listdir(bool recursive);
 
         std::fstream open(OpenMode mode = OpenMode::Read);
 
         Path join(const std::string& path);
         Path join(const Path& path);
 
+        std::string extension();
         Path with_extension(const std::string& extension);
         Path with_extension();
     };

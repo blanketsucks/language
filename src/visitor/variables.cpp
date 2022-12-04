@@ -1,10 +1,15 @@
 #include "visitor.h"
 
 Value Visitor::visit(ast::VariableExpr* expr) {
+    if (expr->name == "null") {
+        llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
+        return llvm::Constant::getNullValue(type);
+    }
+
     Scope* scope = this->scope;
     auto local = scope->get_local(expr->name);
-    if (local.first) {
-        return Value(this->load(local.first), local.second);
+    if (local.value) {
+        return Value(this->load(local.value, local.type), local.is_constant);
     }
 
     if (scope->has_struct(expr->name)) {
@@ -17,11 +22,6 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value::with_function(scope->get_function(expr->name));
     } else if (scope->has_module(expr->name)) {
         return Value::with_module(scope->get_module(expr->name));
-    }
-
-    if (expr->name == "null") {
-        llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
-        return llvm::Constant::getNullValue(type);
     }
 
     ERROR(expr->start, "Undefined variable '{0}'", expr->name);
@@ -42,7 +42,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     llvm::Value* value = nullptr;
-    FunctionCall* call = nullptr;
+    bool is_early_function_call = false;
 
     bool is_constant = false;
     if (!expr->value) {
@@ -63,15 +63,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         Value val = expr->value->accept(*this); is_constant = val.is_constant;
-        call = val.call;
+        is_early_function_call = val.is_early_function_call;
 
-        if (!call) {
+        if (!is_early_function_call) {
             value = val.unwrap(expr->value->start);
             if (!expr->type) {
                 type = value->getType();
             }
         } else {
-            type = call->function->getReturnType();
+            type = this->constructors.back().function->getReturnType();
         }
 
         if (type->isVoidTy()) {
@@ -90,29 +90,38 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     if (!expr->is_multiple_variables) {
+        std::string first = expr->names[0];
         if (!this->current_function) {
             if (!is_constant) {
                 ERROR(expr->start, "Cannot store non-constant value in global scope");
             }
 
-            std::string name = FORMAT("__global.{0}", expr->names[0]);
+            std::string name = FORMAT("__global.{0}", first);
             this->module->getOrInsertGlobal(name, type);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
+            llvm::Constant* constant = nullptr;
 
-            if (!call) {
+            if (!is_early_function_call) {
+                constant = llvm::cast<llvm::Constant>(value);
+            }
+
+            if (!is_early_function_call) {
                 global->setLinkage(llvm::GlobalValue::PrivateLinkage);
-                global->setInitializer(llvm::cast<llvm::Constant>(value));
+                global->setInitializer(constant);
             } else {
                 global->setDSOLocal(true);
                 global->setInitializer(llvm::Constant::getNullValue(type));
 
-                call->store = global;
-                this->constructors.push_back(call);
+                auto& call = this->constructors.back();
+                call.store = global;
             }
 
-            this->scope->variables[expr->names[0]] = global;
-            return value;
+            this->scope->variables[expr->names[0]] = Variable { 
+                first, type, global, constant, false, expr->start, expr->end 
+            };
+
+            return nullptr;
         }
 
         llvm::AllocaInst* inst = this->create_alloca(type);
@@ -133,13 +142,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         } else {
             if (value) { this->builder->CreateStore(value, inst); }
 
-            if (call) {
-                call->store = inst;
-                this->constructors.push_back(call);
+            if (is_early_function_call) {
+                auto& call = this->constructors.back();
+                call.store = inst;
             }
         }
 
-        this->scope->variables[expr->names[0]] = inst;
+        this->scope->variables[first] = Variable {
+            first, type, inst, is_constant ? llvm::cast<llvm::Constant>(value) : nullptr, false, expr->start, expr->end
+        };
 
     } else {
         this->store_tuple(expr->start, this->current_function, value, expr->names, expr->consume_rest);
@@ -150,12 +161,12 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
 Value Visitor::visit(ast::ConstExpr* expr) {
     Value val = expr->value->accept(*this);
-    FunctionCall* call = val.call;
+    bool is_early_function_call = val.is_early_function_call;
 
     llvm::Type* type = nullptr;
     llvm::Value* value = nullptr;
 
-    if (!call) {
+    if (!is_early_function_call) {
         value = val.unwrap(expr->value->start);
         if (!expr->type) {
             type = value->getType();
@@ -163,7 +174,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
             type = expr->type->accept(*this).type;
         }
     } else {
-        type = call->function->getReturnType();
+        type = this->constructors.back().function->getReturnType();
     }
 
     std::string name = expr->name;
@@ -178,17 +189,26 @@ Value Visitor::visit(ast::ConstExpr* expr) {
     this->module->getOrInsertGlobal(name, type);
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);
 
-    if (!call) {
-        global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
-        global->setInitializer(llvm::cast<llvm::Constant>(value));
+    llvm::Constant* constant = nullptr;
+    if (!is_early_function_call) {
+        constant = llvm::cast<llvm::Constant>(value);
     } else {
-        global->setDSOLocal(true);
-        global->setInitializer(llvm::Constant::getNullValue(type));
-
-        call->store = global;
-        this->constructors.push_back(call);
+        constant = llvm::Constant::getNullValue(type);
     }
 
-    this->scope->constants[expr->name] = global;
+    global->setInitializer(constant);
+    if (!is_early_function_call) {
+        global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
+    } else {
+        global->setDSOLocal(true);
+
+        auto& call = this->constructors.back();
+        call.store = global;
+    }
+
+    this->scope->constants[expr->name] = Constant {
+        name, type, global, constant, expr->start, expr->end
+    };
+    
     return nullptr;
 }

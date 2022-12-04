@@ -1,9 +1,9 @@
 import libc;
 
 struct Writer {
-    private handle: i32*;
+    private handle: libc::FILE*;
 
-    func new(handle: i32*) -> Writer {
+    func new(handle: libc::FILE*) -> Writer {
         return Writer { handle };
     }
 
@@ -11,8 +11,12 @@ struct Writer {
         return libc::fileno(self.handle);
     }
 
-    func write(self, buffer: i8*) -> i32 {
-        return libc::fwrite(buffer, 1, libc::strlen(buffer), self.handle);
+    func write(self, buffer: i8*, *, size: i32 = -1) -> i32 {
+        if (size < 0) {
+            size = libc::strlen(buffer);
+        }
+
+        return libc::fwrite(buffer, 1, size, self.handle);
     }
 }
 

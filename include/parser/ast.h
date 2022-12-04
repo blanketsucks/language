@@ -1,7 +1,6 @@
 #ifndef _AST_H
 #define _AST_H
 
-#include "types/include.h"
 #include "lexer/tokens.h"
 #include "llvm.h"
 #include "utils.h"
@@ -64,6 +63,9 @@ enum class ExprKind {
     Foreach,
     Type,
     ArrayFill,
+    TypeAlias,
+    Macro,
+    MacroCall
 };
 
 enum class TypeKind {
@@ -85,6 +87,12 @@ enum class BuiltinType {
     f32,
     f64,
     Void
+};
+
+enum class MacroParameterKind {
+    Identifier,
+    Type,
+    Expression
 };
 
 enum class AttributeValueType {
@@ -559,9 +567,10 @@ public:
     std::string name;
     std::deque<std::string> parents;
     bool is_wildcard;
+    bool is_relative;
 
     ImportExpr(
-        Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard
+        Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard, bool is_relative
     );
 
     Value accept(Visitor& visitor) override;
@@ -653,6 +662,38 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class TypeAliasExpr : public ExprMixin<ExprKind::TypeAlias> {
+public:
+    std::string name;
+    utils::Ref<TypeExpr> type;
+
+    TypeAliasExpr(Location start, Location end, std::string name, utils::Ref<TypeExpr> type);
+    Value accept(Visitor& visitor) override;
+};
+
+struct MacroParameter {
+    std::string name;
+    MacroParameterKind kind;
+};
+
+class MacroExpr : public ExprMixin<ExprKind::Macro> {
+public:
+    std::string name;
+    std::vector<MacroParameter> parameters;
+    utils::Ref<Expr> body;
+
+    MacroExpr(Location start, Location end, std::string name, std::vector<MacroParameter> parameters, utils::Ref<Expr> body);
+    Value accept(Visitor& visitor) override;
+};
+
+class MacroCallExpr : public ExprMixin<ExprKind::MacroCall> {
+public:
+    std::string name;
+    std::vector<utils::Ref<Expr>> args;
+
+    MacroCallExpr(Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> args);
+    Value accept(Visitor& visitor) override;
+};
 
 };
 

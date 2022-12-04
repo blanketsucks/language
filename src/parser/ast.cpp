@@ -384,8 +384,8 @@ Value WhereExpr::accept(Visitor &visitor) {
 }
 
 ImportExpr::ImportExpr(
-    Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard
-) : ExprMixin(start, end), name(name), parents(parents), is_wildcard(is_wildcard) {}
+    Location start, Location end, std::string name, std::deque<std::string> parents, bool is_wildcard, bool is_relative
+) : ExprMixin(start, end), name(name), parents(parents), is_wildcard(is_wildcard), is_relative(is_relative) {}
 
 Value ImportExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
@@ -480,5 +480,15 @@ ArrayFillExpr::ArrayFillExpr(
 }
 
 Value ArrayFillExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+TypeAliasExpr::TypeAliasExpr(
+    Location start, Location end, std::string name, utils::Ref<TypeExpr> type
+) : ExprMixin(start, end), name(name) {
+    this->type = std::move(type);
+}
+
+Value TypeAliasExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

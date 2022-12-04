@@ -1,4 +1,5 @@
 import libc;
+import libc::errno;
 
 const stderr = libc::fdopen(2, "w");
 
@@ -9,8 +10,8 @@ func read_from_filename(filename: i8*) -> i8* {
         # but idk about that. We could also use `perror` instead of doing all of this.
 
         # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
-        let errno = *libc::__errno_location();
-        libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, libc::strerror(errno));
+        let errno = *libc::errno::__errno_location();
+        libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, libc::errno::strerror(errno));
 
         libc::exit(1);
     }
@@ -29,8 +30,8 @@ func read_from_filename(filename: i8*) -> i8* {
     let n = libc::fread(buffer, 1, size, file);
     if (n != size) {
         if (libc::ferror(file)) {
-            let errno = *libc::__errno_location();
-            libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::strerror(errno));
+            let errno = *libc::errno::__errno_location();
+            libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::errno::strerror(errno));
 
             libc::exit(1);
         }

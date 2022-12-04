@@ -33,15 +33,15 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
             }
 
-            llvm::Type* type = this->get_pointer_element_type(value);
+            type = type->getNonOpaquePointerElementType();
             if (type->isVoidTy()) {
                 ERROR(expr->start, "Cannot dereference a void pointer");
             }
 
-            return this->builder->CreateLoad(type, value);
+            return this->load(value, type);
         }
         case TokenKind::BinaryAnd: {
-            return this->get_pointer_from_expr(expr->value.get()).first;
+            return Value::as_reference(this->as_reference(expr->value.get()).value);
         }
         case TokenKind::Inc: {
             if (!is_numeric) {
@@ -78,18 +78,39 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         } else if (expr->left->kind() == ast::ExprKind::Element) {
             this->store_array_element(expr->left->cast<ast::ElementExpr>(), std::move(expr->right));
             return nullptr;
+        } else if (expr->left->kind() == ast::ExprKind::UnaryOp) {
+            auto* unary = expr->left->cast<ast::UnaryOpExpr>();
+            if (unary->op == TokenKind::Mul) { // *a = b
+                llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
+                llvm::Value* parent = unary->value->accept(*this).unwrap(expr->start);
+
+                llvm::Type* type = parent->getType();
+                if (!type->isPointerTy()) {
+                    ERROR(unary->value->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
+                }
+
+                type = type->getNonOpaquePointerElementType();
+                if (!this->is_compatible(type, value->getType())) {
+                    ERROR(expr->right->start, "Cannot assign value of type '{0}' to variable of type '{1}'", this->get_type_name(value->getType()), this->get_type_name(type));
+                }
+
+                value = this->cast(value, type);
+                this->builder->CreateStore(value, parent);
+
+                return nullptr;
+            }
         }
 
-        auto local = this->get_pointer_from_expr(expr->left.get());
-        if (local.second) {
+        auto local = this->as_reference(expr->left.get());
+        if (local.is_constant) {
             ERROR(expr->start, "Cannot assign to constant");
         } 
 
-        if (!local.first) {
+        if (!local.value) {
             ERROR(expr->left->start, "Left hand side of assignment must be a variable, struct field or array element");
         }
 
-        llvm::Value* inst = local.first;
+        llvm::Value* inst = local.value;
         llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
 
         llvm::Type* type = inst->getType()->getNonOpaquePointerElementType();
@@ -133,7 +154,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
         llvm::Value* self = left;
         if (!ltype->isPointerTy()) {
-            self = this->get_pointer_from_expr(expr->left.get()).first;
+            self = this->as_reference(expr->left.get()).value;
         }
 
         return this->call(method->value, { right }, self);
@@ -250,13 +271,13 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->start);
-    auto local = this->get_pointer_from_expr(expr->left.get());
-    if (local.second) {
+    auto local = this->as_reference(expr->left.get());
+    if (local.is_constant) {
         ERROR(expr->start, "Cannot assign to constant");
     }
 
-    llvm::Value* parent = local.first;
-    llvm::Value* lhs = this->load(parent);
+    llvm::Value* parent = local.value;
+    llvm::Value* lhs = this->load(parent, local.type);
 
     llvm::Value* result = nullptr;
     switch (expr->op) {

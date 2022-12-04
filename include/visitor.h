@@ -1,7 +1,6 @@
 #ifndef _VISITOR_H
 #define _VISITOR_H
 
-#include "types/include.h"
 #include "parser/ast.h"
 #include "parser/parser.h"
 #include "llvm.h"
@@ -50,7 +49,6 @@ public:
     std::pair<llvm::Value*, bool> get_variable(std::string name);
     Function* get_function(std::string name);
 
-    llvm::Value* cast(llvm::Value* value, Type* type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
 
     llvm::Value* load(llvm::Value* value, llvm::Type* type = nullptr);
@@ -67,16 +65,15 @@ public:
     );
 
     void store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value);
+
     void store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value);
+    void bounds_check(llvm::Value* index, uint32_t size);
 
     bool is_struct(llvm::Value* value);
     bool is_struct(llvm::Type* type);
 
     utils::Shared<Struct> get_struct(llvm::Value* value);
     utils::Shared<Struct> get_struct(llvm::Type* type);
-
-    llvm::Type* get_llvm_type(Type* name);
-    Type* from_llvm_type(llvm::Type* type);
 
     llvm::AllocaInst* create_alloca(llvm::Type* type);
 
@@ -87,31 +84,21 @@ public:
         bool is_variadic, 
         llvm::Function::LinkageTypes linkage
     );
-
-    void typecheck_function_call(
-        llvm::Function* function,
-        std::vector<llvm::Value*>& args,
-        uint32_t start = 0, 
-        Location location = Location::dummy()
-    );
-
+    
     llvm::Value* call(
         llvm::Function* function, 
         std::vector<llvm::Value*> args, 
         llvm::Value* self = nullptr,
         bool is_constructor = false,
-        llvm::FunctionType* type = nullptr,
-        Location location = Location::dummy()
+        llvm::FunctionType* type = nullptr
     );
-
-    llvm::Type* get_pointer_element_type(llvm::Value* value);
 
     void create_global_constructors();
 
     static std::string get_type_name(llvm::Type* type);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
 
-    Scope::Local get_pointer_from_expr(ast::Expr* expr);
+    ScopeLocal as_reference(ast::Expr* expr);
 
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
@@ -159,6 +146,7 @@ public:
     Value visit(ast::ArrayTypeExpr* expr);
     Value visit(ast::PointerTypeExpr* expr);
     Value visit(ast::FunctionTypeExpr* expr);
+    Value visit(ast::TypeAliasExpr* expr);
 
     Value visit(ast::CastExpr* expr);
     Value visit(ast::SizeofExpr* expr);
@@ -189,21 +177,19 @@ public:
 
     std::map<std::string, utils::Shared<Struct>> structs;
     std::map<std::string, utils::Shared<Module>> modules;
-
     std::map<TupleKey, llvm::StructType*> tuples;
-    std::map<uint32_t, llvm::Type*> typeids;
 
-    std::vector<FunctionCall*> constructors;
+    std::vector<FunctionCall> constructors;
 
-    Scope* global_scope;
-    Scope* scope;
+    Scope* global_scope = nullptr;
+    Scope* scope = nullptr;
 
     utils::Shared<Function> current_function = nullptr;
     utils::Shared<Struct> current_struct = nullptr;
     utils::Shared<Namespace> current_namespace = nullptr;
     utils::Shared<Module> current_module = nullptr;
 
-    llvm::Type* ctx;
+    llvm::Type* ctx = nullptr;
 
     std::vector<Finalizer> finalizers;
 };

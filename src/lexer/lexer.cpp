@@ -1,26 +1,9 @@
 #include "lexer/lexer.h"
-
 #include "utils.h"
+
 #include <string>
 
-std::string escape_str(std::string str) {
-    std::string result;
-    for (char c : str) {
-        if (!isprint((unsigned char)c)) {
-            std::stringstream stream;
-            stream << std::hex << (unsigned int)(unsigned char)c;
-            
-            std::string code = stream.str();
-            result += std::string("\\x") + (code.size() < 2 ? "0" : "") + code;
-        } else {
-            result += c;
-        }
-    }
-
-    return result;
-}
-
-Lexer::Lexer(std::string source, std::string filename) {
+Lexer::Lexer(const std::string& source, std::string filename) {
     this->source = source;
     this->filename = filename;
 
@@ -129,12 +112,13 @@ char Lexer::escape(char current) {
         return '"';
     } else if (next == 'x') {
         char hex[3];
+
         hex[0] = this->next();
         hex[1] = this->next();
         hex[2] = 0;
 
         int i = 0;
-        while (hex[i] != 0) {
+        while (hex[i]) {
             if (hex[i] >= '0' && hex[i] <= '9') {
                 hex[i] -= '0';
             } else if (hex[i] >= 'a' && hex[i] <= 'f') {
@@ -142,8 +126,7 @@ char Lexer::escape(char current) {
             } else if (hex[i] >= 'A' && hex[i] <= 'F') {
                 hex[i] -= 'A' - 10;
             } else {
-                std::cerr << "Invalid hexadecimal character '" << hex[i] << "'." << std::endl;
-                exit(1);
+                ERROR(this->loc(), "Invalid hex escape sequence");
             }
 
             i++;

@@ -1,4 +1,5 @@
 #include "objects.h"
+#include <algorithm>
 
 Function::Function(
     std::string name,
@@ -61,5 +62,16 @@ std::vector<FunctionArgument> Function::params() {
         params.push_back(kwarg.second);
     }
 
+    std::sort(params.begin(), params.end(), [](FunctionArgument a, FunctionArgument b) {
+        return a.index < b.index;
+    });
+
     return params;
+}
+
+bool Function::has_any_default_value() {
+    auto params = this->params();
+    return std::any_of(params.begin(), params.end(), [](FunctionArgument arg) {
+        return arg.default_value != nullptr;
+    });
 }

@@ -143,15 +143,18 @@ Value Visitor::visit(ast::StructExpr* expr) {
         structure = this->scope->structs[expr->name];
         this->scope = structure->scope;
     }
-    
+
+    this->scope->structs["Self"] = structure;
     this->current_struct = structure;
+
     for (auto& method : expr->methods) { 
         method->accept(*this);
     }
 
     this->current_struct = nullptr;
-    this->scope->exit(this);
+    this->scope->structs.erase("Self");
 
+    this->scope->exit(this);
     return nullptr;
 }
 
@@ -183,15 +186,19 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     if (structure->scope->has_function(expr->attribute)) {
         auto function = structure->scope->functions[expr->attribute];
         if (!is_pointer) {
-            value = this->get_pointer_from_expr(expr->parent.get()).first;
+            value = this->as_reference(expr->parent.get()).value;
         }
 
         if (this->current_struct != structure && function->is_private) {
             ERROR(expr->parent->start, "Cannot access private method '{0}'", expr->attribute);
         }
+
+        if (function->parent && function->parent != structure) {
+            value = this->builder->CreateBitCast(value, function->parent->type->getPointerTo());
+        }
         
         function->used = true;
-        return Value(function->value, false, value, function);
+        return Value::with_function(function, value);
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -303,7 +310,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
 }
 
 void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->get_pointer_from_expr(expr->parent.get()).first;
+    llvm::Value* parent = this->as_reference(expr->parent.get()).value;
     llvm::Type* type = parent->getType();
 
     if (!type->isPointerTy()) {

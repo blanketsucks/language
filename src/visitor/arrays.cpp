@@ -1,11 +1,18 @@
 #include "parser/ast.h"
 #include "visitor.h"
+#include <stdint.h>
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
+    std::cout << "ArrayExpr" << std::endl;
     std::vector<llvm::Value*> elements;
     bool is_const = true;
 
+
     for (auto& element : expr->elements) {
+        if (!element) {
+            continue;
+        }
+
         Value value = element->accept(*this);
         is_const &= value.is_constant;
 
@@ -122,19 +129,16 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         ERROR(expr->index->start, "Indicies must be integers");
     }
 
-    if (is_const) {
-        if (!llvm::isa<llvm::ConstantInt>(index)) {
-            ERROR(expr->index->start, "Expected a constant integer as the array index");
-        }
-
-        llvm::ConstantInt* idx = llvm::cast<llvm::ConstantInt>(index);
+    if (is_const && llvm::isa<llvm::ConstantInt>(index)) {
+        int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
         llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(value);
 
-        if (idx->getSExtValue() > int64_t(array->getType()->getArrayNumElements() - 1)) {
-            ERROR(expr->index->start, "Element index out of bounds");
+        int64_t size = array->getType()->getArrayNumElements();
+        if (idx > size - 1) {
+            ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
         }
 
-        return Value(array->getAggregateElement(idx->getSExtValue()), true);
+        return Value(array->getAggregateElement(idx), true);
     }
 
     llvm::Type* element = nullptr;
@@ -148,8 +152,19 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     if (!type->isArrayTy()) {
         ptr = this->builder->CreateGEP(element, value, index);
     } else {
+        if (llvm::isa<llvm::ConstantInt>(index)) {
+            int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
+            int64_t size = type->getArrayNumElements();
+
+            if (idx == size) {
+                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
+            } else if (idx > size - 1) {
+                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
+            }
+        }
+
         // ExtractValue doesn't take a Value so i'm kinda forced to do this.
-        value = this->get_pointer_from_expr(expr->value.get()).first;
+        value = this->as_reference(expr->value.get()).value;
         ptr = this->builder->CreateGEP(type, value, {this->builder->getInt32(0), index});
     }
     
@@ -157,7 +172,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 }
 
 void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->get_pointer_from_expr(expr->value.get()).first;
+    llvm::Value* parent = this->as_reference(expr->value.get()).value;
     llvm::Type* type = parent->getType();
 
     if (!type->isPointerTy()) {

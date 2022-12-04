@@ -20,6 +20,10 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     auto outer = this->current_module;
 
     std::string current_path;
+    if (expr->is_relative && outer) {
+        current_path = outer->path.parent();
+    }
+
     while (!expr->parents.empty()) {
         std::string name = expr->parents.front();
         current_path += name;
@@ -48,10 +52,15 @@ Value Visitor::visit(ast::ImportExpr* expr) {
 
         auto module = this->scope->modules[name];
         if (!module) {
-            module = utils::make_shared<Module>(name, this->format_name(name), current_path);
-            module->scope = new Scope(name, ScopeType::Module);
+            if (this->modules.find(current_path) != this->modules.end()) {
+                module = this->modules[current_path];
+            } else {
+                module = utils::make_shared<Module>(name, this->format_name(name), current_path);
+                module->scope = new Scope(name, ScopeType::Module);
 
-            this->scope->children.push_back(module->scope);
+                this->scope->children.push_back(module->scope);
+            }
+
             this->scope->modules[name] = module;
         }
 
@@ -97,8 +106,15 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     }
 
     if (this->modules.find(path_name) != this->modules.end()) {
-        this->scope->modules[expr->name] = this->modules[path_name];
+        auto module = this->modules[path_name];
+        if (!module->is_ready) {
+            ERROR(expr->start, "Could not import '{0}' because a circular dependency was detected", expr->name);
+        }
+
+        this->scope->modules[expr->name] = module;
         return nullptr;
+    } else if (path_name == this->name) {
+        ERROR(expr->start, "Could not import '{0}' because a circular dependency was detected", expr->name);
     }
 
     std::fstream file = path.open();
@@ -125,6 +141,8 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         
     }
 
+    module->is_ready = true;
     this->current_module = outer;
+
     return nullptr;
 }

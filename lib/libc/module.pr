@@ -1,41 +1,45 @@
 const SEEK_END = 2;
 const SEEK_SET = 0;
     
+type FILE = i32;
+
 extern "C" {
-    func fopen(path: i8*, mode: i8*) -> i32*;
-    func fdopen(fd: i32, mode: i8*) -> i32*;
-    func freopen(path: i8*, mode: i8*, stream: i32*) -> i32*;
-    func fclose(stream: i32*) -> i32;
-    func fflush(stream: i32*) -> i32;
+    func close(fd: i32) -> i32;
 
-    func fgetc(stream: i32*) -> i32;
-    func fgets(buf: i8*, n: i32, stream: i32*) -> i8*;
-    func getc(stream: i32*) -> i32;
+    func fopen(path: i8*, mode: i8*) -> FILE*;
+    func fdopen(fd: i32, mode: i8*) -> FILE*;
+    func freopen(path: i8*, mode: i8*, stream: FILE*) -> FILE*;
+    func fclose(stream: FILE*) -> i32;
+    func fflush(stream: FILE*) -> i32;
+
+    func fgetc(stream: FILE*) -> i32;
+    func fgets(buf: i8*, n: i32, stream: FILE*) -> i8*;
+    func getc(stream: FILE*) -> i32;
     func getchar() -> i32;
-    func ungetc(c: i32, stream: i32*) -> i32;
+    func ungetc(c: i32, stream: FILE*) -> i32;
 
-    func fputc(c: i32, stream: i32*) -> i32;
-    func fputs(s: i8*, stream: i32*) -> i32;
-    func putc(c: i32, stream: i32*) -> i32;
-    [[allow_dead_code]] func putchar(c: i32) -> i32;
-    [[allow_dead_code]] func puts(s: i8*) -> i32;
+    func fputc(c: i32, stream: FILE*) -> i32;
+    func fputs(s: i8*, stream: FILE*) -> i32;
+    func putc(c: i32, stream: FILE*) -> i32;
+    func putchar(c: i32) -> i32;
+    func puts(s: i8*) -> i32;
 
-    func fread(buf: i8*, size: i32, n: i32, stream: i32*) -> i32;
-    func fwrite(buf: i8*, size: i32, n: i32, stream: i32*) -> i32;
+    func fread(buf: i8*, size: i32, n: i32, stream: FILE*) -> i32;
+    func fwrite(buf: i8*, size: i32, n: i32, stream: FILE*) -> i32;
 
-    func fseek(stream: i32*, offset: i32, whence: i32) -> i32;
-    func ftell(stream: i32*) -> i32;
-    func rewind(stream: i32*);
-    func fgetpos(stream: i32*, pos: i32*) -> i32;
-    func fsetpos(stream: i32*, pos: i32*) -> i32;
+    func fseek(stream: FILE*, offset: i32, whence: i32) -> i32;
+    func ftell(stream: FILE*) -> i32;
+    func rewind(stream: FILE*);
+    func fgetpos(stream: FILE*, pos: i32*) -> i32;
+    func fsetpos(stream: FILE*, pos: i32*) -> i32;
 
-    func clearerr(stream: i32*);
-    func feof(stream: i32*) -> i32;
-    func ferror(stream: i32*) -> i32;
-    func fileno(stream: i32*) -> i32;
+    func clearerr(stream: FILE*);
+    func feof(stream: FILE*) -> i32;
+    func ferror(stream: FILE*) -> i32;
+    func fileno(stream: FILE*) -> i32;
 
     func printf(fmt: i8*, ...) -> i32;
-    func fprintf(stream: i32*, fmt: i8*, ...) -> i32;
+    func fprintf(stream: FILE*, fmt: i8*, ...) -> i32;
     func dprintf(fd: i32, fmt: i8*, ...) -> i32;
     func sprintf(buf: i8*, fmt: i8*, ...) -> i32;
     func snprintf(buf: i8*, n: i32, fmt: i8*, ...) -> i32;
@@ -73,6 +77,7 @@ extern "C" {
     func strpbrk(s: i8*, accept: i8*) -> i8*;
     func strsep(s: i8*, delim: i8*) -> i8*;
     func strcoll(s1: i8*, s2: i8*) -> i32;
+    func strncpy(dest: i8*, src: i8*, n: i32) -> i8*;
 
     func isalnum(c: i32) -> i32;
     func isalpha(c: i32) -> i32;
@@ -101,10 +106,4 @@ extern "C" {
     [[noreturn]] func exit(code: i32);
 
     func atexit(f: func() -> void);
-    
-    func strerror(err: i32) -> i8*;
-    func perror(s: i8*);
-
-    func __errno_location() -> i32*;
-    func __h_errno_location() -> i32*;
 }

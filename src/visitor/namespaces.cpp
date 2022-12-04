@@ -58,7 +58,7 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
         ERROR(expr->start, "Field '{0}' does not exist in enum '{1}'", expr->attribute, name);
     }
 
-    Scope* scope;
+    Scope* scope = nullptr;
     if (value.namespace_) {
         scope = value.namespace_->scope;
     } else if (value.structure) {
@@ -67,24 +67,23 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
         scope = value.module->scope;
     }
 
-    if (scope->structs.find(expr->attribute) != scope->structs.end()) {
-        return Value::with_struct(scope->structs[expr->attribute]);
-    } else if (scope->functions.find(expr->attribute) != scope->functions.end()) {
-        auto func = scope->functions[expr->attribute];
-        func->used = true;
-
-        return Value::with_function(func);
-    } else if (scope->namespaces.find(expr->attribute) != scope->namespaces.end()) {
-        return Value::with_namespace(scope->namespaces[expr->attribute]);
-    } else if (scope->constants.find(expr->attribute) != scope->constants.end()) {
-        return Value(this->load(scope->constants[expr->attribute]), true);
-    } else if (scope->enums.find(expr->attribute) != scope->enums.end()) {
-        return Value::with_enum(scope->enums[expr->attribute]);
-    } else if (scope->modules.find(expr->attribute) != scope->modules.end()) {
-        return Value::with_module(scope->modules[expr->attribute]);
-    } else {
-        ERROR(expr->start, "Member '{0}' does not exist in named scope '{1}'", expr->attribute, scope->name);
+    if (scope->has_constant(expr->attribute)) {
+        return Value(this->load(scope->constants[expr->attribute].value), true);
+    } else if (scope->has_function(expr->attribute)) {
+        return Value::with_function(scope->get_function(expr->attribute));
+    } else if (scope->has_struct(expr->attribute)) {
+        return Value::with_struct(scope->get_struct(expr->attribute));
+    } else if (scope->has_enum(expr->attribute)) {
+        return Value::with_enum(scope->get_enum(expr->attribute));
+    } else if (scope->has_module(expr->attribute)) {
+        return Value::with_module(scope->get_module(expr->attribute));
+    } else if (scope->has_namespace(expr->attribute)) {
+        return Value::with_namespace(scope->get_namespace(expr->attribute));
+    } else if (scope->has_type(expr->attribute)) {
+        return Value::with_type(scope->get_type(expr->attribute).type);
     }
+
+    ERROR(expr->start, "Member '{0}' does not exist in named scope '{1}'", expr->attribute, scope->name);
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {

@@ -99,7 +99,7 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
     llvm::Type* itype = iterable->getType();
 
     if (!itype->isPointerTy()) {
-        self = this->get_pointer_from_expr(expr->iterable.get()).first;
+        self = this->as_reference(expr->iterable.get()).value;
 
         if (!self) {
             self = this->create_alloca(itype);
@@ -164,7 +164,7 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
 
     func->branch = func->create_branch("foreach.loop", loop, stop);
 
-    this->scope->variables[expr->name] = alloca;
+    this->scope->variables[expr->name] = Variable::from_alloca(expr->name, alloca);
     expr->body->accept(*this);
 
     if (func->branch->has_jump()) {

@@ -1,7 +1,6 @@
 #ifndef _PARSER_H
 #define _PARSER_H
 
-#include "types/include.h"
 #include "parser/ast.h"
 #include "lexer/tokens.h"
 #include "utils.h"
@@ -10,38 +9,9 @@
 
 #include <map>
 
-struct Context {
-    bool is_inside_function = false;
-    StructType* current_struct = nullptr;
-
-    llvm::Optional<std::string> current_namespace;
-};
-
 class Parser {
 public:
     Parser(std::vector<Token> tokens);
-
-    void free();
-
-    template<typename T> T itoa(const std::string& str, const char* type) {
-        T result = 0;
-        bool error = llvm::StringRef(str).getAsInteger(0, result);
-        if (error) {
-            ERROR(this->current.start, "Invalid {0} integer literal.", type);
-        }
-
-        return result;
-    }
-
-    double ftoa(const std::string& str) {
-        double result = 0;
-        bool error = llvm::StringRef(str).getAsDouble(result);
-        if (error) {
-            ERROR(this->current.start, "Invalid float literal.");
-        }
-
-        return result;
-    }
 
     void end();
 
@@ -66,6 +36,7 @@ public:
     utils::Ref<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
     utils::Ref<ast::Expr> parse_extern_block();
     utils::Ref<ast::EnumExpr> parse_enum();
+    utils::Ref<ast::TypeAliasExpr> parse_type_alias();
 
     utils::Ref<ast::Expr> parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op);
     utils::Ref<ast::Expr> parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op);
@@ -94,7 +65,6 @@ private:
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
     std::map<std::string, ast::BuiltinType> types;
-    std::map<uint32_t, TupleType*> tuples;
 };
 
 #endif
