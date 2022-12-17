@@ -1,6 +1,35 @@
 #include "compiler.h"
-#include "include.h"
-#include "utils.h"
+#include "llvm.h"
+#include "utils/filesystem.h"
+
+llvm::cl::OptionCategory category("Compiler options");
+
+llvm::cl::opt<bool> verbose(
+    "verbose", llvm::cl::desc("Enable verbose output"), llvm::cl::init(false), llvm::cl::cat(category)
+);
+llvm::cl::opt<bool> optimize(
+    "optimize", llvm::cl::desc("Enable optimizations"), llvm::cl::init(false), llvm::cl::cat(category)
+);
+llvm::cl::opt<OutputFormat> format(
+    "format", 
+    llvm::cl::desc("Set the output format"), 
+    llvm::cl::init(OutputFormat::Executable), 
+    llvm::cl::values(
+        clEnumValN(OutputFormat::LLVM, "llvm-ir", "Emit LLVM IR"),
+        clEnumValN(OutputFormat::Bitcode, "llvm-bc", "Emit LLVM Bitcode"),
+        clEnumValN(OutputFormat::Assembly, "assembly", "Emit assembly code"),
+        clEnumValN(OutputFormat::Object, "object", "Emit object code"),
+        clEnumValN(OutputFormat::Executable, "exe", "Emit an executable (default)"),
+        clEnumValN(OutputFormat::SharedLibrary, "shared", "Emit a shared library")
+    ),
+    llvm::cl::cat(category)
+);
+
+llvm::cl::opt<std::string> entry("entry", llvm::cl::desc("Set an entry point for the program"), llvm::cl::init("main"), llvm::cl::cat(category));
+llvm::cl::opt<std::string> output("output", llvm::cl::desc("Set an output file"), llvm::cl::Optional, llvm::cl::cat(category));
+llvm::cl::list<std::string> includes("I", llvm::cl::desc("Add an include path"), llvm::cl::value_desc("path"), llvm::cl::cat(category));
+llvm::cl::list<std::string> libraries("l", llvm::cl::desc("Add a library"), llvm::cl::value_desc("name"), llvm::cl::cat(category));
+llvm::cl::list<std::string> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::OneOrMore);
 
 struct Arguments {
     std::string filename;
@@ -12,160 +41,28 @@ struct Arguments {
     Libraries libraries;
 
     OutputFormat format;
-    bool optimize = true;
-    bool verbose = false;
+    bool optimize;
+    bool verbose;
 };
 
-utils::argparse::ArgumentParser create_argument_parser() {
-    utils::argparse::ArgumentParser parser = utils::argparse::ArgumentParser(
-        "proton", 
-        "Compiler for the Proton programming language.",
-        "proton [options] ...files"
-    );
-
-    parser.add_argument(
-        "--output", 
-        utils::argparse::Required, 
-        "-o",
-        "Set an output file.", 
-        "file"
-    );
-
-    parser.add_argument(
-        "--entry", 
-        utils::argparse::Required, 
-        "-e", 
-        "Set an entry point for the program.", 
-        "name"
-    );
-
-    parser.add_argument(
-        "-emit-llvm-ir", 
-        utils::argparse::NoArguments, 
-        EMPTY, 
-        "Emit LLVM IR."
-    );
-    
-    parser.add_argument(
-        "-emit-llvm-bc", 
-        utils::argparse::NoArguments, 
-        EMPTY, 
-        "Emit LLVM Bitcode."
-    );
-    
-    parser.add_argument(
-        "-emit-assembly", 
-        utils::argparse::NoArguments, 
-        "-S", 
-        "Emit assembly code."
-    );
-    
-    parser.add_argument(
-        "-c", 
-        utils::argparse::NoArguments, 
-        EMPTY, 
-        "Emit object code."
-    );
-    
-    parser.add_argument(
-        "-I", 
-        utils::argparse::Many, 
-        EMPTY, 
-        "Add an include path.", 
-        "path"
-    );
-    
-    parser.add_argument(
-        "-O0", 
-        utils::argparse::NoArguments, 
-        EMPTY, 
-        "Disable optimizations."
-    );
-
-    parser.add_argument(
-        "--library", 
-        utils::argparse::Many, 
-        "-l", 
-        EMPTY, 
-        "libname"
-    );
-
-    parser.add_argument(
-        "-L",
-        utils::argparse::Many,
-        EMPTY,
-        "Add directory to library search path.",
-        "dir"
-    );
-
-    parser.add_argument(
-        "--verbose",
-        utils::argparse::NoArguments,
-        "-v"
-    );
-
-    parser.add_argument(
-        "-shared",
-        utils::argparse::NoArguments
-    );
-
-    parser.add_argument(
-        "--target",
-        utils::argparse::Required
-    );
-
-    return parser;
-}
-
-std::vector<std::string> get_string_vector(utils::argparse::ArgumentParser parser, const std::string& name) {
-    std::vector<std::string> result;
-
-    auto args = parser.get<std::vector<llvm::Any>>(name, {});
-    for (auto& arg : args) {
-        result.push_back(llvm::any_cast<char*>(arg));
-    }
-
-    return result;
-
-}
 
 Arguments parse_arguments(int argc, char** argv) {
     Arguments args;
-    utils::argparse::ArgumentParser parser = create_argument_parser();
 
-    if (argc < 2) {
-        parser.display_help();
-        exit(0);
-    }
+    llvm::cl::HideUnrelatedOptions(category);
+    llvm::cl::ParseCommandLineOptions(argc, argv);
 
-    std::vector<std::string> filenames = parser.parse(argc, argv);
-    if (filenames.empty()) {
-        Compiler::error("No input files provided");
-    }
+    args.filename = files.front(); 
+    args.entry = entry;   
+    args.format = format;
+    args.optimize = optimize;
+    args.verbose = verbose;
+    args.includes = includes;
 
-    std::string filename = filenames.back();
+    args.libraries.names = libraries;
 
-    args.entry = parser.get("entry", "main");
-    if (parser.get("c", false)) {
-        args.format = OutputFormat::Object;
-    } else if (parser.get("emit-llvm-ir", false)) {
-        args.format = OutputFormat::LLVM;
-    } else if (parser.get("emit-assembly", false)) {
-        args.format = OutputFormat::Assembly;
-    } else if (parser.get("emit-llvm-bc", false)) {
-        args.format = OutputFormat::Bitcode;
-    } else if (parser.get("shared", false)) {
-        args.format = OutputFormat::SharedLibrary;
-    } else {
-        args.format = OutputFormat::Executable;
-    }
-
-    args.optimize = !parser.get("O0", false);
-    args.verbose = parser.get("verbose", false);
-    args.filename = filename;
-
-    if (!parser.has("output")) {
-        args.output = utils::filesystem::replace_extension(filename, "o");
+    if (output.empty()) {
+        args.output = utils::filesystem::replace_extension(args.filename, "o");
         switch (args.format) {
             case OutputFormat::LLVM:
                 args.output = utils::filesystem::replace_extension(args.output, "ll"); break;
@@ -189,16 +86,8 @@ Arguments parse_arguments(int argc, char** argv) {
                 args.output = utils::filesystem::replace_extension(args.output, "o"); break;
         }
     } else {
-        args.output = parser.get<char*>("output");
+        args.output = output;
     }
-
-    if (parser.has("target")) {
-        args.target = parser.get<char*>("target");
-    }
-
-    args.libraries.names = get_string_vector(parser, "library");
-    args.libraries.paths = get_string_vector(parser, "L");
-    args.includes = get_string_vector(parser, "I");
 
     return args;
 }
@@ -226,7 +115,7 @@ int main(int argc, char** argv) {
     for (auto& include : args.includes) {
         utils::filesystem::Path inc(include);
         if (!inc.exists()) {
-            Compiler::error("Could not find include path '{s}'", include); exit(1);
+            Compiler::error("Could not find include path '{0}'", include); exit(1);
         }
         
         if (!inc.isdir()) {

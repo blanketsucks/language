@@ -12,8 +12,8 @@ import json
 
 examples = pathlib.Path(__file__).parent / 'examples'
 cwd = pathlib.Path(__file__).parent
-if not (cwd / 'proton').exists():
-    print('Proton executable not found. Please run "make" before running this script.')
+if not (cwd / 'quart').exists():
+    print('Quart executable not found. Please run "make" before running this script.')
     exit(1)
 
 def run(executable: Union[str, os.PathLike[str]], args: Iterable[Any]) -> Tuple[int, str, str]:
@@ -37,7 +37,7 @@ class Example:
         self.file = file
 
     def compile(self) -> None:
-        returncode, stdout, stderr = run('./proton', [self.file])
+        returncode, stdout, stderr = run('./quart', [self.file])
         if returncode != 0:
             print(stdout)
             print(stderr)
@@ -101,7 +101,7 @@ class Example:
 
 i = 0
 for file in examples.iterdir():
-    if file.suffix != '.pr':
+    if file.suffix != '.qr':
         continue
 
     example = Example(file)

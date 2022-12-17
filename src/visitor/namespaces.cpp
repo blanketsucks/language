@@ -70,17 +70,17 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     if (scope->has_constant(expr->attribute)) {
         return Value(this->load(scope->constants[expr->attribute].value), true);
     } else if (scope->has_function(expr->attribute)) {
-        return Value::with_function(scope->get_function(expr->attribute));
+        return Value::from_function(scope->get_function(expr->attribute));
     } else if (scope->has_struct(expr->attribute)) {
-        return Value::with_struct(scope->get_struct(expr->attribute));
+        return Value::from_struct(scope->get_struct(expr->attribute));
     } else if (scope->has_enum(expr->attribute)) {
-        return Value::with_enum(scope->get_enum(expr->attribute));
+        return Value::from_enum(scope->get_enum(expr->attribute));
     } else if (scope->has_module(expr->attribute)) {
-        return Value::with_module(scope->get_module(expr->attribute));
+        return Value::from_module(scope->get_module(expr->attribute));
     } else if (scope->has_namespace(expr->attribute)) {
-        return Value::with_namespace(scope->get_namespace(expr->attribute));
+        return Value::from_namespace(scope->get_namespace(expr->attribute));
     } else if (scope->has_type(expr->attribute)) {
-        return Value::with_type(scope->get_type(expr->attribute).type);
+        return Value::from_type(scope->get_type(expr->attribute).type);
     }
 
     ERROR(expr->start, "Member '{0}' does not exist in named scope '{1}'", expr->attribute, scope->name);
@@ -91,7 +91,6 @@ Value Visitor::visit(ast::UsingExpr* expr) {
     if (!parent.namespace_ && !parent.module) {
         ERROR(expr->start, "Expected a namespace or module");
     }
-
 
     Scope* scope = nullptr;
     if (parent.namespace_) {

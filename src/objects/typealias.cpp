@@ -1,4 +1,4 @@
-#include "objects.h"
+#include "objects/typealias.h"
 
 TypeAlias TypeAlias::from_enum(utils::Shared<Enum> enumeration) {
     return { enumeration->name, enumeration->type, enumeration, enumeration->start, enumeration->end };

@@ -1,6 +1,4 @@
-#include "utils.h"
 #include "visitor.h"
-#include <stdint.h>
 
 bool Visitor::is_struct(llvm::Value* value) {
     return this->is_struct(value->getType());
@@ -122,7 +120,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
                 ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
             }
 
-            fields[field.name] = {field.name, ty, field.is_private, index, offset};
+            fields[field.name] = {field.name, ty, field.is_private, field.is_readonly, index, offset};
             index++;
 
             offset += this->getsizeof(ty);
@@ -152,9 +150,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
     }
 
     this->current_struct = nullptr;
-    this->scope->structs.erase("Self");
-
     this->scope->exit(this);
+    
     return nullptr;
 }
 
@@ -198,7 +195,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         }
         
         function->used = true;
-        return Value::with_function(function, value);
+        return Value::from_function(function, value);
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -310,26 +307,22 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
 }
 
 void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->as_reference(expr->parent.get()).value;
-    llvm::Type* type = parent->getType();
+    auto ref = this->as_reference(expr->parent.get());
+    llvm::Value* parent = ref.value;
 
-    if (!type->isPointerTy()) {
-        ERROR(expr->start, "Attribute access on non-structure type");
+    if (!this->is_struct(ref.type)) {
+        ERROR(expr->parent->start, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(ref.type));
     }
 
-    type = type->getNonOpaquePointerElementType();
-    if (type->isPointerTy()) {
-        type = type->getNonOpaquePointerElementType();
+    if (ref.is_immutable) {
+        ERROR(expr->parent->start, "Cannot modify immutable value '{0}'", ref.name);
+    }
+
+    if (ref.type->isPointerTy()) {
         parent = this->load(parent);
     }
 
-    if (!type->isStructTy()) {
-        ERROR(expr->start, "Attribute access on non-structure type");
-    }
-
-    std::string name = type->getStructName().str();
-    auto structure = this->structs[name];
-
+    auto structure = this->get_struct(ref.type);
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {
         ERROR(expr->start, "Attribute '{0}' does not exist in structure '{1}'", expr->attribute, name);
@@ -338,6 +331,10 @@ void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr>
     StructField field = structure->fields.at(expr->attribute);
     if (this->current_struct != structure && field.is_private) {
         ERROR(expr->start, "Cannot access private field '{0}'", expr->attribute);
+    }
+
+    if (this->current_struct != structure && field.is_readonly) {
+        ERROR(expr->start, "Cannot modify readonly field '{0}'", expr->attribute);
     }
 
     llvm::Value* attr = value->accept(*this).unwrap(value->start);

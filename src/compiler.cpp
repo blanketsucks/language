@@ -1,10 +1,10 @@
 #include "compiler.h"
-#include "utils.h"
 #include "llvm.h"
 #include "visitor.h"
 #include "preprocessor.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
+#include "utils/string.h"
 
 #include "llvm/Passes/PassBuilder.h"
 
@@ -248,17 +248,17 @@ CompilerError Compiler::compile() {
         start = Compiler::now();
     }
 
-    std::string target_triple = llvm::sys::getDefaultTargetTriple();
+    std::string triple = llvm::sys::getDefaultTargetTriple();
     if (!this->target.empty()) {
-        target_triple = this->target;
+        triple = this->target;
     }
 
     std::string err;
     if (this->verbose) {
-        std::cout << "LLVM Tagret Triple: " << std::quoted(target_triple) << '\n';
+        std::cout << "LLVM Tagret Triple: " << std::quoted(triple) << '\n';
     }
 
-    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(target_triple, err);
+    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, err);
     if (!target) {
         return {1, FORMAT("Could not create target: '{0}'", err)};
     }
@@ -271,11 +271,11 @@ CompilerError Compiler::compile() {
     auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
     utils::Ref<llvm::TargetMachine> machine(
-        target->createTargetMachine(target_triple, "generic", "", options, reloc)
+        target->createTargetMachine(triple, "generic", "", options, reloc)
     );
 
     visitor.module->setDataLayout(machine->createDataLayout());
-    visitor.module->setTargetTriple(target_triple);
+    visitor.module->setTargetTriple(triple);
 
     visitor.module->setPICLevel(llvm::PICLevel::BigPIC);
     visitor.module->setPIELevel(llvm::PIELevel::Large);

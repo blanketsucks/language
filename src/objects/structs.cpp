@@ -1,4 +1,5 @@
-#include "objects.h"
+#include "objects/structs.h"
+#include "objects/scopes.h"
 
 Struct::Struct(
     std::string name,
@@ -25,10 +26,13 @@ int Struct::get_field_index(std::string name) {
 }
 
 StructField Struct::get_field_at(uint32_t index) {
-    std::vector<StructField> fields = utils::values(this->fields);
-    std::sort(fields.begin(), fields.end(), [](auto& a, auto& b) { return a.index < b.index; });
+    for (auto pair : this->fields) {
+        if (pair.second.index == index) {
+            return pair.second;
+        }
+    }
 
-    return fields[index];
+    return { "", nullptr, false, false, 0, 0 };
 }
 
 std::vector<StructField> Struct::get_fields(bool with_private) {

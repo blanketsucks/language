@@ -1,5 +1,14 @@
 #include "visitor.h"
 
+static std::map<TokenKind, std::string> STRUCT_OP_MAPPING = {
+    {TokenKind::Add, "add"},
+    {TokenKind::Minus, "sub"},
+    {TokenKind::Mul, "mul"},
+    {TokenKind::Div, "div"},
+    {TokenKind::Mod, "mod"}
+    // TODO: add more
+};
+
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
     llvm::Type* type = value->getType();
@@ -41,14 +50,21 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             return this->load(value, type);
         }
         case TokenKind::BinaryAnd: {
-            return Value::as_reference(this->as_reference(expr->value.get()).value);
+            auto ref = this->as_reference(expr->value.get());
+            if (!ref.value) {
+                ERROR(expr->start, "Expected a variable, struct member or array element");
+            }
+
+            return Value::as_reference(ref.value, ref.is_immutable, ref.is_stack_allocated);
         }
         case TokenKind::Inc: {
             if (!is_numeric) {
                 ERROR(expr->start, "Unsupported unary operator '++' for type '{0}'", this->get_type_name(type));
             }
 
-            llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
+            llvm::Type* type = value->getType();
+
+            llvm::Value* one = this->builder->getIntN(type->getIntegerBitWidth(), 1);
             llvm::Value* result = this->builder->CreateAdd(value, one);
 
             this->builder->CreateStore(result, value);
@@ -101,24 +117,25 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             }
         }
 
-        auto local = this->as_reference(expr->left.get());
-        if (local.is_constant) {
+        auto ref = this->as_reference(expr->left.get());
+        if (ref.is_constant) {
             ERROR(expr->start, "Cannot assign to constant");
-        } 
+        } else if (ref.is_immutable) {
+            ERROR(expr->start, "Cannot assign to immutable variable '{0}'", ref.name);
+        }
 
-        if (!local.value) {
+        if (!ref.value) {
             ERROR(expr->left->start, "Left hand side of assignment must be a variable, struct field or array element");
         }
 
-        llvm::Value* inst = local.value;
+        llvm::Value* inst = ref.value;
         llvm::Value* value = expr->right->accept(*this).unwrap(expr->start);
 
-        llvm::Type* type = inst->getType()->getNonOpaquePointerElementType();
-        if (!this->is_compatible(type, value->getType())) {
+        if (!this->is_compatible(ref.type, value->getType())) {
             ERROR(
                 expr->start, 
                 "Cannot assign variable of type '{0}' to value of type '{1}'", 
-                this->get_type_name(type), this->get_type_name(value->getType())
+                this->get_type_name(ref.type), this->get_type_name(value->getType())
             );
         }
 

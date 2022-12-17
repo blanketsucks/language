@@ -1,5 +1,15 @@
 #include "visitor.h"
 
+static std::vector<std::string> RESERVED_FUNCTION_NAMES = {
+    "__global_constructors_init"
+};
+
+bool Visitor::is_reserved_function(std::string name) {
+    return std::find(
+        RESERVED_FUNCTION_NAMES.begin(), RESERVED_FUNCTION_NAMES.end(), name
+    ) != RESERVED_FUNCTION_NAMES.end();
+}
+
 llvm::Function* Visitor::create_function(
     std::string name, 
     llvm::Type* ret, 
@@ -9,6 +19,132 @@ llvm::Function* Visitor::create_function(
 ) {
     llvm::FunctionType* type = llvm::FunctionType::get(ret, args, is_variadic);
     return llvm::Function::Create(type, linkage, name, this->module.get());
+}
+
+std::vector<llvm::Value*> Visitor::handle_function_arguments(
+    Location location,
+    utils::Shared<Function> function,
+    llvm::Value* self,
+    std::vector<utils::Ref<ast::Expr>> args,
+    std::map<std::string, utils::Ref<ast::Expr>> kwargs
+) {
+    uint32_t argc = args.size() + kwargs.size() + (self ? 1 : 0);
+    if (function->has_any_default_value()) {
+        if (argc + function->get_default_arguments_count() < function->argc()) {
+            ERROR(location, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
+        } else if (argc > function->argc() && !function->is_variadic()) {
+            ERROR(location, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+        }
+    } else {
+        if (argc < function->argc()) {
+            ERROR(location, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
+        } else if (argc > function->argc() && !function->is_variadic()) {
+            ERROR(location, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+        }
+    }
+
+    if (!this->current_function && function->noreturn) {
+        ERROR(location, "Cannot call noreturn function '{0}' from global scope", function->name);
+    }
+
+    std::map<int64_t, llvm::Value*> values;
+    std::vector<llvm::Value*> varargs;
+
+    uint32_t i = self ? 1 : 0;
+    auto params = function->params();
+
+    // Name is only used for kwargs when they are not in order
+    const auto& visit = [&](utils::Ref<ast::Expr> expr, std::string name = "") {
+        llvm::Value* value = nullptr;
+        if (i < params.size()) {
+            FunctionArgument param;
+            if (!name.empty()) {
+                param = function->kwargs[name]; i = param.index;
+            } else {
+                param = params[i];
+            }
+
+            this->ctx = param.type;
+            if (param.is_reference) {
+                auto ref = this->as_reference(expr.get());
+                if (ref.is_immutable && !param.is_immutable) {
+                    ERROR(expr->start, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
+                }
+
+                value = ref.value;
+                if (!this->is_compatible(param.type, value->getType())) {
+                    ERROR(
+                        expr->start, 
+                        "Cannot pass reference value of type '{0}' to reference parameter of type '{1}'", 
+                        this->get_type_name(value->getType()->getNonOpaquePointerElementType()), 
+                        this->get_type_name(param.type->getNonOpaquePointerElementType())
+                    );
+                }
+            } else {
+                Value val = expr->accept(*this);
+                if (val.is_immutable && !param.is_immutable) {
+                    ERROR(expr->start, "Cannot pass immutable value to mutable parameter '{0}'", param.name);
+                }
+
+                value = val.unwrap(expr->start);
+                if (!this->is_compatible(param.type, value->getType())) {
+                    ERROR(
+                        expr->start, 
+                        "Cannot pass value of type '{0}' to parameter of type '{1}'", 
+                        this->get_type_name(value->getType()), 
+                        this->get_type_name(param.type)
+                    );
+                }
+
+                value = this->cast(value, param.type);
+            }
+
+            values[i] = value;
+            this->ctx = nullptr;
+        } else {
+            if (!function->is_variadic()) {
+                ERROR(
+                    expr->start, 
+                    "Function call expects {0} arguments but got {1}", 
+                    function->value->size(), i
+                );
+            }
+
+            value = expr->accept(*this).unwrap(expr->start);
+            varargs.push_back(value);
+        }
+
+        i++; 
+    };
+
+    for (auto& arg : args) {
+        visit(std::move(arg));
+    }
+
+    for (auto& entry : kwargs) {
+        if (!function->has_kwarg(entry.first)) {
+            ERROR(entry.second->start, "Function does not have a keyword parameter named '{0}'", entry.first);
+        }
+
+        visit(std::move(entry.second), entry.first);
+    }
+
+    std::vector<llvm::Value*> ret;
+    ret.reserve(function->argc());
+
+    for (auto& param : params) {
+        bool found = values.find(param.index) != values.end();
+        llvm::Value* value = found ? values[param.index] : param.default_value;
+
+        ret.push_back(value);
+    }
+
+    for (auto& value : varargs) {
+        ret.push_back(value);
+    }
+
+
+    return ret;
 }
 
 llvm::Value* Visitor::call(
@@ -92,6 +228,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         llvm::Type* type = nullptr;
         if (arg.is_self) {
             type = this->current_struct->type->getPointerTo();
+            arg.is_reference = true;
         } else {
             type = arg.type->accept(*this).type;
             if (arg.is_reference) {
@@ -121,9 +258,25 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         }
 
         if (arg.is_kwarg) {
-            kwargs[arg.name] = {arg.name, type, default_value, index, arg.is_reference, false};
+            kwargs[arg.name] = {
+                arg.name, 
+                type, 
+                default_value, 
+                index, 
+                arg.is_reference, 
+                false,
+                arg.is_immutable
+            };
         } else {
-            args.push_back({arg.name, type, default_value, index, arg.is_reference, false});
+            args.push_back({
+                arg.name, 
+                type, 
+                default_value, 
+                index, 
+                arg.is_reference, 
+                false,
+                arg.is_immutable
+            });
         }
 
         llvm_args.push_back(type); index++;
@@ -145,6 +298,10 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
             this->current_struct, 
             this->current_module
         );
+    }
+
+    if (this->is_reserved_function(fn)) {
+        ERROR(expr->start, "Function name '{0}' is reserved", fn);
     }
 
     llvm::Function* function = this->create_function(
@@ -219,9 +376,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             llvm::AllocaInst* inst = this->create_alloca(arg.type);
             this->builder->CreateStore(argument, inst);
 
-            func->scope->variables[arg.name] = Variable::from_alloca(arg.name, inst);
+            func->scope->variables[arg.name] = Variable::from_alloca(arg.name, inst, arg.is_immutable);
         } else {
-            func->scope->variables[arg.name] = Variable::from_value(arg.name, argument);
+            func->scope->variables[arg.name] = Variable::from_value(
+                arg.name, argument, arg.is_immutable, true, false
+            );
         }
 
         i++;
@@ -232,7 +391,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
     if (!expr->body) {
         if (!func->ret->isVoidTy()) {
-            ERROR(expr->start, "Function '{0}' expects a return value", name);
+            ERROR(expr->start, "Function '{0}' expects a return value", func->name);
         }
 
         this->builder->CreateRetVoid();
@@ -241,14 +400,13 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
         if (!func->has_return()) {
             if (func->ret->isVoidTy() || func->is_entry) {
-                func->defer(*this);
                 if (func->is_entry) {
                     this->builder->CreateRet(this->builder->getInt32(0));
                 } else {
                     this->builder->CreateRetVoid();
                 }
             } else {
-                ERROR(expr->start, "Function '{0}' expects a return value", name);
+                ERROR(expr->start, "Function '{0}' expects a return value", func->name);
             }
         } else {
             this->set_insert_point(func->return_block);
@@ -288,7 +446,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 
         this->ctx = func->ret;
         Value val = expr->value->accept(*this);
-        if (val.is_reference) {
+        if (val.is_reference && val.is_stack_allocated) {
             ERROR(expr->value->start, "Cannot return a reference associated with a local stack variable");
         }
 
@@ -303,9 +461,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->branch->has_return = true;
-
         this->builder->CreateStore(value, func->return_value);
-        func->defer(*this);
 
         this->builder->CreateBr(func->return_block);
         this->ctx = nullptr;
@@ -317,9 +473,8 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->branch->has_return = true;
-        func->defer(*this);
-
         this->builder->CreateBr(func->return_block);
+        
         return nullptr;
     }
 }
@@ -330,7 +485,7 @@ Value Visitor::visit(ast::DeferExpr* expr) {
         ERROR(expr->start, "Defer statement outside of function");
     }
 
-    func->defers.push_back({std::move(expr->expr), expr->attributes.has("ignore_noreturn")});
+    TODO("Fix defer statement");
     return nullptr;
 }
 
@@ -352,7 +507,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         auto structure = callable.structure;
         
         llvm::AllocaInst* instance = this->builder->CreateAlloca(structure->type);
-        callable.parent = instance; // `self` parameter for the constructor
+        callable.self = instance; // `self` parameter for the constructor
     
         func = structure->scope->functions["constructor"];
         func->used = true;
@@ -375,7 +530,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         }
     }
 
-    if (callable.parent) {
+    if (callable.self) {
         argc++;
     }
 
@@ -388,6 +543,9 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (func) {
         name = func->name;
+        if (this->current_function) {
+            this->current_function->calls.push_back(function);
+        }
     }
 
     llvm::FunctionType* ftype = nullptr;
@@ -402,128 +560,42 @@ Value Visitor::visit(ast::CallExpr* expr) {
         }
     }
 
-    if (!func->has_any_default_value()) {
-        if (ftype->getNumParams() != argc) {
-            if (ftype->isVarArg()) {
-                if (argc < 1) {
-                    if (name.empty()) {
-                        ERROR(expr->start, "Function call expects at least one argument", name);
-                    }
-
-                    ERROR(expr->start, "Function '{0}' expects at least one argument", name);
-                }
-            } else {
-                if (name.empty()) {
-                    ERROR(
-                        expr->start, 
-                        "Function call expects {0} arguments but got {1}", 
-                        function->arg_size(), argc
-                    );
-                }
-
-                ERROR(
-                    expr->start, 
-                    "Function '{s}' expects {0} arguments but got {1}", 
-                    name, function->arg_size(), argc
-                );
-            }
-        }
-    }
-
     std::vector<llvm::Value*> args;
-    uint32_t i = callable.parent ? 1 : 0;
-
-    auto visit = [&](ast::Expr* expr, bool is_reference = false) {
-        if (i < argc) this->ctx = ftype->getParamType(i);
-
-        llvm::Value* value = nullptr;
-        if (is_reference) {
-            value = this->as_reference(expr).value;
-            if (!value) {
-                ERROR(expr->start, "Expected variable, struct attribute or array element as reference value");
-            }
-        } else {
-            value = expr->accept(*this).unwrap(expr->start);
-        }
-
-        // TODO: Fix when kwargs are passed in a different order
-        if (i < ftype->getNumParams()) {
-            if (!this->is_compatible(ftype->getParamType(i), value->getType())) {
-                ERROR(
-                    expr->start, 
-                    "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                    this->get_type_name(value->getType()), this->get_type_name(ftype->getParamType(i))
-                );
-            } else {
-                value = this->cast(value, ftype->getParamType(i));
-            }
-        }
-
-        args.push_back(value);
-        this->ctx = nullptr;
-
-        i++;
-    };
+    uint32_t i = callable.self ? 1 : 0;
 
     if (func) {
-        if (func->noreturn && !this->current_function) {
-            ERROR(expr->start, "Cannot call a noreturn function from top level code");
+        args = this->handle_function_arguments(
+            expr->start,
+            func, 
+            callable.self, 
+            std::move(expr->args), 
+            std::move(expr->kwargs)
+        );
+    } else {
+        if (argc > ftype->getNumParams() && !ftype->isVarArg()) {
+            ERROR(expr->start, "Function expects at most {0} arguments but got {1}", ftype->getNumParams(), argc);
+        } else if (argc < ftype->getNumParams()) {
+            ERROR(expr->start, "Function expects at least {0} arguments but got {1}", ftype->getNumParams(), argc);
         }
 
-        if (func->noreturn) {
-            this->current_function->defer(*this, true);
-        }
-
-        auto params = func->params();
-        std::map<uint32_t, llvm::Value*> values;
-
+        args.reserve(argc);
         for (auto& arg : expr->args) {
-            bool is_reference = false;
-            if (i < params.size()) {
-                is_reference = params[i].is_reference;
-            }
+            if (i < argc) this->ctx = ftype->getParamType(i);
+            llvm::Value* value = arg->accept(*this).unwrap(arg->start);
 
-            auto& value = values[i];
-
-            visit(arg.get(), is_reference);
-            value = args.back();
-        }
-
-        for (auto& kwarg : expr->kwargs) {
-            if (!func->has_kwarg(kwarg.first)) {
-                ERROR(kwarg.second->start, "Function '{0}' does not have a keyword argument '{1}'", name, kwarg.first);
-            }
-
-            bool is_reference = false;
-            if (i < params.size()) {
-                is_reference = params[i].is_reference;
-            }
-
-            auto& value = values[i];
-            visit(kwarg.second.get(), is_reference);
-
-            value = args.back();
-        }
-
-        if (callable.parent) {
-            params.erase(params.begin());
-        }
-
-        for (auto& param : params) {
-            auto value = values[param.index];
-            if (!value) {
-                if (param.default_value) {
-                    args.push_back(param.default_value);
+            if (i < ftype->getNumParams()) {
+                if (!this->is_compatible(ftype->getParamType(i), value->getType())) {
+                    ERROR(
+                        arg->start, 
+                        "Cannot pass value of type '{0}' to parameter of type '{1}'", 
+                        this->get_type_name(value->getType()), this->get_type_name(ftype->getParamType(i))
+                    );
                 } else {
-                    if (i < ftype->getNumParams() && !ftype->isVarArg()) {
-                        ERROR(expr->start, "Missing value for parameter '{0}'", param.name);
-                    }
+                    value = this->cast(value, ftype->getParamType(i));
                 }
             }
-        }
-    } else {
-        for (auto& arg : expr->args) {
-            visit(arg.get());
+
+            args.push_back(value); i++;
         }
     }
 
@@ -532,10 +604,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
             function, args, nullptr
         });
 
-        return Value(nullptr, false, false, true);
+        return Value::as_early_function_call();
     }
 
+
     return this->call(
-        function, args, callable.parent, is_constructor, ftype
+        function, args, callable.self, is_constructor, ftype
     );
 }

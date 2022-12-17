@@ -61,6 +61,7 @@ enum class TokenKind {
     Arrow,
     Ellipsis,
     Newline,
+    Maybe,
     
     EOS
 };
@@ -90,6 +91,7 @@ struct Token {
 
     bool match(TokenKind type, std::string value);
     bool match(TokenKind type, std::vector<std::string> values);
+    bool match(std::vector<TokenKind> types);
 
     bool operator==(TokenKind type);
     bool operator==(Token token);
@@ -125,6 +127,9 @@ static std::vector<std::string> KEYWORDS = {
     "import",
     "foreach",
     "in",
+    "static_assert",
+    "immutable",
+    "readonly",
 
     // Preprocessor keywords
     "$define",

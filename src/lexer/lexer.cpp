@@ -1,5 +1,5 @@
 #include "lexer/lexer.h"
-#include "utils.h"
+#include "utils/log.h"
 
 #include <string>
 
@@ -488,6 +488,9 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(token);
         } else if (this->current == '"' || this->current == '\'') {
             tokens.push_back(this->parse_string());
+        } else if (this->current == '?') {
+            tokens.push_back(this->create_token(TokenKind::Maybe, "?"));
+            this->next();
         } else {
             ERROR(this->loc(), "Unexpected character '{0}'", this->current);
         }

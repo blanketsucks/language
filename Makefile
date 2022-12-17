@@ -14,10 +14,10 @@ LDFLAGS = $(FLAGS) $(shell $(LLVM-CONFIG) --ldflags --libs --system-libs core)
 build: compiler
 
 compiler: main.o source
-	$(CXX) main.o $(OBJS) $(LDFLAGS) -o proton
+	$(CXX) main.o $(OBJS) $(LDFLAGS) -o quart
 
 jit: main-jit.o source
-	$(CXX) main-jit.o $(OBJS) $(LDFLAGS) -rdynamic -o proton-jit
+	$(CXX) main-jit.o $(OBJS) $(LDFLAGS) -rdynamic -o quart-jit
 
 all: source jit compiler
 
@@ -27,4 +27,4 @@ source: $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 clean:
-	rm -fr main.o main-jit.o $(OBJS) proton
+	rm -fr main.o main-jit.o $(OBJS) quart

@@ -1,4 +1,5 @@
 #include "visitor.h"
+#include "utils/utils.h"
 
 llvm::StructType* Visitor::create_tuple_type(std::vector<llvm::Type*> types) {
     llvm::StructType* type = nullptr;
@@ -73,25 +74,20 @@ void Visitor::store_tuple(
     if (consume_rest.empty()) {
         values = this->unpack(value, names.size(), location);
         for (auto& pair : utils::zip(names, values)) {
-            llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
-            this->builder->CreateStore(pair.second, inst);
+            llvm::AllocaInst* alloca = this->create_alloca(pair.second->getType());
+            this->builder->CreateStore(pair.second, alloca);
 
-            func->scope->variables[pair.first] = Variable {
-                name, pair.second->getType(), inst, nullptr, false, location, location
-            };
+            func->scope->variables[pair.first] = Variable::from_alloca(pair.first, alloca);
         }
 
         return;
     }
 
     if (!consume_rest.empty() && names.size() == 1) {
-        llvm::AllocaInst* inst = this->create_alloca(value->getType());
-        this->builder->CreateStore(value, inst);
+        llvm::AllocaInst* alloca = this->create_alloca(value->getType());
+        this->builder->CreateStore(value, alloca);
 
-        func->scope->variables[consume_rest] = Variable {
-            consume_rest, value->getType(), inst, nullptr, false, location, location
-        };
-
+        func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
         return;
     }
 
@@ -154,16 +150,11 @@ void Visitor::store_tuple(
         this->builder->CreateStore(values[i], ptr);
     }
 
-    func->scope->variables[consume_rest] = Variable {
-        consume_rest, type, alloca, nullptr, false, location, location
-    };
-
+    func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
     for (auto& pair : finals) {
-        llvm::AllocaInst* inst = this->create_alloca(pair.second->getType());
-        this->builder->CreateStore(pair.second, inst);
+        alloca = this->create_alloca(pair.second->getType());
+        this->builder->CreateStore(pair.second, alloca);
 
-        func->scope->variables[pair.first] = Variable {
-            pair.first, pair.second->getType(), inst, nullptr, false, location, location
-        };
+        func->scope->variables[pair.first] = Variable::from_alloca(pair.first, alloca);
     }
 }

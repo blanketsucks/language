@@ -1,4 +1,8 @@
-#include "include.h"
+#include "lexer/lexer.h"
+#include "parser/parser.h"
+#include "preprocessor.h"
+#include "visitor.h"
+
 #include "jit.h"
 
 int main(int argc, char** argv) {
@@ -11,6 +15,12 @@ int main(int argc, char** argv) {
     }
 
     std::string filename = argv[1];
+
+    utils::filesystem::Path path(filename);
+    if (!path.exists()) {
+        Compiler::error("File not found '{0}'", filename);
+        return 1;
+    }
 
     std::fstream file(filename, std::ios::in);
     Lexer lexer(file, filename);
@@ -33,9 +43,13 @@ int main(int argc, char** argv) {
         Compiler::error("Main entry point function takes no more than 2 arguments");
     }
 
+    // Apparently, we can only access the global ctor function only if it has the external linkage
+    visitor.create_global_constructors(llvm::Function::ExternalLinkage);
     visitor.finalize();
-    parser.free();
 
-    jit::ProtonJIT jit = jit::ProtonJIT(filename, std::move(visitor.module), std::move(visitor.context));
-    return jit.run(argc - 1, argv + sizeof(char));
+    jit::QuartJIT jit = jit::QuartJIT(filename, std::move(visitor.module), std::move(visitor.context));
+    int code = jit.run(argc - 1, argv + sizeof(char));
+
+    llvm::llvm_shutdown();
+    return code;
 }

@@ -1,5 +1,7 @@
 #include "parser/parser.h"
 #include "parser/ast.h"
+#include "utils/log.h"
+
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
@@ -233,12 +235,11 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
 
     while (this->current != TokenKind::RParen) {
         std::string value = this->current.value;
-        if (
-            this->current != TokenKind::Identifier && this->current != TokenKind::Ellipsis && this->current != TokenKind::Mul
-        ) {
+        if (!this->current.match({TokenKind::Keyword, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis})) {
             ERROR(this->current.start, "Expected identifier");
         }
 
+        bool is_immutable = false;
         if (this->current == TokenKind::Ellipsis) {
             if (is_variadic) {
                 ERROR(this->current.start, "Cannot have multiple variadic arguments");
@@ -258,6 +259,19 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
 
             this->expect(TokenKind::Comma, ",");
             continue;
+        } else if (this->current == TokenKind::Keyword) {
+            if (this->current.value != "immutable") {
+                ERROR(this->current.start, "Expected 'immutable' keyword");
+            }
+
+            this->next();
+            is_immutable = true;
+
+            if (this->current != TokenKind::Identifier) {
+                ERROR(this->current.start, "Expected identifier");
+            }
+
+            value = this->current.value;
         }
 
         utils::Ref<ast::TypeExpr> type = nullptr;
@@ -304,7 +318,17 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             }
         }
 
-        args.push_back({argument, std::move(type), is_reference, is_self, has_kwargs, std::move(default_value)});
+        ast::Argument arg = {
+            argument, 
+            std::move(type),
+            std::move(default_value),
+            is_reference, 
+            is_self, 
+            has_kwargs, 
+            is_immutable
+        };
+
+        args.push_back(std::move(arg));
         if (this->current != TokenKind::Comma) {
             break;
         }
@@ -408,8 +432,13 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
         ast::Attributes attributes = this->parse_attributes();
 
         bool is_private = false;
+        bool is_readonly = false;
+
         if (this->current.match(TokenKind::Keyword, "private")) {
             is_private = true;
+            this->next();
+        } else if (this->current.match(TokenKind::Keyword, "readonly")) {
+            is_readonly = true;
             this->next();
         }
 
@@ -442,7 +471,13 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
             this->next();
 
             this->expect(TokenKind::Colon, ":");
-            fields[name] = {name, this->parse_type(), index, is_private};
+            fields[name] = {
+                name, 
+                this->parse_type(), 
+                index,
+                is_private, 
+                is_readonly
+            };
 
             this->expect(TokenKind::SemiColon, ";");
             index++;
@@ -464,6 +499,12 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     std::vector<std::string> names;
     bool is_multiple_variables = false;
     bool has_consume_rest = false;
+    bool is_immutable = false;
+
+    if (!is_const && this->current.match(TokenKind::Keyword, "immutable")) {
+        is_immutable = true;
+        this->next();
+    }
 
     std::string consume_rest;
     if (this->current == TokenKind::LParen) {
@@ -535,7 +576,7 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         return utils::make_ref<ast::ConstExpr>(start, end, names[0], std::move(type), std::move(expr));
     } else {
         return utils::make_ref<ast::VariableAssignmentExpr>(
-            start, end, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables
+            start, end, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables, is_immutable
         );
     }
 }
@@ -920,6 +961,20 @@ utils::Ref<ast::Expr> Parser::statement() {
 
                 auto body = this->expr(false);
                 return utils::make_ref<ast::ForeachExpr>(start, body->end, variable, std::move(expr), std::move(body));
+            } else if (this->current.value == "static_assert") {
+                Location start = this->current.start;
+                this->next(); this->expect(TokenKind::LParen, "(");
+
+                auto expr = this->expr(false);
+                std::string message;
+                if (this->current == TokenKind::Comma) {
+                    this->next(); message = this->expect(TokenKind::String, "string").value;
+                }
+
+                this->expect(TokenKind::RParen, ")"); 
+                Location end = this->expect(TokenKind::SemiColon, ";").end;
+                    
+                return utils::make_ref<ast::StaticAssertExpr>(start, end, std::move(expr), message);
             } else {
                 ERROR(this->current.start, "Expected an expression");
             }
@@ -1004,8 +1059,6 @@ utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
         if (precedence < prec) {
             return left;
         }
-
-        // let foo: int(2) = 2;
 
         TokenKind op = this->current.type;
         this->next();
@@ -1122,6 +1175,9 @@ utils::Ref<ast::Expr> Parser::call() {
 
         this->expect(TokenKind::RBrace, "}");
         expr = utils::make_ref<ast::ConstructorExpr>(start, this->current.end, std::move(expr), std::move(fields));
+    } else if (this->current == TokenKind::Maybe) {
+        this->next();
+        expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
     }
 
     if (this->current == TokenKind::Dot) {
@@ -1160,6 +1216,11 @@ utils::Ref<ast::Expr> Parser::attr(Location start, utils::Ref<ast::Expr> expr) {
         
         std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
         expr = utils::make_ref<ast::AttributeExpr>(start, this->current.end, value, std::move(expr));
+
+        if (this->current == TokenKind::Maybe) {
+            this->next();
+            expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
+        }
     }
 
     if (this->current == TokenKind::LBracket) {
@@ -1176,6 +1237,11 @@ utils::Ref<ast::Expr> Parser::element(Location start, utils::Ref<ast::Expr> expr
 
         this->expect(TokenKind::RBracket, "]");
         expr = utils::make_ref<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
+
+        if (this->current == TokenKind::Maybe) {
+            this->next();
+            expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
+        }
     }
 
     if (this->current == TokenKind::Dot) {

@@ -3,25 +3,29 @@
 Value Visitor::visit(ast::VariableExpr* expr) {
     if (expr->name == "null") {
         llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
-        return llvm::Constant::getNullValue(type);
+        return Value(llvm::Constant::getNullValue(type), true);
     }
 
     Scope* scope = this->scope;
-    auto local = scope->get_local(expr->name);
+    auto local = scope->get_local(expr->name, bool(this->current_function));
     if (local.value) {
+        if (!this->current_function) {
+            return Value(local.value, local.is_constant);
+        }
+            
         return Value(this->load(local.value, local.type), local.is_constant);
     }
 
     if (scope->has_struct(expr->name)) {
-        return Value::with_struct(scope->get_struct(expr->name));
+        return Value::from_struct(scope->get_struct(expr->name));
     } else if (scope->has_namespace(expr->name)) {
-        return Value::with_namespace(scope->get_namespace(expr->name));
+        return Value::from_namespace(scope->get_namespace(expr->name));
     } else if (scope->has_enum(expr->name)) {
-        return Value::with_enum(scope->get_enum(expr->name));
+        return Value::from_enum(scope->get_enum(expr->name));
     } else if (scope->has_function(expr->name)) {
-        return Value::with_function(scope->get_function(expr->name));
+        return Value::from_function(scope->get_function(expr->name));
     } else if (scope->has_module(expr->name)) {
-        return Value::with_module(scope->get_module(expr->name));
+        return Value::from_module(scope->get_module(expr->name));
     }
 
     ERROR(expr->start, "Undefined variable '{0}'", expr->name);
@@ -65,60 +69,78 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         Value val = expr->value->accept(*this); is_constant = val.is_constant;
         is_early_function_call = val.is_early_function_call;
 
+        llvm::Type* vtype = nullptr;
         if (!is_early_function_call) {
             value = val.unwrap(expr->value->start);
+            vtype = value->getType();
+
             if (!expr->type) {
-                type = value->getType();
+                type = vtype;
             }
         } else {
-            type = this->constructors.back().function->getReturnType();
+            vtype = this->constructors.back().function->getReturnType();
+            if (!expr->type) {
+                type = vtype;
+            }
+
+            value = llvm::Constant::getNullValue(type);
         }
 
         if (type->isVoidTy()) {
             ERROR(expr->value->start, "Cannot store value of type 'void'");
         }
-        
-        if (!this->is_compatible(type, value->getType())) {
+
+        if (!this->is_compatible(type, vtype)) {
             ERROR(
                 expr->value->start, 
                 "Expected expression of type '{0}' but got '{1}' instead", 
-                this->get_type_name(type), this->get_type_name(value->getType())
+                this->get_type_name(type), this->get_type_name(vtype)
             );
         } else {
-            value = this->cast(value, type);
+            // TODO: Somehow be able to cast in this case
+            if (is_early_function_call && (type != vtype)) {
+                ERROR(
+                    expr->value->start, 
+                    "Expected expression of type '{0}' but got '{1}' instead", 
+                    this->get_type_name(type), this->get_type_name(vtype)
+                );
+            } else {
+                value = this->cast(value, type);
+            }
         }
     }
 
     if (!expr->is_multiple_variables) {
         std::string first = expr->names[0];
         if (!this->current_function) {
-            if (!is_constant) {
-                ERROR(expr->start, "Cannot store non-constant value in global scope");
+            if (!llvm::isa<llvm::Constant>(value)) {
+                ERROR(expr->value->start, "Cannot store non-constant value in a global variable");
             }
 
             std::string name = FORMAT("__global.{0}", first);
             this->module->getOrInsertGlobal(name, type);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
-            llvm::Constant* constant = nullptr;
+            llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
 
-            if (!is_early_function_call) {
-                constant = llvm::cast<llvm::Constant>(value);
-            }
-
+            global->setInitializer(constant);
             if (!is_early_function_call) {
                 global->setLinkage(llvm::GlobalValue::PrivateLinkage);
-                global->setInitializer(constant);
             } else {
-                global->setDSOLocal(true);
-                global->setInitializer(llvm::Constant::getNullValue(type));
-
                 auto& call = this->constructors.back();
                 call.store = global;
             }
 
-            this->scope->variables[expr->names[0]] = Variable { 
-                first, type, global, constant, false, expr->start, expr->end 
+            this->scope->variables[first] = Variable { 
+                first, 
+                type, 
+                global, 
+                constant, 
+                false,
+                expr->is_immutable,
+                false,
+                expr->start, 
+                expr->end 
             };
 
             return nullptr;
@@ -126,7 +148,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
         llvm::AllocaInst* inst = this->create_alloca(type);
         if (is_constant && type->isAggregateType()) {
-            std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, expr->names[0]);
+            std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, first);
             this->module->getOrInsertGlobal(name, type);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -140,8 +162,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 this->getsizeof(type)
             );
         } else {
-            if (value) { this->builder->CreateStore(value, inst); }
-
+            this->builder->CreateStore(value, inst);
             if (is_early_function_call) {
                 auto& call = this->constructors.back();
                 call.store = inst;
@@ -149,7 +170,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         this->scope->variables[first] = Variable {
-            first, type, inst, is_constant ? llvm::cast<llvm::Constant>(value) : nullptr, false, expr->start, expr->end
+            first, 
+            type, 
+            inst, 
+            is_constant ? llvm::cast<llvm::Constant>(value) : nullptr, 
+            false, 
+            expr->is_immutable,
+            true,
+            expr->start,
+            expr->end
         };
 
     } else {

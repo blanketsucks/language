@@ -1,12 +1,8 @@
-#include "parser/ast.h"
 #include "visitor.h"
-#include <stdint.h>
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
-    std::cout << "ArrayExpr" << std::endl;
     std::vector<llvm::Value*> elements;
     bool is_const = true;
-
 
     for (auto& element : expr->elements) {
         if (!element) {
@@ -150,7 +146,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 
     llvm::Value* ptr = nullptr;
     if (!type->isArrayTy()) {
-        ptr = this->builder->CreateGEP(element, value, index);
+        ptr = this->builder->CreateInBoundsGEP(element, value, index);
     } else {
         if (llvm::isa<llvm::ConstantInt>(index)) {
             int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
@@ -165,23 +161,28 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 
         // ExtractValue doesn't take a Value so i'm kinda forced to do this.
         value = this->as_reference(expr->value.get()).value;
-        ptr = this->builder->CreateGEP(type, value, {this->builder->getInt32(0), index});
+        ptr = this->builder->CreateInBoundsGEP(type, value, {this->builder->getInt32(0), index});
     }
     
     return this->load(ptr, element);
 }
 
 void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value) {
-    llvm::Value* parent = this->as_reference(expr->value.get()).value;
-    llvm::Type* type = parent->getType();
+    auto ref = this->as_reference(expr->value.get());
+    llvm::Value* parent = ref.value;
 
-    if (!type->isPointerTy()) {
-        ERROR(expr->value->start, "Value of type '{0}' does not support item assignment", type);
+    if (!ref.type->isPointerTy() && !ref.type->isArrayTy()) {
+        ERROR(expr->value->start, "Value of type '{0}' does not support item assignment", this->get_type_name(ref.type));
     }
 
-    type = type->getNonOpaquePointerElementType();
-    if (type->isStructTy()) {
-        ERROR(expr->value->start, "Value of type '{0}' does not support item assignment", type);
+    if (ref.is_immutable) {
+        ERROR(expr->value->start, "Cannot modify immutable value '{0}'", ref.name);
+    }
+
+    llvm::Type* type = ref.type;
+    if (this->get_pointer_depth(ref.type) >= 1) {
+        parent = this->load(parent, ref.type);
+        type = type->getPointerElementType();
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->start);
@@ -192,7 +193,18 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
     llvm::Value* element = value->accept(*this).unwrap(value->start);
     llvm::Value* ptr = nullptr;
 
-    if (type->isArrayTy()) {
+    if (ref.type->isArrayTy()) {
+        if (llvm::isa<llvm::ConstantInt>(index)) {
+            int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
+            int64_t size = type->getArrayNumElements();
+
+            if (idx == size) {
+                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
+            } else if (idx > size - 1) {
+                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
+            }
+        }
+
         std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
         ptr = this->builder->CreateGEP(type, parent, indicies);
     } else {

@@ -1,9 +1,9 @@
 #ifndef _JIT_H
 #define _JIT_H
 
+#include "utils/pointer.h"
 #include "llvm.h"
 #include "compiler.h"
-#include "utils.h"
 
 namespace jit {
 
@@ -20,16 +20,17 @@ template<typename T> T ExitOnError(llvm::Expected<T&> &&error) {
     return *error;
 }
 
-class ProtonJIT {
+class QuartJIT {
 public:
     typedef int EntryFunction(int, char**);
+    typedef void CtorFunction(void);
     typedef void ErrorReporter(llvm::Error);
 
     template<typename T> static llvm::JITEvaluatedSymbol create_symbol_from_pointer(T* ptr) {
         return llvm::JITEvaluatedSymbol(llvm::pointerToJITTargetAddress(ptr), llvm::JITSymbolFlags());
     }
 
-    ProtonJIT(std::string filename, utils::Ref<llvm::Module> module, utils::Ref<llvm::LLVMContext> context);
+    QuartJIT(std::string filename, utils::Ref<llvm::Module> module, utils::Ref<llvm::LLVMContext> context);
 
     llvm::orc::JITDylib& dylib() const;
     llvm::orc::SymbolStringPtr mangle(std::string name);
@@ -39,7 +40,7 @@ public:
     llvm::orc::SymbolMap getSymbolMap() const;
 
     template<typename T> void define(std::string name, T* ptr) {
-        this->symbols[this->mangle(name)] = ProtonJIT::create_symbol_from_pointer<T>(ptr);
+        this->symbols[this->mangle(name)] = QuartJIT::create_symbol_from_pointer<T>(ptr);
     }
 
     template<typename T> T lookup(std::string name) {

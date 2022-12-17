@@ -2,7 +2,9 @@
 #define _MANGLER_H
 
 #include "llvm.h"
-#include "objects.h"
+#include "objects/modules.h"
+#include "objects/namespaces.h"
+#include "objects/structs.h"
 
 class Mangler {
 public:

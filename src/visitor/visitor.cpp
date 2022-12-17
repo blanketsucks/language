@@ -1,6 +1,5 @@
 #include "visitor.h"
 #include "parser/ast.h"
-#include "utils.h"
 #include "llvm/IR/Constant.h"
 
 Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
@@ -226,11 +225,15 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
             ast::ElementExpr* element = expr->cast<ast::ElementExpr>();
 
             ScopeLocal parent = this->as_reference(element->value.get());
-            if (!parent.value) return {nullptr, nullptr, false};
+            if (!parent.value) return parent;
 
             llvm::Type* type = parent.type;
             if (!type->isPointerTy() && !type->isArrayTy()) {
                 ERROR(element->value->start, "Cannot index into value of type '{0}'", this->get_type_name(type));
+            }
+
+            if (this->get_pointer_depth(type) > 1) {
+                parent.value = this->load(parent.value, type);
             }
 
             llvm::Value* index = element->index->accept(*this).unwrap(element->index->start);
@@ -245,51 +248,58 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
                 ptr = this->builder->CreateGEP(type, parent.value, index);
             }
 
-            return { ptr, parent.type, false };
+            return { parent.name, ptr, parent.type, false, parent.is_immutable, false };
         }
         case ast::ExprKind::Attribute: {
             ast::AttributeExpr* attribute = expr->cast<ast::AttributeExpr>();
 
             ScopeLocal parent = this->as_reference(attribute->parent.get());
-            if (!parent.value) return {nullptr, nullptr, false};
+            if (!parent.value) return parent;
             
             if (!this->is_struct(parent.type)) {
-                return {nullptr, nullptr, false};
+                return { "", nullptr, nullptr, false, false, false };
             }
 
             auto structure = this->get_struct(parent.type);
+            if (!structure) {
+                ERROR(attribute->parent->start, "Cannot access attribute of type '{0}'", this->get_type_name(parent.type));
+            }
+
             int index = structure->get_field_index(attribute->attribute);
             if (index < 0) {
                 ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
             }
 
             llvm::Value* value = parent.value;
-            if (parent.type->isPointerTy()) {
+            if (this->get_pointer_depth(parent.type) > 0) {
                 value = this->load(parent.value, parent.type);
             }
 
             return {
+                parent.name,
                 this->builder->CreateStructGEP(structure->type, value, index),
-                structure->type->getStructElementType(index)->getPointerTo(), 
+                structure->type->getStructElementType(index), 
+                false,
+                parent.is_immutable,
                 false
             };
         }
         default:
-            return {nullptr, nullptr, false};
+            return { "", nullptr, nullptr, false, false, false };
     }
 }
 
-void Visitor::create_global_constructors() {
+void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
     if (this->constructors.empty()) {
         return;
     }
 
     llvm::Function* function = this->create_function(
-        "__global_constructors",
+        "__global_constructors_init",
         this->builder->getVoidTy(),
         {},
         false,
-        llvm::Function::LinkageTypes::InternalLinkage
+        linkage
     );
 
     function->setSection(".text.startup");
@@ -379,7 +389,7 @@ Value Visitor::visit(ast::FloatExpr* expr) {
 
 Value Visitor::visit(ast::StringExpr* expr) {
     return Value(
-        this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get()),
+        this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get()), 
         true
     );
 }
@@ -412,6 +422,54 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
 
     StructField field = structure->fields[expr->field];
     return Value(this->builder->getInt32(field.offset), true);
+}
+
+Value Visitor::visit(ast::StaticAssertExpr* expr) {
+    llvm::Value* value = expr->condition->accept(*this).unwrap(expr->condition->start);
+    if (!llvm::isa<llvm::ConstantInt>(value)) {
+        ERROR(expr->condition->start, "Expected a constant integer expression");
+    }
+
+    if (llvm::cast<llvm::ConstantInt>(value)->isZero()) {
+        if (!expr->message.empty()) {
+            ERROR(expr->condition->start, "Static assertion failed: {0}", expr->message);
+        } else {
+            ERROR(expr->condition->start, "Static assertion failed");
+        }
+    }
+
+    return nullptr;
+}
+
+Value Visitor::visit(ast::MaybeExpr* expr) {
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->start);
+    if (llvm::isa<llvm::Constant>(value)) {
+        llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
+        if (constant->isZeroValue()) {
+            ERROR(expr->value->start, "Expected a value of type '{0}' but got 'null'", this->get_type_name(constant->getType()));
+        }
+
+        return Value(constant, true);
+    }
+
+    llvm::Value* is_null = this->builder->CreateIsNull(value);
+
+    llvm::BasicBlock* block = this->builder->GetInsertBlock();
+    llvm::Function* function = block->getParent();
+
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context);
+
+    this->builder->CreateCondBr(is_null, then, merge);
+    this->builder->SetInsertPoint(then);
+    
+    this->builder->CreateUnreachable(); // TODO: Error message
+
+    function->getBasicBlockList().push_back(merge);
+    this->builder->SetInsertPoint(merge);
+
+    return value;
+
 }
 
 Value Visitor::visit(ast::WhereExpr* expr) {

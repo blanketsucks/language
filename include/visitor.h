@@ -1,15 +1,18 @@
 #ifndef _VISITOR_H
 #define _VISITOR_H
 
-#include "parser/ast.h"
 #include "parser/parser.h"
-#include "llvm.h"
-#include "objects.h"
+#include "utils/pointer.h"
+#include "utils/log.h"
+#include "parser/ast.h"
+#include "objects/scopes.h"
+#include "objects/functions.h"
+#include "objects/namespaces.h"
+#include "objects/modules.h"
+#include "objects/structs.h"
+#include "objects/values.h"
 #include "mangler.h"
-#include "utils.h"
-
-#include "llvm/ADT/Optional.h"
-#include "llvm/IR/DerivedTypes.h"
+#include "llvm.h"
 
 #include <functional>
 #include <map>
@@ -26,6 +29,8 @@
 #else
     #define _UNREACHABLE
 #endif
+
+#define FILE_EXTENSION ".qr"
 
 class Visitor {
 public:
@@ -77,12 +82,21 @@ public:
 
     llvm::AllocaInst* create_alloca(llvm::Type* type);
 
+    bool is_reserved_function(std::string name);
     llvm::Function* create_function(
         std::string name, 
         llvm::Type* ret,
         std::vector<llvm::Type*> args, 
         bool is_variadic, 
         llvm::Function::LinkageTypes linkage
+    );
+
+    std::vector<llvm::Value*> handle_function_arguments(
+        Location location,
+        utils::Shared<Function> function,
+        llvm::Value* self,
+        std::vector<utils::Ref<ast::Expr>> args,
+        std::map<std::string, utils::Ref<ast::Expr>> kwargs
     );
     
     llvm::Value* call(
@@ -93,12 +107,16 @@ public:
         llvm::FunctionType* type = nullptr
     );
 
-    void create_global_constructors();
+    void create_global_constructors(
+        llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::InternalLinkage
+    );
 
     static std::string get_type_name(llvm::Type* type);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
 
     ScopeLocal as_reference(ast::Expr* expr);
+
+    uint32_t get_pointer_depth(llvm::Type* type);
 
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
@@ -108,6 +126,9 @@ public:
     Value visit(ast::CharExpr* expr);
     Value visit(ast::FloatExpr* expr);
     Value visit(ast::StringExpr* expr);
+    Value visit(ast::StaticAssertExpr* expr);
+
+    Value visit(ast::MaybeExpr* expr);
 
     Value visit(ast::VariableExpr* expr);
     Value visit(ast::VariableAssignmentExpr* expr);

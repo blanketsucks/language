@@ -1,4 +1,5 @@
-#include "objects.h"
+#include "objects/functions.h"
+
 #include <algorithm>
 
 Function::Function(
@@ -14,12 +15,26 @@ Function::Function(
 ) : name(name), ret(ret), value(value), args(args), kwargs(kwargs), attrs(attrs), 
     is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous) {
     this->used = false;
+    this->is_finalized = false;
+
     this->is_private = attrs.has("private");
     this->noreturn = attrs.has("noreturn");
     this->attrs = attrs;
+
     this->return_block = nullptr;
     this->calls = {};
-    this->is_finalized = false;
+}
+
+std::string Function::get_mangled_name() {
+    return this->value->getName().str();
+}
+
+uint32_t Function::argc() {
+    return this->args.size() + this->kwargs.size();
+}
+
+bool Function::is_variadic() {
+    return this->value->isVarArg();
 }
 
 Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::BasicBlock* end) {
@@ -33,23 +48,9 @@ Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::
 }
 
 bool Function::has_return() {
-    for (Branch* branch : this->branches) {
-        if (branch->has_return) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void Function::defer(Visitor& visitor, bool is_noreturn) {
-    for (auto& defer : this->defers) {
-        if (defer.ignore_noreturn_calls && is_noreturn) {
-            continue;
-        }
-
-        defer.expr->accept(visitor);
-    }
+    return std::any_of(this->branches.begin(), this->branches.end(), [](Branch* branch) {
+        return branch->has_return;
+    });
 }
 
 bool Function::has_kwarg(std::string name) {
@@ -72,6 +73,13 @@ std::vector<FunctionArgument> Function::params() {
 bool Function::has_any_default_value() {
     auto params = this->params();
     return std::any_of(params.begin(), params.end(), [](FunctionArgument arg) {
+        return arg.default_value != nullptr;
+    });
+}
+
+uint32_t Function::get_default_arguments_count() {
+    auto params = this->params();
+    return std::count_if(params.begin(), params.end(), [](FunctionArgument arg) {
         return arg.default_value != nullptr;
     });
 }

@@ -3,7 +3,7 @@
 
 #include "parser/ast.h"
 #include "lexer/tokens.h"
-#include "utils.h"
+#include "utils/pointer.h"
 
 #include "llvm/ADT/Optional.h"
 

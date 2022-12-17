@@ -1,22 +1,4 @@
-#include "utils.h"
-
-#include <sys/stat.h>
-#include <fstream>
-#include <cstring>
-
-#if _WIN32 || _WIN64
-    #include <Windows.h>
-#else
-    #include <dirent.h>
-#endif
-
-#ifndef S_ISREG 
-    #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
-#endif
-
-#ifndef S_ISDIR 
-    #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
-#endif
+#include "utils/filesystem.h"
 
 using namespace utils;
 
@@ -48,6 +30,14 @@ bool filesystem::Path::operator==(const Path& other) const {
 
 bool filesystem::Path::operator==(const std::string& other) const {
     return this->name == other;
+}
+
+filesystem::Path filesystem::Path::operator/(const std::string& other) {
+    return this->join(other);
+}
+
+filesystem::Path filesystem::Path::operator/(const Path& other) {
+    return this->join(other.name);
 }
 
 bool filesystem::Path::exists() const {
@@ -97,6 +87,26 @@ std::string filesystem::Path::parent() {
     }
 
     return this->name.substr(0, pos);
+}
+
+std::vector<std::string> filesystem::Path::parts() {
+    std::vector<std::string> parts;
+    std::string part;
+
+    for (auto& c : this->name) {
+        if (c == '/' || c == '\\') {
+            parts.push_back(part);
+            part.clear();
+        } else {
+            part += c;
+        }
+    }
+
+    if (!part.empty()) {
+        parts.push_back(part);
+    }
+
+    return parts;
 }
 
 std::vector<filesystem::Path> filesystem::Path::listdir() {

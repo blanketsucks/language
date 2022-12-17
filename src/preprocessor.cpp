@@ -1,10 +1,8 @@
 #include "preprocessor.h"
 
+#include "utils/filesystem.h"
 #include "lexer/lexer.h"
-#include "utils.h"
-
-#include <sys/stat.h>
-#include <fstream>
+#include "utils/log.h"
 
 std::vector<Token> Macro::expand()  {
     std::vector<Token> tokens;
@@ -339,30 +337,6 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
 
     this->update(new_tokens);
     return {};
-}
-
-int Preprocessor::evaluate_token_expression(TokenKind op, Token right, Token left) {
-    if (right == TokenKind::String) {
-        if (left != right.type) {
-            ERROR(left.start, "Expected left hand side of expression to be a string");
-        }
-
-        switch (op) {
-            case TokenKind::Eq:
-                return right.value == left.value;
-            case TokenKind::Neq:
-                return right.value != left.value;
-            default:
-                std::string name = Token::getTokenTypeValue(op);
-                ERROR(right.start, "Unsupported binary operator '{0}' for types 'char*' and 'char*'", name);
-        }
-
-
-    } else if (right == TokenKind::Integer || right == TokenKind::Float) {
-
-    }
-    
-    ERROR(right.start, "Expected an integer or a string expression"); exit(1);
 }
 
 std::vector<Token> Preprocessor::run(std::vector<Token> tokens) {

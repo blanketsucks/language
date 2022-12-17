@@ -1,5 +1,29 @@
-#include "objects.h"
+#include "objects/scopes.h"
 #include "visitor.h"
+
+ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_value) {
+    llvm::Value* value = use_store_value ? variable.value : variable.constant;
+    return {
+        variable.name,
+        value,
+        variable.type,
+        false,
+        variable.is_immutable,
+        variable.is_stack_allocated
+    };    
+}
+
+ScopeLocal ScopeLocal::from_constant(const Constant& constant, bool use_store_value) {
+    llvm::Value* value = use_store_value ? constant.store : constant.value;
+    return {
+        constant.name,
+        value,
+        constant.type,
+        true,
+        false,
+        false
+    };
+}
 
 Scope::Scope(std::string name, ScopeType type, Scope* parent) : name(name), type(type), parent(parent) {
     this->namespaces = {};
@@ -109,19 +133,19 @@ bool Scope::has_type(std::string name) {
     return true;
 }
 
-ScopeLocal Scope::get_local(std::string name) {
+ScopeLocal Scope::get_local(std::string name, bool use_store_value) {
     if (this->variables.find(name) != this->variables.end()) {
-        auto variable = this->variables[name];
-        return { variable.value, variable.type, false };
+        auto& variable = this->variables[name];
+        return ScopeLocal::from_variable(variable, use_store_value);
     } else if (this->constants.find(name) != this->constants.end()) {
-        auto constant = this->constants[name];
-        return { constant.store ? constant.store : constant.value, constant.type, true };
+        auto& constant = this->constants[name];
+        return ScopeLocal::from_constant(constant, use_store_value);
     }
 
     if (this->parent) {
         return this->parent->get_local(name);
     } else {
-        return { nullptr, nullptr, false };
+        return { "", nullptr, nullptr, false, false, false };
     }
 }
 
@@ -236,8 +260,19 @@ void Scope::finalize() {
             delete func->return_block;
         }
 
-        if (func->value->use_empty() && !func->is_entry) {
-            func->value->eraseFromParent();
+        llvm::Function* function = func->value;
+        if (function->use_empty() && !func->is_entry) {
+            if (function->getParent()) {
+                function->eraseFromParent();
+            }
+
+            for (auto& call : func->calls) {
+                if (call->use_empty()) {
+                    if (call->getParent()) {
+                        call->eraseFromParent();
+                    }
+                }
+            }
         }
         
         for (auto branch : func->branches) delete branch;

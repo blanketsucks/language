@@ -1,7 +1,7 @@
 const SEEK_END = 2;
 const SEEK_SET = 0;
     
-type FILE = i32;
+struct FILE;
 
 extern "C" {
     func close(fd: i32) -> i32;

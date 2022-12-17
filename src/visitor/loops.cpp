@@ -1,4 +1,3 @@
-#include "parser/ast.h"
 #include "visitor.h"
 
 Value Visitor::visit(ast::WhileExpr* expr) {
@@ -69,9 +68,7 @@ Value Visitor::visit(ast::ForExpr* expr) {
     return nullptr;
 }
 
-Value Visitor::visit(ast::BreakExpr* expr) {
-    UNUSED(expr);
-
+Value Visitor::visit(ast::BreakExpr*) {
     auto func = this->current_function;
     func->branch->has_break = true;
 
@@ -79,9 +76,7 @@ Value Visitor::visit(ast::BreakExpr* expr) {
     return nullptr;
 }
 
-Value Visitor::visit(ast::ContinueExpr* expr) {
-    UNUSED(expr);
-
+Value Visitor::visit(ast::ContinueExpr*) {
     auto func = this->current_function;
     func->branch->has_continue = true;
 

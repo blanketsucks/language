@@ -1,7 +1,32 @@
 #include "parser/ast.h"
 #include "visitor.h"
+#include "utils/string.h"
+
 #include "llvm/IR/Instructions.h"
 #include <functional>
+
+static std::map<std::string, uint32_t> TYPE_SIZES = {
+    {"i8", 1},
+    {"i16", 2},
+    {"i32", 4},
+    {"i64", 8},
+    {"i128", 16},
+    {"f32", 4},
+    {"f64", 8},
+    {"bool", 1},
+    {"char", 1},
+    {"void", 0}
+};
+
+uint32_t Visitor::get_pointer_depth(llvm::Type* type) {
+    uint32_t depth = 0;
+    while (type->isPointerTy()) {
+        type = type->getPointerElementType();
+        depth++;
+    }
+
+    return depth;
+} 
 
 uint32_t Visitor::getsizeof(llvm::Value* value) {
     return this->getsizeof(value->getType());
@@ -59,7 +84,7 @@ std::string Visitor::get_type_name(llvm::Type* type) {
             return FORMAT("({0})", llvm::make_range(names.begin(), names.end()));
         }
 
-        return name.str();
+        return utils::replace(name.str(), ".", "::");
     } else if (type->isFunctionTy()) {
         llvm::FunctionType* ty = llvm::cast<llvm::FunctionType>(type);
         std::string ret = Visitor::get_type_name(ty->getReturnType());
@@ -223,16 +248,21 @@ Value Visitor::visit(ast::CastExpr* expr) {
 
 Value Visitor::visit(ast::SizeofExpr* expr) {
     uint32_t size = 0;
-    if (expr->value) {
-        Value val = expr->value->accept(*this);
-        if (val.structure) {
-            size = this->getsizeof(val.structure->type);
-        } else {
-            size = this->getsizeof(val.unwrap(expr->value->start));
+
+    if (expr->value->kind() == ast::ExprKind::Variable) {
+        ast::VariableExpr* id = expr->value->cast<ast::VariableExpr>();
+        if (TYPE_SIZES.find(id->name) != TYPE_SIZES.end()) {
+            return Value(this->builder->getInt32(TYPE_SIZES[id->name]), true);
         }
+    } 
+
+    Value val = expr->value->accept(*this);
+    if (val.structure) {
+        size = this->getsizeof(val.structure->type);
+    } else if (val.enumeration) {
+        size = this->getsizeof(val.enumeration->type);
     } else {
-        llvm::Type* type = expr->accept(*this).type;
-        size = this->getsizeof(type);
+        size = this->getsizeof(val.unwrap(expr->value->start));
     }
 
     return Value(this->builder->getInt32(size), true);
@@ -241,23 +271,23 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
 Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
     switch (expr->value) {
         case ast::BuiltinType::Void:
-            return Value::with_type(this->builder->getVoidTy());
+            return Value::from_type(this->builder->getVoidTy());
         case ast::BuiltinType::Bool:
-            return Value::with_type(this->builder->getInt1Ty());
+            return Value::from_type(this->builder->getInt1Ty());
         case ast::BuiltinType::i8:
-            return Value::with_type(this->builder->getInt8Ty());
+            return Value::from_type(this->builder->getInt8Ty());
         case ast::BuiltinType::i16:
-            return Value::with_type(this->builder->getInt16Ty());
+            return Value::from_type(this->builder->getInt16Ty());
         case ast::BuiltinType::i32:
-            return Value::with_type(this->builder->getInt32Ty());
+            return Value::from_type(this->builder->getInt32Ty());
         case ast::BuiltinType::i64:
-            return Value::with_type(this->builder->getInt64Ty());
+            return Value::from_type(this->builder->getInt64Ty());
         case ast::BuiltinType::i128:
-            return Value::with_type(this->builder->getIntNTy(128));
+            return Value::from_type(this->builder->getIntNTy(128));
         case ast::BuiltinType::f32:
-            return Value::with_type(this->builder->getFloatTy());
+            return Value::from_type(this->builder->getFloatTy());
         case ast::BuiltinType::f64:
-            return Value::with_type(this->builder->getDoubleTy());
+            return Value::from_type(this->builder->getDoubleTy());
         default:
             _UNREACHABLE
     }
@@ -279,9 +309,11 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
     }
 
     if (scope->has_struct(expr->name)) {
-        return Value::with_type(scope->get_struct(expr->name)->type);
+        return Value::from_type(scope->get_struct(expr->name)->type);
     } else if (scope->has_type(expr->name)) {
-        return Value::with_type(scope->get_type(expr->name).type);
+        return Value::from_type(scope->get_type(expr->name).type);
+    } else if (scope->has_enum(expr->name)) {
+        return Value::from_type(scope->get_enum(expr->name)->type);
     }
 
     ERROR(expr->start, "Unrecognised type '{0}'", expr->name);
@@ -289,7 +321,7 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
 
 Value Visitor::visit(ast::PointerTypeExpr* expr) {
     Value ret = expr->element->accept(*this);
-    return Value::with_type(ret.type->getPointerTo());
+    return Value::from_type(ret.type->getPointerTo());
 }
 
 Value Visitor::visit(ast::ArrayTypeExpr* expr) {
@@ -304,7 +336,7 @@ Value Visitor::visit(ast::ArrayTypeExpr* expr) {
     }
 
     llvm::ConstantInt* csize = llvm::cast<llvm::ConstantInt>(size);
-    return Value::with_type(llvm::ArrayType::get(element, csize->getZExtValue()));
+    return Value::from_type(llvm::ArrayType::get(element, csize->getZExtValue()));
 }
 
 Value Visitor::visit(ast::TupleTypeExpr* expr) {
@@ -318,7 +350,7 @@ Value Visitor::visit(ast::TupleTypeExpr* expr) {
         types.push_back(type);
     }
 
-    return Value::with_type(this->create_tuple_type(types));
+    return Value::from_type(this->create_tuple_type(types));
 }
 
 Value Visitor::visit(ast::FunctionTypeExpr* expr) {
@@ -337,7 +369,7 @@ Value Visitor::visit(ast::FunctionTypeExpr* expr) {
         types.push_back(ty);
     }
 
-    return Value::with_type(llvm::FunctionType::get(ret, types, false));
+    return Value::from_type(llvm::FunctionType::get(ret, types, false));
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {

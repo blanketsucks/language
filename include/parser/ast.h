@@ -2,8 +2,8 @@
 #define _AST_H
 
 #include "lexer/tokens.h"
+#include "utils/pointer.h"
 #include "llvm.h"
-#include "utils.h"
 
 #include <iostream>
 #include <memory>
@@ -64,8 +64,8 @@ enum class ExprKind {
     Type,
     ArrayFill,
     TypeAlias,
-    Macro,
-    MacroCall
+    StaticAssert,
+    Maybe
 };
 
 enum class TypeKind {
@@ -87,12 +87,6 @@ enum class BuiltinType {
     f32,
     f64,
     Void
-};
-
-enum class MacroParameterKind {
-    Identifier,
-    Type,
-    Expression
 };
 
 enum class AttributeValueType {
@@ -175,11 +169,14 @@ public:
 
 struct Argument {
     std::string name;
+
     utils::Ref<TypeExpr> type;
+    utils::Ref<Expr> default_value;
+
     bool is_reference;
     bool is_self;
     bool is_kwarg;
-    utils::Ref<Expr> default_value;
+    bool is_immutable;
 };
 
 class BlockExpr : public ExprMixin<ExprKind::Block> {
@@ -240,6 +237,7 @@ public:
     utils::Ref<Expr> value;
     bool external;
     bool is_multiple_variables;
+    bool is_immutable;
     std::string consume_rest;
 
     VariableAssignmentExpr(
@@ -250,7 +248,8 @@ public:
         utils::Ref<Expr> value, 
         std::string cnosume_rest,
         bool external = false,
-        bool is_multiple_variables = false
+        bool is_multiple_variables = false,
+        bool is_immutable = false
     );
     
     Value accept(Visitor& visitor) override;
@@ -418,8 +417,11 @@ public:
 struct StructField {
     std::string name;
     utils::Ref<TypeExpr> type;
+
     uint32_t index;
-    bool is_private = false;
+
+    bool is_private;
+    bool is_readonly;
 };
 
 class StructExpr : public ExprMixin<ExprKind::Struct> {
@@ -671,27 +673,20 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-struct MacroParameter {
-    std::string name;
-    MacroParameterKind kind;
-};
-
-class MacroExpr : public ExprMixin<ExprKind::Macro> {
+class StaticAssertExpr : public ExprMixin<ExprKind::StaticAssert> {
 public:
-    std::string name;
-    std::vector<MacroParameter> parameters;
-    utils::Ref<Expr> body;
+    utils::Ref<Expr> condition;
+    std::string message;
 
-    MacroExpr(Location start, Location end, std::string name, std::vector<MacroParameter> parameters, utils::Ref<Expr> body);
+    StaticAssertExpr(Location start, Location end, utils::Ref<Expr> condition, std::string message);
     Value accept(Visitor& visitor) override;
 };
 
-class MacroCallExpr : public ExprMixin<ExprKind::MacroCall> {
+class MaybeExpr : public ExprMixin<ExprKind::Maybe> {
 public:
-    std::string name;
-    std::vector<utils::Ref<Expr>> args;
+    utils::Ref<Expr> value;
 
-    MacroCallExpr(Location start, Location end, std::string name, std::vector<utils::Ref<Expr>> args);
+    MaybeExpr(Location start, Location end, utils::Ref<Expr> value);
     Value accept(Visitor& visitor) override;
 };
 

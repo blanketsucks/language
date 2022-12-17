@@ -70,7 +70,7 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         current_path += "/";
     }
 
-    utils::filesystem::Path path(current_path + expr->name + ".pr");
+    utils::filesystem::Path path(current_path + expr->name + FILE_EXTENSION);
     std::string path_name = path.name;
 
     if (!path.exists()) {
@@ -88,7 +88,7 @@ Value Visitor::visit(ast::ImportExpr* expr) {
 
         path_name = dir.name;
 
-        path = dir.join("module.pr");
+        path = dir.join("module.qr");
         if (!path.exists()) {
             auto module = utils::make_shared<Module>(expr->name, this->format_name(expr->name), dir.name);
             module->scope = new Scope(expr->name, ScopeType::Module);

@@ -16,12 +16,11 @@ func read_from_filename(filename: i8*) -> i8* {
         libc::exit(1);
     }
 
-    defer libc::fclose(file);
     libc::fseek(file, 0, libc::SEEK_END);
-
     let size = libc::ftell(file);
+    
     if (!size) { # Empty file
-        return null;
+        libc::fclose(file); return null;
     }
 
     libc::fseek(file, 0, libc::SEEK_SET);
@@ -33,13 +32,14 @@ func read_from_filename(filename: i8*) -> i8* {
             let errno = *libc::errno::__errno_location();
             libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::errno::strerror(errno));
 
-            libc::exit(1);
+            libc::fclose(file); libc::exit(1);
         }
 
         libc::fprintf(stderr, "Could not read file '%s': Unknown error.", filename);
-        libc::exit(1);
+        libc::fclose(file); libc::exit(1);
     }
 
+    libc::fclose(file);
     return buffer;
 }
 

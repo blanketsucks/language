@@ -1,0 +1,42 @@
+#ifndef _UTILS_LOG_H
+#define _UTILS_LOG_H
+
+#include "lexer/tokens.h"
+#include "utils/filesystem.h" // Needed for the macros/functions required for has_color_support()
+
+#include "llvm/Support/FormatVariadic.h"
+
+#define FORMAT(fmt, ...) llvm::formatv(fmt, __VA_ARGS__).str()
+
+#define RED     utils::Color::Red
+#define WHITE   utils::Color::White
+#define MAGENTA utils::Color::Magenta
+#define RESET   utils::Color::Reset
+
+#define COLOR(color, s) utils::color(color, s)
+
+#define ERROR(loc, ...) utils::error(loc, llvm::formatv(__VA_ARGS__)); exit(1)
+#define NOTE(loc, ...) utils::note(loc, llvm::formatv(__VA_ARGS__))
+
+#define TODO(x) \
+    std::cout << FORMAT("{0}:{1} in {2}: '{3}'\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, x); \
+    exit(1)
+
+namespace utils {
+
+enum class Color {
+    Reset = 0,
+    Red = 31,
+    White = 37,
+    Magenta = 35
+};
+
+bool has_color_support();
+std::string color(Color color, const std::string& str);
+
+void error(Location location, const std::string& message, bool fatal = true);
+void note(Location location, const std::string& message);
+
+}
+
+#endif

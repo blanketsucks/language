@@ -7,15 +7,13 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     } else {
         type = expr->type->accept(*this).type;
     }
-
+    
     auto enumeration = utils::make_shared<Enum>(expr->name, type);
 
     enumeration->start = expr->start;
     enumeration->end = expr->end;
 
     this->scope->enums[expr->name] = enumeration;
-    this->scope->types[expr->name] = TypeAlias::from_enum(enumeration);
-
     enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
 
     if (type->isIntegerTy()) {

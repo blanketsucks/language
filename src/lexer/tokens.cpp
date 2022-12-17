@@ -62,6 +62,10 @@ bool Token::match(TokenKind type, std::vector<std::string> values) {
     return this->type == type && (std::find(values.begin(), values.end(), this->value) != values.end());
 }
 
+bool Token::match(std::vector<TokenKind> types) {
+    return std::find(types.begin(), types.end(), this->type) != types.end();
+}
+
 bool Token::operator==(TokenKind type) {
     return this->type == type;
 }

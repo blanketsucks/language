@@ -1,6 +1,4 @@
 #include "parser/ast.h"
-
-#include "objects.h"
 #include "visitor.h"
 
 #include <vector>
@@ -63,8 +61,10 @@ VariableAssignmentExpr::VariableAssignmentExpr(
     utils::Ref<Expr> value, 
     std::string consume_rest,
     bool external,
-    bool is_multiple_variables
-) : ExprMixin(start, end), names(names), external(external), is_multiple_variables(is_multiple_variables), consume_rest(consume_rest) {
+    bool is_multiple_variables,
+    bool is_immutable
+) : ExprMixin(start, end), names(names), external(external), 
+    is_multiple_variables(is_multiple_variables), is_immutable(is_immutable), consume_rest(consume_rest) {
     this->value = std::move(value);
     this->type = std::move(type);
 }
@@ -490,5 +490,25 @@ TypeAliasExpr::TypeAliasExpr(
 }
 
 Value TypeAliasExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+StaticAssertExpr::StaticAssertExpr(
+    Location start, Location end, utils::Ref<Expr> condition, std::string message
+) : ExprMixin(start, end), message(message) {
+    this->condition = std::move(condition);
+}
+
+Value StaticAssertExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+MaybeExpr::MaybeExpr(
+    Location start, Location end, utils::Ref<Expr> value
+) : ExprMixin(start, end) {
+    this->value = std::move(value);
+}
+
+Value MaybeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
