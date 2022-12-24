@@ -8,6 +8,7 @@
 #include "objects/modules.h"
 #include "objects/namespaces.h"
 #include "objects/enums.h"
+#include "objects/types.h"
 
 #include "llvm/IR/Value.h"
 
@@ -27,7 +28,7 @@ struct Value {
     utils::Shared<Namespace> namespace_;
     utils::Shared<Module> module;
 
-    llvm::Type* type;
+    Type type = Type::null();
 
     Value(llvm::Value* value, bool is_constant = false, llvm::Value* self = nullptr);
     
@@ -41,7 +42,7 @@ struct Value {
     static Value from_module(utils::Shared<Module> module);
     static Value from_namespace(utils::Shared<Namespace> namespace_);
     static Value from_enum(utils::Shared<Enum> enumeration);
-    static Value from_type(llvm::Type* type);
+    static Value from_type(Type type);
 
     static Value as_early_function_call();
     static Value as_reference(

@@ -70,7 +70,7 @@ Value Value::from_module(utils::Shared<Module> module) {
     return value;
 }
 
-Value Value::from_type(llvm::Type* type) {
+Value Value::from_type(Type type) {
     auto value = Value::null();
     value.type = type;
 

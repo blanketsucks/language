@@ -89,19 +89,35 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
 Value Visitor::visit(ast::TernaryExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
-    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->start);
-    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->start);
-
     if (!this->is_compatible(this->builder->getInt1Ty(), condition->getType())) {
         ERROR(expr->condition->start, "Expected a boolean expression in the condition of a ternary expression");
     }
+
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context);
+    llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context);
+
+    this->builder->CreateCondBr(condition, then, else_);
+    this->set_insert_point(then);
+
+    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->start);
+
+    this->builder->CreateBr(merge);
+    this->set_insert_point(else_);
+
+    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->start);
+
+    this->builder->CreateBr(merge);
+    this->set_insert_point(merge);
 
     if (!this->is_compatible(true_value->getType(), false_value->getType())) {
         ERROR(expr->start, "The true and false expressions of a ternary expression must have the same type");
     }
 
-    false_value = this->cast(false_value, true_value->getType());
-    return this->builder->CreateSelect(
-        this->cast(condition, this->builder->getInt1Ty()), true_value, false_value
-    );
+    llvm::PHINode* phi = this->builder->CreatePHI(true_value->getType(), 2);
+    
+    phi->addIncoming(true_value, then);
+    phi->addIncoming(false_value, else_);
+
+    return phi;
 }

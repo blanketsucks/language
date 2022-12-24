@@ -54,6 +54,7 @@ public:
     std::pair<llvm::Value*, bool> get_variable(std::string name);
     Function* get_function(std::string name);
 
+    llvm::Value* cast(llvm::Value* value, Type type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
 
     llvm::Value* load(llvm::Value* value, llvm::Type* type = nullptr);
@@ -76,6 +77,7 @@ public:
 
     bool is_struct(llvm::Value* value);
     bool is_struct(llvm::Type* type);
+    bool is_tuple(llvm::Type* type);
 
     utils::Shared<Struct> get_struct(llvm::Value* value);
     utils::Shared<Struct> get_struct(llvm::Type* type);
@@ -110,8 +112,11 @@ public:
     void create_global_constructors(
         llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::InternalLinkage
     );
-
+    
+    static std::string get_type_name(Type type);
     static std::string get_type_name(llvm::Type* type);
+
+    bool is_compatible(Type t1, llvm::Type* t2);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
 
     ScopeLocal as_reference(ast::Expr* expr);
@@ -162,11 +167,13 @@ public:
     Value visit(ast::ElementExpr* expr);
 
     Value visit(ast::BuiltinTypeExpr* expr);
+    Value visit(ast::IntegerTypeExpr* expr);
     Value visit(ast::NamedTypeExpr* expr);
     Value visit(ast::TupleTypeExpr* expr);
     Value visit(ast::ArrayTypeExpr* expr);
     Value visit(ast::PointerTypeExpr* expr);
     Value visit(ast::FunctionTypeExpr* expr);
+    Value visit(ast::ReferenceTypeExpr* expr);
     Value visit(ast::TypeAliasExpr* expr);
 
     Value visit(ast::CastExpr* expr);

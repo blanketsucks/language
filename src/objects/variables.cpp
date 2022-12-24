@@ -41,18 +41,18 @@ Variable Variable::from_value(
     };
 }
 
-Variable Variable::empty() {
+Variable Variable::null() {
     return { "", nullptr, nullptr, nullptr, false, false, false, Location(), Location() };
 }
 
-bool Variable::is_empty() {
+bool Variable::is_null() {
     return this->name.empty() && !this->type && !this->value;
 }
 
-Constant Constant::empty() {
+Constant Constant::null() {
     return { "", nullptr, nullptr, nullptr, Location(), Location() };
 }
 
-bool Constant::is_empty() {
+bool Constant::is_null() {
     return this->name.empty() && !this->type && !this->value;
 }

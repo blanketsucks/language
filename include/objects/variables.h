@@ -39,8 +39,8 @@ struct Variable {
         Location end = Location()
     );
 
-    static Variable empty();
-    bool is_empty();
+    static Variable null();
+    bool is_null();
 };
 
 struct Constant {
@@ -53,8 +53,8 @@ struct Constant {
     Location start;
     Location end;
 
-    static Constant empty();
-    bool is_empty();
+    static Constant null();
+    bool is_null();
 };
 
 #endif

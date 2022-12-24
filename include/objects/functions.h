@@ -4,6 +4,7 @@
 #include "utils/pointer.h"
 #include "lexer/tokens.h"
 #include "parser/ast.h"
+#include "objects/types.h"
 #include "llvm.h"
 
 struct Scope;
@@ -16,11 +17,12 @@ struct FunctionCall {
 };
 
 struct FunctionReturn {
-    llvm::Type* type;
+    Type type;
     llvm::AllocaInst* value;
     llvm::BasicBlock* block;
 
-    FunctionReturn(llvm::Type* type, llvm::AllocaInst* value, llvm::BasicBlock* block) : type(type), value(value), block(block) {}
+    FunctionReturn(Type type, llvm::AllocaInst* value, llvm::BasicBlock* block) : type(type), value(value), block(block) {}
+    llvm::Type* operator->() { return this->type.value; }
 };
 
 struct Branch {
@@ -41,33 +43,31 @@ struct Branch {
 struct FunctionArgument {
     std::string name;
 
-    llvm::Type* type;
+    Type type;
     llvm::Value* default_value;
 
     uint32_t index;
 
-    bool is_reference;
     bool is_kwarg;
     bool is_immutable;
+    bool is_self;
+
+    bool is_reference() { return this->type.is_reference; }
 };
 
 struct Function {
     std::string name;
-    llvm::Type* ret;
-
     llvm::Function* value;
 
+    FunctionReturn ret;
     std::vector<FunctionArgument> args;
     std::map<std::string, FunctionArgument> kwargs;
-    std::map<int, llvm::Value*> defaults;
 
     Scope* scope;
 
     std::vector<Branch*> branches;
     Branch* branch;
 
-    llvm::AllocaInst* return_value;
-    llvm::BasicBlock* return_block;
     llvm::BasicBlock* current_block;
 
     std::vector<llvm::Function*> calls;
@@ -82,8 +82,8 @@ struct Function {
     bool is_anonymous;
     bool used;
     bool noreturn;
-
     bool is_finalized;
+    bool is_operator;
 
     Location start;
     Location end;
@@ -92,11 +92,12 @@ struct Function {
         std::string name,
         std::vector<FunctionArgument> args,
         std::map<std::string, FunctionArgument> kwargs,
-        llvm::Type* ret,
+        Type return_type,
         llvm::Function* value,
         bool is_entry,
         bool is_intrinsic,
         bool is_anonymous, 
+        bool is_operator,
         ast::Attributes attrs
     );
 

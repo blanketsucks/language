@@ -42,7 +42,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
             }
 
-            type = type->getNonOpaquePointerElementType();
+            type = type->getPointerElementType();
             if (type->isVoidTy()) {
                 ERROR(expr->start, "Cannot dereference a void pointer");
             }
@@ -62,12 +62,19 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '++' for type '{0}'", this->get_type_name(type));
             }
 
-            llvm::Type* type = value->getType();
+            auto ref = this->as_reference(expr->value.get());
+            if (ref.is_null()) {
+                ERROR(expr->start, "Expected a variable, struct member or array element");
+            }
 
-            llvm::Value* one = this->builder->getIntN(type->getIntegerBitWidth(), 1);
+            if (ref.is_immutable) {
+                ERROR(expr->start, "Cannot increment immutable variable");
+            }
+
+            llvm::Value* one = this->builder->getIntN(ref.type->getIntegerBitWidth(), 1);
             llvm::Value* result = this->builder->CreateAdd(value, one);
 
-            this->builder->CreateStore(result, value);
+            this->builder->CreateStore(result, ref.value);
             return result;
         }
         case TokenKind::Dec: {
@@ -75,8 +82,20 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->start, "Unsupported unary operator '--' for type '{0}'", this->get_type_name(type));
             }
 
-            llvm::Value* one = llvm::ConstantInt::get(value->getType(), llvm::APInt(value->getType()->getIntegerBitWidth(), 1, true));
-            return this->builder->CreateSub(value, one);
+            auto ref = this->as_reference(expr->value.get());
+            if (ref.is_null()) {
+                ERROR(expr->start, "Expected a variable, struct member or array element");
+            }
+
+            if (ref.is_immutable) {
+                ERROR(expr->start, "Cannot decrement immutable variable");
+            }
+
+            llvm::Value* one = this->builder->getIntN(ref.type->getIntegerBitWidth(), 1);
+            llvm::Value* result = this->builder->CreateSub(value, one);
+
+            this->builder->CreateStore(result, ref.value);
+            return result;
         }
         default:
             _UNREACHABLE
@@ -105,7 +124,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                     ERROR(unary->value->start, "Unsupported unary operator '*' for type '{0}'", this->get_type_name(type));
                 }
 
-                type = type->getNonOpaquePointerElementType();
+                type = type->getPointerElementType();
                 if (!this->is_compatible(type, value->getType())) {
                     ERROR(expr->right->start, "Cannot assign value of type '{0}' to variable of type '{1}'", this->get_type_name(value->getType()), this->get_type_name(type));
                 }
@@ -154,6 +173,12 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     llvm::Type* ltype = left->getType();
     llvm::Type* rtype = right->getType();
 
+    std::string err = FORMAT(
+        "Unsupported binary operation '{0}' between types '{1}' and '{2}'.", 
+        Token::get_type_value(expr->op),
+        this->get_type_name(ltype), this->get_type_name(rtype)
+    );
+
     if (this->is_struct(ltype)) {
         auto structure = this->get_struct(ltype);
         if (STRUCT_OP_MAPPING.find(expr->op) == STRUCT_OP_MAPPING.end()) {
@@ -162,11 +187,11 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
         auto method = structure->scope->functions[STRUCT_OP_MAPPING[expr->op]];
         if (!method) {
-            ERROR(
-                expr->start, "Unsupported binary operation '{0}' between types '{1}' and '{2}'.", 
-                Token::getTokenTypeValue(expr->op),
-                this->get_type_name(ltype), this->get_type_name(rtype)
-            );
+            utils::error(expr->start, err);
+        }
+
+        if (!method->is_operator) {
+            utils::error(expr->start, err);
         }
 
         llvm::Value* self = left;
@@ -178,11 +203,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     }
 
     if (!this->is_compatible(ltype, rtype)) {
-        ERROR(
-            expr->start, "Unsupported binary operation '{0}' between types '{1}' and '{2}'.", 
-            Token::getTokenTypeValue(expr->op),
-            this->get_type_name(ltype), this->get_type_name(rtype)
-        );
+        utils::error(expr->start, err);
     } else {
         right = this->cast(right, ltype);
     }

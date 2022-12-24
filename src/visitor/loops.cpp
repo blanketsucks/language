@@ -86,8 +86,10 @@ Value Visitor::visit(ast::ContinueExpr*) {
 
 Value Visitor::visit(ast::ForeachExpr* expr) {
     llvm::Value* iterable = expr->iterable->accept(*this).unwrap(expr->iterable->start);
+    std::string err = FORMAT("Cannot iterate over value of type '{0}'", this->get_type_name(iterable->getType()));
+
     if (!this->is_struct(iterable->getType())) {
-        ERROR(expr->iterable->start, "Cannot iterate over non-struct type");
+        utils::error(expr->iterable->start, err);
     }
 
     llvm::Value* self = iterable;
@@ -105,11 +107,15 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
     auto structure = this->get_struct(itype);
     if (structure->has_method("iter")) {
         auto iter = structure->get_method("iter");
+        if (!iter->is_operator) {
+            utils::error(expr->iterable->start, err);
+        }
+
         iterable = this->call(iter->value, {}, self);
         itype = iterable->getType();
 
         if (!this->is_struct(itype)) {
-            ERROR(expr->iterable->start, "Cannot iterate over non-struct type");
+            utils::error(expr->iterable->start, err);
         }
 
         self = iterable;
@@ -122,7 +128,7 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
     }
 
     if (!structure->has_method("next")) {
-        ERROR(expr->iterable->start, "Cannot iterate over non-iterable type");
+        utils::error(expr->iterable->start, err);
     }
 
     auto next = structure->get_method("next");

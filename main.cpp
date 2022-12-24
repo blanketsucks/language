@@ -1,6 +1,7 @@
 #include "compiler.h"
 #include "llvm.h"
 #include "utils/filesystem.h"
+#include "objects/types.h"
 
 llvm::cl::OptionCategory category("Compiler options");
 
@@ -17,8 +18,8 @@ llvm::cl::opt<OutputFormat> format(
     llvm::cl::values(
         clEnumValN(OutputFormat::LLVM, "llvm-ir", "Emit LLVM IR"),
         clEnumValN(OutputFormat::Bitcode, "llvm-bc", "Emit LLVM Bitcode"),
-        clEnumValN(OutputFormat::Assembly, "assembly", "Emit assembly code"),
-        clEnumValN(OutputFormat::Object, "object", "Emit object code"),
+        clEnumValN(OutputFormat::Assembly, "asm", "Emit assembly code"),
+        clEnumValN(OutputFormat::Object, "obj", "Emit object code"),
         clEnumValN(OutputFormat::Executable, "exe", "Emit an executable (default)"),
         clEnumValN(OutputFormat::SharedLibrary, "shared", "Emit a shared library")
     ),
@@ -110,7 +111,7 @@ int main(int argc, char** argv) {
     compiler.set_target(args.target);
     compiler.set_verbose(args.verbose);
 
-    compiler.set_optimization_level(args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug );
+    compiler.set_optimization_level(args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug);
     
     for (auto& include : args.includes) {
         utils::filesystem::Path inc(include);

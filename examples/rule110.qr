@@ -8,15 +8,15 @@ func main() -> i32 {
     let state: [i32; SIZE];
 
     state[SIZE - 2] = 1;
-    for (i = 0; i < (SIZE - 2); i += 1) {
-        for (j = 0; j < SIZE; j += 1) {
+    for (i = 0; i < (SIZE - 2); i++) {
+        for (j = 0; j < SIZE; j++) {
             libc::putchar(" *"[state[j]]);
         }
 
         libc::putchar('\n');
 
         let pattern = (state[0] << 1) | state[1];
-        for (j = 1; j < (SIZE - 1); j += 1) {
+        for (j = 1; j < (SIZE - 1); j++) {
             pattern = ((pattern << 1) & 7) | state[j + 1];
             state[j] = (110 >> pattern) & 1;
         }

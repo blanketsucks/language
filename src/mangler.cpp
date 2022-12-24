@@ -21,7 +21,7 @@ std::string Mangler::mangle(llvm::Type* type) {
     } else if (type->isFloatingPointTy()) {
         stream << "f" << type->getPrimitiveSizeInBits();
     } else if (type->isPointerTy()) {
-        stream << "p" << Mangler::mangle(type->getNonOpaquePointerElementType());
+        stream << "p" << Mangler::mangle(type->getPointerElementType());
     } else if (type->isArrayTy()) {
         stream << "a" << type->getArrayNumElements() << Mangler::mangle(type->getArrayElementType());
     } else if (type->isStructTy()) {

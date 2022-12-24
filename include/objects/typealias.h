@@ -17,9 +17,9 @@ struct TypeAlias {
     Location end;
 
     static TypeAlias from_enum(utils::Shared<Enum> enumeration);
-    static TypeAlias empty();
+    static TypeAlias null();
 
-    bool is_empty();
+    bool is_null();
 };
 
 #endif

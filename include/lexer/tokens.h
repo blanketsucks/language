@@ -87,7 +87,7 @@ struct Token {
     Location end;
     std::string value;
 
-    static std::string getTokenTypeValue(TokenKind type);
+    static std::string get_type_value(TokenKind type);
 
     bool match(TokenKind type, std::string value);
     bool match(TokenKind type, std::vector<std::string> values);
@@ -130,6 +130,7 @@ static std::vector<std::string> KEYWORDS = {
     "static_assert",
     "immutable",
     "readonly",
+    "operator",
 
     // Preprocessor keywords
     "$define",

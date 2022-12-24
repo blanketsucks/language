@@ -1,9 +1,12 @@
+#include "objects/values.h"
 #include "parser/ast.h"
 #include "visitor.h"
 #include "utils/string.h"
 
 #include "llvm/IR/Instructions.h"
 #include <functional>
+
+#define LLVM_MAX_INT_BITS (2 << (23 - 1)) // 2^23
 
 static std::map<std::string, uint32_t> TYPE_SIZES = {
     {"i8", 1},
@@ -47,6 +50,10 @@ uint32_t Visitor::getsizeof(llvm::Type* type) {
     return type->getPrimitiveSizeInBits() / 8;
 }
 
+std::string Visitor::get_type_name(Type type) {
+    return Visitor::get_type_name(type.value);
+}
+
 std::string Visitor::get_type_name(llvm::Type* type) {
     if (type->isVoidTy()) {
         return "void";
@@ -67,7 +74,7 @@ std::string Visitor::get_type_name(llvm::Type* type) {
     } else if (type->isIntegerTy(128)) {
         return "i128";
     } else if (type->isPointerTy()) {
-        return Visitor::get_type_name(type->getNonOpaquePointerElementType()) + "*";
+        return Visitor::get_type_name(type->getPointerElementType()) + "*";
     } else if (type->isArrayTy()) {
         std::string name = Visitor::get_type_name(type->getArrayElementType());
         return FORMAT("[{0}; {1}]", name, type->getArrayNumElements());
@@ -104,6 +111,10 @@ std::string Visitor::get_type_name(llvm::Type* type) {
     return "";
 }
 
+bool Visitor::is_compatible(Type t1, llvm::Type* t2) {
+    return this->is_compatible(t1.value, t2);
+}
+
 bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
     if (t1 == t2) {
         return true;
@@ -112,13 +123,13 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
     if (t1->isPointerTy()) {
         if (!t2->isPointerTy()) {
             if (t2->isArrayTy()) {
-                return this->is_compatible(t1->getNonOpaquePointerElementType(), t2->getArrayElementType());
+                return this->is_compatible(t1->getPointerElementType(), t2->getArrayElementType());
             }
             
             return false;
         }
 
-        t2 = t2->getNonOpaquePointerElementType(); t1 = t1->getNonOpaquePointerElementType(); 
+        t2 = t2->getPointerElementType(); t1 = t1->getPointerElementType(); 
         if (t2->isVoidTy() || t1->isVoidTy()) {
             return true;
         }
@@ -128,7 +139,7 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
         if (!t2->isArrayTy()) { 
             if (!t2->isPointerTy()) { return false; }
 
-            t2 = t2->getNonOpaquePointerElementType();
+            t2 = t2->getPointerElementType();
             return this->is_compatible(t1->getArrayElementType(), t2);
         }
 
@@ -155,6 +166,10 @@ bool Visitor::is_compatible(llvm::Type* t1, llvm::Type* t2) {
     }
 
     return false;
+}
+
+llvm::Value* Visitor::cast(llvm::Value* value, Type type) {
+    return this->cast(value, type.value);
 }
 
 llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
@@ -188,7 +203,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
 
     llvm::Type* from = value->getType();
-    llvm::Type* to = expr->to->accept(*this).type;
+    llvm::Type* to = expr->to->accept(*this).type.value;
 
     if (from == to) {
         return value;
@@ -293,6 +308,20 @@ Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
     }
 }
 
+Value Visitor::visit(ast::IntegerTypeExpr* expr) {
+    llvm::Value* value = expr->size->accept(*this).unwrap(expr->size->start);
+    if (!llvm::isa<llvm::ConstantInt>(value)) {
+        ERROR(expr->size->start, "Integer type size must be a constant");
+    }
+
+    int64_t size = llvm::cast<llvm::ConstantInt>(value)->getSExtValue();
+    if (size < 1 || size > LLVM_MAX_INT_BITS) {
+        ERROR(expr->size->start, "Integer type size must be between 1 and {0} bits", LLVM_MAX_INT_BITS);
+    }
+
+    return Value::from_type(this->builder->getIntNTy(size));
+}
+
 Value Visitor::visit(ast::NamedTypeExpr* expr) {
     Scope* scope = this->scope;
     while (!expr->parents.empty()) {
@@ -325,7 +354,7 @@ Value Visitor::visit(ast::PointerTypeExpr* expr) {
 }
 
 Value Visitor::visit(ast::ArrayTypeExpr* expr) {
-    llvm::Type* element = expr->element->accept(*this).type;
+    llvm::Type* element = expr->element->accept(*this).type.value;
     if (element->isVoidTy()) {
         ERROR(expr->start, "Cannot create an array of type 'void'");
     }
@@ -342,7 +371,7 @@ Value Visitor::visit(ast::ArrayTypeExpr* expr) {
 Value Visitor::visit(ast::TupleTypeExpr* expr) {
     std::vector<llvm::Type*> types;
     for (auto& element : expr->elements) {
-        llvm::Type* type = element->accept(*this).type;
+        llvm::Type* type = element->accept(*this).type.value;
         if (type->isVoidTy()) {
             ERROR(element->start, "Cannot create a tuple with a 'void' element");
         }
@@ -356,12 +385,12 @@ Value Visitor::visit(ast::TupleTypeExpr* expr) {
 Value Visitor::visit(ast::FunctionTypeExpr* expr) {
     llvm::Type* ret = this->builder->getVoidTy();
     if (expr->ret) {
-        ret = expr->ret->accept(*this).type;
+        ret = expr->ret->accept(*this).type.value;
     }
 
     std::vector<llvm::Type*> types;
     for (auto& param : expr->args) {
-        llvm::Type* ty = param->accept(*this).type;
+        llvm::Type* ty = param->accept(*this).type.value;
         if (ty->isVoidTy()) {
             ERROR(param->start, "Function parameter type cannot be of type 'void'");
         }
@@ -372,8 +401,17 @@ Value Visitor::visit(ast::FunctionTypeExpr* expr) {
     return Value::from_type(llvm::FunctionType::get(ret, types, false));
 }
 
+Value Visitor::visit(ast::ReferenceTypeExpr* expr) {
+    llvm::Type* type = expr->type->accept(*this).type.value;
+    if (type->isVoidTy()) {
+        ERROR(expr->start, "Cannot create a reference to type 'void'");
+    }
+
+    return Value::from_type(Type(type->getPointerTo(), true));
+}
+
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
-    llvm::Type* type = expr->type->accept(*this).type;
+    llvm::Type* type = expr->type->accept(*this).type.value;
     this->scope->types[expr->name] = TypeAlias { expr->name, type, nullptr, expr->start, expr->end };
 
     return nullptr;

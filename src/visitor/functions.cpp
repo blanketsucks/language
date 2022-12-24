@@ -64,8 +64,8 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                 param = params[i];
             }
 
-            this->ctx = param.type;
-            if (param.is_reference) {
+            this->ctx = param.type.value;
+            if (param.is_reference()) {
                 auto ref = this->as_reference(expr.get());
                 if (ref.is_immutable && !param.is_immutable) {
                     ERROR(expr->start, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
@@ -76,8 +76,8 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                     ERROR(
                         expr->start, 
                         "Cannot pass reference value of type '{0}' to reference parameter of type '{1}'", 
-                        this->get_type_name(value->getType()->getNonOpaquePointerElementType()), 
-                        this->get_type_name(param.type->getNonOpaquePointerElementType())
+                        this->get_type_name(value->getType()->getPointerElementType()), 
+                        this->get_type_name(param.type->getPointerElementType())
                     );
                 }
             } else {
@@ -96,7 +96,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                     );
                 }
 
-                value = this->cast(value, param.type);
+                value = this->cast(value, param.type.value);
             }
 
             values[i] = value;
@@ -133,7 +133,11 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     ret.reserve(function->argc());
 
     for (auto& param : params) {
-        bool found = values.find(param.index) != values.end();
+        if (param.is_self) {
+            continue;
+        }
+
+        bool found = values.find(param.index) != values.end();;
         llvm::Value* value = found ? values[param.index] : param.default_value;
 
         ret.push_back(value);
@@ -198,7 +202,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         default: break;
     }
 
-    llvm::Type* ret = nullptr;
+    Type ret;
     if (!expr->return_type) {
         ret = this->builder->getVoidTy();
     } else {
@@ -225,35 +229,33 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 
     uint32_t index = 0;
     for (auto& arg : expr->args) {
-        llvm::Type* type = nullptr;
+        Type type = nullptr;
         if (arg.is_self) {
-            type = this->current_struct->type->getPointerTo();
-            arg.is_reference = true;
+            type = Type(
+                this->current_struct->type->getPointerTo(),true
+            );
         } else {
             type = arg.type->accept(*this).type;
-            if (arg.is_reference) {
-                type = type->getPointerTo();
-            }
         }
 
         llvm::Value* default_value = nullptr;
         if (arg.default_value) {
-            this->ctx = type;
+            this->ctx = type.value;
             default_value = arg.default_value->accept(*this).unwrap(arg.default_value->start);
 
             if (!llvm::isa<llvm::Constant>(default_value)) {
                 ERROR(arg.default_value->start, "Default values must be constants");
             }
 
-            if (!this->is_compatible(type, default_value->getType())) {
+            if (!this->is_compatible(type.value, default_value->getType())) {
                 ERROR(
                     arg.default_value->start, 
                     "Default value of type '{0}' does not match expected type '{1}'",
-                    this->get_type_name(default_value->getType()), this->get_type_name(type)
+                    this->get_type_name(default_value->getType()), this->get_type_name(type.value)
                 );
             }
 
-            default_value = this->cast(default_value, type);
+            default_value = this->cast(default_value, type.value);
             this->ctx = nullptr;
         }
 
@@ -262,24 +264,24 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
                 arg.name, 
                 type, 
                 default_value, 
-                index, 
-                arg.is_reference, 
+                index,
                 false,
-                arg.is_immutable
+                arg.is_immutable,
+                arg.is_self
             };
         } else {
             args.push_back({
                 arg.name, 
                 type, 
                 default_value, 
-                index, 
-                arg.is_reference, 
+                index,
                 false,
-                arg.is_immutable
+                arg.is_immutable,
+                arg.is_self
             });
         }
 
-        llvm_args.push_back(type); index++;
+        llvm_args.push_back(type.value); index++;
     }
 
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
@@ -293,7 +295,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
             expr->name, 
             llvm_args, 
             expr->is_variadic, 
-            ret, 
+            ret.value, 
             this->current_namespace, 
             this->current_struct, 
             this->current_module
@@ -305,7 +307,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     llvm::Function* function = this->create_function(
-        fn, ret, llvm_args, expr->is_variadic, linkage
+        fn, ret.value, llvm_args, expr->is_variadic, linkage
     );
 
     auto func = utils::make_shared<Function>(
@@ -317,6 +319,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         (name == this->entry), 
         pair.second,
         is_anonymous,
+        expr->is_operator,
         expr->attributes
     );
 
@@ -360,11 +363,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     Branch* branch = func->create_branch(name);
     func->branch = branch;
 
-    if (!func->ret->isVoidTy()) {
-        func->return_value = this->builder->CreateAlloca(func->ret);
+    if (!func->ret.type->isVoidTy()) {
+        func->ret.value = this->builder->CreateAlloca(func->ret.type.value);
     }
 
-    func->return_block = llvm::BasicBlock::Create(*this->context);
+    func->ret.block = llvm::BasicBlock::Create(*this->context);
     func->scope = this->create_scope(func->name, ScopeType::Function);
 
     uint32_t i = 0;
@@ -372,8 +375,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         llvm::Argument* argument = function->getArg(i);
         argument->setName(arg.name);
 
-        if (!arg.is_reference) {
-            llvm::AllocaInst* inst = this->create_alloca(arg.type);
+        if (!arg.is_reference()) {
+            llvm::AllocaInst* inst = this->create_alloca(arg.type.value);
             this->builder->CreateStore(argument, inst);
 
             func->scope->variables[arg.name] = Variable::from_alloca(arg.name, inst, arg.is_immutable);
@@ -409,12 +412,12 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
                 ERROR(expr->start, "Function '{0}' expects a return value", func->name);
             }
         } else {
-            this->set_insert_point(func->return_block);
+            this->set_insert_point(func->ret.block);
 
             if (func->ret->isVoidTy()) {
                 this->builder->CreateRetVoid();
             } else {
-                llvm::Value* value = this->builder->CreateLoad(function->getReturnType(), func->return_value);
+                llvm::Value* value = this->builder->CreateLoad(function->getReturnType(), func->ret.value);
                 this->builder->CreateRet(value);
             }
         }
@@ -444,26 +447,56 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             ERROR(expr->start, "Cannot return a value from void function");
         }
 
-        this->ctx = func->ret;
+        if (func->ret.type.is_reference) {
+            auto ref = this->as_reference(expr->value.get());
+            if (ref.is_null()) {
+                ERROR(expr->value->start, "Expected a variable, array or struct member");
+            }
+
+            if (ref.is_stack_allocated) {
+                ERROR(expr->value->start, "Cannot return a reference associated with a local stack variable");
+            }
+
+            if (ref.is_immutable) {
+                ERROR(expr->value->start, "Cannot return a reference associated with an immutable variable");
+            }
+
+            llvm::Type* ret = func->ret.type.value->getPointerElementType();
+            if (!this->is_compatible(ret, ref.type)) {
+                ERROR(
+                    expr->value->start,
+                    "Cannot return reference value of type '{0}' from function expecting '{1}'",
+                    this->get_type_name(ref.type), this->get_type_name(ret)
+                );
+            }
+
+            this->builder->CreateStore(ref.value, func->ret.value);
+            this->builder->CreateBr(func->ret.block);
+
+            func->branch->has_return = true;
+            return nullptr;
+        }
+
+        this->ctx = func->ret.type.value;
         Value val = expr->value->accept(*this);
         if (val.is_reference && val.is_stack_allocated) {
             ERROR(expr->value->start, "Cannot return a reference associated with a local stack variable");
         }
 
         llvm::Value* value = val.unwrap(expr->value->start);
-        if (!this->is_compatible(func->ret, value->getType())) {
+        if (!this->is_compatible(func->ret.type, value->getType())) {
             ERROR(
                 expr->start, "Cannot return value of type '{0}' from function expecting '{1}'", 
-                this->get_type_name(value->getType()), this->get_type_name(func->ret)
+                this->get_type_name(value->getType()), this->get_type_name(func->ret.type)
             );
         } else {
-            value = this->cast(value, func->ret);
+            value = this->cast(value, func->ret.type);
         }
 
         func->branch->has_return = true;
-        this->builder->CreateStore(value, func->return_value);
+        this->builder->CreateStore(value, func->ret.value);
 
-        this->builder->CreateBr(func->return_block);
+        this->builder->CreateBr(func->ret.block);
         this->ctx = nullptr;
 
         return nullptr;
@@ -473,7 +506,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->branch->has_return = true;
-        this->builder->CreateBr(func->return_block);
+        this->builder->CreateBr(func->ret.block);
         
         return nullptr;
     }
@@ -519,7 +552,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
     } else {
         type = callable.value->getType();
         if (type->isPointerTy()) {
-            type = type->getNonOpaquePointerElementType();
+            type = type->getPointerElementType();
             if (!type->isFunctionTy()) {
                 ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
             }
@@ -552,7 +585,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
     if (type->isFunctionTy()) {
         ftype = llvm::cast<llvm::FunctionType>(type);
     } else {
-        type = type->getNonOpaquePointerElementType();
+        type = type->getPointerElementType();
         if (type->isFunctionTy()) {
             ftype = llvm::cast<llvm::FunctionType>(type);
         } else {

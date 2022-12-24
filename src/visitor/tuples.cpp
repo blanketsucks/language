@@ -1,6 +1,10 @@
 #include "visitor.h"
 #include "utils/utils.h"
 
+bool Visitor::is_tuple(llvm::Type* type) {
+    return type->isStructTy() && type->getStructName().startswith("__tuple");
+}
+
 llvm::StructType* Visitor::create_tuple_type(std::vector<llvm::Type*> types) {
     llvm::StructType* type = nullptr;
     if (this->tuples.find(types) == this->tuples.end()) {
@@ -99,7 +103,7 @@ void Visitor::store_tuple(
 
     // TODO: Array support
     if (vtype->isPointerTy()) {
-        llvm::Type* type = vtype->getNonOpaquePointerElementType();
+        llvm::Type* type = vtype->getPointerElementType();
         n = type->getStructNumElements();
     } else {
         n = vtype->getStructNumElements();

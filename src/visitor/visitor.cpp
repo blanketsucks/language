@@ -121,7 +121,7 @@ llvm::Value* Visitor::load(llvm::Value* value, llvm::Type* type) {
 
     type = value->getType();
     if (type->isPointerTy()) {
-        type = type->getNonOpaquePointerElementType();
+        type = type->getPointerElementType();
         return this->builder->CreateLoad(type, value);
     }
 
@@ -163,7 +163,7 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
         return values;
     }
 
-    type = type->getNonOpaquePointerElementType();
+    type = type->getPointerElementType();
     if (!type->isAggregateType()) {
         ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
     }
@@ -225,7 +225,9 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
             ast::ElementExpr* element = expr->cast<ast::ElementExpr>();
 
             ScopeLocal parent = this->as_reference(element->value.get());
-            if (!parent.value) return parent;
+            if (parent.is_null()) {
+                return parent;
+            }
 
             llvm::Type* type = parent.type;
             if (!type->isPointerTy() && !type->isArrayTy()) {
@@ -248,16 +250,18 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
                 ptr = this->builder->CreateGEP(type, parent.value, index);
             }
 
-            return { parent.name, ptr, parent.type, false, parent.is_immutable, false };
+            return ScopeLocal::from_scope_local(parent, ptr);
         }
         case ast::ExprKind::Attribute: {
             ast::AttributeExpr* attribute = expr->cast<ast::AttributeExpr>();
 
             ScopeLocal parent = this->as_reference(attribute->parent.get());
-            if (!parent.value) return parent;
+            if (parent.is_null()) {
+                return parent;
+            }
             
             if (!this->is_struct(parent.type)) {
-                return { "", nullptr, nullptr, false, false, false };
+                return ScopeLocal::null();
             }
 
             auto structure = this->get_struct(parent.type);
@@ -275,17 +279,14 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
                 value = this->load(parent.value, parent.type);
             }
 
-            return {
-                parent.name,
+            return ScopeLocal::from_scope_local(
+                parent,
                 this->builder->CreateStructGEP(structure->type, value, index),
-                structure->type->getStructElementType(index), 
-                false,
-                parent.is_immutable,
-                false
-            };
+                structure->type->getStructElementType(index)
+            );
         }
         default:
-            return { "", nullptr, nullptr, false, false, false };
+            return ScopeLocal::null();
     }
 }
 

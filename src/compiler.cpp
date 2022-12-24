@@ -13,6 +13,12 @@
 #include <vector>
 #include <iomanip>
 
+CompilerError::CompilerError(uint32_t code, std::string message) : code(code), message(message) {}
+
+CompilerError CompilerError::success() {
+    return CompilerError(0, "Success");
+}
+
 void CompilerError::unwrap() {
     if (this->code != 0) {
         Compiler::error(this->message);
@@ -260,7 +266,7 @@ CompilerError Compiler::compile() {
 
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, err);
     if (!target) {
-        return {1, FORMAT("Could not create target: '{0}'", err)};
+        return CompilerError(1, FORMAT("Could not create target: '{0}'", err));
     }
 
     if (this->verbose) {
@@ -291,7 +297,7 @@ CompilerError Compiler::compile() {
 
     llvm::raw_fd_ostream dest(object, error, llvm::sys::fs::OF_None);
     if (error) {
-        return {1, FORMAT("Could not open file '{0}'. {1}", object, error.message())};
+        return CompilerError(1, FORMAT("Could not open file '{0}': {1}", object, error.message()));
     }
 
     if (this->format == OutputFormat::LLVM) {
@@ -300,7 +306,7 @@ CompilerError Compiler::compile() {
             Compiler::log_duration("LLVM", start);
         }
 
-        return {};
+        return CompilerError::success();
     } else if (this->format == OutputFormat::Bitcode) {
         llvm::BitcodeWriterPass pass(dest);
         llvm::ModuleAnalysisManager manager;
@@ -310,7 +316,7 @@ CompilerError Compiler::compile() {
             Compiler::log_duration("LLVM", start);
         }
         
-        return {};
+        return CompilerError::success();
     }
 
     llvm::legacy::PassManager pass;
@@ -321,7 +327,7 @@ CompilerError Compiler::compile() {
     }
 
     if (machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
-        return {1, "Target machine can't emit a file of this type"};
+        return CompilerError(1, "Target machine can't emit a file of this type");
     }
 
     pass.run(*visitor.module);
@@ -333,7 +339,7 @@ CompilerError Compiler::compile() {
     }
 
     if (this->format != OutputFormat::Executable && this->format != OutputFormat::SharedLibrary) {
-        return {};
+        return CompilerError::success();
     }
 
     std::vector<std::string> args = this->get_linker_arguments();
@@ -350,8 +356,8 @@ CompilerError Compiler::compile() {
     }
 
     if (code != 0) {
-        return {code, FORMAT("Linker exited with code {0}", code)};
+        return CompilerError(code, FORMAT("Linker exited with code {0}", code));
     }
 
-    return {};
+    return CompilerError::success();
 }

@@ -42,6 +42,9 @@ struct CompilerError {
     uint32_t code;
     std::string message;
 
+    CompilerError(uint32_t code, std::string message);
+    static CompilerError success();
+
     void unwrap();
 };
 

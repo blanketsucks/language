@@ -105,7 +105,21 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
     utils::Ref<ast::TypeExpr> type = nullptr;
     Location start = this->current.start;
 
-    if (this->current.match(TokenKind::Keyword, "func")) {
+    bool is_reference = false;
+    if (this->current == TokenKind::BinaryAnd) {
+        is_reference = true;
+        this->next();
+    }
+
+    if (this->current.match(TokenKind::Identifier, "int")) {
+        this->next();
+        this->expect(TokenKind::LParen, "(");
+
+        auto size = this->expr(false);
+        Location end = this->expect(TokenKind::RParen, ")").end;
+
+        type = utils::make_ref<ast::IntegerTypeExpr>(start, end, std::move(size));
+    } else if (this->current.match(TokenKind::Keyword, "func")) {
         // func(int, int) -> int 
         this->next(); this->expect(TokenKind::LParen, "(");
 
@@ -182,6 +196,10 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
         type = utils::make_ref<ast::PointerTypeExpr>(start, end, std::move(type));
     }
 
+    if (is_reference) {
+        type = utils::make_ref<ast::ReferenceTypeExpr>(start, this->current.end, std::move(type));
+    }
+
     return type;
 } 
 
@@ -216,7 +234,7 @@ utils::Ref<ast::TypeAliasExpr> Parser::parse_type_alias() {
 }
 
 utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
-    ast::ExternLinkageSpecifier linkage, bool with_name
+    ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
 ) {
     Location start = this->current.start;
     std::string name;
@@ -236,7 +254,7 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
     while (this->current != TokenKind::RParen) {
         std::string value = this->current.value;
         if (!this->current.match({TokenKind::Keyword, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis})) {
-            ERROR(this->current.start, "Expected identifier");
+            ERROR(this->current.start, "Expected argument name, '*' or '...'");
         }
 
         bool is_immutable = false;
@@ -277,9 +295,7 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
         utils::Ref<ast::TypeExpr> type = nullptr;
         std::string argument;
 
-        bool is_reference = false;
         bool is_self = false;
-
         if (value == "self") {
             if (this->is_inside_struct) {
                 argument = "self"; is_self = true;
@@ -288,21 +304,13 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
                 this->next();
                 this->expect(TokenKind::Colon, ":");
 
-                if (this->current == TokenKind::BinaryAnd) {
-                    is_reference = true;
-                    this->next();
-                }
-
                 type = this->parse_type();
                 argument = value;
             }
         } else {
             this->next(); this->expect(TokenKind::Colon, ":");
-            if (this->current == TokenKind::BinaryAnd) {
-                is_reference = true; this->next();
-            }
-
             type = this->parse_type();
+
             argument = value;
         }
 
@@ -322,7 +330,6 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             argument, 
             std::move(type),
             std::move(default_value),
-            is_reference, 
             is_self, 
             has_kwargs, 
             is_immutable
@@ -343,12 +350,14 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
     }
 
     return utils::make_ref<ast::PrototypeExpr>(
-        start, end, name, std::move(args), is_variadic, std::move(ret), linkage
+        start, end, name, std::move(args), std::move(ret), is_variadic, is_operator, linkage
     );
 }
 
-utils::Ref<ast::Expr> Parser::parse_function_definition(ast::ExternLinkageSpecifier linkage) {
-    auto prototype = this->parse_prototype(linkage, true);
+utils::Ref<ast::Expr> Parser::parse_function_definition(
+    ast::ExternLinkageSpecifier linkage, bool is_operator
+) {
+    auto prototype = this->parse_prototype(linkage, true, is_operator);
     if (this->current == TokenKind::SemiColon) {
         this->next();
         return prototype;
@@ -433,12 +442,16 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
         bool is_private = false;
         bool is_readonly = false;
+        bool is_operator = false;
 
         if (this->current.match(TokenKind::Keyword, "private")) {
             is_private = true;
             this->next();
         } else if (this->current.match(TokenKind::Keyword, "readonly")) {
             is_readonly = true;
+            this->next();
+        } else if (this->current.match(TokenKind::Keyword, "operator")) {
+            is_operator = true;
             this->next();
         }
 
@@ -448,8 +461,10 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
 
         if (this->current.value == "func") {
             this->next();
+            auto definition = this->parse_function_definition(
+                ast::ExternLinkageSpecifier::None, is_operator
+            );
 
-            auto definition = this->parse_function_definition();
             if (is_private) {
                 definition->attributes.add("private");
             }
@@ -1359,7 +1374,7 @@ utils::Ref<ast::Expr> Parser::factor() {
 
                 this->next();
 
-                auto prototype = this->parse_prototype(ast::ExternLinkageSpecifier::None, false);
+                auto prototype = this->parse_prototype(ast::ExternLinkageSpecifier::None, false, false);
                 auto body = this->expr(false);
 
                 this->is_inside_function = outer;

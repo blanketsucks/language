@@ -36,7 +36,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     if (expr->external) {
         std::string name = expr->names[0];
 
-        type = expr->type->accept(*this).type;
+        type = expr->type->accept(*this).type.value;
         this->module->getOrInsertGlobal(name, type);
 
         llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -46,11 +46,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     llvm::Value* value = nullptr;
-    bool is_early_function_call = false;
 
+    bool is_early_function_call = false;
     bool is_constant = false;
+    bool is_reference = false;
+    bool is_immutable = false;
+    bool is_stack_allocated = false;
+
     if (!expr->value) {
-        type = expr->type->accept(*this).type;
+        type = expr->type->accept(*this).type.value;
         if (type->isAggregateType()) {
             value = llvm::ConstantAggregateZero::get(type);
         } else if (type->isPointerTy()) {
@@ -62,12 +66,17 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         is_constant = true;
     } else {
         if (expr->type) {
-            type = expr->type->accept(*this).type;
+            type = expr->type->accept(*this).type.value;
             this->ctx = type;
         }
 
-        Value val = expr->value->accept(*this); is_constant = val.is_constant;
+        Value val = expr->value->accept(*this); 
+
+        is_constant = val.is_constant;
         is_early_function_call = val.is_early_function_call;
+        is_reference = val.is_reference;
+        is_immutable = val.is_immutable;
+        is_stack_allocated = val.is_stack_allocated;
 
         llvm::Type* vtype = nullptr;
         if (!is_early_function_call) {
@@ -146,6 +155,24 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             return nullptr;
         }
 
+        if (is_reference) {
+            if (expr->is_immutable && !is_immutable) {
+                ERROR(expr->start, "Cannot assign mutable reference to immutable reference variable '{0}'", first);
+            }
+
+            this->scope->variables[first] = Variable::from_value(
+                first, 
+                value, 
+                expr->is_immutable, 
+                true, 
+                is_stack_allocated, 
+                expr->start, 
+                expr->end
+            );
+
+            return nullptr;
+        }
+
         llvm::AllocaInst* inst = this->create_alloca(type);
         if (is_constant && type->isAggregateType()) {
             std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, first);
@@ -200,7 +227,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         if (!expr->type) {
             type = value->getType();
         } else {
-            type = expr->type->accept(*this).type;
+            type = expr->type->accept(*this).type.value;
         }
     } else {
         type = this->constructors.back().function->getReturnType();

@@ -10,7 +10,7 @@ bool Visitor::is_struct(llvm::Type* type) {
             return false;
         }
 
-        type = type->getNonOpaquePointerElementType();
+        type = type->getPointerElementType();
         if (!type->isStructTy()) {
             return false;
         }
@@ -29,7 +29,7 @@ utils::Shared<Struct> Visitor::get_struct(llvm::Type* type) {
     }
 
     if (type->isPointerTy()) {
-        type = type->getNonOpaquePointerElementType();
+        type = type->getPointerElementType();
     }
 
     auto name = type->getStructName();
@@ -115,7 +115,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
         std::sort(sfields.begin(), sfields.end(), [](auto& a, auto& b) { return a.index < b.index; });        
         for (auto& field : sfields) {
-            llvm::Type* ty = field.type->accept(*this).type;
+            llvm::Type* ty = field.type->accept(*this).type.value;
             if (ty == type) {
                 ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
             }
@@ -156,46 +156,29 @@ Value Visitor::visit(ast::StructExpr* expr) {
 }
 
 Value Visitor::visit(ast::AttributeExpr* expr) {
-    Value parent = expr->parent->accept(*this);
-    bool is_constant = parent.is_constant;
-
-    llvm::Value* value = parent.unwrap(expr->parent->start);
-    llvm::Type* type = value->getType();
-
-    std::string name;
-    bool is_pointer = false;
-
-    if (type->isStructTy()) {
-        name = type->getStructName().str();
-    } else if (type->isPointerTy()) {
-        llvm::Type* element = type->getNonOpaquePointerElementType();
-        if (element->isStructTy()) {
-            name = element->getStructName().str();
-            is_pointer = true;
-        }
-    }
-
-    if (name.empty()) {
+    auto ref = this->as_reference(expr->parent.get());
+    if (ref.is_null()) {
         ERROR(expr->start, "Cannot access attributes of non-struct types");
     }
 
-    auto structure = this->structs[name];
+    auto structure = this->get_struct(ref.type);
+
+    llvm::Value* self = ref.value;
+    if (this->get_pointer_depth(ref.type) >= 1) {
+        self = this->builder->CreateLoad(ref.type, self);
+    }
+
     if (structure->scope->has_function(expr->attribute)) {
         auto function = structure->scope->functions[expr->attribute];
-        if (!is_pointer) {
-            value = this->as_reference(expr->parent.get()).value;
-        }
-
         if (this->current_struct != structure && function->is_private) {
             ERROR(expr->parent->start, "Cannot access private method '{0}'", expr->attribute);
         }
 
         if (function->parent && function->parent != structure) {
-            value = this->builder->CreateBitCast(value, function->parent->type->getPointerTo());
+            self = this->builder->CreateBitCast(self, function->parent->type->getPointerTo());
         }
-        
-        function->used = true;
-        return Value::from_function(function, value);
+
+        return Value::from_function(function, self);
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -208,19 +191,12 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         ERROR(expr->start, "Cannot access private field '{0}'", expr->attribute);
     }
     
-    if (is_constant) {
-        if (!llvm::isa<llvm::ConstantStruct>(value)) {
-            ERROR(expr->start, "Expected a constant structure");
-        } 
-
-        llvm::ConstantStruct* structure = llvm::cast<llvm::ConstantStruct>(value);
-        return Value(structure->getAggregateElement(index), true);
-    } else if (!is_pointer) {
-        return this->builder->CreateExtractValue(value, index);
+    if (ref.is_constant) {
+        llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
+        return Value(constant->getAggregateElement(index), true);
     }
 
-    llvm::Value* ptr = this->builder->CreateStructGEP(type->getNonOpaquePointerElementType(), value, index);
-    return this->load(ptr);
+    return this->load(this->builder->CreateStructGEP(ref.type, self, index));
 }
 
 Value Visitor::visit(ast::ConstructorExpr* expr) {
@@ -294,7 +270,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         return Value(llvm::ConstantStruct::get(structure->type, constants), true);
     }
     
-    if (!args.size()) {
+    if (args.empty()) {
         return llvm::ConstantAggregateZero::get(structure->type);
     }
 

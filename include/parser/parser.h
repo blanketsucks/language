@@ -25,9 +25,11 @@ public:
     utils::Ref<ast::TypeExpr> parse_type();
 
     utils::Ref<ast::BlockExpr> parse_block();
-    utils::Ref<ast::PrototypeExpr> parse_prototype(ast::ExternLinkageSpecifier linkage, bool with_name);
+    utils::Ref<ast::PrototypeExpr> parse_prototype(
+        ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
+    );
     utils::Ref<ast::Expr> parse_function_definition(
-        ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None
+        ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None, bool is_operator = false
     );
     utils::Ref<ast::IfExpr> parse_if_statement();
     utils::Ref<ast::StructExpr> parse_struct();

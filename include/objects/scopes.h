@@ -35,8 +35,14 @@ struct ScopeLocal {
     bool is_immutable;
     bool is_stack_allocated;
 
+    bool is_null();
+    static ScopeLocal null();
+
     static ScopeLocal from_variable(const Variable& variable, bool use_store_value = false);
     static ScopeLocal from_constant(const Constant& constant, bool use_store_value = false);
+    static ScopeLocal from_scope_local(const ScopeLocal& local, llvm::Value* value, llvm::Type* type = nullptr);
+
+    llvm::Constant* get_constant_value();
 };
 
 struct Scope {

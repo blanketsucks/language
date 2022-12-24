@@ -70,11 +70,13 @@ enum class ExprKind {
 
 enum class TypeKind {
     Builtin,
+    Integer,
     Named,
     Tuple,
     Array,
     Pointer,
-    Function
+    Function,
+    Reference
 };
 
 enum class BuiltinType {
@@ -173,7 +175,6 @@ struct Argument {
     utils::Ref<TypeExpr> type;
     utils::Ref<Expr> default_value;
 
-    bool is_reference;
     bool is_self;
     bool is_kwarg;
     bool is_immutable;
@@ -330,8 +331,11 @@ class PrototypeExpr : public ExprMixin<ExprKind::Prototype> {
 public:
     std::string name;
     std::vector<Argument> args;
-    bool is_variadic;
     utils::Ref<TypeExpr> return_type;
+
+    bool is_variadic;
+    bool is_operator;
+
     ExternLinkageSpecifier linkage;
 
     PrototypeExpr(
@@ -339,8 +343,9 @@ public:
         Location end, 
         std::string name, 
         std::vector<Argument> args, 
-        bool is_variadic,
         utils::Ref<TypeExpr> return_type, 
+        bool is_variadic,
+        bool is_operator,
         ExternLinkageSpecifier linkage
     );
 
@@ -612,6 +617,14 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+class IntegerTypeExpr : public TypeExpr {
+public:
+    utils::Ref<Expr> size;
+
+    IntegerTypeExpr(Location start, Location end, utils::Ref<Expr> size);
+    Value accept(Visitor& visitor) override;
+};
+
 class NamedTypeExpr : public TypeExpr {
 public:
     std::string name;
@@ -652,6 +665,14 @@ public:
     utils::Ref<TypeExpr> ret;
 
     FunctionTypeExpr(Location start, Location end, std::vector<utils::Ref<TypeExpr>> args, utils::Ref<TypeExpr> ret);
+    Value accept(Visitor& visitor) override;
+};
+
+class ReferenceTypeExpr : public TypeExpr {
+public:
+    utils::Ref<TypeExpr> type;
+
+    ReferenceTypeExpr(Location start, Location end, utils::Ref<TypeExpr> type);
     Value accept(Visitor& visitor) override;
 };
 

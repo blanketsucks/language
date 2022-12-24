@@ -83,13 +83,41 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
 }
 
 Value Visitor::visit(ast::ElementExpr* expr) {
-    bool is_const = false;
-    Value val = expr->value->accept(*this); is_const = val.is_constant;
+    auto ref = this->as_reference(expr->value.get());
+    if (ref.is_null()) {
+        llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->start);
+        if (!value->getType()->isPointerTy()) {
+            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(value->getType()));
+        }
 
-    llvm::Value* value = val.unwrap(expr->value->start);
-    llvm::Type* type = value->getType();
-    if (type->isStructTy()) {
-        llvm::StringRef name = type->getStructName();
+        ref.value = value;
+        ref.type = value->getType();
+    } else {
+        if (this->get_pointer_depth(ref.type) >= 1) {
+            ref.value = this->load(ref.value);
+        }
+    }
+
+    if (ref.type->isStructTy() && !this->is_tuple(ref.type)) {
+        auto structure = this->get_struct(ref.type);
+        if (!structure->has_method("getitem")) {
+            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
+        }
+
+        auto method = structure->get_method("getitem");
+        if (!method->is_operator) {
+            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
+        }
+
+        if (method->argc() != 2) { // 2 with self
+            ERROR(expr->value->start, "Method 'getitem' of type '{0}' must take exactly one argument", this->get_type_name(ref.type));
+        }
+
+        return this->call(method->value, { expr->index->accept(*this).unwrap(expr->index->start) }, ref.value);
+    }
+
+    if (ref.type->isStructTy()) {
+        llvm::StringRef name = ref.type->getStructName();
         if (!name.startswith("__tuple")) {
             ERROR(expr->value->start, "Expected a pointer, array or tuple");
         }
@@ -99,25 +127,22 @@ Value Visitor::visit(ast::ElementExpr* expr) {
             ERROR(expr->index->start, "Tuple indices must be integer constants");
         }
 
-        llvm::ConstantInt* index = llvm::cast<llvm::ConstantInt>(val);
-        int64_t idx = index->getSExtValue();
-
-        if (idx < 0) {
+        int64_t index = llvm::cast<llvm::ConstantInt>(val)->getSExtValue();
+        if (index < 0) {
             ERROR(expr->index->start, "Tuple indices must be a positive integer");
         }
 
-        uint32_t elements = type->getStructNumElements();
-        if (idx > elements) {
+        uint32_t elements = ref.type->getStructNumElements();
+        if (index > elements) {
             ERROR(expr->index->start, "Element index out of bounds");
         }
 
-        if (is_const) {
-            llvm::ConstantStruct* tuple = llvm::cast<llvm::ConstantStruct>(value);
-            return Value(tuple->getAggregateElement(idx), true);
+        if (ref.is_constant) {
+            llvm::ConstantStruct* tuple = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
+            return Value(tuple->getAggregateElement(index), true);
         }
 
-        llvm::Value* ptr = this->builder->CreateStructGEP(type, value, idx);
-        return this->builder->CreateLoad(type->getStructElementType(idx), ptr);
+        return this->load(this->builder->CreateStructGEP(ref.type, ref.value, index));
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->start);
@@ -125,9 +150,9 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         ERROR(expr->index->start, "Indicies must be integers");
     }
 
-    if (is_const && llvm::isa<llvm::ConstantInt>(index)) {
+    if (ref.is_constant && llvm::isa<llvm::ConstantInt>(index)) {
         int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
-        llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(value);
+        llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(ref.get_constant_value());
 
         int64_t size = array->getType()->getArrayNumElements();
         if (idx > size - 1) {
@@ -137,20 +162,15 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         return Value(array->getAggregateElement(idx), true);
     }
 
-    llvm::Type* element = nullptr;
-    if (type->isArrayTy()) {
-        element = type->getArrayElementType();
-    } else {
-        element = type->getNonOpaquePointerElementType();
-    }
-
     llvm::Value* ptr = nullptr;
-    if (!type->isArrayTy()) {
-        ptr = this->builder->CreateInBoundsGEP(element, value, index);
+    if (!ref.type->isArrayTy()) {
+        ptr = this->builder->CreateGEP(
+            ref.type->getPointerElementType(), ref.value, index
+        );
     } else {
         if (llvm::isa<llvm::ConstantInt>(index)) {
             int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
-            int64_t size = type->getArrayNumElements();
+            int64_t size = ref.type->getArrayNumElements();
 
             if (idx == size) {
                 ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
@@ -159,12 +179,12 @@ Value Visitor::visit(ast::ElementExpr* expr) {
             }
         }
 
-        // ExtractValue doesn't take a Value so i'm kinda forced to do this.
-        value = this->as_reference(expr->value.get()).value;
-        ptr = this->builder->CreateInBoundsGEP(type, value, {this->builder->getInt32(0), index});
+        ptr = this->builder->CreateGEP(
+            ref.type, ref.value, {this->builder->getInt32(0), index}
+        );
     }
     
-    return this->load(ptr, element);
+    return this->load(ptr);
 }
 
 void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value) {
@@ -182,7 +202,6 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
     llvm::Type* type = ref.type;
     if (this->get_pointer_depth(ref.type) >= 1) {
         parent = this->load(parent, ref.type);
-        type = type->getPointerElementType();
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->start);
@@ -191,8 +210,21 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
     }
 
     llvm::Value* element = value->accept(*this).unwrap(value->start);
-    llvm::Value* ptr = nullptr;
+    llvm::Type* ty = type->isArrayTy() ? type->getArrayElementType() : type->getPointerElementType();
 
+    if (!this->is_compatible(ty, element->getType())) {
+        ERROR(
+            value->start, 
+            "Cannot assign value of type '{0}' to {1} of type '{2}'", 
+            this->get_type_name(element->getType()),
+            type->isArrayTy() ? "an array" : "a pointer",
+            this->get_type_name(type)
+        );
+    } else {
+        element = this->cast(element, ty);
+    }
+
+    llvm::Value* ptr = nullptr;
     if (ref.type->isArrayTy()) {
         if (llvm::isa<llvm::ConstantInt>(index)) {
             int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
@@ -208,6 +240,10 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
         std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
         ptr = this->builder->CreateGEP(type, parent, indicies);
     } else {
+        if (this->get_pointer_depth(type) <= 1) {
+            type = type->getPointerElementType();
+        }
+
         ptr = this->builder->CreateGEP(type, parent, index);
     }
 

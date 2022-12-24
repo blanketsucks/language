@@ -121,6 +121,8 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     Lexer lexer(file, path.name);
 
     Preprocessor preprocessor(lexer.lex());
+    preprocessor.define("__file__", path.filename());
+
     auto tokens = preprocessor.process();
 
     Parser parser(tokens);

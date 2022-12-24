@@ -6,14 +6,15 @@ Function::Function(
     std::string name,
     std::vector<FunctionArgument> args,
     std::map<std::string, FunctionArgument> kwargs,
-    llvm::Type* ret,
+    Type return_type,
     llvm::Function* value,
     bool is_entry,
     bool is_intrinsic,
     bool is_anonymous,
+    bool is_operator,
     ast::Attributes attrs
-) : name(name), ret(ret), value(value), args(args), kwargs(kwargs), attrs(attrs), 
-    is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous) {
+) : name(name), value(value), ret(return_type, nullptr, nullptr), args(args), kwargs(kwargs), attrs(attrs), 
+    is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous), is_operator(is_operator) {
     this->used = false;
     this->is_finalized = false;
 
@@ -21,7 +22,6 @@ Function::Function(
     this->noreturn = attrs.has("noreturn");
     this->attrs = attrs;
 
-    this->return_block = nullptr;
     this->calls = {};
 }
 

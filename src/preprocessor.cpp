@@ -261,6 +261,26 @@ void Preprocessor::define(std::string name) {
     this->macros[name] = Macro(name, {}, {});
 }
 
+void Preprocessor::define(std::string name, int value) {
+    Token token = {
+        TokenKind::Integer,
+        Location(), Location(),
+        std::to_string(value)
+    };
+
+    this->macros[name] = Macro(name, {}, {token});
+}
+
+void Preprocessor::define(std::string name, std::string value) {
+    Token token = {
+        TokenKind::String,
+        Location(), Location(),
+        value
+    };
+
+    this->macros[name] = Macro(name, {}, {token});
+}
+
 void Preprocessor::undef(std::string name) {
     this->macros.erase(name);
 }

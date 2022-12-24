@@ -5,7 +5,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     if (!expr->type) {
         type = this->builder->getInt64Ty();
     } else {
-        type = expr->type->accept(*this).type;
+        type = expr->type->accept(*this).type.value;
     }
     
     auto enumeration = utils::make_shared<Enum>(expr->name, type);

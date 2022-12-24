@@ -25,7 +25,7 @@ std::string Location::format() {
     return this->filename + ":" + line + ":" + column + ":";
 }
 
-std::string Token::getTokenTypeValue(TokenKind type) {
+std::string Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";
         case TokenKind::Dec: return "--";

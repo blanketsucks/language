@@ -154,11 +154,12 @@ PrototypeExpr::PrototypeExpr(
     Location start, 
     Location end, 
     std::string name, 
-    std::vector<Argument> args, 
+    std::vector<Argument> args,
+    utils::Ref<TypeExpr> return_type,
     bool is_variadic,
-    utils::Ref<TypeExpr> return_type, 
+    bool is_operator,
     ExternLinkageSpecifier linkage
-) : ExprMixin(start, end), name(name), is_variadic(is_variadic), linkage(linkage) {
+) : ExprMixin(start, end), name(name), is_variadic(is_variadic), is_operator(is_operator), linkage(linkage) {
     this->args = std::move(args);
     this->return_type = std::move(return_type);
 }
@@ -411,6 +412,16 @@ Value BuiltinTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
+IntegerTypeExpr::IntegerTypeExpr(
+    Location start, Location end, utils::Ref<Expr> size
+) : TypeExpr(start, end, TypeKind::Integer) {
+    this->size = std::move(size);
+}
+
+Value IntegerTypeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
 NamedTypeExpr::NamedTypeExpr(
     Location start, Location end, std::string name, std::deque<std::string> parents
 ) : TypeExpr(start, end, TypeKind::Named), name(name), parents(parents) {}
@@ -457,7 +468,17 @@ FunctionTypeExpr::FunctionTypeExpr(
     this->ret = std::move(ret);
 }
 
-Value FunctionTypeExpr::accept(Visitor &visitor) {
+Value FunctionTypeExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+ReferenceTypeExpr::ReferenceTypeExpr(
+    Location start, Location end, utils::Ref<TypeExpr> type
+) : TypeExpr(start, end, TypeKind::Reference) {
+    this->type = std::move(type);
+}
+
+Value ReferenceTypeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
