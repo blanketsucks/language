@@ -21,8 +21,8 @@ void Visitor::panic(const std::string& message, Span span) {
 
     this->builder->CreateCall(function, {
         this->to_str(span.filename), 
-        this->builder->getInt32(span.start.line), 
-        this->builder->getInt32(span.start.column), 
+        this->to_int(span.start.line),
+        this->to_int(span.start.column),
         this->to_str(message)
     });
 

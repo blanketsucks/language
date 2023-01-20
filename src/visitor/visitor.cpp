@@ -108,8 +108,20 @@ std::string Visitor::format_name(std::string name) {
     return formatted.empty() ? name : FORMAT("{0}.{1}", formatted, name);
 }
 
+llvm::Constant* Visitor::to_str(const char* str) {
+    return this->builder->CreateGlobalStringPtr(str, ".str", 0, this->module.get());
+}
+
 llvm::Constant* Visitor::to_str(const std::string& str) {
     return this->builder->CreateGlobalStringPtr(str, ".str", 0, this->module.get());
+}
+
+llvm::Constant* Visitor::to_int(uint64_t value, uint32_t bits) {
+    return this->builder->getIntN(bits, value);
+}
+
+llvm::Constant* Visitor::to_float(double value) {
+    return llvm::ConstantFP::get(*this->context, llvm::APFloat(value));
 }
 
 llvm::AllocaInst* Visitor::create_alloca(llvm::Type* type) {

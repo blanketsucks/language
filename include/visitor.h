@@ -64,7 +64,12 @@ public:
     std::pair<llvm::Value*, bool> get_variable(std::string name);
     Function* get_function(std::string name);
 
+    llvm::Constant* to_str(const char* str);
     llvm::Constant* to_str(const std::string& str);
+
+    llvm::Constant* to_int(uint64_t value, uint32_t bits = 64);
+
+    llvm::Constant* to_float(double value);
 
     // Returns the `merge` block that should be inserted after doing stuff in the `then` block
     llvm::BasicBlock* create_if_statement(llvm::Value* condition);
