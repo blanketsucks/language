@@ -1,7 +1,7 @@
 #include "visitor.h"
 
 void Visitor::panic(const std::string& message, Span span) {
-    llvm::Function* function = this->module->getFunction("__quart_panic");
+    llvm::Function* function = this->module->getFunction("__quart_panic"); // Defined in lib/panic.c
     if (!function) {
         function = this->create_function(
             "__quart_panic",
