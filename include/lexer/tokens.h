@@ -7,13 +7,49 @@
 #include <map>
 #include <algorithm>
 
+#include "lexer/location.h"
+
 enum class TokenKind {
     Identifier,
-    Keyword,
     Integer,
     Float,
     String,
     Char,
+
+    // Keywords
+    Extern,
+    Func,
+    Return,
+    If,
+    Else,
+    While,
+    For,
+    Break,
+    Continue,
+    Let,
+    Const,
+    Struct,
+    Namespace,
+    Enum,
+    Module,
+    Import,
+    As,
+    Type,
+    Sizeof,
+    Offsetof,
+    Typeof,
+    Using,
+    From,
+    Defer,
+    Private,
+    Foreach,
+    In,
+    StaticAssert,
+    Immutable,
+    Readonly,
+    Operator,
+
+    Reserved,
 
     Add,
     Minus,
@@ -58,7 +94,8 @@ enum class TokenKind {
     Colon,
     Dot,
     DoubleColon,
-    Arrow,
+    Arrow, // ->
+    DoubleArrow, // =>
     Ellipsis,
     Newline,
     Maybe,
@@ -66,26 +103,11 @@ enum class TokenKind {
     EOS
 };
 
-struct Location {
-    uint32_t line;
-    uint32_t column;
-    uint32_t index;
-
-    std::string filename;
-
-    Location update(uint32_t line, uint32_t column, uint32_t index);
-    Location update(uint32_t column, uint32_t index);
-
-    std::string format();
-
-    static Location dummy() { return Location { 0, 0, 0, "" }; }
-};
-
 struct Token {
     TokenKind type;
-    Location start;
-    Location end;
     std::string value;
+
+    Span span;
 
     static std::string get_type_value(TokenKind type);
 
@@ -98,54 +120,42 @@ struct Token {
     bool operator!=(TokenKind type);
 };
 
-static std::vector<std::string> KEYWORDS = {
+static std::map<std::string, TokenKind> KEYWORDS = {
     // Keywords
-    "extern",
-    "func",
-    "return",
-    "if",
-    "else",
-    "while",
-    "for",
-    "break",
-    "continue",
-    "let",
-    "const",
-    "struct",
-    "namespace",
-    "type",
-    "as",
-    "sizeof",
-    "offsetof",
-    "typeof",
-    "using",
-    "from",
-    "defer",
-    "private",
-    "enum",
-    "where",
-    "import",
-    "foreach",
-    "in",
-    "static_assert",
-    "immutable",
-    "readonly",
-    "operator",
-
-    // Preprocessor keywords
-    "$define",
-    "$undef",
-    "$error",
-    "$include",
-    "$ifdef",
-    "$ifndef",
-    "$endif",
-    "$if",
-    "$elif",
-    "$else",
+    {"extern", TokenKind::Extern},
+    {"func", TokenKind::Func},
+    {"return", TokenKind::Return},
+    {"if", TokenKind::If},
+    {"else", TokenKind::Else},
+    {"while", TokenKind::While},
+    {"for", TokenKind::For},
+    {"break", TokenKind::Break},
+    {"continue", TokenKind::Continue},
+    {"let", TokenKind::Let},
+    {"const", TokenKind::Const},
+    {"struct", TokenKind::Struct},
+    {"namespace", TokenKind::Namespace},
+    {"enum", TokenKind::Enum},
+    {"module", TokenKind::Module},
+    {"import", TokenKind::Import},
+    {"as", TokenKind::As},
+    {"type", TokenKind::Type},
+    {"sizeof", TokenKind::Sizeof},
+    {"offsetof", TokenKind::Offsetof},
+    {"typeof", TokenKind::Typeof},
+    {"using", TokenKind::Using},
+    {"from", TokenKind::From},
+    {"defer", TokenKind::Defer},
+    {"private", TokenKind::Private},
+    {"foreach", TokenKind::Foreach},
+    {"in", TokenKind::In},
+    {"static_assert", TokenKind::StaticAssert},
+    {"immutable", TokenKind::Immutable},
+    {"readonly", TokenKind::Readonly},
+    {"operator", TokenKind::Operator},
 
     // Reserved words
-    "__tuple"
+    {"__tuple", TokenKind::Reserved}
 };
 
 static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {

@@ -1,7 +1,6 @@
 #include "compiler.h"
-#include "llvm.h"
-#include "utils/filesystem.h"
-#include "objects/types.h"
+
+#include "llvm/Support/CommandLine.h"
 
 llvm::cl::OptionCategory category("Compiler options");
 
@@ -26,14 +25,38 @@ llvm::cl::opt<OutputFormat> format(
     llvm::cl::cat(category)
 );
 
+llvm::cl::opt<MangleStyle> mangling(
+    "mangle-style", 
+    llvm::cl::desc("Set the mangling style"), 
+    llvm::cl::init(MangleStyle::Full), 
+    llvm::cl::values(
+        clEnumValN(MangleStyle::Full, "full", "Use the default mangling style"),
+        clEnumValN(MangleStyle::Minimal, "minimal", "Use a minimal mangling style"),
+        clEnumValN(MangleStyle::None, "none", "Do not mangle names")
+    ),
+    llvm::cl::cat(category)
+);
+
 llvm::cl::opt<std::string> entry("entry", llvm::cl::desc("Set an entry point for the program"), llvm::cl::init("main"), llvm::cl::cat(category));
 llvm::cl::opt<std::string> output("output", llvm::cl::desc("Set an output file"), llvm::cl::Optional, llvm::cl::cat(category));
-llvm::cl::list<std::string> includes("I", llvm::cl::desc("Add an include path"), llvm::cl::value_desc("path"), llvm::cl::cat(category));
-llvm::cl::list<std::string> libraries("l", llvm::cl::desc("Add a library"), llvm::cl::value_desc("name"), llvm::cl::cat(category));
+llvm::cl::list<std::string> includes(
+    "I", 
+    llvm::cl::Prefix,
+    llvm::cl::desc("Add an include path"), 
+    llvm::cl::value_desc("path"), 
+    llvm::cl::cat(category)
+);
+llvm::cl::list<std::string> libraries(
+    "l",
+    llvm::cl::Prefix,
+    llvm::cl::desc("Add a library"), 
+    llvm::cl::value_desc("name"), 
+    llvm::cl::cat(category)
+);
 llvm::cl::list<std::string> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::OneOrMore);
 
 struct Arguments {
-    std::string filename;
+    utils::filesystem::Path file;
     std::string output;
     std::string entry;
     std::string target;
@@ -53,7 +76,11 @@ Arguments parse_arguments(int argc, char** argv) {
     llvm::cl::HideUnrelatedOptions(category);
     llvm::cl::ParseCommandLineOptions(argc, argv);
 
-    args.filename = files.front(); 
+    args.file = files.front(); 
+    if (!args.file.exists()) {
+        Compiler::error("File not found '{0}'", args.file.str()); exit(1);
+    }
+
     args.entry = entry;   
     args.format = format;
     args.optimize = optimize;
@@ -63,7 +90,7 @@ Arguments parse_arguments(int argc, char** argv) {
     args.libraries.names = libraries;
 
     if (output.empty()) {
-        args.output = utils::filesystem::replace_extension(args.filename, "o");
+        args.output = args.file.with_extension("o").str();
         switch (args.format) {
             case OutputFormat::LLVM:
                 args.output = utils::filesystem::replace_extension(args.output, "ll"); break;
@@ -97,22 +124,25 @@ int main(int argc, char** argv) {
     Arguments args = parse_arguments(argc, argv);
     Compiler::init();
 
-    utils::filesystem::Path path(args.filename);
-    if (!path.exists()) {
-        Compiler::error("File not found '{0}'", args.filename); exit(1);
-    }
+    CompilerOptions options = {
+        .input = args.file,
+        .output = args.output,
+        .entry = args.entry,
+        .target = args.target,
+        .libs = args.libraries,
+        .includes = {},
+        .format = args.format,
+        .optimization = args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug,
+        .opts = OptimizationOptions {
+            .enable = args.optimize,
+            .mangle_style = mangling
+        },
+        .verbose = args.verbose,
+        .object_files = {},
+        .extras = {}
+    };
 
-    Compiler compiler;
-
-    compiler.set_entry_point(args.entry);
-    compiler.set_input_file(args.filename);
-    compiler.set_output_file(args.output);
-    compiler.set_output_format(args.format);
-    compiler.set_target(args.target);
-    compiler.set_verbose(args.verbose);
-
-    compiler.set_optimization_level(args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug);
-    
+    Compiler compiler(options);    
     for (auto& include : args.includes) {
         utils::filesystem::Path inc(include);
         if (!inc.exists()) {
@@ -126,13 +156,14 @@ int main(int argc, char** argv) {
         compiler.add_include_path(include);
     }
 
-    compiler.set_libraries(args.libraries.names);
-    compiler.set_library_paths(args.libraries.paths);
-
     compiler.add_library("c");
+    compiler.add_library("pthread");
 
     compiler.add_include_path("lib/");
-    compiler.define_preprocessor_macro("__file__", args.filename);
+
+    compiler.add_object_file("lib/panic.o");
+
+    compiler.define_preprocessor_macro("__file__", args.file.filename());
 
     compiler.compile().unwrap();
 

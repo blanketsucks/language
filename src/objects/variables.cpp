@@ -1,7 +1,7 @@
 #include "objects/variables.h"
 
 Variable Variable::from_alloca(
-    std::string name, llvm::AllocaInst* alloca, bool is_immutable, Location start, Location end
+    std::string name, llvm::AllocaInst* alloca, bool is_immutable, Span span
 ) {
     return { 
         name, 
@@ -11,8 +11,7 @@ Variable Variable::from_alloca(
         false, 
         is_immutable,
         true,
-        start, 
-        end
+        span
     };
 }
 
@@ -22,8 +21,7 @@ Variable Variable::from_value(
     bool is_immutable,
     bool is_reference,
     bool is_stack_allocated,
-    Location start, 
-    Location end
+    Span span
 ) {
     llvm::Type* type = value->getType();
     assert(type->isPointerTy());
@@ -36,13 +34,12 @@ Variable Variable::from_value(
         is_reference, 
         is_immutable,
         is_stack_allocated,
-        start, 
-        end
+        span
     };
 }
 
 Variable Variable::null() {
-    return { "", nullptr, nullptr, nullptr, false, false, false, Location(), Location() };
+    return { "", nullptr, nullptr, nullptr, false, false, false, Span() };
 }
 
 bool Variable::is_null() {
@@ -50,7 +47,7 @@ bool Variable::is_null() {
 }
 
 Constant Constant::null() {
-    return { "", nullptr, nullptr, nullptr, Location(), Location() };
+    return { "", nullptr, nullptr, nullptr, Span() };
 }
 
 bool Constant::is_null() {

@@ -38,25 +38,29 @@ OPTIONS:
 
 Compiler options:
 
-  -I=<path>         - Add an include path
-  --entry=<string>  - Set an entry point for the program
-  --format=<value>  - Set the output format
-    =llvm-ir        -   Emit LLVM IR
-    =llvm-bc        -   Emit LLVM Bitcode
-    =assembly       -   Emit assembly code
-    =object         -   Emit object code
-    =exe            -   Emit an executable (default)
-    =shared         -   Emit a shared library
-  -l=<name>         - Add a library
-  --optimize        - Enable optimizations
-  --output=<string> - Set an output file
-  --verbose         - Enable verbose output
+  -I=<path>              - Add an include path
+  --entry=<string>       - Set an entry point for the program
+  --format=<value>       - Set the output format
+    =llvm-ir             -   Emit LLVM IR
+    =llvm-bc             -   Emit LLVM Bitcode
+    =asm                 -   Emit assembly code
+    =obj                 -   Emit object code
+    =exe                 -   Emit an executable (default)
+    =shared              -   Emit a shared library
+  -l=<name>              - Add a library
+  --mangle-style=<value> - Set the mangling style
+    =full                -   Use the default mangling style
+    =minimal             -   Use a minimal mangling style
+    =none                -   Do not mangle names
+  --optimize             - Enable optimizations
+  --output=<string>      - Set an output file
+  --verbose              - Enable verbose output
 
 Generic Options:
 
-  --help            - Display available options (--help-hidden for more)
-  --help-list       - Display list of available options (--help-list-hidden for more)
-  --version         - Display the version of this program
+  --help                 - Display available options (--help-hidden for more)
+  --help-list            - Display list of available options (--help-list-hidden for more)
+  --version              - Display the version of this program
 ```
 
 ## Building/Running the JIT
@@ -66,7 +70,7 @@ Quart has a built-in JIT Compiler, you can build this compiler using the followi
 ```console
 $ git clone https://github.com/blanketsucks/language.git
 $ cd language
-$ make jit # or make all which will build both the JIT and the compiler
+$ make jit # or `make all` which will build both the JIT and the compiler
 ```
 
 After the build, you'll have a `quart-jit` executable in the same directory.

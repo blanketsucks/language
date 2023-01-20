@@ -33,7 +33,7 @@ class ExampleResult(TypedDict):
     stderr: str
 
 class Example:
-    def __init__(self, file: pathlib.Path[str]) -> None:
+    def __init__(self, file: pathlib.Path) -> None:
         self.file = file
 
     def compile(self) -> None:

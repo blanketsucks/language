@@ -3,9 +3,15 @@
 
 #include <sstream>
 
+const char* Mangler::PREFIX = "P";
+const char* Mangler::SEPARATOR = "3";
+const char* Mangler::ARGS_SEPARATOR = ".";
+const char* Mangler::VARIADIC = "e";
+const char* Mangler::END = "E";
+
 std::string Mangler::replace(std::string str) {
     for (auto& c : str) {
-        if (c == '.') { c = Mangler::SEPARATOR; }
+        if (c == '.') { c = *Mangler::SEPARATOR; }
     }
 
     return str;
@@ -48,9 +54,9 @@ std::string Mangler::mangle(
     std::vector<llvm::Type*> args,
     bool is_variadic,
     llvm::Type* ret,
-    utils::Shared<Namespace> ns,
-    utils::Shared<Struct> structure,
-    utils::Shared<Module> module
+    utils::Ref<Namespace> ns,
+    utils::Ref<Struct> structure,
+    utils::Ref<Module> module
 ) {
     std::stringstream stream; stream << '_' << Mangler::PREFIX;
 
@@ -125,10 +131,6 @@ std::string Mangler::demangle_type(std::string name) {
 }
 
 std::string Mangler::demangle(std::string name) {
-    if (name[0] != Mangler::PREFIX && name[1] != '_') {
-        return name;
-    }
-
     name = name.substr(2);
     std::stringstream stream;
 

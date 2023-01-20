@@ -1,6 +1,7 @@
 #include "lexer/lexer.h"
 #include "utils/log.h"
 
+#include <cctype>
 #include <string>
 
 Lexer::Lexer(const std::string& source, std::string filename) {
@@ -11,23 +12,9 @@ Lexer::Lexer(const std::string& source, std::string filename) {
     this->next();
 }
 
-Lexer::Lexer(std::fstream& file, std::string filename) {
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-
-    this->source = buffer.str();
-    this->filename = filename;
-
-    this->reset();
-    this->next();
-}
-
-Lexer::Lexer(FILE* file, std::string filename) {
-    std::stringstream buffer;
-    buffer << file;
-
-    this->source = buffer.str();
-    this->filename = filename;
+Lexer::Lexer(utils::filesystem::Path path) {
+    this->filename = path.str();
+    this->source = path.read(true).str();
 
     this->reset();
     this->next();
@@ -35,7 +22,7 @@ Lexer::Lexer(FILE* file, std::string filename) {
 
 char Lexer::next() {
     if (this->index == UINT32_MAX) {
-        ERROR(this->loc(), "Lexer index overflow.");
+        ERROR(this->make_span(), "Lexer index overflow.");
     }
 
     this->current = this->source[this->index];
@@ -48,14 +35,14 @@ char Lexer::next() {
 
     this->column++;
     if (this->column == UINT32_MAX) {
-        ERROR(this->loc(), "Lexer column overflow.");
+        ERROR(this->make_span(), "Lexer column overflow.");
     }
 
     return this->current;
 }
 
-char Lexer::peek() { 
-    return this->source[this->index]; 
+char Lexer::peek(uint32_t offset) { 
+    return this->source[this->index + offset]; 
 }
 
 char Lexer::prev() { 
@@ -70,23 +57,47 @@ void Lexer::reset() {
 }
 
 bool Lexer::is_keyword(std::string word) {
-    return std::find(KEYWORDS.begin(), KEYWORDS.end(), word) != KEYWORDS.end();
+    return KEYWORDS.find(word) != KEYWORDS.end();
+}
+
+TokenKind Lexer::get_keyword_kind(std::string word) {
+    return KEYWORDS.at(word);
 }
 
 Token Lexer::create_token(TokenKind type, std::string value) {
-    return {type, this->loc(), this->loc(), value};
+    return {type, value, this->make_span()};
 }
 
 Token Lexer::create_token(TokenKind type, Location start, std::string value) {
-    return {type, start, this->loc(), value};
+    return {type, value, this->make_span(start, this->loc())};
 }
 
 Location Lexer::loc() {
     return Location {
         this->line,
         this->column,
-        this->index,
-        this->filename,
+        this->index
+    };
+}
+
+Span Lexer::make_span() {
+    return this->make_span(this->loc(), this->loc());
+}
+
+Span Lexer::make_span(const Location& start, const Location& end) {
+    uint32_t offset = start.index - start.column;
+    std::string line;
+
+    if (offset < this->source.size()) {
+        line = this->source.substr(offset);
+        line = line.substr(0, line.find('\n'));
+    }
+
+    return Span {
+        start,
+        end,
+        this->filename.c_str(),
+        line
     };
 }
 
@@ -126,7 +137,7 @@ char Lexer::escape(char current) {
             } else if (hex[i] >= 'A' && hex[i] <= 'F') {
                 hex[i] -= 'A' - 10;
             } else {
-                ERROR(this->loc(), "Invalid hex escape sequence");
+                ERROR(this->make_span(), "Invalid hex escape sequence");
             }
 
             i++;
@@ -135,7 +146,61 @@ char Lexer::escape(char current) {
         return (char)(hex[0] * 16 + hex[1]);
     }
 
-    ERROR(this->loc(), "Invalid escape sequence"); exit(1);
+    ERROR(this->make_span(), "Invalid escape sequence"); exit(1);
+}
+
+bool Lexer::is_valid_identifier(uint8_t c) {
+    if (std::isalnum(c) || c == '_') {
+        return true;
+    } else if (c < 128) {
+        return false;
+    }
+
+    uint32_t expected = 0;
+    if (c < 0x80) {
+        return true;
+    } else if (c < 0xE0) {
+        expected = 1;
+    } else if (c < 0xF0) {
+        expected = 2;
+    } else if (c < 0xF8) {
+        expected = 3;
+    } else {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < expected; i++) {
+        uint8_t next = this->peek(i);
+        if ((next & 0xC0) != 0x80) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string Lexer::parse_unicode(uint8_t current) {  
+    uint32_t expected = 0;
+
+    if (current < 0x80) {
+        return std::string(1, current);
+    } else if (current < 0xE0) {
+        expected = 1;
+    } else if (current < 0xF0) {
+        expected = 2;
+    } else if (current < 0xF8) {
+        expected = 3;
+    }
+
+    std::string unicode;
+    unicode.reserve(expected + 1); // I'm pretty sure this doesn't improve performance that much in this case but meh
+
+    unicode += this->current;
+    for (uint32_t i = 0; i < expected; i++) {
+        unicode += this->next();
+    }
+
+    return unicode;
 }
 
 void Lexer::skip_comment() {
@@ -148,19 +213,19 @@ Token Lexer::parse_identifier() {
     std::string value;
     Location start = this->loc();
 
-    value += this->current;
+    value += this->parse_unicode(this->current);
 
     char next = this->next();
-    while (std::isalnum(next) || next == '_') {
-        value += this->current;
+    while (this->is_valid_identifier(next)) {
+        value += this->parse_unicode(next);
         next = this->next();
     }
 
-    if (this->is_keyword(value)) {
-        return this->create_token(TokenKind::Keyword, start, value);
+    if (Lexer::is_keyword(value)) {
+        return this->create_token(Lexer::get_keyword_kind(value), start, value);
     } else {
         if (value[0] == '$') {
-            ERROR(start, "Identifiers starting with '$' are reserved for keywords.");
+            ERROR(this->make_span(start, this->loc()), "Identifiers starting with '$' are reserved for keywords.");
         }
 
         return this->create_token(TokenKind::Identifier, start, value);
@@ -186,8 +251,8 @@ Token Lexer::parse_string() {
     }
 
     if (this->current != '"') {
-        NOTE(start, "Unterminated string literal.");
-        ERROR(this->loc(), "Expected end of string.");
+        NOTE(this->make_span(start, start), "Unterminated string literal.");
+        ERROR(this->make_span(this->loc(), this->loc()), "Expected end of string.");
     }
     
     Token token = this->create_token(TokenKind::String, start, value); this->next();
@@ -223,7 +288,7 @@ Token Lexer::parse_number() {
     
         if (this->current != '.') {
             if (std::isdigit(this->peek()) ) {
-                ERROR(start, "Leading zeros on integer constants are not allowed");
+                ERROR(this->make_span(start, this->loc()), "Leading zeros on integer constants are not allowed");
             }
 
             return this->create_token(TokenKind::Integer, start, "0");
@@ -261,7 +326,7 @@ std::vector<Token> Lexer::lex() {
 
         if (this->current == '\n') {
             if (this->line == UINT32_MAX) {
-                ERROR(this->loc(), "Lexer line overflow. Too many lines in file.");
+                ERROR(this->make_span(), "Lexer line overflow. Too many lines in file.");
             }
 
             this->line++;
@@ -275,11 +340,15 @@ std::vector<Token> Lexer::lex() {
 
         if (std::isspace(this->current)) {
             this->next();
+            if (this->current == '\t') {
+                this->column += 3;
+            }
+
             continue;
-        } else if (std::isalpha(this->current) || this->current == '_' || this->current == '$') {
-            tokens.push_back(this->parse_identifier());
         } else if (std::isdigit(this->current)) {
             tokens.push_back(this->parse_number());
+        } else if (this->is_valid_identifier(this->current)) {
+            tokens.push_back(this->parse_identifier());
         } else if (this->current == '#') {
             this->skip_comment();
         } else if (this->current == '+') {
@@ -354,6 +423,9 @@ std::vector<Token> Lexer::lex() {
             if (next == '=') {
                 this->next();
                 token = this->create_token(TokenKind::Eq, start, "==");
+            } else if (next == '>') {
+                this->next();
+                token = this->create_token(TokenKind::DoubleArrow, start, "=>");
             } else {
                 token = this->create_token(TokenKind::Assign, "=");
             }
@@ -492,11 +564,11 @@ std::vector<Token> Lexer::lex() {
             tokens.push_back(this->create_token(TokenKind::Maybe, "?"));
             this->next();
         } else {
-            ERROR(this->loc(), "Unexpected character '{0}'", this->current);
+            ERROR(this->make_span(), "Unexpected character '{0}'", this->current);
         }
     }
 
-    Token eof = {TokenKind::EOS, this->loc(), this->loc(), "\0"};
+    Token eof = {TokenKind::EOS, "\0", this->make_span()};
     tokens.push_back(eof);
 
     return tokens;

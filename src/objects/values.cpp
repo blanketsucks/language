@@ -23,9 +23,9 @@ bool Value::is_null() {
     return !this->value;
 }
 
-llvm::Value* Value::unwrap(Location location) {
+llvm::Value* Value::unwrap(Span span) {
     if (!this->value) {
-        ERROR(location, "Expected an expression");
+        ERROR(span, "Expected an expression");
     }
 
     return this->value;
@@ -35,35 +35,35 @@ Value Value::null() {
     return Value(nullptr);
 }
 
-Value Value::from_function(utils::Shared<Function> function, llvm::Value* self) {
+Value Value::from_function(utils::Ref<Function> function, llvm::Value* self) {
     auto value = Value(function->value, false, self);
     value.function = function;
 
     return value;
 }
 
-Value Value::from_struct(utils::Shared<Struct> structure) {
+Value Value::from_struct(utils::Ref<Struct> structure) {
     auto value = Value::null();
     value.structure = structure;
 
     return value;
 }
 
-Value Value::from_namespace(utils::Shared<Namespace> ns) {
+Value Value::from_namespace(utils::Ref<Namespace> ns) {
     auto value = Value::null();
     value.namespace_ = ns;
 
     return value;
 }
 
-Value Value::from_enum(utils::Shared<Enum> enumeration) {
+Value Value::from_enum(utils::Ref<Enum> enumeration) {
     auto value = Value::null();
     value.enumeration = enumeration;
 
     return value;
 }
 
-Value Value::from_module(utils::Shared<Module> module) {
+Value Value::from_module(utils::Ref<Module> module) {
     auto value = Value::null();
     value.module = module;
 

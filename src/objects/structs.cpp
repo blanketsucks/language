@@ -13,7 +13,7 @@ bool Struct::has_method(std::string name) {
     return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
-utils::Shared<Function> Struct::get_method(std::string name) { 
+utils::Ref<Function> Struct::get_method(std::string name) { 
     return this->scope->functions[name]; 
 }
 
@@ -50,8 +50,8 @@ std::vector<StructField> Struct::get_fields(bool with_private) {
     return fields;
 }
 
-std::vector<utils::Shared<Struct>> Struct::expand() {
-   std::vector<utils::Shared<Struct>> parents;
+std::vector<utils::Ref<Struct>> Struct::expand() {
+   std::vector<utils::Ref<Struct>> parents;
     for (auto parent : this->parents) {
         parents.push_back(parent);
 

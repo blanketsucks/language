@@ -1,0 +1,101 @@
+import libc;
+
+struct StringIterator {
+    private data: i8*;
+    private index: i32;
+
+    func new(data: i8*) -> StringIterator {
+        return StringIterator {
+            data: data,
+            index: 0,
+        };
+    }
+
+    operator func next(self) -> (i8, bool) {
+        let c = self.data[self.index];
+        self.index += 1;
+
+        return (c, c != 0);
+    }
+}
+
+struct BaseString {
+    private data: i8*;
+    private length: i32;
+
+    func c_str(self) -> i8* { return self.data; }
+    func len(self) -> i32 { return self.length; }
+
+    operator func getitem(self, index: i32) -> i8 {
+        if (index < 0 || index >= self.length) {
+           return 0;
+        }
+
+        return self.data[index];
+    }
+
+    operator func iter(self) -> StringIterator {
+        return StringIterator::new(self.data);
+    }
+}
+
+struct String(BaseString) {
+    private _capacity: i32;
+
+    func new(c_str: i8* = null) -> String {
+        let length = 0 if c_str == null else libc::strlen(c_str);
+        let data = libc::malloc(length + 1) as i8*;
+
+        if (c_str) {
+            libc::memcpy(data, c_str, length + 1);
+        }
+
+        return String {
+            data: data,
+            length: length,
+            _capacity: length + 1,
+        };
+    }
+    
+    func free(self) {
+        libc::free(self.data);
+    }
+
+    func append(self, c: i8) {
+        if (self.length + 1 >= self._capacity) {
+            self._capacity *= 2;
+            self.data = libc::realloc(self.data, self._capacity) as i8*;
+        }
+
+        self.data[self.length] = c;
+        self.length += 1;
+
+        self.data[self.length] = 0;
+    }
+
+    func extend(self, c_str: i8*) {
+        let length = libc::strlen(c_str);
+        let new_length = self.length + length;
+
+        if (new_length >= self._capacity) {
+            self._capacity = new_length + 1;
+            self.data = libc::realloc(self.data, self._capacity) as i8*;
+        }
+
+        let data = ((self.data as i64) + self.length) as i8*;
+        libc::memcpy(data, c_str, length + 1);
+
+        self.length = new_length;
+    }
+
+    func capacity(self) -> i32 { return self._capacity; }
+}
+
+struct StringView(BaseString) {
+    func new(c_str: i8*) -> StringView {
+        return StringView {
+            data: c_str,
+            length: libc::strlen(c_str),
+        };
+    }
+}

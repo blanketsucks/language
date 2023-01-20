@@ -2,11 +2,10 @@
 
 import libc;
 
-$define SIZE 100
+const SIZE = 100;
+let state: [i32; SIZE];
 
 func main() -> i32 { 
-    let state: [i32; SIZE];
-
     state[SIZE - 2] = 1;
     for (i = 0; i < (SIZE - 2); i++) {
         for (j = 0; j < SIZE; j++) {

@@ -8,10 +8,8 @@ Value Visitor::visit(ast::EnumExpr* expr) {
         type = expr->type->accept(*this).type.value;
     }
     
-    auto enumeration = utils::make_shared<Enum>(expr->name, type);
-
-    enumeration->start = expr->start;
-    enumeration->end = expr->end;
+    auto enumeration = utils::make_ref<Enum>(expr->name, type);
+    enumeration->span = expr->span;
 
     this->scope->enums[expr->name] = enumeration;
     enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
@@ -21,9 +19,9 @@ Value Visitor::visit(ast::EnumExpr* expr) {
         for (auto& field : expr->fields) {
             llvm::Constant* constant = nullptr;
             if (field.value) {
-                llvm::Value* value = field.value->accept(*this).unwrap(field.value->start);
+                llvm::Value* value = field.value->accept(*this).unwrap(field.value->span);
                 if (!llvm::isa<llvm::ConstantInt>(value)) {
-                    ERROR(field.value->start, "Expected a constant integer");
+                    ERROR(field.value->span, "Expected a constant integer");
                 }
 
                 llvm::ConstantInt* val = llvm::cast<llvm::ConstantInt>(value);
@@ -49,15 +47,15 @@ Value Visitor::visit(ast::EnumExpr* expr) {
 
     for (auto& field : expr->fields) {
         if (!field.value) {
-            ERROR(expr->start, "Expected a value");
+            ERROR(expr->span, "Expected a value");
         }
 
         Value value = field.value->accept(*this);
         if (!value.is_constant) {
-            ERROR(field.value->start, "Expected a constant value");
+            ERROR(field.value->span, "Expected a constant value");
         }
 
-        llvm::Constant* constant = llvm::cast<llvm::Constant>(value.unwrap(field.value->start));
+        llvm::Constant* constant = llvm::cast<llvm::Constant>(value.unwrap(field.value->span));
         enumeration->add_field(field.name, constant);
     }
 

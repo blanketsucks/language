@@ -3,11 +3,9 @@
 
 #include "preprocessor.h"
 #include "utils/log.h"
+#include "utils/filesystem.h"
+#include "visitor.h"
 
-#include "llvm/Support/FormatVariadic.h"
-#include <map>
-#include <vector>
-#include <string>
 #include <chrono>
 
 enum class OutputFormat {
@@ -36,6 +34,8 @@ enum class OptimizationLevel {
 struct Libraries {
     std::vector<std::string> names;
     std::vector<std::string> paths;
+
+    bool empty() const { return this->names.empty() || this->paths.empty(); }
 };
 
 struct CompilerError {
@@ -46,6 +46,31 @@ struct CompilerError {
     static CompilerError success();
 
     void unwrap();
+};
+
+struct CompilerOptions {
+    using Extra = std::pair<std::string, std::string>;
+
+    utils::filesystem::Path input;
+    std::string output;
+    std::string entry;
+    std::string target;
+
+    Libraries libs;
+    std::vector<std::string> includes;
+
+    std::string linker = "cc";
+
+    OutputFormat format = OutputFormat::Executable;
+    OptimizationLevel optimization = OptimizationLevel::Debug;
+    OptimizationOptions opts;
+
+    bool verbose = false;
+
+    std::vector<std::string> object_files;
+    std::vector<Extra> extras;
+
+    bool has_target() const { return !this->target.empty(); }
 };
 
 class Compiler {
@@ -67,6 +92,10 @@ public:
         std::cout << message << std::endl;
     }
 
+    Compiler(const CompilerOptions& options) : options(options) {}
+    
+    CompilerOptions& get_options() { return this->options; }
+
     void add_library(std::string name);
     void add_library_path(std::string path);
 
@@ -81,8 +110,9 @@ public:
     void set_output_file(std::string output);
 
     void set_optimization_level(OptimizationLevel level);
+    void set_optimization_options(OptimizationOptions opts);
 
-    void set_input_file(std::string file);
+    void set_input_file(const utils::filesystem::Path& input);
     void set_entry_point(std::string entry);
 
     void set_target(std::string target);
@@ -90,6 +120,8 @@ public:
     void set_verbose(bool verbose);
 
     void set_linker(std::string linker);
+
+    void add_object_file(std::string file);
 
     void add_extra_linker_option(std::string name, std::string value);
     void add_extra_linker_option(std::string name);
@@ -101,22 +133,7 @@ public:
     CompilerError compile();
 
 private:
-    Libraries libraries;
-    std::vector<std::string> includes;
-
-    OutputFormat format = OutputFormat::Executable;
-    OptimizationLevel opt;
-
-    bool verbose = false;
-
-    std::string output;
-    std::string input;
-    std::string entry;
-    std::string target;
-
-    std::string linker = "cc";
-    std::vector<std::pair<std::string, std::string>> extras;
-
+    CompilerOptions options;
     std::vector<Macro> macros;
 };
 

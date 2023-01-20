@@ -32,10 +32,20 @@ enum class Color {
 };
 
 bool has_color_support();
+std::string color_to_str(Color color);
 std::string color(Color color, const std::string& str);
 
-void error(Location location, const std::string& message, bool fatal = true);
-void note(Location location, const std::string& message);
+void underline_error(
+    std::stringstream& stream,
+    const std::string& line,
+    uint32_t line_number,
+    uint32_t start_index,
+    uint32_t end_index,
+    uint32_t start_column
+);
+
+void error(Span span, const std::string& message, bool fatal = true);
+void note(Span span, const std::string& message);
 
 }
 

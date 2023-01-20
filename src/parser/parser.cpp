@@ -1,5 +1,6 @@
 #include "parser/parser.h"
 #include "parser/ast.h"
+#include "utils/utils.h"
 #include "utils/log.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -15,19 +16,31 @@ static std::vector<ast::ExprKind> NUMERIC_KINDS = {
     ast::ExprKind::Float
 };
 
-static std::vector<std::string> NAMESPACE_ALLOWED_KEYWORDS = {
-    "struct",
-    "namespace",
-    "extern",
-    "func",
-    "type",
-    "const"
+static std::vector<TokenKind> NAMESPACE_ALLOWED_KEYWORDS = {
+    TokenKind::Struct,
+    TokenKind::Func,
+    TokenKind::Type,
+    TokenKind::Const,
+    TokenKind::Enum,
+    TokenKind::Namespace,
+    TokenKind::Extern
 };
 
-static std::vector<std::string> STRUCT_ALLOWED_KEYWORDS = {
-    "func",
-    "type",
-    "const"
+static std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
+    TokenKind::Func,
+    TokenKind::Type,
+    TokenKind::Const
+};
+
+// {name: (bits, is_float)}
+static std::map<std::string, std::pair<uint32_t, bool>> NUM_TYPES_BIT_MAPPING = {
+    {"i8", {8, false}},
+    {"i16", {16, false}},
+    {"i32", {32, false}},
+    {"i64", {64, false}},
+    {"i128", {128, false}},
+    {"f32", {32, true}},
+    {"f64", {64, true}}
 };
 
 Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
@@ -55,7 +68,7 @@ Parser::Parser(std::vector<Token> tokens) : tokens(tokens) {
 void Parser::end() {
     if (this->current != TokenKind::SemiColon) {
         Token last = this->tokens[this->index - 1];
-        ERROR(last.end, "Expected ';'");
+        ERROR(last.span, "Expected ';'");
     }
 
     this->next();
@@ -83,7 +96,7 @@ Token Parser::peek() {
 
 Token Parser::expect(TokenKind type, std::string value) {
     if (this->current.type != type) {
-        ERROR(this->current.start, "Expected {0}", value);
+        ERROR(this->current.span, "Expected {0}", value);
     }
 
     Token token = this->current;
@@ -101,9 +114,9 @@ int Parser::get_token_precendence() {
     return precedence;
 }
 
-utils::Ref<ast::TypeExpr> Parser::parse_type() {
-    utils::Ref<ast::TypeExpr> type = nullptr;
-    Location start = this->current.start;
+utils::Scope<ast::TypeExpr> Parser::parse_type() {
+    utils::Scope<ast::TypeExpr> type = nullptr;
+    Span start = this->current.span;
 
     bool is_reference = false;
     if (this->current == TokenKind::BinaryAnd) {
@@ -116,14 +129,14 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
         this->expect(TokenKind::LParen, "(");
 
         auto size = this->expr(false);
-        Location end = this->expect(TokenKind::RParen, ")").end;
+        Span end = this->expect(TokenKind::RParen, ")").span;
 
-        type = utils::make_ref<ast::IntegerTypeExpr>(start, end, std::move(size));
-    } else if (this->current.match(TokenKind::Keyword, "func")) {
+        type = utils::make_scope<ast::IntegerTypeExpr>(Span::from_span(start, end), std::move(size));
+    } else if (this->current == TokenKind::Func) {
         // func(int, int) -> int 
         this->next(); this->expect(TokenKind::LParen, "(");
 
-        std::vector<utils::Ref<ast::TypeExpr>> args;
+        std::vector<utils::Scope<ast::TypeExpr>> args;
         while (this->current != TokenKind::RParen) {
             args.push_back(this->parse_type());
             if (this->current != TokenKind::Comma) {
@@ -133,21 +146,21 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
             this->next();
         }
 
-        Location end = this->expect(TokenKind::RParen, ")").end;
-        utils::Ref<ast::TypeExpr> ret = nullptr;
+        Span end = this->expect(TokenKind::RParen, ")").span;
+        utils::Scope<ast::TypeExpr> ret = nullptr;
 
         if (this->current == TokenKind::Arrow) {
-            end = this->next().end; ret = this->parse_type();
+            end = this->next().span; ret = this->parse_type();
         }
 
-        type = utils::make_ref<ast::FunctionTypeExpr>(start, end, std::move(args), std::move(ret));
+        type = utils::make_scope<ast::FunctionTypeExpr>(Span::from_span(start, end), std::move(args), std::move(ret));
     } else if (this->current == TokenKind::LParen) {
         this->next();
         if (this->current == TokenKind::RParen) {
-            ERROR(this->current.start, "Tuple type literals must atleast have a single element");
+            ERROR(this->current.span, "Tuple type literals must atleast have a single element");
         }
 
-        std::vector<utils::Ref<ast::TypeExpr>> types;
+        std::vector<utils::Scope<ast::TypeExpr>> types;
         while (this->current != TokenKind::RParen) {
             types.push_back(this->parse_type());
             if (this->current != TokenKind::Comma) {
@@ -157,8 +170,8 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
             this->next();
         }
 
-        Location end = this->expect(TokenKind::RParen, ")").end;
-        type = utils::make_ref<ast::TupleTypeExpr>(start, end, std::move(types));
+        Span end = this->expect(TokenKind::RParen, ")").span;
+        type = utils::make_scope<ast::TupleTypeExpr>(Span::from_span(start, end), std::move(types));
     } else if (this->current == TokenKind::LBracket) {
         this->next();
         auto element = this->parse_type();
@@ -166,12 +179,16 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
         this->expect(TokenKind::SemiColon, ";");
         auto size = this->expr(false);
 
-        Location end = this->expect(TokenKind::RBracket, "]").end;
-        type = utils::make_ref<ast::ArrayTypeExpr>(start, end, std::move(element), std::move(size));
+        Span end = this->expect(TokenKind::RBracket, "]").span;
+        type = utils::make_scope<ast::ArrayTypeExpr>(
+            Span::from_span(start, end), std::move(element), std::move(size)
+        );
     } else {
         std::string name = this->expect(TokenKind::Identifier, "identifier").value;
         if (this->types.find(name) != this->types.end()) {
-            type = utils::make_ref<ast::BuiltinTypeExpr>(start, this->current.end, this->types[name]);
+            type = utils::make_scope<ast::BuiltinTypeExpr>(
+                Span::from_span(start, this->current.span), this->types[name]
+            );
         } else {
             std::deque<std::string> parents;
             while (this->current == TokenKind::DoubleColon) {
@@ -187,25 +204,25 @@ utils::Ref<ast::TypeExpr> Parser::parse_type() {
                 name = back;
             }
 
-            type = utils::make_ref<ast::NamedTypeExpr>(start, this->current.end, name, parents);
+            type = utils::make_scope<ast::NamedTypeExpr>(Span::from_span(start, this->current.span), name, parents);
         }
     }
 
     while (this->current == TokenKind::Mul) {
-        Location end = this->next().end;
-        type = utils::make_ref<ast::PointerTypeExpr>(start, end, std::move(type));
+        Span end = this->next().span;
+        type = utils::make_scope<ast::PointerTypeExpr>(Span::from_span(start, end), std::move(type));
     }
 
     if (is_reference) {
-        type = utils::make_ref<ast::ReferenceTypeExpr>(start, this->current.end, std::move(type));
+        type = utils::make_scope<ast::ReferenceTypeExpr>(Span::from_span(start, this->current.span), std::move(type));
     }
 
     return type;
 } 
 
-utils::Ref<ast::BlockExpr> Parser::parse_block() {
-    std::vector<utils::Ref<ast::Expr>> body;
-    Location start = this->current.start;
+utils::Scope<ast::BlockExpr> Parser::parse_block() {
+    std::vector<utils::Scope<ast::Expr>> body;
+    Span start = this->current.span;
 
     while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
@@ -217,34 +234,23 @@ utils::Ref<ast::BlockExpr> Parser::parse_block() {
         }
     }
 
-    Location end = this->expect(TokenKind::RBrace, "}").end;
-    return utils::make_ref<ast::BlockExpr>(start, end, std::move(body));
+    Span end = this->expect(TokenKind::RBrace, "}").span;
+    return utils::make_scope<ast::BlockExpr>(Span::from_span(start, end), std::move(body));
 }
 
-utils::Ref<ast::TypeAliasExpr> Parser::parse_type_alias() {
-    Location start = this->current.start;
+utils::Scope<ast::TypeAliasExpr> Parser::parse_type_alias() {
+    Span start = this->current.span;
 
     std::string name = this->expect(TokenKind::Identifier, "identifier").value;
     this->expect(TokenKind::Assign, "=");
 
     auto type = this->parse_type();
-    this->end();
+    Span end = this->expect(TokenKind::SemiColon, ";").span;
 
-    return utils::make_ref<ast::TypeAliasExpr>(start, this->current.end, name, std::move(type));
+    return utils::make_scope<ast::TypeAliasExpr>(Span::from_span(start, end), name, std::move(type));
 }
 
-utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
-    ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
-) {
-    Location start = this->current.start;
-    std::string name;
-
-    if (with_name) {
-        name = this->expect(TokenKind::Identifier, "function name").value;
-    }
-
-    this->expect(TokenKind::LParen, "(");
-
+std::pair<std::vector<ast::Argument>, bool> Parser::parse_arguments() {
     std::vector<ast::Argument> args;
 
     bool has_kwargs = false;
@@ -252,15 +258,17 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
     bool is_variadic = false;
 
     while (this->current != TokenKind::RParen) {
-        std::string value = this->current.value;
-        if (!this->current.match({TokenKind::Keyword, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis})) {
-            ERROR(this->current.start, "Expected argument name, '*' or '...'");
+        std::string argument = this->current.value;
+        if (!this->current.match(
+            {TokenKind::Immutable, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis}
+        )) {
+            ERROR(this->current.span, "Expected argument name, '*' or '...'");
         }
 
         bool is_immutable = false;
         if (this->current == TokenKind::Ellipsis) {
             if (is_variadic) {
-                ERROR(this->current.start, "Cannot have multiple variadic arguments");
+                ERROR(this->current.span, "Cannot have multiple variadic arguments");
             }
 
             is_variadic = true;
@@ -269,7 +277,7 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             break;
         } else if (this->current == TokenKind::Mul) {
             if (has_kwargs) {
-                ERROR(this->current.start, "Only one '*' seperator is allowed in a function prototype");
+                ERROR(this->current.span, "Only one '*' seperator is allowed in a function prototype");
             }
 
             has_kwargs = true;
@@ -277,44 +285,28 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
 
             this->expect(TokenKind::Comma, ",");
             continue;
-        } else if (this->current == TokenKind::Keyword) {
-            if (this->current.value != "immutable") {
-                ERROR(this->current.start, "Expected 'immutable' keyword");
-            }
-
+        } else if (this->current == TokenKind::Immutable) {
             this->next();
             is_immutable = true;
 
             if (this->current != TokenKind::Identifier) {
-                ERROR(this->current.start, "Expected identifier");
+                ERROR(this->current.span, "Expected identifier");
             }
 
-            value = this->current.value;
+            argument = this->current.value;
         }
 
-        utils::Ref<ast::TypeExpr> type = nullptr;
-        std::string argument;
-
+        utils::Scope<ast::TypeExpr> type = nullptr;
         bool is_self = false;
-        if (value == "self") {
-            if (this->is_inside_struct) {
-                argument = "self"; is_self = true;
-                this->next();
-            } else {
-                this->next();
-                this->expect(TokenKind::Colon, ":");
 
-                type = this->parse_type();
-                argument = value;
-            }
+        if (argument == "self" && this->is_inside_struct && !has_kwargs) {
+            is_self = true; this->next();
         } else {
             this->next(); this->expect(TokenKind::Colon, ":");
             type = this->parse_type();
-
-            argument = value;
         }
 
-        utils::Ref<ast::Expr> default_value = nullptr;
+        utils::Scope<ast::Expr> default_value = nullptr;
         if (this->current == TokenKind::Assign) {
             has_default_values = true;
             this->next();
@@ -322,20 +314,19 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
             default_value = this->expr(false);
         } else {
             if (has_default_values) {
-                ERROR(this->current.start, "Cannot have non-default arguments follow default arguments");
+                ERROR(this->current.span, "Cannot have non-default arguments follow default arguments");
             }
         }
-
-        ast::Argument arg = {
+        
+        args.push_back({
             argument, 
             std::move(type),
             std::move(default_value),
             is_self, 
             has_kwargs, 
             is_immutable
-        };
+        });
 
-        args.push_back(std::move(arg));
         if (this->current != TokenKind::Comma) {
             break;
         }
@@ -343,21 +334,41 @@ utils::Ref<ast::PrototypeExpr> Parser::parse_prototype(
         this->next();
     }
 
-    Location end = this->expect(TokenKind::RParen, ")").end;
-    utils::Ref<ast::TypeExpr> ret = nullptr;
-    if (this->current == TokenKind::Arrow) {
-        end = this->next().end; ret = this->parse_type();
+    this->expect(TokenKind::RParen, ")");
+    return {std::move(args), is_variadic};
+}
+
+utils::Scope<ast::PrototypeExpr> Parser::parse_prototype(
+    ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
+) {
+    Span start = this->current.span;
+    std::string name;
+
+    if (with_name) {
+        name = this->expect(TokenKind::Identifier, "function name").value;
+        this->expect(TokenKind::LParen, "(");
     }
 
-    return utils::make_ref<ast::PrototypeExpr>(
-        start, end, name, std::move(args), std::move(ret), is_variadic, is_operator, linkage
+    auto pair = this->parse_arguments();
+
+    Span end = this->current.span;
+    utils::Scope<ast::TypeExpr> ret = nullptr;
+
+    if (this->current == TokenKind::Arrow) {
+        end = this->next().span; ret = this->parse_type();
+    }
+
+    return utils::make_scope<ast::PrototypeExpr>(
+        Span::from_span(start, end), name, std::move(pair.first), std::move(ret), pair.second, is_operator, linkage
     );
 }
 
-utils::Ref<ast::Expr> Parser::parse_function_definition(
+utils::Scope<ast::Expr> Parser::parse_function_definition(
     ast::ExternLinkageSpecifier linkage, bool is_operator
 ) {
+    Span start = this->current.span;
     auto prototype = this->parse_prototype(linkage, true, is_operator);
+
     if (this->current == TokenKind::SemiColon) {
         this->next();
         return prototype;
@@ -366,20 +377,33 @@ utils::Ref<ast::Expr> Parser::parse_function_definition(
     this->expect(TokenKind::LBrace, "{");
     this->is_inside_function = true;
 
-    auto body = this->parse_block();
+    std::vector<utils::Scope<ast::Expr>> body;
+    while (!this->current.match({TokenKind::RBrace, TokenKind::EOS})) {
+        ast::Attributes attrs = this->parse_attributes();
+        auto expr = this->statement();
+
+        if (expr) {
+            expr->attributes.update(attrs);
+            body.push_back(std::move(expr));
+        }
+    }
+
+    auto end = this->expect(TokenKind::RBrace, "}").span;
     this->is_inside_function = false;
 
-    return utils::make_ref<ast::FunctionExpr>(prototype->start, body->end, std::move(prototype), std::move(body));
+    return utils::make_scope<ast::FunctionExpr>(
+        Span::from_span(start, end), std::move(prototype), std::move(body)
+    );
 }
 
-utils::Ref<ast::IfExpr> Parser::parse_if_statement() {
-    Location start = this->current.start;
+utils::Scope<ast::IfExpr> Parser::parse_if_statement() {
+    Span start = this->current.span;
     this->expect(TokenKind::LParen, "(");
 
     auto condition = this->expr(false);
     this->expect(TokenKind::RParen, ")");
 
-    utils::Ref<ast::Expr> body;
+    utils::Scope<ast::Expr> body;
     if (this->current != TokenKind::LBrace) {
         body = this->statement();
     } else {
@@ -387,9 +411,9 @@ utils::Ref<ast::IfExpr> Parser::parse_if_statement() {
         body = this->parse_block();
     }
 
-    Location end = body->end;
-    utils::Ref<ast::Expr> else_body;
-    if (this->current == TokenKind::Keyword && this->current.value == "else") {
+    Span end = body->span;
+    utils::Scope<ast::Expr> else_body;
+    if (this->current == TokenKind::Else) {
         this->next();
         if (this->current != TokenKind::LBrace) {
             else_body = this->statement();
@@ -398,24 +422,26 @@ utils::Ref<ast::IfExpr> Parser::parse_if_statement() {
             else_body = this->parse_block();
         }
 
-        end = else_body->end;
+        end = else_body->span;
     }
 
-    return utils::make_ref<ast::IfExpr>(start, end, std::move(condition), std::move(body), std::move(else_body));
+    return utils::make_scope<ast::IfExpr>(
+        Span::from_span(start, end), std::move(condition), std::move(body), std::move(else_body)
+    );
 }
 
-utils::Ref<ast::StructExpr> Parser::parse_struct() {
-    Location start = this->current.start;
+utils::Scope<ast::StructExpr> Parser::parse_struct() {
+    Span start = this->current.span;
     std::string name = this->expect(TokenKind::Identifier, "struct name").value;
 
-    std::map<std::string, ast::StructField> fields;
-    std::vector<utils::Ref<ast::Expr>> methods;
-    std::vector<utils::Ref<ast::Expr>> parents;
+    std::vector<ast::StructField> fields;
+    std::vector<utils::Scope<ast::Expr>> methods;
+    std::vector<utils::Scope<ast::Expr>> parents;
 
     if (this->current == TokenKind::SemiColon) {
         this->next();
-        return utils::make_ref<ast::StructExpr>(
-            start, this->current.end, name, true, std::move(parents), std::move(fields), std::move(methods)
+        return utils::make_scope<ast::StructExpr>(
+            Span::from_span(start, this->current.span), name, true, std::move(parents), std::move(fields), std::move(methods)
         );
     }
 
@@ -444,79 +470,80 @@ utils::Ref<ast::StructExpr> Parser::parse_struct() {
         bool is_readonly = false;
         bool is_operator = false;
 
-        if (this->current.match(TokenKind::Keyword, "private")) {
-            is_private = true;
-            this->next();
-        } else if (this->current.match(TokenKind::Keyword, "readonly")) {
-            is_readonly = true;
-            this->next();
-        } else if (this->current.match(TokenKind::Keyword, "operator")) {
-            is_operator = true;
-            this->next();
+        switch (this->current.type) {
+            case TokenKind::Private: is_private = true; this->next(); break;
+            case TokenKind::Readonly: is_readonly = true; this->next(); break;
+            case TokenKind::Operator: is_operator = true; this->next(); break;
         }
 
-        if (this->current != TokenKind::Identifier && !this->current.match(TokenKind::Keyword, STRUCT_ALLOWED_KEYWORDS)) {
-            ERROR(this->current.start, "Expected field name or function definition");
+
+        if (this->current != TokenKind::Identifier && !this->current.match(STRUCT_ALLOWED_KEYWORDS)) {
+            ERROR(this->current.span, "Expected field name or function definition");
         }
 
-        if (this->current.value == "func") {
-            this->next();
-            auto definition = this->parse_function_definition(
-                ast::ExternLinkageSpecifier::None, is_operator
-            );
+        switch (this->current.type) {
+            case TokenKind::Func: {
+                this->next();
+                auto definition = this->parse_function_definition(
+                    ast::ExternLinkageSpecifier::None, is_operator
+                );
 
-            if (is_private) {
-                definition->attributes.add("private");
+                if (is_private) {
+                    definition->attributes.add("private");
+                }
+
+                definition->attributes.update(attributes);
+                methods.push_back(std::move(definition));
+            } break;
+            case TokenKind::Const: {
+                this->next();
+                methods.push_back(this->parse_variable_definition(true));
+            } break;
+            case TokenKind::Type: {
+                this->next();
+                methods.push_back(this->parse_type_alias());
+            } break;
+            default: {
+                if (index == UINT32_MAX) {
+                    ERROR(this->current.span, "Cannot define more than {0} fields inside a struct", UINT32_MAX);
+                }
+
+                std::string name = this->current.value;
+                this->next();
+
+                this->expect(TokenKind::Colon, ":");
+                fields.push_back({
+                    name, 
+                    this->parse_type(), 
+                    index,
+                    is_private, 
+                    is_readonly
+                });
+
+                this->expect(TokenKind::SemiColon, ";");
+                index++;
             }
-
-            definition->attributes.update(attributes);
-            methods.push_back(std::move(definition));
-        } else if (this->current.value == "const") {
-            this->next();
-            methods.push_back(this->parse_variable_definition(true));
-        } else if (this->current.value == "type") {
-            this->next();
-            methods.push_back(this->parse_type_alias());
-        } else {
-            if (index == UINT32_MAX) {
-                ERROR(this->current.start, "Cannot define more than {0} fields inside a structure", UINT32_MAX);
-            }
-
-            std::string name = this->current.value;
-            this->next();
-
-            this->expect(TokenKind::Colon, ":");
-            fields[name] = {
-                name, 
-                this->parse_type(), 
-                index,
-                is_private, 
-                is_readonly
-            };
-
-            this->expect(TokenKind::SemiColon, ";");
-            index++;
         }
     }
 
-    Location end = this->expect(TokenKind::RBrace, "}").end;
+    Span end = this->expect(TokenKind::RBrace, "}").span;
     this->is_inside_struct = false;
 
-    return utils::make_ref<ast::StructExpr>(
-        start, end, name, false, std::move(parents), std::move(fields), std::move(methods)
+    return utils::make_scope<ast::StructExpr>(
+        Span::from_span(start, end), name, false, std::move(parents), std::move(fields), std::move(methods)
     );    
 }
 
-utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
-    Location start = this->current.start;
-    utils::Ref<ast::TypeExpr> type = nullptr;
+utils::Scope<ast::Expr> Parser::parse_variable_definition(bool is_const) {
+    Span start = this->current.span;
+    utils::Scope<ast::TypeExpr> type = nullptr;
 
     std::vector<std::string> names;
     bool is_multiple_variables = false;
     bool has_consume_rest = false;
     bool is_immutable = false;
 
-    if (!is_const && this->current.match(TokenKind::Keyword, "immutable")) {
+    if (!is_const && this->current == TokenKind::Immutable) {
         is_immutable = true;
         this->next();
     }
@@ -528,7 +555,7 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         while (this->current != TokenKind::RParen) {
             if (this->current == TokenKind::Mul) {
                 if (has_consume_rest) {
-                    ERROR(this->current.start, "Cannot consume rest of the arguments more than once");
+                    ERROR(this->current.span, "Cannot consume rest of the arguments more than once");
                 }
 
                 this->next();
@@ -562,42 +589,42 @@ utils::Ref<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         this->next(); type = this->parse_type();
     }
     
-    utils::Ref<ast::Expr> expr = nullptr;
-    Location end;
+    utils::Scope<ast::Expr> expr = nullptr;
+    Span end;
 
     if (this->current != TokenKind::Assign) {
-        end = this->expect(TokenKind::SemiColon, ";").end;
+        end = this->expect(TokenKind::SemiColon, ";").span;
 
         if (!type) {
-            ERROR(this->current.start, "Un-initialized variables must have an inferred type");
+            ERROR(this->current.span, "Un-initialized variables must have an inferred type");
         }
     } else {
         this->next();
         expr = this->expr(false);
         
         this->expect(TokenKind::SemiColon, ";");
-        end = expr->end;
+        end = expr->span;
     };
 
     if (names.size() > 1 && !expr) {
-        ERROR(expr->start, "Expected an expression when using multiple named assignments");
+        ERROR(expr->span, "Expected an expression when using multiple named assignments");
     }
     
     if (is_const) {
         if (!expr) {
-            ERROR(this->current.start, "Constants must have an initializer");
+            ERROR(this->current.span, "Constants must have an initializer");
         }
 
-        return utils::make_ref<ast::ConstExpr>(start, end, names[0], std::move(type), std::move(expr));
+        return utils::make_scope<ast::ConstExpr>(Span::from_span(start, end), names[0], std::move(type), std::move(expr));
     } else {
-        return utils::make_ref<ast::VariableAssignmentExpr>(
-            start, end, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables, is_immutable
+        return utils::make_scope<ast::VariableAssignmentExpr>(
+            Span::from_span(start, end), names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables, is_immutable
         );
     }
 }
 
-utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
-    Location start = this->current.start;
+utils::Scope<ast::NamespaceExpr> Parser::parse_namespace() {
+    Span start = this->current.span;
 
     std::string name = this->expect(TokenKind::Identifier, "namespace name").value;
     std::deque<std::string> parents;
@@ -619,14 +646,29 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
 
     this->expect(TokenKind::LBrace, "{");
     
-    std::vector<utils::Ref<ast::Expr>> members;
+    std::vector<utils::Scope<ast::Expr>> members;
     while (this->current != TokenKind::RBrace) {
         ast::Attributes attrs = this->parse_attributes();
-        if (!this->current.match(TokenKind::Keyword, NAMESPACE_ALLOWED_KEYWORDS)) {
-            ERROR(this->current.start, "Expected function, extern, struct, const, type, or namespace definition");
+        if (!this->current.match(NAMESPACE_ALLOWED_KEYWORDS)) {
+            ERROR(this->current.span, "Expected function, extern, struct, const, type, or namespace definition");
         }
 
-        utils::Ref<ast::Expr> member;
+        utils::Scope<ast::Expr> member;
+        TokenKind kind = this->current.type;
+
+        this->next();
+        switch (kind) {
+            case TokenKind::Func: member = this->parse_function_definition(); break;
+            case TokenKind::Extern: member = this->parse_extern_block(); break;
+            case TokenKind::Struct: member = this->parse_struct(); break;
+            case TokenKind::Namespace: member = this->parse_namespace(); break;
+            case TokenKind::Type: member = this->parse_type_alias(); break;
+            case TokenKind::Const: member = this->parse_variable_definition(true); break;
+            case TokenKind::Enum: member = this->parse_enum(); break;
+            default: __UNREACHABLE
+        }
+
+
         if (this->current.value == "func") {
             this->next();
             member = this->parse_function_definition();
@@ -648,13 +690,13 @@ utils::Ref<ast::NamespaceExpr> Parser::parse_namespace() {
         members.push_back(std::move(member));
     }
 
-    Location end = this->expect(TokenKind::RBrace, "}").end;
-    return utils::make_ref<ast::NamespaceExpr>(start, end, name, parents, std::move(members));
+    Span end = this->expect(TokenKind::RBrace, "}").span;
+    return utils::make_scope<ast::NamespaceExpr>(Span::from_span(start, end), name, parents, std::move(members));
 }
 
-utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
-    utils::Ref<ast::Expr> definition;
-    Location start = this->current.start;
+utils::Scope<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
+    utils::Scope<ast::Expr> definition;
+    Span start = this->current.span;
     
     ast::Attributes attrs = this->parse_attributes();
     if (this->current == TokenKind::Identifier) {
@@ -666,18 +708,20 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
         this->expect(TokenKind::Colon, ":");
         auto type = this->parse_type();
 
-        utils::Ref<ast::Expr> expr;
+        utils::Scope<ast::Expr> expr;
         if (this->current == TokenKind::Assign) {
             expr = this->expr(false);
         }
 
-        Location end = this->expect(TokenKind::SemiColon, ";").end;
+        Span end = this->expect(TokenKind::SemiColon, ";").span;
 
         std::vector<std::string> names = {name,};
-        definition = utils::make_ref<ast::VariableAssignmentExpr>(start, end, names, std::move(type), std::move(expr), consume_rest, true, false);
+        definition = utils::make_scope<ast::VariableAssignmentExpr>(
+            Span::from_span(start, end), names, std::move(type), std::move(expr), consume_rest, true, false
+        );
     } else {
-        if (this->current != TokenKind::Keyword && this->current.value != "func") {
-            ERROR(this->current.start, "Expected function");
+        if (this->current != TokenKind::Func) {
+            ERROR(this->current.span, "Expected function");
         }
 
         this->next();
@@ -688,13 +732,13 @@ utils::Ref<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) 
     return definition;
 }
 
-utils::Ref<ast::Expr> Parser::parse_extern_block() {
-    Location start = this->current.start;
+utils::Scope<ast::Expr> Parser::parse_extern_block() {
+    Span start = this->current.span;
     ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::Unspecified;
 
     if (this->current == TokenKind::String) {
         if (this->current.value != "C") {
-            ERROR(this->current.start, "Unknown extern linkage specifier");
+            ERROR(this->current.span, "Unknown extern linkage specifier");
         }
 
         this->next();
@@ -703,7 +747,7 @@ utils::Ref<ast::Expr> Parser::parse_extern_block() {
 
     // TODO: Allow const/let defitnitions
     if (this->current == TokenKind::LBrace) {
-        std::vector<utils::Ref<ast::Expr>> definitions;
+        std::vector<utils::Scope<ast::Expr>> definitions;
         this->next();
 
         while (this->current != TokenKind::RBrace) {
@@ -711,18 +755,18 @@ utils::Ref<ast::Expr> Parser::parse_extern_block() {
             definitions.push_back(std::move(definition));
         }
 
-        Location end = this->expect(TokenKind::RBrace, "}").end;
-        return utils::make_ref<ast::BlockExpr>(start, end, std::move(definitions));
+        Span end = this->expect(TokenKind::RBrace, "}").span;
+        return utils::make_scope<ast::BlockExpr>(Span::from_span(start, end), std::move(definitions));
     }
 
     return this->parse_extern(linkage);
 }
 
-utils::Ref<ast::EnumExpr> Parser::parse_enum() {
-    Location start = this->current.start;
+utils::Scope<ast::EnumExpr> Parser::parse_enum() {
+    Span start = this->current.span;
     std::string name = this->expect(TokenKind::Identifier, "enum name").value;
 
-    utils::Ref<ast::TypeExpr> type;
+    utils::Scope<ast::TypeExpr> type;
     if (this->current == TokenKind::Colon) {
         this->next(); type = this->parse_type();
     }
@@ -732,7 +776,7 @@ utils::Ref<ast::EnumExpr> Parser::parse_enum() {
     std::vector<ast::EnumField> fields;
     while (this->current != TokenKind::RBrace) {
         std::string field = this->expect(TokenKind::Identifier, "enum field name").value;
-        utils::Ref<ast::Expr> value = nullptr;
+        utils::Scope<ast::Expr> value = nullptr;
 
         if (this->current == TokenKind::Assign) {
             this->next();
@@ -747,24 +791,53 @@ utils::Ref<ast::EnumExpr> Parser::parse_enum() {
         this->next();
     }
 
-    Location end = this->expect(TokenKind::RBrace, "}").end;
-    return utils::make_ref<ast::EnumExpr>(start, end, name, std::move(type), std::move(fields));
+    Span end = this->expect(TokenKind::RBrace, "}").span;
+    return utils::make_scope<ast::EnumExpr>(Span::from_span(start, end), name, std::move(type), std::move(fields));
 
 }
 
-std::vector<utils::Ref<ast::Expr>> Parser::parse() {
+utils::Scope<ast::Expr> Parser::parse_anonymous_function() {
+    auto pair = this->parse_arguments();
+
+    utils::Scope<ast::TypeExpr> ret = nullptr;
+    if (this->current == TokenKind::Colon) {
+        this->next();
+        ret = this->parse_type();
+    }
+
+    this->expect(TokenKind::DoubleArrow, "=>");
+
+    std::vector<utils::Scope<ast::Expr>> body;
+    body.push_back(this->expr(false));
+    
+    auto prototype = utils::make_scope<ast::PrototypeExpr>(
+        this->current.span,
+        "", 
+        std::move(pair.first), 
+        std::move(ret), 
+        std::move(pair.second),
+        false,
+        ast::ExternLinkageSpecifier::None
+    );
+    
+    return utils::make_scope<ast::FunctionExpr>(
+        Span::from_span(prototype->span, this->current.span), std::move(prototype), std::move(body)
+    );
+}
+
+std::vector<utils::Scope<ast::Expr>> Parser::parse() {
     return this->statements();
 }
 
-std::vector<utils::Ref<ast::Expr>> Parser::statements() {
-    std::vector<utils::Ref<ast::Expr>> statements;
+std::vector<utils::Scope<ast::Expr>> Parser::statements() {
+    std::vector<utils::Scope<ast::Expr>> statements;
 
     while (this->current != TokenKind::EOS) {
         ast::Attributes attrs = this->parse_attributes();
         auto expr = this->statement();
 
         if (expr) {
-            expr->attributes.update(attrs);
+            expr->attributes = attrs;
             statements.push_back(std::move(expr));
         }
     }
@@ -772,229 +845,237 @@ std::vector<utils::Ref<ast::Expr>> Parser::statements() {
     return statements;
 }
 
-utils::Ref<ast::Expr> Parser::statement() {
+utils::Scope<ast::Expr> Parser::statement() {
     switch (this->current.type) {
-        case TokenKind::Keyword:
-            if (this->current.value == "extern") {
-                this->next();
-                return this->parse_extern_block();
-            } else if (this->current.value == "func") {
-                this->next();
-                return this->parse_function_definition();
-            } else if (this->current.value == "return") {
-                if (!this->is_inside_function) {
-                    ERROR(this->current.start, "Return statement outside of function");
-                }
-
-                this->next();
-                Location start = this->current.start;
-                if (this->current == TokenKind::SemiColon) {
-                    this->next();
-                    return utils::make_ref<ast::ReturnExpr>(start, this->current.end, nullptr);
-                }
-
-                auto expr = this->expr(false);
-
-                Location end = this->expect(TokenKind::SemiColon, ";").end;
-                return utils::make_ref<ast::ReturnExpr>(start, end, std::move(expr));
-            } else if (this->current.value == "if") {
-                if (!this->is_inside_function) {
-                    ERROR(this->current.start, "If statement outside of function");
-                }
-
-                this->next();
-                return this->parse_if_statement();
-            } else if (this->current.value == "let") {
-                this->next();
-                return this->parse_variable_definition(false);
-            }  else if (this->current.value == "const") {
-                this->next();
-                return this->parse_variable_definition(true);
-            } else if (this->current.value == "struct") {
-                if (this->is_inside_function) {
-                    ERROR(this->current.start, "Struct definition inside function");
-                }
-
-                this->next();
-                return this->parse_struct();
-            } else if (this->current.value == "namespace") {
-                this->next();
-                return this->parse_namespace();
-            } else if (this->current.value == "type") {
-                this->next();
-                return this->parse_type_alias();
-            } else if (this->current.value == "while") {
-                bool has_outer_loop = this->is_inside_loop;
-                Location start = this->current.start;
-
-                this->next();
-                this->expect(TokenKind::LParen, "(");
-                
-                auto condition = this->expr(false);
-                this->expect(TokenKind::RParen, ")");
-
-                this->expect(TokenKind::LBrace, "{");
-
-                this->is_inside_loop = true;
-                auto body = this->parse_block();
-
-                this->is_inside_loop = has_outer_loop;
-                return utils::make_ref<ast::WhileExpr>(start, body->end, std::move(condition), std::move(body));
-            } else if (this->current.value == "for") {
-                bool has_outer_loop = this->is_inside_loop;
-                Location start_ = this->current.start;
-
-                this->next();
-                this->expect(TokenKind::LParen, "(");
-
-                auto start = this->parse_variable_definition(false);
-
-                auto end = this->expr(false);
-                this->expect(TokenKind::SemiColon, ";");
-
-                auto step = this->expr(false);
-                this->expect(TokenKind::RParen, ")");
-
-                this->expect(TokenKind::LBrace, "{");
-
-                this->is_inside_loop = true;
-                auto body = this->parse_block();
-
-                this->is_inside_loop = has_outer_loop;
-                return utils::make_ref<ast::ForExpr>(
-                    start_, body->end, std::move(start), std::move(end), std::move(step), std::move(body)
-                );
-            } else if (this->current.value == "break") {
-                if (!this->is_inside_loop) {
-                    ERROR(this->current.start, "Break statement outside of loop");
-                }
-
-                Location start = this->current.start;
-                this->next();
-
-                Location end = this->expect(TokenKind::SemiColon, ";").end;
-                return utils::make_ref<ast::BreakExpr>(start, end);
-            } else if (this->current.value == "continue") {
-                if (!this->is_inside_loop) {
-                    ERROR(this->current.start, "Continue statement outside of loop");
-                }
-
-                Location start = this->current.start;
-                this->next();
-
-                Location end = this->expect(TokenKind::SemiColon, ";").end;
-                return utils::make_ref<ast::ContinueExpr>(start, end);
-            } else if (this->current.value == "using") {
-                Location start = this->current.start;
-                this->next();
-
-                std::vector<std::string> members;
-                if (this->current != TokenKind::LParen) {
-                    members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
-                } else {
-                    this->next();
-                    while (this->current != TokenKind::RParen) {
-                        members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
-                        if (this->current != TokenKind::Comma) {
-                            break;
-                        }
-                        this->next();
-                    }
-
-                    this->expect(TokenKind::RParen, ")");
-                }
-
-                if (this->current != TokenKind::Keyword && this->current.value != "from") {
-                    ERROR(this->current.start, "Expected 'from' keyword.");
-                }
-
-                this->next();
-                auto parent = this->expr();
-
-                return utils::make_ref<ast::UsingExpr>(start, this->current.end, members, std::move(parent));
-            } else if (this->current.value == "defer") {
-                if (!this->is_inside_function) {
-                    ERROR(this->current.start, "Defer statement outside of function");
-                }
-
-                Location start = this->current.start;
-                this->next();
-
-                auto expr = this->expr();
-                return utils::make_ref<ast::DeferExpr>(start, this->current.end, std::move(expr));
-            } else if (this->current.value == "enum") {
-                this->next();
-                return this->parse_enum();
-            } else if (this->current.value == "import") {
-                Location start = this->current.start;
-                this->next();
-
-                bool is_relative = false;
-                if (this->current == TokenKind::DoubleColon) {
-                    is_relative = true;
-                    this->next();
-                }
-
-                std::string name = this->expect(TokenKind::Identifier, "module name").value;
-                bool is_wildcard = false;
-
-                std::deque<std::string> parents;
-                while (this->current == TokenKind::DoubleColon) {
-                    this->next();
-
-                    if (this->current == TokenKind::Mul) {
-                        is_wildcard = true;
-                        this->next();
-
-                        break;
-                    }
-
-                    std::string parent = this->expect(TokenKind::Identifier, "module name").value;
-                    parents.push_back(parent);
-                }
-
-                if (!parents.empty()) {
-                    std::string back = parents.back();
-                    parents.pop_back();
-
-                    parents.push_back(name);
-                    name = back;
-                }
-
-                Location end = this->expect(TokenKind::SemiColon, ";").end;
-                return utils::make_ref<ast::ImportExpr>(start, end, name, parents, is_wildcard, is_relative);
-            } else if (this->current.value == "foreach") {
-                Location start = this->current.start;
-                this->next(); this->expect(TokenKind::LParen, "(");
-
-                // TODO: foreach ((x, y) in foo)
-                auto variable = this->expect(TokenKind::Identifier, "identifier").value;
-                this->expect(TokenKind::Keyword, "in");
-
-                auto expr = this->expr(false);
-                this->expect(TokenKind::RParen, ")");
-
-                auto body = this->expr(false);
-                return utils::make_ref<ast::ForeachExpr>(start, body->end, variable, std::move(expr), std::move(body));
-            } else if (this->current.value == "static_assert") {
-                Location start = this->current.start;
-                this->next(); this->expect(TokenKind::LParen, "(");
-
-                auto expr = this->expr(false);
-                std::string message;
-                if (this->current == TokenKind::Comma) {
-                    this->next(); message = this->expect(TokenKind::String, "string").value;
-                }
-
-                this->expect(TokenKind::RParen, ")"); 
-                Location end = this->expect(TokenKind::SemiColon, ";").end;
-                    
-                return utils::make_ref<ast::StaticAssertExpr>(start, end, std::move(expr), message);
-            } else {
-                ERROR(this->current.start, "Expected an expression");
+        case TokenKind::Extern: {
+            this->next();
+            return this->parse_extern_block();
+        } 
+        case TokenKind::Func: {
+            this->next();
+            return this->parse_function_definition();
+        }
+        case TokenKind::Return: {
+            if (!this->is_inside_function) {
+                ERROR(this->current.span, "Return statement outside of function");
             }
 
-            break;
+            this->next();
+            Span start = this->current.span;
+            if (this->current == TokenKind::SemiColon) {
+                this->next();
+                return utils::make_scope<ast::ReturnExpr>(Span::from_span(start, this->current.span), nullptr);
+            }
+
+            auto expr = this->expr(false);
+
+            Span end = this->expect(TokenKind::SemiColon, ";").span;
+            return utils::make_scope<ast::ReturnExpr>(Span::from_span(start, end), std::move(expr));
+        } 
+        case TokenKind::If: {
+            if (!this->is_inside_function) {
+                ERROR(this->current.span, "If statement outside of function");
+            }
+
+            this->next();
+            return this->parse_if_statement();
+        } 
+        case TokenKind::Let: {
+            this->next();
+            return this->parse_variable_definition(false);
+        }
+        case TokenKind::Const: {
+            this->next();
+            return this->parse_variable_definition(true);
+        }
+        case TokenKind::Struct: {
+            this->next();
+            return this->parse_struct();
+        }
+        case TokenKind::Namespace: {
+            this->next();
+            return this->parse_namespace();
+        } 
+        case TokenKind::Type: {
+            this->next();
+            return this->parse_type_alias();
+        }
+        case TokenKind::While: {
+            bool has_outer_loop = this->is_inside_loop;
+            Span start = this->current.span;
+
+            this->next();
+            this->expect(TokenKind::LParen, "(");
+            
+            auto condition = this->expr(false);
+            this->expect(TokenKind::RParen, ")");
+
+            this->expect(TokenKind::LBrace, "{");
+
+            this->is_inside_loop = true;
+            auto body = this->parse_block();
+
+            this->is_inside_loop = has_outer_loop;
+            return utils::make_scope<ast::WhileExpr>(Span::from_span(start, body->span), std::move(condition), std::move(body));
+        } 
+        case TokenKind::For: {
+            bool has_outer_loop = this->is_inside_loop;
+            Span start_ = this->current.span;
+
+            this->next();
+            this->expect(TokenKind::LParen, "(");
+
+            auto start = this->parse_variable_definition(false);
+
+            auto end = this->expr(false);
+            this->expect(TokenKind::SemiColon, ";");
+
+            auto step = this->expr(false);
+            this->expect(TokenKind::RParen, ")");
+
+            this->expect(TokenKind::LBrace, "{");
+
+            this->is_inside_loop = true;
+            auto body = this->parse_block();
+
+            this->is_inside_loop = has_outer_loop;
+            return utils::make_scope<ast::ForExpr>(
+                Span::from_span(start_, body->span), std::move(start), std::move(end), std::move(step), std::move(body)
+            );
+        } 
+        case TokenKind::Break: {
+            if (!this->is_inside_loop) {
+                ERROR(this->current.span, "Break statement outside of loop");
+            }
+
+            Span start = this->current.span;
+            this->next();
+
+            Span end = this->expect(TokenKind::SemiColon, ";").span;
+            return utils::make_scope<ast::BreakExpr>(Span::from_span(start, end));
+        } 
+        case TokenKind::Continue: {
+            if (!this->is_inside_loop) {
+                ERROR(this->current.span, "Continue statement outside of loop");
+            }
+
+            Span start = this->current.span;
+            this->next();
+
+            Span end = this->expect(TokenKind::SemiColon, ";").span;
+            return utils::make_scope<ast::ContinueExpr>(Span::from_span(start, end));
+        } 
+        case TokenKind::Using: {
+            Span start = this->current.span;
+            this->next();
+
+            std::vector<std::string> members;
+            if (this->current != TokenKind::LParen) {
+                members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
+            } else {
+                this->next();
+                while (this->current != TokenKind::RParen) {
+                    members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
+                    if (this->current != TokenKind::Comma) {
+                        break;
+                    }
+                    this->next();
+                }
+
+                this->expect(TokenKind::RParen, ")");
+            }
+
+            if (this->current != TokenKind::From) {
+                ERROR(this->current.span, "Expected 'from' keyword.");
+            }
+
+            this->next();
+            auto parent = this->expr();
+
+            return utils::make_scope<ast::UsingExpr>(Span::from_span(start, this->current.span), members, std::move(parent));
+        } 
+        case TokenKind::Defer: {
+            if (!this->is_inside_function) {
+                ERROR(this->current.span, "Defer statement outside of function");
+            }
+
+            Span start = this->current.span;
+            this->next();
+
+            auto expr = this->expr();
+            return utils::make_scope<ast::DeferExpr>(Span::from_span(start, this->current.span), std::move(expr));
+        } 
+        case TokenKind::Enum: {
+            this->next();
+            return this->parse_enum();
+        } 
+        case TokenKind::Import: {
+            Span start = this->current.span;
+            this->next();
+
+            bool is_relative = false;
+            if (this->current == TokenKind::DoubleColon) {
+                is_relative = true;
+                this->next();
+            }
+
+            std::string name = this->expect(TokenKind::Identifier, "module name").value;
+            bool is_wildcard = false;
+
+            while (this->current == TokenKind::DoubleColon) {
+                this->next();
+
+                if (this->current == TokenKind::Mul) {
+                    is_wildcard = true;
+                    this->next();
+
+                    break;
+                }
+
+                name += FORMAT("::{0}", this->expect(TokenKind::Identifier, "module name").value);
+            }
+
+            Span end = this->expect(TokenKind::SemiColon, ";").span;
+            return utils::make_scope<ast::ImportExpr>(Span::from_span(start, end), name, is_wildcard, is_relative);
+        }
+        case TokenKind::Foreach: {
+            Span start = this->current.span;
+            this->next(); this->expect(TokenKind::LParen, "(");
+
+            // TODO: foreach ((x, y) in foo)
+            auto variable = this->expect(TokenKind::Identifier, "identifier").value;
+            this->expect(TokenKind::In, "in");
+
+            bool outer = this->is_inside_loop;
+            this->is_inside_loop = true;
+
+            auto expr = this->expr(false);
+
+            this->expect(TokenKind::RParen, ")");
+            this->expect(TokenKind::LBrace, "{");
+
+            auto body = this->parse_block();
+            this->is_inside_loop = outer;
+
+            return utils::make_scope<ast::ForeachExpr>(
+                Span::from_span(start, body->span), variable, std::move(expr), std::move(body)
+            );
+        } 
+        case TokenKind::StaticAssert: {
+            Span start = this->current.span;
+            this->next(); this->expect(TokenKind::LParen, "(");
+
+            auto expr = this->expr(false);
+            std::string message;
+            if (this->current == TokenKind::Comma) {
+                this->next(); message = this->expect(TokenKind::String, "string").value;
+            }
+
+            this->expect(TokenKind::RParen, ")"); 
+            Span end = this->expect(TokenKind::SemiColon, ";").span;
+                
+            return utils::make_scope<ast::StaticAssertExpr>(Span::from_span(start, end), std::move(expr), message);
+        }
         case TokenKind::SemiColon:
             this->next();
             return nullptr;
@@ -1002,7 +1083,7 @@ utils::Ref<ast::Expr> Parser::statement() {
             return this->expr();
     }
 
-    ERROR(this->current.start, "Unreachable");
+    ERROR(this->current.span, "Unreachable");
     return nullptr;
 }
 
@@ -1030,7 +1111,7 @@ ast::Attributes Parser::parse_attributes() {
                             type = ast::AttributeValueType::Integer;
                             break;
                         default:
-                            ERROR(this->current.start, "Expected a string or integer.");
+                            ERROR(this->current.span, "Expected a string or integer.");
                     }
 
                     this->next();
@@ -1056,7 +1137,7 @@ ast::Attributes Parser::parse_attributes() {
     return attrs;
 }
 
-utils::Ref<ast::Expr> Parser::expr(bool semicolon) {
+utils::Scope<ast::Expr> Parser::expr(bool semicolon) {
     auto left = this->unary();
     auto expr = this->binary(0, std::move(left));
     
@@ -1067,9 +1148,9 @@ utils::Ref<ast::Expr> Parser::expr(bool semicolon) {
     return expr;
 }
 
-utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
+utils::Scope<ast::Expr> Parser::binary(int prec, utils::Scope<ast::Expr> left) {
     while (true) {
-        Location start = this->current.start;
+        Span start = this->current.span;
         int precedence = this->get_token_precendence();
         if (precedence < prec) {
             return left;
@@ -1086,76 +1167,76 @@ utils::Ref<ast::Expr> Parser::binary(int prec, utils::Ref<ast::Expr> left) {
         }
        
         if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
-            left = utils::make_ref<ast::InplaceBinaryOpExpr>(
-                start, this->current.end, INPLACE_OPERATORS[op], std::move(left), std::move(right)
+            left = utils::make_scope<ast::InplaceBinaryOpExpr>(
+                Span::from_span(start, this->current.span), INPLACE_OPERATORS[op], std::move(left), std::move(right)
             );
         } else {
-            left = utils::make_ref<ast::BinaryOpExpr>(start, this->current.end, op, std::move(left), std::move(right));
+            left = utils::make_scope<ast::BinaryOpExpr>(
+                Span::from_span(start, this->current.span), op, std::move(left), std::move(right)
+            );
         }
     }
 }
 
-utils::Ref<ast::Expr> Parser::unary() {
+utils::Scope<ast::Expr> Parser::unary() {
     if (std::find(UNARY_OPERATORS.begin(), UNARY_OPERATORS.end(), this->current.type) == UNARY_OPERATORS.end()) {
         return this->call();
     }
 
-    Location start = this->current.start;
+    Span start = this->current.span;
 
     TokenKind op = this->current.type;
     this->next();
 
     auto value = this->call();
-    return utils::make_ref<ast::UnaryOpExpr>(start, value->end, op, std::move(value));
+    return utils::make_scope<ast::UnaryOpExpr>(Span::from_span(start, this->current.span), op, std::move(value));
 }
 
-utils::Ref<ast::Expr> Parser::call() {
-    Location start = this->current.start;
+utils::Scope<ast::Expr> Parser::call() {
+    Span start = this->current.span;
 
     auto expr = this->factor();
     while (this->current == TokenKind::LParen) {
         this->next();
 
-        std::vector<utils::Ref<ast::Expr>> args;
-        std::map<std::string, utils::Ref<ast::Expr>> kwargs;
+        std::vector<utils::Scope<ast::Expr>> args;
+        std::map<std::string, utils::Scope<ast::Expr>> kwargs;
 
         bool has_kwargs = false;
-        if (this->current != TokenKind::RParen) {
-            while (true) {
-                if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Assign) {
-                    std::string name = this->current.value;
-                    this->next(); this->next();
+        while (this->current != TokenKind::RParen) {
+            if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Assign) {
+                std::string name = this->current.value;
+                this->next(); this->next();
 
-                    auto value = this->expr(false);
-                    kwargs[name] = std::move(value);
+                auto value = this->expr(false);
+                kwargs[name] = std::move(value);
 
-                    has_kwargs = true;
-                } else {
-                    if (has_kwargs) {
-                        ERROR(this->current.start, "Positional arguments must come before keyword arguments");
-                    }
-
-                    auto value = this->expr(false);
-                    args.push_back(std::move(value));
+                has_kwargs = true;
+            } else {
+                if (has_kwargs) {
+                    ERROR(this->current.span, "Positional arguments must come before keyword arguments");
                 }
 
-                if (this->current != TokenKind::Comma) {
-                    break;
-                }
-
-                this->next();
+                auto value = this->expr(false);
+                args.push_back(std::move(value));
             }
+
+            if (this->current != TokenKind::Comma) {
+                break;
+            }
+
+            this->next();
         }
-        
+
         this->expect(TokenKind::RParen, ")");
-        expr = utils::make_ref<ast::CallExpr>(
-            start, this->current.end, std::move(expr), std::move(args), std::move(kwargs)
+        expr = utils::make_scope<ast::CallExpr>(
+            Span::from_span(start, this->current.span), std::move(expr), std::move(args), std::move(kwargs)
         );
     }
 
     if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
         TokenKind op = this->current.type;
-        expr = utils::make_ref<ast::UnaryOpExpr>(start, this->current.end, op, std::move(expr));
+        expr = utils::make_scope<ast::UnaryOpExpr>(Span::from_span(start, this->current.span), op, std::move(expr));
 
         this->next();
     } else if (this->current == TokenKind::LBrace) {
@@ -1167,7 +1248,7 @@ utils::Ref<ast::Expr> Parser::call() {
             std::string name;
             if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
                 if (!previous_is_named_field) {
-                    ERROR(this->current.start, "Expected a field name.");
+                    ERROR(this->current.span, "Expected a field name.");
                 }
 
                 previous_is_named_field = true;
@@ -1189,10 +1270,10 @@ utils::Ref<ast::Expr> Parser::call() {
         }
 
         this->expect(TokenKind::RBrace, "}");
-        expr = utils::make_ref<ast::ConstructorExpr>(start, this->current.end, std::move(expr), std::move(fields));
+        expr = utils::make_scope<ast::ConstructorExpr>(Span::from_span(start, this->current.span), std::move(expr), std::move(fields));
     } else if (this->current == TokenKind::Maybe) {
         this->next();
-        expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
+        expr = utils::make_scope<ast::MaybeExpr>(Span::from_span(start, this->current.span), std::move(expr));
     }
 
     if (this->current == TokenKind::Dot) {
@@ -1201,40 +1282,42 @@ utils::Ref<ast::Expr> Parser::call() {
         expr = this->element(start, std::move(expr));
     }
 
-    if (this->current.match(TokenKind::Keyword, "as")) {
-        this->next(); Location end = this->current.end;
-        expr = utils::make_ref<ast::CastExpr>(start, end, std::move(expr), this->parse_type());   
-    }
-
-    if (this->current.match(TokenKind::Keyword, "if")) {
-        this->next();
-        auto condition = this->expr(false);
-
-        if (!this->current.match(TokenKind::Keyword, "else")) {
-            ERROR(this->current.start, "Expected 'else' after 'if' in ternary expression");
+    switch (this->current.type) {
+        case TokenKind::As: {
+            this->next();
+            return utils::make_scope<ast::CastExpr>(Span::from_span(start, this->current.span), std::move(expr), this->parse_type());
         }
+        case TokenKind::If: {
+            this->next();
+            auto condition = this->expr(false);
 
-        this->next();
-        auto else_expr = this->expr(false);
+            if (this->current != TokenKind::Else) {
+                ERROR(this->current.span, "Expected 'else' after 'if' in ternary expression");
+            }
 
-        expr = utils::make_ref<ast::TernaryExpr>(
-            start, this->current.end, std::move(condition), std::move(expr), std::move(else_expr)
-        );
+            this->next();
+            auto else_expr = this->expr(false);
+
+            return utils::make_scope<ast::TernaryExpr>(
+                Span::from_span(start, this->current.span), std::move(condition), std::move(expr), std::move(else_expr)
+            );
+        }
+        default: {
+            return expr;
+        }
     }
-
-    return expr;
 }
 
-utils::Ref<ast::Expr> Parser::attr(Location start, utils::Ref<ast::Expr> expr) {
+utils::Scope<ast::Expr> Parser::attr(Span start, utils::Scope<ast::Expr> expr) {
     while (this->current == TokenKind::Dot) {
         this->next();
         
         std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
-        expr = utils::make_ref<ast::AttributeExpr>(start, this->current.end, value, std::move(expr));
+        expr = utils::make_scope<ast::AttributeExpr>(Span::from_span(start, this->current.span), value, std::move(expr));
 
         if (this->current == TokenKind::Maybe) {
             this->next();
-            expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
+            expr = utils::make_scope<ast::MaybeExpr>(Span::from_span(start, this->current.span), std::move(expr));
         }
     }
 
@@ -1245,17 +1328,17 @@ utils::Ref<ast::Expr> Parser::attr(Location start, utils::Ref<ast::Expr> expr) {
     return expr;
 }
 
-utils::Ref<ast::Expr> Parser::element(Location start, utils::Ref<ast::Expr> expr) {
+utils::Scope<ast::Expr> Parser::element(Span start, utils::Scope<ast::Expr> expr) {
     while (this->current == TokenKind::LBracket) {
         this->next();
         auto index = this->expr(false);
 
         this->expect(TokenKind::RBracket, "]");
-        expr = utils::make_ref<ast::ElementExpr>(start, this->current.end, std::move(expr), std::move(index));
+        expr = utils::make_scope<ast::ElementExpr>(Span::from_span(start, this->current.span), std::move(expr), std::move(index));
 
         if (this->current == TokenKind::Maybe) {
             this->next();
-            expr = utils::make_ref<ast::MaybeExpr>(start, this->current.end, std::move(expr));
+            expr = utils::make_scope<ast::MaybeExpr>(Span::from_span(start, this->current.span), std::move(expr));
         }
     }
 
@@ -1266,10 +1349,10 @@ utils::Ref<ast::Expr> Parser::element(Location start, utils::Ref<ast::Expr> expr
     return expr;
 }
 
-utils::Ref<ast::Expr> Parser::factor() {
-    utils::Ref<ast::Expr> expr;
+utils::Scope<ast::Expr> Parser::factor() {
+    utils::Scope<ast::Expr> expr;
 
-    Location start = this->current.start;
+    Span start = this->current.span;
     switch (this->current.type) {
         case TokenKind::Integer: {
             std::string value = this->current.value;
@@ -1278,28 +1361,19 @@ utils::Ref<ast::Expr> Parser::factor() {
             int bits = 32;
             bool is_float = false;
 
-            if (this->current.match(TokenKind::Identifier, "i8")) {
-                bits = 8; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "i16")) {
-                bits = 16; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "i32")) {
-                bits = 32; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "i64")) {
-                bits = 64; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "i128")) {
-                bits = 128; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "f32")) {
-                bits = 32; is_float = true; this->next();
-            } else if (this->current.match(TokenKind::Identifier, "f64")) {
-                bits = 64; is_float = true; this->next();
+            if (NUM_TYPES_BIT_MAPPING.find(this->current.value) != NUM_TYPES_BIT_MAPPING.end()) {
+                auto pair = NUM_TYPES_BIT_MAPPING[this->current.value];
+                bits = pair.first; is_float = pair.second;
+
+                this->next();
             }
 
             // Integers are not callable nor indexable so we can safely return from this function.
-            return utils::make_ref<ast::IntegerExpr>(start, this->current.end, value, bits, is_float);
+            return utils::make_scope<ast::IntegerExpr>(Span::from_span(start, this->current.span), value, bits, is_float);
         }
         case TokenKind::Char: {
             std::string value = this->current.value; this->next();
-            return utils::make_ref<ast::CharExpr>(start, this->current.start, value[0]);
+            return utils::make_scope<ast::CharExpr>(Span::from_span(start, this->current.span), value[0]);
         }
         case TokenKind::Float: {
             double result = 0.0;
@@ -1313,83 +1387,62 @@ utils::Ref<ast::Expr> Parser::factor() {
                 is_double = true;
             }
 
-            return utils::make_ref<ast::FloatExpr>(start, this->current.start, result, is_double);
+            return utils::make_scope<ast::FloatExpr>(Span::from_span(start, this->current.span), result, is_double);
         }
         case TokenKind::String: {
             std::string value = this->current.value;
             this->next();
 
-            expr = utils::make_ref<ast::StringExpr>(start, this->current.start, value);
+            expr = utils::make_scope<ast::StringExpr>(Span::from_span(start, this->current.span), value);
             break;
         }
         case TokenKind::Identifier: {
             std::string name = this->current.value;
-            Location end = this->current.end;
-
             this->next();
             if (name == "true") {
-                return utils::make_ref<ast::IntegerExpr>(start, end, "1", 1);
+                return utils::make_scope<ast::IntegerExpr>(Span::from_span(start, this->current.span), "1", 1);
             } else if (name == "false") {
-                return utils::make_ref<ast::IntegerExpr>(start, end, "0", 1);
+                return utils::make_scope<ast::IntegerExpr>(Span::from_span(start, this->current.span), "0", 1);
             }
 
-            expr = utils::make_ref<ast::VariableExpr>(start, this->current.start, name);
+            expr = utils::make_scope<ast::VariableExpr>(Span::from_span(start, this->current.span), name);
             break;
         }
-        case TokenKind::Keyword: {
-            if (this->current.value == "sizeof") {
-                this->next();
-                
-                this->expect(TokenKind::LParen, "(");
-                utils::Ref<ast::Expr> expr = this->expr(false);
+        case TokenKind::Sizeof: {
+            this->next();
+            
+            this->expect(TokenKind::LParen, "(");
+            utils::Scope<ast::Expr> expr = this->expr(false);
 
-                Location end = this->expect(TokenKind::RParen, ")").end;
+            Span end = this->expect(TokenKind::RParen, ")").span;
 
-                // TODO: sizeof for types
-                return utils::make_ref<ast::SizeofExpr>(start, end, std::move(expr));
-            } else if (this->current.value == "offsetof") {
-                Location start = this->current.start;
-                this->next();
+            // TODO: sizeof for types
+            return utils::make_scope<ast::SizeofExpr>(Span::from_span(start, end), std::move(expr));
+        }
+        case TokenKind::Offsetof: {
+            Span start = this->current.span;
+            this->next();
 
-                this->expect(TokenKind::LParen, "(");
-                auto value = this->expr(false);
+            this->expect(TokenKind::LParen, "(");
+            auto value = this->expr(false);
 
-                this->expect(TokenKind::Comma, ",");
-                std::string field = this->expect(TokenKind::Identifier, "identifier").value;
+            this->expect(TokenKind::Comma, ",");
+            std::string field = this->expect(TokenKind::Identifier, "identifier").value;
 
-                Location end = this->expect(TokenKind::RParen, ")").end;
-                return utils::make_ref<ast::OffsetofExpr>(start, end, std::move(value), field);
-            } else if (this->current.value == "where") {
-                Location start = this->current.start;
-                this->next();
-
-                this->expect(TokenKind::LParen, "(");
-                auto expr = this->expr(false);
-                Location end = this->expect(TokenKind::RParen, ")").end;
-
-                return utils::make_ref<ast::WhereExpr>(start, end, std::move(expr));
-            } else if (this->current.value == "func") {
-                bool outer = this->is_inside_function;
-                this->is_inside_function = true;
-
-                this->next();
-
-                auto prototype = this->parse_prototype(ast::ExternLinkageSpecifier::None, false, false);
-                auto body = this->expr(false);
-
-                this->is_inside_function = outer;
-                return utils::make_ref<ast::FunctionExpr>(start, this->current.start, std::move(prototype), std::move(body));
-            } else {
-                ERROR(this->current.start, "Unexpected keyword."); exit(1);
-            }
+            Span end = this->expect(TokenKind::RParen, ")").span;
+            return utils::make_scope<ast::OffsetofExpr>(Span::from_span(start, end), std::move(value), field);
         }
         case TokenKind::LParen: {
-            Location start = this->current.start;
+            Span start = this->current.span;
             this->next();
+
+            if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
+                return this->parse_anonymous_function();
+            }
 
             expr = this->expr(false);
             if (this->current == TokenKind::Comma) {
-                std::vector<utils::Ref<ast::Expr>> elements;
+                std::vector<utils::Scope<ast::Expr>> elements;
                 elements.push_back(std::move(expr));
 
                 this->next();
@@ -1403,8 +1456,8 @@ utils::Ref<ast::Expr> Parser::factor() {
                     this->next();
                 }
 
-                Location end = this->expect(TokenKind::RParen, ")").end;
-                expr = utils::make_ref<ast::TupleExpr>(start, end, std::move(elements));
+                Span end = this->expect(TokenKind::RParen, ")").span;
+                expr = utils::make_scope<ast::TupleExpr>(Span::from_span(start, end), std::move(elements));
             } else {
                 this->expect(TokenKind::RParen, ")");
             }
@@ -1412,7 +1465,7 @@ utils::Ref<ast::Expr> Parser::factor() {
         }
         case TokenKind::LBracket: {
             this->next();
-            std::vector<utils::Ref<ast::Expr>> elements;
+            std::vector<utils::Scope<ast::Expr>> elements;
 
             if (this->current != TokenKind::RBracket) {
                 auto element = this->expr(false);
@@ -1421,7 +1474,7 @@ utils::Ref<ast::Expr> Parser::factor() {
                     auto size = this->expr(false);
 
                     this->expect(TokenKind::RBracket, "]");
-                    return utils::make_ref<ast::ArrayFillExpr>(start, this->current.start, std::move(element), std::move(size));
+                    return utils::make_scope<ast::ArrayFillExpr>(Span::from_span(start, this->current.span), std::move(element), std::move(size));
                 }
 
                 elements.push_back(std::move(element));
@@ -1438,13 +1491,18 @@ utils::Ref<ast::Expr> Parser::factor() {
                 this->next();
             }
 
-            Location end = this->expect(TokenKind::RBracket, "]").end;
-            expr = utils::make_ref<ast::ArrayExpr>(start, end, std::move(elements));
+            Span end = this->expect(TokenKind::RBracket, "]").span;
+            expr = utils::make_scope<ast::ArrayExpr>(Span::from_span(start, end), std::move(elements));
             break;
         }
         case TokenKind::LBrace: {
             this->next();
             expr = this->parse_block();
+
+            break;
+        }
+        default: {
+            ERROR(this->current.span, "Expected an expression");
         }
     }
 
@@ -1452,7 +1510,7 @@ utils::Ref<ast::Expr> Parser::factor() {
         this->next();
 
         std::string value = this->expect(TokenKind::Identifier, "identifier").value;
-        expr = utils::make_ref<ast::NamespaceAttributeExpr>(start, this->current.end, value, std::move(expr));
+        expr = utils::make_scope<ast::NamespaceAttributeExpr>(Span::from_span(start, this->current.span), value, std::move(expr));
     }
 
     if (this->current == TokenKind::Dot) {

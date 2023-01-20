@@ -13,8 +13,7 @@ struct Namespace {
 
     Scope* scope;
 
-    Location start;
-    Location end;
+    Span span;
 
     Namespace(std::string name, std::string qualified_name) : name(name), qualified_name(qualified_name) {};
 };

@@ -14,7 +14,7 @@ void jit::ExitOnError(llvm::Error error) {
 }
 
 jit::QuartJIT::QuartJIT(
-    std::string filename, utils::Ref<llvm::Module> module, utils::Ref<llvm::LLVMContext> context
+    std::string filename, utils::Scope<llvm::Module> module, utils::Scope<llvm::LLVMContext> context
 ) {
     this->filename = filename;
     this->jit = jit::ExitOnError(llvm::orc::LLJITBuilder().create());

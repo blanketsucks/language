@@ -17,6 +17,7 @@ Function::Function(
     is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous), is_operator(is_operator) {
     this->used = false;
     this->is_finalized = false;
+    this->current_block = nullptr;
 
     this->is_private = attrs.has("private");
     this->noreturn = attrs.has("noreturn");

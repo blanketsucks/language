@@ -1,9 +1,11 @@
 #ifndef _VISITOR_H
 #define _VISITOR_H
 
+#include "lexer/tokens.h"
 #include "parser/parser.h"
 #include "utils/pointer.h"
 #include "utils/log.h"
+#include "utils/utils.h"
 #include "parser/ast.h"
 #include "objects/scopes.h"
 #include "objects/functions.h"
@@ -21,25 +23,33 @@
 #include <unordered_map>
 #include <memory>
 
-#ifdef __GNUC__
-    #define _UNREACHABLE __builtin_unreachable();
-#elif _MSC_VER
-    #undef alloca
-    #define _UNREACHABLE __assume(false);
-#else
-    #define _UNREACHABLE
-#endif
-
 #define FILE_EXTENSION ".qr"
+
+enum class MangleStyle {
+    Full,
+    Minimal,
+    None
+};
+
+struct OptimizationOptions {
+    bool enable = true;
+    bool dead_code_elimination = true;
+
+    MangleStyle mangle_style = MangleStyle::Full; // Not really an optimization, but it's here for now
+};
 
 class Visitor {
 public:
     using TupleKey = std::vector<llvm::Type*>;
     using Finalizer = std::function<void(Visitor&)>;
 
-    Visitor(std::string name, std::string entry, bool with_optimizations = true);
-    void finalize();
+    Visitor(
+        std::string name, 
+        std::string entry, 
+        const OptimizationOptions& options = OptimizationOptions()
+    );
 
+    void finalize();
     void add_finalizer(Finalizer finalizer);
 
     void dump(llvm::raw_ostream& stream);
@@ -54,6 +64,11 @@ public:
     std::pair<llvm::Value*, bool> get_variable(std::string name);
     Function* get_function(std::string name);
 
+    llvm::Constant* to_str(const std::string& str);
+
+    // Returns the `merge` block that should be inserted after doing stuff in the `then` block
+    llvm::BasicBlock* create_if_statement(llvm::Value* condition);
+
     llvm::Value* cast(llvm::Value* value, Type type);
     llvm::Value* cast(llvm::Value* value, llvm::Type* type);
 
@@ -64,23 +79,28 @@ public:
     uint32_t getsizeof(llvm::Type* type);
 
     llvm::StructType* create_tuple_type(std::vector<llvm::Type*> types);
-    void store_tuple(Location location, utils::Shared<Function> func, llvm::Value* value, std::vector<std::string> names, std::string consume_rest);
-    llvm::Value* make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type = nullptr);
+    void store_tuple(
+       Span span, utils::Ref<Function> func, llvm::Value* value, std::vector<std::string> names, std::string consume_rest
+    );
+    llvm::Value* make_tuple(
+        std::vector<llvm::Value*> values, llvm::StructType* type = nullptr
+    );
     std::vector<llvm::Value*> unpack(
-        llvm::Value* value, uint32_t n, Location location = Location::dummy()
+        llvm::Value* value, uint32_t n, Span span = Span()
     );
 
-    void store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value);
+    void store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Expr> value);
 
-    void store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value);
-    void bounds_check(llvm::Value* index, uint32_t size);
+    void store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr> value);
+    void create_bounds_check(llvm::Value* index, uint32_t count, Span span);
 
     bool is_struct(llvm::Value* value);
     bool is_struct(llvm::Type* type);
     bool is_tuple(llvm::Type* type);
 
-    utils::Shared<Struct> get_struct(llvm::Value* value);
-    utils::Shared<Struct> get_struct(llvm::Type* type);
+    utils::Ref<Struct> get_struct(llvm::Value* value);
+    utils::Ref<Struct> get_struct(llvm::Type* type);
+    void check_struct_self(llvm::Value* value, Span span);
 
     llvm::AllocaInst* create_alloca(llvm::Type* type);
 
@@ -94,13 +114,21 @@ public:
     );
 
     std::vector<llvm::Value*> handle_function_arguments(
-        Location location,
-        utils::Shared<Function> function,
+        Span span,
+        utils::Ref<Function> function,
         llvm::Value* self,
-        std::vector<utils::Ref<ast::Expr>> args,
-        std::map<std::string, utils::Ref<ast::Expr>> kwargs
+        std::vector<utils::Scope<ast::Expr>>& args,
+        std::map<std::string, utils::Scope<ast::Expr>>& kwargs
     );
     
+    llvm::Value* call(
+        utils::Ref<Function> function, 
+        std::vector<llvm::Value*> args, 
+        llvm::Value* self = nullptr,
+        bool is_constructor = false,
+        llvm::FunctionType* type = nullptr
+    );
+
     llvm::Value* call(
         llvm::Function* function, 
         std::vector<llvm::Value*> args, 
@@ -119,9 +147,15 @@ public:
     bool is_compatible(Type t1, llvm::Type* t2);
     bool is_compatible(llvm::Type* t1, llvm::Type* t2);
 
-    ScopeLocal as_reference(ast::Expr* expr);
+    bool is_reference_expr(utils::Scope<ast::Expr>& expr); // if it's a &expr or not
+    llvm::Value* as_reference(llvm::Value* value);
+    ScopeLocal as_reference(utils::Scope<ast::Expr>& expr);
 
     uint32_t get_pointer_depth(llvm::Type* type);
+
+    bool is_valid_sized_type(llvm::Type* type);
+
+    void panic(const std::string& message, Span span = Span());
 
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
@@ -188,23 +222,21 @@ public:
 
     Value visit(ast::EnumExpr* expr);
 
-    Value visit(ast::WhereExpr* expr);
-
     Value visit(ast::ImportExpr* expr);
 
     std::string name;
     std::string entry;
-    bool with_optimizations;
+    OptimizationOptions options;
 
     uint64_t id = 0;
     
-    utils::Ref<llvm::LLVMContext> context;
-    utils::Ref<llvm::Module> module;
-    utils::Ref<llvm::IRBuilder<>> builder;
-    utils::Ref<llvm::legacy::FunctionPassManager> fpm;
+    utils::Scope<llvm::LLVMContext> context;
+    utils::Scope<llvm::Module> module;
+    utils::Scope<llvm::IRBuilder<>> builder;
+    utils::Scope<llvm::legacy::FunctionPassManager> fpm;
 
-    std::map<std::string, utils::Shared<Struct>> structs;
-    std::map<std::string, utils::Shared<Module>> modules;
+    std::map<std::string, utils::Ref<Struct>> structs;
+    std::map<std::string, utils::Ref<Module>> modules;
     std::map<TupleKey, llvm::StructType*> tuples;
 
     std::vector<FunctionCall> constructors;
@@ -212,10 +244,10 @@ public:
     Scope* global_scope = nullptr;
     Scope* scope = nullptr;
 
-    utils::Shared<Function> current_function = nullptr;
-    utils::Shared<Struct> current_struct = nullptr;
-    utils::Shared<Namespace> current_namespace = nullptr;
-    utils::Shared<Module> current_module = nullptr;
+    utils::Ref<Function> current_function = nullptr;
+    utils::Ref<Struct> current_struct = nullptr;
+    utils::Ref<Namespace> current_namespace = nullptr;
+    utils::Ref<Module> current_module = nullptr;
 
     llvm::Type* ctx = nullptr;
 

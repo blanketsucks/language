@@ -55,6 +55,11 @@ struct FunctionArgument {
     bool is_reference() { return this->type.is_reference; }
 };
 
+struct StructDeconstructor {
+    llvm::Value* self;
+    Struct* structure;
+};
+
 struct Function {
     std::string name;
     llvm::Function* value;
@@ -72,7 +77,7 @@ struct Function {
 
     std::vector<llvm::Function*> calls;
 
-    utils::Shared<Struct> parent;
+    utils::Ref<Struct> parent;
     bool is_private;
 
     ast::Attributes attrs;
@@ -85,8 +90,9 @@ struct Function {
     bool is_finalized;
     bool is_operator;
 
-    Location start;
-    Location end;
+    std::vector<StructDeconstructor> dtors;
+
+    Span span;
 
     Function(
         std::string name,

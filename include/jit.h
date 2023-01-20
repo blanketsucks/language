@@ -30,7 +30,7 @@ public:
         return llvm::JITEvaluatedSymbol(llvm::pointerToJITTargetAddress(ptr), llvm::JITSymbolFlags());
     }
 
-    QuartJIT(std::string filename, utils::Ref<llvm::Module> module, utils::Ref<llvm::LLVMContext> context);
+    QuartJIT(std::string filename, utils::Scope<llvm::Module> module, utils::Scope<llvm::LLVMContext> context);
 
     llvm::orc::JITDylib& dylib() const;
     llvm::orc::SymbolStringPtr mangle(std::string name);
@@ -54,7 +54,7 @@ public:
 private:
     std::string filename;
 
-    utils::Ref<llvm::orc::LLJIT> jit;
+    utils::Scope<llvm::orc::LLJIT> jit;
     llvm::orc::ThreadSafeModule module;
 
     llvm::orc::SymbolMap symbols;

@@ -70,87 +70,12 @@ void Preprocessor::update(std::map<std::string, Macro> macros) {
 
 std::vector<Token> Preprocessor::process() {
     while (this->current != TokenKind::EOS) {
-        if (this->current == TokenKind::Keyword) {
-            if (this->current.value == "$define") {
-                this->next();
-                this->parse_macro_definition();
-            } else if (this->current.value == "$undef") {
-                this->next();
-                std::string name = this->current.value;
-
-                if (!this->is_macro(name)) {
-                    ERROR(this->current.start, "Undefined macro '{0}'", name); exit(1);
-                }
-
-                this->macros.erase(name);
-                this->next();
-            } else if (this->current.value == "$error") {
-                this->next();
-                utils::error(this->current.start, this->current.value);
-            } else if (this->current.value == "$include") {
-                this->next();
-                std::string path = this->current.value;
-
-                this->parse_include(path);
-            } else if (this->current.value == "$ifdef") {
-                this->if_directive_location = this->current.start;
-                this->next();
-
-                std::string name = this->current.value;
-                this->has_if_directive = true;
-                if (!this->is_macro(name)) {
-                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"}); continue;
-                }
-
-                this->should_close_if_directive = true;
-                this->next();
-            } else if (this->current.value == "$ifndef") {
-                this->if_directive_location = this->current.start;
-                this->next();
-
-                std::string name = this->current.value;
-                this->has_if_directive = true;
-                if (this->is_macro(name)) {
-                    this->skip_until(TokenKind::Keyword, {"$else", "$endif"}); continue;
-                }
-
-                this->should_close_if_directive = true;
-                this->next();
-            } else if (this->current.value == "$else") {
-                if (!this->has_if_directive) {
-                    ERROR(this->current.start, "Unexpected '$else'");
-                }
-
-                this->next();
-                if (this->should_close_if_directive) {
-                    this->skip_until(TokenKind::Keyword, {"$endif"}); continue;
-                }
-            } else if (this->current.value == "$endif") {
-                if (!this->has_if_directive) {
-                    ERROR(this->current.start, "Unexpected '$endif'");
-                }
-
-                this->next();
-
-                this->should_close_if_directive = false;
-                this->has_if_directive = false;
-            }
-        } else if (this->current == TokenKind::Identifier) {
-            if (this->is_macro(this->current.value)) {
-                Macro macro = this->macros[this->current.value];
-                this->expand(macro);
-            }
-        }
-
+        // TODO: Do something with this
         if (this->current != TokenKind::Newline) {
             this->processed.push_back(this->current);
         }
 
         this->next();
-    }
-
-    if (this->has_if_directive) {
-        ERROR(this->if_directive_location, "Unterminated if directive");
     }
     
     this->processed.push_back(this->current);
@@ -159,7 +84,7 @@ std::vector<Token> Preprocessor::process() {
 
 Macro Preprocessor::parse_macro_definition() {
     if (this->current != TokenKind::Identifier) {
-        ERROR(this->current.start, "Expected identifier");
+        ERROR(this->current.span, "Expected identifier");
     }
  
     std::string name = this->current.value;
@@ -171,7 +96,7 @@ Macro Preprocessor::parse_macro_definition() {
 
         while (this->current != TokenKind::RParen) {
             if (this->current != TokenKind::Identifier) {
-                ERROR(this->current.start, "Expected identifier");
+                ERROR(this->current.span, "Expected identifier");
             }
 
             args.push_back(this->current.value);
@@ -197,36 +122,36 @@ Macro Preprocessor::parse_macro_definition() {
     return macro;
 }
 
-std::fstream Preprocessor::search_include_paths(std::string filename) {
+utils::filesystem::Path Preprocessor::search_include_paths(std::string filename) {
     utils::filesystem::Path path(filename);
     if (path.exists()) {
         if (!path.isfile()) {
-            ERROR(this->current.start, "'{0}' is not a file", filename);
+            ERROR(this->current.span, "'{0}' is not a file", filename);
         }
 
-        return path.open();
+        return path;
     }
 
     for (auto& search : this->include_paths) {
         path = utils::filesystem::Path(search).join(filename);
         if (path.exists()) {
             if (!path.isfile()) {
-                ERROR(this->current.start, "'{0}' is not a file", path.name);
+                ERROR(this->current.span, "'{0}' is not a file", path.name);
             }
 
-            return path.open();
+            return path;
         }
     }
 
-    ERROR(this->current.start, "Could not find file '{0}'", filename);
+    ERROR(this->current.span, "Could not find file '{0}'", filename);
 }
 
 void Preprocessor::parse_include(std::string path) {
-    std::fstream file = this->search_include_paths(path);
+    auto file = this->search_include_paths(path);
     if (this->includes.find(path) != this->includes.end()) {
         Include inc = this->includes[path];
         if (inc.state != IncludeState::Processed) {
-            ERROR(this->current.start, "Circluar dependency detected in include path '{0}'", path);
+            ERROR(this->current.span, "Circluar dependency detected in include path '{0}'", path);
         }
 
         this->next();
@@ -234,7 +159,7 @@ void Preprocessor::parse_include(std::string path) {
     }
 
     this->next();
-    Lexer lexer(file, path);
+    Lexer lexer(file);
 
     Include include = {path, IncludeState::Initialized};
     this->includes[path] = include;
@@ -251,35 +176,15 @@ void Preprocessor::parse_include(std::string path) {
 
     this->update(tokens);
     this->update(preprocessor.macros);
-
-    if (file.is_open()) {
-        file.close();
-    }
 }
 
 void Preprocessor::define(std::string name) {
     this->macros[name] = Macro(name, {}, {});
 }
 
-void Preprocessor::define(std::string name, int value) {
-    Token token = {
-        TokenKind::Integer,
-        Location(), Location(),
-        std::to_string(value)
-    };
+void Preprocessor::define(std::string name, int value) {}
 
-    this->macros[name] = Macro(name, {}, {token});
-}
-
-void Preprocessor::define(std::string name, std::string value) {
-    Token token = {
-        TokenKind::String,
-        Location(), Location(),
-        value
-    };
-
-    this->macros[name] = Macro(name, {}, {token});
-}
+void Preprocessor::define(std::string name, std::string value) {}
 
 void Preprocessor::undef(std::string name) {
     this->macros.erase(name);
@@ -290,7 +195,7 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
     if (macro.is_callable()) {
         this->next();
         if (this->current != TokenKind::LParen) {
-            ERROR(this->current.start, "Expected '('");
+            ERROR(this->current.span, "Expected '('");
         }
 
         this->next();
@@ -299,12 +204,12 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         size_t index = 0;
         while (this->current != TokenKind::RParen) {
             if (index >= macro.args.size()) {
-                ERROR(this->current.start, "Too many arguments passed to macro call", false);
+                ERROR(this->current.span, "Too many arguments passed to macro call", false);
 
                 std::string message = FORMAT(
                     "'{0}' macro expects {1} arguments but got {2}", macro.name, macro.args.size(), index + 1
                 );
-                utils::note(this->current.start, message);
+                utils::note(this->current.span, message);
 
                 exit(1);
             }
@@ -321,12 +226,12 @@ std::vector<Token> Preprocessor::expand(Macro macro, bool return_tokens) {
         }
 
         if (this->current != TokenKind::RParen) {
-            ERROR(this->current.start, "Expected ')'");
+            ERROR(this->current.span, "Expected ')'");
         }
 
         if (index < macro.args.size() - 1) {
-            ERROR(this->current.start, "Too few arguments passed to macro call", false);
-            NOTE(this->current.start, "'{s}' macro expects {i} arguments but got {i}", macro.name, macro.args.size(), index + 1);
+            ERROR(this->current.span, "Too few arguments passed to macro call", false);
+            NOTE(this->current.span, "'{s}' macro expects {i} arguments but got {i}", macro.name, macro.args.size(), index + 1);
             
             exit(1);
         }

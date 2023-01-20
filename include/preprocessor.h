@@ -2,6 +2,7 @@
 #define _PREPROCESSOR_H
 
 #include "lexer/tokens.h"
+#include "utils/filesystem.h"
 
 enum class IncludeState {
     Initialized,
@@ -39,7 +40,7 @@ public:
     Macro parse_macro_definition();
     void parse_include(std::string path);
 
-    std::fstream search_include_paths(std::string path);
+    utils::filesystem::Path search_include_paths(std::string path);
 
     bool is_macro(std::string name);
 

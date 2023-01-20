@@ -12,6 +12,10 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         if (!this->current_function) {
             return Value(local.value, local.is_constant);
         }
+
+        if (local.type->isArrayTy()) {
+            return this->builder->CreateGEP(local.type, local.value, this->builder->getInt32(0));
+        }
             
         return Value(this->load(local.value, local.type), local.is_constant);
     }
@@ -28,7 +32,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value::from_module(scope->get_module(expr->name));
     }
 
-    ERROR(expr->start, "Undefined variable '{0}'", expr->name);
+    ERROR(expr->span, "Undefined variable '{0}'", expr->name);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
@@ -52,6 +56,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     bool is_reference = false;
     bool is_immutable = false;
     bool is_stack_allocated = false;
+    bool has_initializer = !!expr->value;
 
     if (!expr->value) {
         type = expr->type->accept(*this).type.value;
@@ -80,15 +85,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
         llvm::Type* vtype = nullptr;
         if (!is_early_function_call) {
-            value = val.unwrap(expr->value->start);
+            value = val.unwrap(expr->value->span);
             vtype = value->getType();
 
-            if (!expr->type) {
+            if (!type) {
                 type = vtype;
             }
         } else {
             vtype = this->constructors.back().function->getReturnType();
-            if (!expr->type) {
+            if (!type) {
                 type = vtype;
             }
 
@@ -96,12 +101,12 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         if (type->isVoidTy()) {
-            ERROR(expr->value->start, "Cannot store value of type 'void'");
+            ERROR(expr->value->span, "Cannot store value of type 'void'");
         }
 
         if (!this->is_compatible(type, vtype)) {
             ERROR(
-                expr->value->start, 
+                expr->value->span, 
                 "Expected expression of type '{0}' but got '{1}' instead", 
                 this->get_type_name(type), this->get_type_name(vtype)
             );
@@ -109,7 +114,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             // TODO: Somehow be able to cast in this case
             if (is_early_function_call && (type != vtype)) {
                 ERROR(
-                    expr->value->start, 
+                    expr->value->span, 
                     "Expected expression of type '{0}' but got '{1}' instead", 
                     this->get_type_name(type), this->get_type_name(vtype)
                 );
@@ -123,7 +128,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         std::string first = expr->names[0];
         if (!this->current_function) {
             if (!llvm::isa<llvm::Constant>(value)) {
-                ERROR(expr->value->start, "Cannot store non-constant value in a global variable");
+                ERROR(expr->value->span, "Cannot store non-constant value in a global variable");
             }
 
             std::string name = FORMAT("__global.{0}", first);
@@ -148,8 +153,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 false,
                 expr->is_immutable,
                 false,
-                expr->start, 
-                expr->end 
+                expr->span
             };
 
             return nullptr;
@@ -157,7 +161,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 
         if (is_reference) {
             if (expr->is_immutable && !is_immutable) {
-                ERROR(expr->start, "Cannot assign mutable reference to immutable reference variable '{0}'", first);
+                ERROR(expr->span, "Cannot assign mutable reference to immutable reference variable '{0}'", first);
             }
 
             this->scope->variables[first] = Variable::from_value(
@@ -166,15 +170,14 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 expr->is_immutable, 
                 true, 
                 is_stack_allocated, 
-                expr->start, 
-                expr->end
+                expr->span
             );
 
             return nullptr;
         }
 
         llvm::AllocaInst* inst = this->create_alloca(type);
-        if (is_constant && type->isAggregateType()) {
+        if (is_constant && type->isAggregateType() && has_initializer) {
             std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, first);
             this->module->getOrInsertGlobal(name, type);
 
@@ -189,7 +192,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 this->getsizeof(type)
             );
         } else {
-            this->builder->CreateStore(value, inst);
+            if (!has_initializer) {
+                this->builder->CreateMemSet(
+                    inst, this->builder->getInt8(0), 
+                    this->getsizeof(type), llvm::MaybeAlign(0)
+                );
+            } else {
+                this->builder->CreateStore(value, inst);
+            }
+
             if (is_early_function_call) {
                 auto& call = this->constructors.back();
                 call.store = inst;
@@ -204,12 +215,21 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             false, 
             expr->is_immutable,
             true,
-            expr->start,
-            expr->end
+            expr->span
         };
 
+        if (auto structure = this->get_struct(type)) {
+            if (!structure->has_method("destructor")) {
+                return nullptr;
+            }
+
+            this->current_function->dtors.push_back({
+                inst, structure.get()
+            });
+        }
+
     } else {
-        this->store_tuple(expr->start, this->current_function, value, expr->names, expr->consume_rest);
+        this->store_tuple(expr->span, this->current_function, value, expr->names, expr->consume_rest);
     }
     
     return value;
@@ -223,7 +243,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
     llvm::Value* value = nullptr;
 
     if (!is_early_function_call) {
-        value = val.unwrap(expr->value->start);
+        value = val.unwrap(expr->value->span);
         if (!expr->type) {
             type = value->getType();
         } else {
@@ -263,7 +283,7 @@ Value Visitor::visit(ast::ConstExpr* expr) {
     }
 
     this->scope->constants[expr->name] = Constant {
-        name, type, global, constant, expr->start, expr->end
+        name, type, global, constant, expr->span
     };
     
     return nullptr;

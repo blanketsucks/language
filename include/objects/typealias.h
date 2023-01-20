@@ -11,12 +11,11 @@ struct TypeAlias {
     std::string name;
     llvm::Type* type;
 
-    utils::Shared<Enum> enumeration;
+    utils::Ref<Enum> enumeration;
 
-    Location start;
-    Location end;
+    Span span;
 
-    static TypeAlias from_enum(utils::Shared<Enum> enumeration);
+    static TypeAlias from_enum(utils::Ref<Enum> enumeration);
     static TypeAlias null();
 
     bool is_null();

@@ -13,10 +13,9 @@ struct Enum {
     std::string name;
     llvm::Type* type;
 
-    Location start;
-    Location end;
-
     Scope* scope;
+
+    Span span;
 
     Enum(std::string name, llvm::Type* type);
 

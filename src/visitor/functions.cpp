@@ -1,4 +1,6 @@
+#include "parser/ast.h"
 #include "visitor.h"
+#include <llvm-14/llvm/IR/Function.h>
 
 static std::vector<std::string> RESERVED_FUNCTION_NAMES = {
     "__global_constructors_init"
@@ -22,29 +24,29 @@ llvm::Function* Visitor::create_function(
 }
 
 std::vector<llvm::Value*> Visitor::handle_function_arguments(
-    Location location,
-    utils::Shared<Function> function,
+    Span span,
+    utils::Ref<Function> function,
     llvm::Value* self,
-    std::vector<utils::Ref<ast::Expr>> args,
-    std::map<std::string, utils::Ref<ast::Expr>> kwargs
+    std::vector<utils::Scope<ast::Expr>>& args,
+    std::map<std::string, utils::Scope<ast::Expr>>& kwargs
 ) {
     uint32_t argc = args.size() + kwargs.size() + (self ? 1 : 0);
     if (function->has_any_default_value()) {
         if (argc + function->get_default_arguments_count() < function->argc()) {
-            ERROR(location, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
+            ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
         } else if (argc > function->argc() && !function->is_variadic()) {
-            ERROR(location, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+            ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
         }
     } else {
         if (argc < function->argc()) {
-            ERROR(location, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
+            ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
         } else if (argc > function->argc() && !function->is_variadic()) {
-            ERROR(location, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+            ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
         }
     }
 
     if (!this->current_function && function->noreturn) {
-        ERROR(location, "Cannot call noreturn function '{0}' from global scope", function->name);
+        ERROR(span, "Cannot call noreturn function '{0}' from global scope", function->name);
     }
 
     std::map<int64_t, llvm::Value*> values;
@@ -54,7 +56,9 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     auto params = function->params();
 
     // Name is only used for kwargs when they are not in order
-    const auto& visit = [&](utils::Ref<ast::Expr> expr, std::string name = "") {
+    const auto& visit = [&](
+        utils::Scope<ast::Expr>& expr, const std::string& name = ""
+    ) {
         llvm::Value* value = nullptr;
         if (i < params.size()) {
             FunctionArgument param;
@@ -66,15 +70,15 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 
             this->ctx = param.type.value;
             if (param.is_reference()) {
-                auto ref = this->as_reference(expr.get());
+                auto ref = this->as_reference(expr);
                 if (ref.is_immutable && !param.is_immutable) {
-                    ERROR(expr->start, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
+                    ERROR(expr->span, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
                 }
 
                 value = ref.value;
                 if (!this->is_compatible(param.type, value->getType())) {
                     ERROR(
-                        expr->start, 
+                        expr->span, 
                         "Cannot pass reference value of type '{0}' to reference parameter of type '{1}'", 
                         this->get_type_name(value->getType()->getPointerElementType()), 
                         this->get_type_name(param.type->getPointerElementType())
@@ -82,14 +86,11 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                 }
             } else {
                 Value val = expr->accept(*this);
-                if (val.is_immutable && !param.is_immutable) {
-                    ERROR(expr->start, "Cannot pass immutable value to mutable parameter '{0}'", param.name);
-                }
+                value = val.unwrap(expr->span);
 
-                value = val.unwrap(expr->start);
                 if (!this->is_compatible(param.type, value->getType())) {
                     ERROR(
-                        expr->start, 
+                        expr->span, 
                         "Cannot pass value of type '{0}' to parameter of type '{1}'", 
                         this->get_type_name(value->getType()), 
                         this->get_type_name(param.type)
@@ -97,20 +98,20 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                 }
 
                 value = this->cast(value, param.type.value);
+        
+                values[i] = value;
+                this->ctx = nullptr;
             }
-
-            values[i] = value;
-            this->ctx = nullptr;
         } else {
             if (!function->is_variadic()) {
                 ERROR(
-                    expr->start, 
+                    expr->span, 
                     "Function call expects {0} arguments but got {1}", 
                     function->value->size(), i
                 );
             }
 
-            value = expr->accept(*this).unwrap(expr->start);
+            value = expr->accept(*this).unwrap(expr->span);
             varargs.push_back(value);
         }
 
@@ -118,15 +119,15 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     };
 
     for (auto& arg : args) {
-        visit(std::move(arg));
+        visit(arg);
     }
 
     for (auto& entry : kwargs) {
         if (!function->has_kwarg(entry.first)) {
-            ERROR(entry.second->start, "Function does not have a keyword parameter named '{0}'", entry.first);
+            ERROR(entry.second->span, "Function does not have a keyword parameter named '{0}'", entry.first);
         }
 
-        visit(std::move(entry.second), entry.first);
+        visit(entry.second, entry.first);
     }
 
     std::vector<llvm::Value*> ret;
@@ -149,6 +150,16 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 
 
     return ret;
+}
+
+llvm::Value* Visitor::call(
+    utils::Ref<Function> function, 
+    std::vector<llvm::Value*> args, 
+    llvm::Value* self, 
+    bool is_constructor,
+    llvm::FunctionType* type
+) {
+    return this->call(function->value, args, self, is_constructor, type);
 }
 
 llvm::Value* Visitor::call(
@@ -176,11 +187,12 @@ llvm::Value* Visitor::call(
 
 Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (!this->current_struct && expr->attributes.has("private")) {
-        ERROR(expr->start, "Cannot declare private function outside of a struct");
+        ERROR(expr->span, "Cannot declare private function outside of a struct");
     }
 
     std::string name;
     bool is_anonymous = false;
+    bool is_llvm_intrinsic = false;
 
     if (expr->name.empty()) {
         name = FORMAT("__anon.{0}", this->id);
@@ -188,33 +200,37 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 
         is_anonymous = true;
     } else {
-        if (expr->linkage == ast::ExternLinkageSpecifier::C) {
+        if (expr->linkage == ast::ExternLinkageSpecifier::C || this->options.mangle_style == MangleStyle::None) {
             name = expr->name;
         } else {
             name = this->format_name(expr->name);
         }
     }
 
-    auto pair = this->format_intrinsic_function(name);
-    switch (expr->linkage) {
-        case ast::ExternLinkageSpecifier::C:
-            if (!pair.second) pair.first = expr->name;
-        default: break;
+    if (expr->attributes.has("llvm_intrinsic")) {
+        is_llvm_intrinsic = true;
+        name = expr->attributes.get("llvm_intrinsic").value;
     }
 
+    switch (expr->linkage) {
+        case ast::ExternLinkageSpecifier::C:
+            if (!is_anonymous) name = expr->name;
+        default: break;
+    }
+    
     Type ret;
     if (!expr->return_type) {
         ret = this->builder->getVoidTy();
     } else {
         ret = expr->return_type->accept(*this).type;
         if (ret->isVoidTy()) {
-            NOTE(expr->return_type->start, "Redundant return type. Function return types default to 'void'");
+            NOTE(expr->return_type->span, "Redundant return type. Function return types default to 'void'");
         }
     }
 
     if (name == this->entry) {
         if (!ret->isVoidTy() && !ret->isIntegerTy()) {
-            ERROR(expr->start, "Entry point function must either return void or an integer");
+            ERROR(expr->span, "Entry point function must either return void or an integer");
         }
 
         if (ret->isVoidTy()) {
@@ -231,25 +247,28 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     for (auto& arg : expr->args) {
         Type type = nullptr;
         if (arg.is_self) {
-            type = Type(
-                this->current_struct->type->getPointerTo(),true
-            );
+            utils::Ref<Struct> structure = this->current_struct;
+            type = Type(structure->type->getPointerTo(), true);
         } else {
             type = arg.type->accept(*this).type;
+        }
+
+        if (!this->is_valid_sized_type(type.value)) {
+            ERROR(arg.type->span, "Cannot define a parameter of type '{0}'", this->get_type_name(type.value));
         }
 
         llvm::Value* default_value = nullptr;
         if (arg.default_value) {
             this->ctx = type.value;
-            default_value = arg.default_value->accept(*this).unwrap(arg.default_value->start);
+            default_value = arg.default_value->accept(*this).unwrap(arg.default_value->span);
 
             if (!llvm::isa<llvm::Constant>(default_value)) {
-                ERROR(arg.default_value->start, "Default values must be constants");
+                ERROR(arg.default_value->span, "Default values must be constants");
             }
 
             if (!this->is_compatible(type.value, default_value->getType())) {
                 ERROR(
-                    arg.default_value->start, 
+                    arg.default_value->span, 
                     "Default value of type '{0}' does not match expected type '{1}'",
                     this->get_type_name(default_value->getType()), this->get_type_name(type.value)
                 );
@@ -289,8 +308,14 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         linkage = llvm::Function::LinkageTypes::InternalLinkage;
     }
 
-    std::string fn = pair.first;
-    if (expr->linkage != ast::ExternLinkageSpecifier::C && pair.first != this->entry && !pair.second) {
+    std::string fn = name;
+    if (
+        expr->linkage != ast::ExternLinkageSpecifier::C && 
+        name != this->entry && 
+        !is_llvm_intrinsic &&
+        this->options.mangle_style == MangleStyle::Full &&
+        !is_anonymous
+    ) {
         fn = Mangler::mangle(
             expr->name, 
             llvm_args, 
@@ -303,21 +328,21 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     if (this->is_reserved_function(fn)) {
-        ERROR(expr->start, "Function name '{0}' is reserved", fn);
+        ERROR(expr->span, "Function name '{0}' is reserved", fn);
     }
 
     llvm::Function* function = this->create_function(
         fn, ret.value, llvm_args, expr->is_variadic, linkage
     );
 
-    auto func = utils::make_shared<Function>(
-        pair.first, 
+    auto func = utils::make_ref<Function>(
+        name, 
         args,
         kwargs,
         ret, 
         function,
         (name == this->entry), 
-        pair.second,
+        is_llvm_intrinsic,
         is_anonymous,
         expr->is_operator,
         expr->attributes
@@ -331,10 +356,9 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         func->parent = this->current_struct;
     }
 
-    func->start = expr->start;
-    func->end = expr->end;
-
+    func->span = expr->span;
     this->scope->functions[expr->name] = func;
+
     return function;
 }
 
@@ -347,15 +371,16 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
     llvm::Function* function = func->value;
     if (!function->empty()) {
-        NOTE(func->start, "Function '{0}' was previously defined here", func->name);
-        ERROR(expr->start, "Function '{0}' is already defined", func->name);
+        NOTE(func->span, "Function '{0}' was previously defined here", func->name);
+        ERROR(expr->span, "Function '{0}' is already defined", func->name);
     }
 
     if (func->is_intrinsic) {
-        ERROR(expr->start, "Cannot define intrinsic function '{0}'", func->name);
+        ERROR(expr->span, "Cannot define intrinsic function '{0}'", func->name);
     }
 
-    func->end = expr->end;
+    auto outer = this->current_function;
+    this->current_function = func;
 
     llvm::BasicBlock* block = llvm::BasicBlock::Create(*this->context, "", function);
     this->set_insert_point(block, false);
@@ -376,10 +401,10 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         argument->setName(arg.name);
 
         if (!arg.is_reference()) {
-            llvm::AllocaInst* inst = this->create_alloca(arg.type.value);
-            this->builder->CreateStore(argument, inst);
+            llvm::AllocaInst* alloca = this->create_alloca(arg.type.value);
+            this->builder->CreateStore(argument, alloca);
 
-            func->scope->variables[arg.name] = Variable::from_alloca(arg.name, inst, arg.is_immutable);
+            func->scope->variables[arg.name] = Variable::from_alloca(arg.name, alloca, arg.is_immutable);
         } else {
             func->scope->variables[arg.name] = Variable::from_value(
                 arg.name, argument, arg.is_immutable, true, false
@@ -388,19 +413,23 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
         i++;
     }
-    
-    auto outer = this->current_function;
-    this->current_function = func;
 
-    if (!expr->body) {
+    if (expr->body.empty()) {
         if (!func->ret->isVoidTy()) {
-            ERROR(expr->start, "Function '{0}' expects a return value", func->name);
+            ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
 
         this->builder->CreateRetVoid();
     } else {
-        expr->body->accept(*this);
+        for (auto& stmt : expr->body) {
+            stmt->accept(*this);
+        }
 
+        for (auto& dtor : func->dtors) {
+            llvm::Function* fn = dtor.structure->get_method("destructor")->value;
+            this->call(fn, {}, dtor.self);
+        }
+        
         if (!func->has_return()) {
             if (func->ret->isVoidTy() || func->is_entry) {
                 if (func->is_entry) {
@@ -409,11 +438,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
                     this->builder->CreateRetVoid();
                 }
             } else {
-                ERROR(expr->start, "Function '{0}' expects a return value", func->name);
+                ERROR(expr->span, "Function '{0}' expects a return value", func->name);
             }
         } else {
             this->set_insert_point(func->ret.block);
-
+ 
             if (func->ret->isVoidTy()) {
                 this->builder->CreateRetVoid();
             } else {
@@ -426,7 +455,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     bool error = llvm::verifyFunction(*function, &llvm::errs());
     assert((!error) && "Error while verifying function IR. Most likely a compiler bug.");
 
-    if (this->with_optimizations) {
+    if (this->options.enable) {
         this->fpm->run(*function);
     }
 
@@ -444,27 +473,27 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
     auto func = this->current_function;
     if (expr->value) {
         if (func->ret->isVoidTy()) {
-            ERROR(expr->start, "Cannot return a value from void function");
+            ERROR(expr->span, "Cannot return a value from void function");
         }
 
         if (func->ret.type.is_reference) {
-            auto ref = this->as_reference(expr->value.get());
+            auto ref = this->as_reference(expr->value);
             if (ref.is_null()) {
-                ERROR(expr->value->start, "Expected a variable, array or struct member");
+                ERROR(expr->value->span, "Expected a variable, array or struct member");
             }
 
-            if (ref.is_stack_allocated) {
-                ERROR(expr->value->start, "Cannot return a reference associated with a local stack variable");
+            if (ref.is_stack_allocated && ref.is_scope_local) {
+                ERROR(expr->value->span, "Cannot return a reference associated with a local stack variable");
             }
 
             if (ref.is_immutable) {
-                ERROR(expr->value->start, "Cannot return a reference associated with an immutable variable");
+                ERROR(expr->value->span, "Cannot return a reference associated with an immutable variable");
             }
 
             llvm::Type* ret = func->ret.type.value->getPointerElementType();
             if (!this->is_compatible(ret, ref.type)) {
                 ERROR(
-                    expr->value->start,
+                    expr->value->span,
                     "Cannot return reference value of type '{0}' from function expecting '{1}'",
                     this->get_type_name(ref.type), this->get_type_name(ret)
                 );
@@ -480,13 +509,13 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         this->ctx = func->ret.type.value;
         Value val = expr->value->accept(*this);
         if (val.is_reference && val.is_stack_allocated) {
-            ERROR(expr->value->start, "Cannot return a reference associated with a local stack variable");
+            ERROR(expr->value->span, "Cannot return a reference associated with a local stack variable");
         }
 
-        llvm::Value* value = val.unwrap(expr->value->start);
+        llvm::Value* value = val.unwrap(expr->value->span);
         if (!this->is_compatible(func->ret.type, value->getType())) {
             ERROR(
-                expr->start, "Cannot return value of type '{0}' from function expecting '{1}'", 
+                expr->span, "Cannot return value of type '{0}' from function expecting '{1}'", 
                 this->get_type_name(value->getType()), this->get_type_name(func->ret.type)
             );
         } else {
@@ -502,7 +531,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         return nullptr;
     } else {
         if (!func->ret->isVoidTy()) {
-            ERROR(expr->start, "Function '{0}' expects a return value", func->name);
+            ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
 
         func->branch->has_return = true;
@@ -515,7 +544,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 Value Visitor::visit(ast::DeferExpr* expr) {
     auto func = this->current_function;
     if (!func) {
-        ERROR(expr->start, "Defer statement outside of function");
+        ERROR(expr->span, "Defer statement outside of function");
     }
 
     TODO("Fix defer statement");
@@ -527,7 +556,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
     auto func = callable.function;
 
     if (!func && !expr->kwargs.empty()) {
-        ERROR(expr->start, "Keyword arguments are not allowed in this context");
+        ERROR(expr->span, "Keyword arguments are not allowed in this context");
     }
 
     if (func) func->used = true;
@@ -554,11 +583,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
         if (type->isPointerTy()) {
             type = type->getPointerElementType();
             if (!type->isFunctionTy()) {
-                ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
+                ERROR(expr->span, "Expected a function but got value of type '{0}'", this->get_type_name(type));
             }
         } else {
             if (!callable.function) {
-                ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
+                ERROR(expr->span, "Expected a function but got value of type '{0}'", this->get_type_name(type));
             }
         }
     }
@@ -571,7 +600,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     std::string name = function->getName().str();
     if (function->getName() == this->entry) {
-        ERROR(expr->start, "Cannot call the main entry function");
+        ERROR(expr->span, "Cannot call the main entry function");
     }
 
     if (func) {
@@ -589,7 +618,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
         if (type->isFunctionTy()) {
             ftype = llvm::cast<llvm::FunctionType>(type);
         } else {
-            ERROR(expr->start, "Expected a function but got value of type '{0}'", this->get_type_name(type));
+            ERROR(expr->span, "Expected a function but got value of type '{0}'", this->get_type_name(type));
         }
     }
 
@@ -598,28 +627,28 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (func) {
         args = this->handle_function_arguments(
-            expr->start,
+            expr->span,
             func, 
-            callable.self, 
-            std::move(expr->args), 
-            std::move(expr->kwargs)
+            callable.self,
+            expr->args, 
+            expr->kwargs
         );
     } else {
         if (argc > ftype->getNumParams() && !ftype->isVarArg()) {
-            ERROR(expr->start, "Function expects at most {0} arguments but got {1}", ftype->getNumParams(), argc);
+            ERROR(expr->span, "Function expects at most {0} arguments but got {1}", ftype->getNumParams(), argc);
         } else if (argc < ftype->getNumParams()) {
-            ERROR(expr->start, "Function expects at least {0} arguments but got {1}", ftype->getNumParams(), argc);
+            ERROR(expr->span, "Function expects at least {0} arguments but got {1}", ftype->getNumParams(), argc);
         }
 
         args.reserve(argc);
         for (auto& arg : expr->args) {
             if (i < argc) this->ctx = ftype->getParamType(i);
-            llvm::Value* value = arg->accept(*this).unwrap(arg->start);
+            llvm::Value* value = arg->accept(*this).unwrap(arg->span);
 
             if (i < ftype->getNumParams()) {
                 if (!this->is_compatible(ftype->getParamType(i), value->getType())) {
                     ERROR(
-                        arg->start, 
+                        arg->span, 
                         "Cannot pass value of type '{0}' to parameter of type '{1}'", 
                         this->get_type_name(value->getType()), this->get_type_name(ftype->getParamType(i))
                     );

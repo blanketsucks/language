@@ -1,11 +1,11 @@
 #include "objects/typealias.h"
 
-TypeAlias TypeAlias::from_enum(utils::Shared<Enum> enumeration) {
-    return { enumeration->name, enumeration->type, enumeration, enumeration->start, enumeration->end };
+TypeAlias TypeAlias::from_enum(utils::Ref<Enum> enumeration) {
+    return { enumeration->name, enumeration->type, enumeration, enumeration->span };
 }
 
 TypeAlias TypeAlias::null() {
-    return { "", nullptr, nullptr, Location(), Location() };
+    return { "", nullptr, nullptr, Span() };
 }
 
 bool TypeAlias::is_null() {

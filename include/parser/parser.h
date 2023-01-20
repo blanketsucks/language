@@ -1,6 +1,7 @@
 #ifndef _PARSER_H
 #define _PARSER_H
 
+#include "lexer/location.h"
 #include "parser/ast.h"
 #include "lexer/tokens.h"
 #include "utils/pointer.h"
@@ -22,39 +23,41 @@ public:
 
     int get_token_precendence();
     
-    utils::Ref<ast::TypeExpr> parse_type();
+    utils::Scope<ast::TypeExpr> parse_type();
 
-    utils::Ref<ast::BlockExpr> parse_block();
-    utils::Ref<ast::PrototypeExpr> parse_prototype(
+    utils::Scope<ast::BlockExpr> parse_block();
+    std::pair<std::vector<ast::Argument>, bool> parse_arguments(); // Returns a pair of arguments and whether or not the arguments are variadic
+    utils::Scope<ast::PrototypeExpr> parse_prototype(
         ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
     );
-    utils::Ref<ast::Expr> parse_function_definition(
+    utils::Scope<ast::Expr> parse_function_definition(
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None, bool is_operator = false
     );
-    utils::Ref<ast::IfExpr> parse_if_statement();
-    utils::Ref<ast::StructExpr> parse_struct();
-    utils::Ref<ast::Expr> parse_variable_definition(bool is_const = false);
-    utils::Ref<ast::NamespaceExpr> parse_namespace();
-    utils::Ref<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
-    utils::Ref<ast::Expr> parse_extern_block();
-    utils::Ref<ast::EnumExpr> parse_enum();
-    utils::Ref<ast::TypeAliasExpr> parse_type_alias();
+    utils::Scope<ast::IfExpr> parse_if_statement();
+    utils::Scope<ast::StructExpr> parse_struct();
+    utils::Scope<ast::Expr> parse_variable_definition(bool is_const = false);
+    utils::Scope<ast::NamespaceExpr> parse_namespace();
+    utils::Scope<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
+    utils::Scope<ast::Expr> parse_extern_block();
+    utils::Scope<ast::EnumExpr> parse_enum();
+    utils::Scope<ast::TypeAliasExpr> parse_type_alias();
+    utils::Scope<ast::Expr> parse_anonymous_function();
 
-    utils::Ref<ast::Expr> parse_immediate_binary_op(utils::Ref<ast::Expr> right, utils::Ref<ast::Expr> left, TokenKind op);
-    utils::Ref<ast::Expr> parse_immediate_unary_op(utils::Ref<ast::Expr> expr, TokenKind op);
+    utils::Scope<ast::Expr> parse_immediate_binary_op(utils::Scope<ast::Expr> right, utils::Scope<ast::Expr> left, TokenKind op);
+    utils::Scope<ast::Expr> parse_immediate_unary_op(utils::Scope<ast::Expr> expr, TokenKind op);
 
     ast::Attributes parse_attributes();
 
-    std::vector<utils::Ref<ast::Expr>> parse();
-    std::vector<utils::Ref<ast::Expr>> statements();
-    utils::Ref<ast::Expr> statement();
-    utils::Ref<ast::Expr> expr(bool semicolon = true);
-    utils::Ref<ast::Expr> binary(int prec, utils::Ref<ast::Expr> left);
-    utils::Ref<ast::Expr> unary();
-    utils::Ref<ast::Expr> call();
-    utils::Ref<ast::Expr> attr(Location start, utils::Ref<ast::Expr> expr);
-    utils::Ref<ast::Expr> element(Location start, utils::Ref<ast::Expr> expr);
-    utils::Ref<ast::Expr> factor();
+    std::vector<utils::Scope<ast::Expr>> parse();
+    std::vector<utils::Scope<ast::Expr>> statements();
+    utils::Scope<ast::Expr> statement();
+    utils::Scope<ast::Expr> expr(bool semicolon = true);
+    utils::Scope<ast::Expr> binary(int prec, utils::Scope<ast::Expr> left);
+    utils::Scope<ast::Expr> unary();
+    utils::Scope<ast::Expr> call();
+    utils::Scope<ast::Expr> attr(Span start, utils::Scope<ast::Expr> expr);
+    utils::Scope<ast::Expr> element(Span start, utils::Scope<ast::Expr> expr);
+    utils::Scope<ast::Expr> factor();
 
 private:
     uint32_t index;

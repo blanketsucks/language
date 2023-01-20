@@ -2,6 +2,7 @@
 #define _OBJECTS_VARIABLES_H
 
 #include "lexer/tokens.h"
+#include "lexer/location.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Type.h"
@@ -18,15 +19,13 @@ struct Variable {
     bool is_immutable;
     bool is_stack_allocated;
 
-    Location start;
-    Location end;
+    Span span;
 
     static Variable from_alloca(
-        std::string name, 
+        std::string name,
         llvm::AllocaInst* alloca,
         bool is_immutable = false,
-        Location start = Location(),
-        Location end = Location()
+        Span span = Span()
     );
 
     static Variable from_value(
@@ -35,8 +34,7 @@ struct Variable {
         bool is_immutable = false,
         bool is_reference = false,
         bool is_stack_allocated = true,
-        Location start = Location(),
-        Location end = Location()
+        Span span = Span()
     );
 
     static Variable null();
@@ -50,8 +48,7 @@ struct Constant {
     llvm::Value* store;
     llvm::Constant* value;
 
-    Location start;
-    Location end;
+    Span span;
 
     static Constant null();
     bool is_null();

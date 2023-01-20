@@ -9,7 +9,8 @@ ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_va
         variable.type,
         false,
         variable.is_immutable,
-        variable.is_stack_allocated
+        variable.is_stack_allocated,
+        true, // Assume it always belongs to the current scope
     };    
 }
 
@@ -21,7 +22,8 @@ ScopeLocal ScopeLocal::from_constant(const Constant& constant, bool use_store_va
         constant.type,
         true,
         false,
-        false
+        false,
+        true, // Assume it always belongs to the current scope
     };
 }
 
@@ -32,12 +34,13 @@ ScopeLocal ScopeLocal::from_scope_local(const ScopeLocal& local, llvm::Value* va
         type ? type : local.type,
         false,
         local.is_immutable,
-        local.is_stack_allocated
+        local.is_stack_allocated,
+        local.is_scope_local,
     };
 }
 
 ScopeLocal ScopeLocal::null() {
-    return { "", nullptr, nullptr, false, false, false };
+    return { "", nullptr, nullptr, false, false, false, false };
 }
 
 bool ScopeLocal::is_null() {
@@ -174,7 +177,10 @@ ScopeLocal Scope::get_local(std::string name, bool use_store_value) {
     }
 
     if (this->parent) {
-        return this->parent->get_local(name);
+        auto local = this->parent->get_local(name, use_store_value);
+        local.is_scope_local = false;
+
+        return local;
     } else {
         return ScopeLocal::null();
     }
@@ -204,7 +210,7 @@ Constant Scope::get_constant(std::string name) {
     return Constant::null();
 }
 
-utils::Shared<Function> Scope::get_function(std::string name) {
+utils::Ref<Function> Scope::get_function(std::string name) {
     if (this->functions.find(name) != this->functions.end()) {
         return this->functions[name];
     }
@@ -216,7 +222,7 @@ utils::Shared<Function> Scope::get_function(std::string name) {
     return nullptr;
 }
 
-utils::Shared<Struct> Scope::get_struct(std::string name) {
+utils::Ref<Struct> Scope::get_struct(std::string name) {
     if (this->structs.find(name) != this->structs.end()) {
         return this->structs[name];
     }
@@ -228,7 +234,7 @@ utils::Shared<Struct> Scope::get_struct(std::string name) {
     return nullptr;
 }
 
-utils::Shared<Enum> Scope::get_enum(std::string name) {
+utils::Ref<Enum> Scope::get_enum(std::string name) {
     if (this->enums.find(name) != this->enums.end()) {
         return this->enums[name];
     }
@@ -240,7 +246,7 @@ utils::Shared<Enum> Scope::get_enum(std::string name) {
     return nullptr;
 }
 
-utils::Shared<Module> Scope::get_module(std::string name) {
+utils::Ref<Module> Scope::get_module(std::string name) {
     if (this->modules.find(name) != this->modules.end()) {
         return this->modules[name];
     }
@@ -252,7 +258,7 @@ utils::Shared<Module> Scope::get_module(std::string name) {
     return nullptr;
 }
 
-utils::Shared<Namespace> Scope::get_namespace(std::string name) {
+utils::Ref<Namespace> Scope::get_namespace(std::string name) {
     if (this->namespaces.find(name) != this->namespaces.end()) {
         return this->namespaces[name];
     }
@@ -280,37 +286,39 @@ void Scope::exit(Visitor* visitor) {
     visitor->scope = this->parent;
 }
 
-void Scope::finalize() {
-    for (auto& entry : this->functions) {
-        if (entry.second->is_finalized) {
-            continue;
-        }
-
-        auto func = entry.second;
-        if (!func->has_return()) {
-            delete func->ret.block;
-        }
-
-        llvm::Function* function = func->value;
-        if (function->use_empty() && !func->is_entry) {
-            if (function->getParent()) {
-                function->eraseFromParent();
+void Scope::finalize(bool eliminate_dead_functions) {
+    if (eliminate_dead_functions) {
+        for (auto& entry : this->functions) {
+            if (entry.second->is_finalized) {
+                continue;
             }
 
-            for (auto& call : func->calls) {
-                if (call->use_empty()) {
-                    if (call->getParent()) {
-                        call->eraseFromParent();
+            auto func = entry.second;
+            if (!func->has_return()) {
+                delete func->ret.block;
+            }
+
+            llvm::Function* function = func->value;
+            if (function->use_empty() && !func->is_entry) {
+                if (function->getParent()) {
+                    function->eraseFromParent();
+                }
+
+                for (auto& call : func->calls) {
+                    if (call->use_empty()) {
+                        if (call->getParent()) {
+                            call->eraseFromParent();
+                        }
                     }
                 }
             }
+            
+            for (auto branch : func->branches) delete branch;
+            func->is_finalized = true;
         }
-        
-        for (auto branch : func->branches) delete branch;
-        func->is_finalized = true;
     }
 
     for (auto scope : this->children) {
-        scope->finalize(); delete scope;
+        scope->finalize(eliminate_dead_functions); delete scope;
     }
 }

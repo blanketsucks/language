@@ -2,6 +2,7 @@
 #define _OBJECTS_VALUES_H
 
 #include "utils/pointer.h"
+#include "lexer/location.h"
 
 #include "objects/functions.h"
 #include "objects/structs.h"
@@ -22,26 +23,26 @@ struct Value {
     bool is_immutable;
     bool is_stack_allocated;
 
-    utils::Shared<Function> function;
-    utils::Shared<Struct> structure;
-    utils::Shared<Enum> enumeration;
-    utils::Shared<Namespace> namespace_;
-    utils::Shared<Module> module;
+    utils::Ref<Function> function;
+    utils::Ref<Struct> structure;
+    utils::Ref<Enum> enumeration;
+    utils::Ref<Namespace> namespace_;
+    utils::Ref<Module> module;
 
     Type type = Type::null();
 
     Value(llvm::Value* value, bool is_constant = false, llvm::Value* self = nullptr);
     
     bool is_null();
-    llvm::Value* unwrap(Location location);
+    llvm::Value* unwrap(Span span);
 
     static Value null();
 
-    static Value from_function(utils::Shared<Function> function, llvm::Value* self = nullptr);
-    static Value from_struct(utils::Shared<Struct> structure);
-    static Value from_module(utils::Shared<Module> module);
-    static Value from_namespace(utils::Shared<Namespace> namespace_);
-    static Value from_enum(utils::Shared<Enum> enumeration);
+    static Value from_function(utils::Ref<Function> function, llvm::Value* self = nullptr);
+    static Value from_struct(utils::Ref<Struct> structure);
+    static Value from_module(utils::Ref<Module> module);
+    static Value from_namespace(utils::Ref<Namespace> namespace_);
+    static Value from_enum(utils::Ref<Enum> enumeration);
     static Value from_type(Type type);
 
     static Value as_early_function_call();

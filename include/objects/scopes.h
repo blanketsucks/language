@@ -34,6 +34,7 @@ struct ScopeLocal {
     bool is_constant;
     bool is_immutable;
     bool is_stack_allocated;
+    bool is_scope_local; // If the variable belongs to the current scope and not to a parent of that scope
 
     bool is_null();
     static ScopeLocal null();
@@ -54,11 +55,11 @@ struct Scope {
 
     std::map<std::string, Variable> variables;
     std::map<std::string, Constant> constants;
-    std::map<std::string, utils::Shared<Function>> functions;
-    std::map<std::string, utils::Shared<Struct>> structs;
-    std::map<std::string, utils::Shared<Enum>> enums;
-    std::map<std::string, utils::Shared<Namespace>> namespaces;
-    std::map<std::string, utils::Shared<Module>> modules;
+    std::map<std::string, utils::Ref<Function>> functions;
+    std::map<std::string, utils::Ref<Struct>> structs;
+    std::map<std::string, utils::Ref<Enum>> enums;
+    std::map<std::string, utils::Ref<Namespace>> namespaces;
+    std::map<std::string, utils::Ref<Module>> modules;
     std::map<std::string, TypeAlias> types;
 
     Scope(std::string name, ScopeType type, Scope* parent = nullptr);
@@ -77,17 +78,17 @@ struct Scope {
     Variable get_variable(std::string name);
     Constant get_constant(std::string name);
 
-    utils::Shared<Function> get_function(std::string name);
-    utils::Shared<Struct> get_struct(std::string name);
-    utils::Shared<Enum> get_enum(std::string name);
-    utils::Shared<Namespace> get_namespace(std::string name);
-    utils::Shared<Module> get_module(std::string name);
+    utils::Ref<Function> get_function(std::string name);
+    utils::Ref<Struct> get_struct(std::string name);
+    utils::Ref<Enum> get_enum(std::string name);
+    utils::Ref<Namespace> get_namespace(std::string name);
+    utils::Ref<Module> get_module(std::string name);
 
     TypeAlias get_type(std::string name);
 
     void exit(Visitor* visitor);
 
-    void finalize();
+    void finalize(bool eliminate_dead_functions = true);
 };
 
 

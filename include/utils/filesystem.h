@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <assert.h>
 #include <fstream>
+#include <sstream>
 
 #if _WIN32 || _WIN64
     #include <io.h>
@@ -40,6 +41,7 @@ struct Path {
     std::string name;
 
     Path(const std::string& name);
+    Path();
 
     bool operator==(const Path& other) const;
     bool operator==(const std::string& other) const;
@@ -50,11 +52,14 @@ struct Path {
     static Path empty();
     static Path cwd();
 
+    static Path from_parts(const std::vector<std::string>& parts);
+
     bool exists() const;
     bool isfile() const;
     bool isdir() const;
     bool isempty() const;
 
+    std::string str();
     std::string filename();
     std::string parent();
 
@@ -64,6 +69,7 @@ struct Path {
     std::vector<Path> listdir(bool recursive);
 
     std::fstream open(OpenMode mode = OpenMode::Read);
+    std::stringstream read(bool binary = false);
 
     Path join(const std::string& path);
     Path join(const Path& path);

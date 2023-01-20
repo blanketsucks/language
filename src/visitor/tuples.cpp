@@ -44,7 +44,7 @@ Value Visitor::visit(ast::TupleExpr* expr) {
         Value val = elem->accept(*this);
         is_const &= val.is_constant;
 
-        llvm::Value* value = val.unwrap(elem->start);
+        llvm::Value* value = val.unwrap(elem->span);
 
         elements.push_back(value);
         types.push_back(value->getType());
@@ -61,22 +61,22 @@ Value Visitor::visit(ast::TupleExpr* expr) {
     }
 
     if (!this->current_function) {
-        ERROR(expr->start, "Tuple literals cannot contain non-constant elements");
+        ERROR(expr->span, "Tuple literals cannot contain non-constant elements");
     }
 
     return this->make_tuple(elements, type);
 }  
 
 void Visitor::store_tuple(
-    Location location, 
-    utils::Shared<Function> func, 
+    Span span, 
+    utils::Ref<Function> func, 
     llvm::Value* value, 
     std::vector<std::string> names,
     std::string consume_rest
 ) {
     std::vector<llvm::Value*> values;
     if (consume_rest.empty()) {
-        values = this->unpack(value, names.size(), location);
+        values = this->unpack(value, names.size(), span);
         for (auto& pair : utils::zip(names, values)) {
             llvm::AllocaInst* alloca = this->create_alloca(pair.second->getType());
             this->builder->CreateStore(pair.second, alloca);
@@ -109,7 +109,7 @@ void Visitor::store_tuple(
         n = vtype->getStructNumElements();
     }
 
-    values = this->unpack(value, n, location);
+    values = this->unpack(value, n, span);
 
     // We need to know how many variables are before and after the consume rest and it's position, from there
     // we can chop off the values and store them in their respective variables and the values left will be

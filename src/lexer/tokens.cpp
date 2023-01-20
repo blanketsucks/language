@@ -1,30 +1,5 @@
 #include "lexer/tokens.h"
 
-Location Location::update(uint32_t line, uint32_t column, uint32_t index) {
-    return Location {
-        this->line + line,
-        this->column + column,
-        this->index + index,
-        this->filename
-    };
-}
-
-Location Location::update(uint32_t column, uint32_t index) {
-    return Location {
-        this->line,
-        this->column + column,
-        this->index + index,
-        this->filename
-    };
-}
-
-std::string Location::format() { 
-    std::string line = std::to_string(this->line);
-    std::string column = std::to_string(this->column);
-
-    return this->filename + ":" + line + ":" + column + ":";
-}
-
 std::string Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";

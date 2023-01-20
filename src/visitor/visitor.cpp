@@ -2,15 +2,15 @@
 #include "parser/ast.h"
 #include "llvm/IR/Constant.h"
 
-Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
+Visitor::Visitor(std::string name, std::string entry, const OptimizationOptions& options) {
     this->name = name;
     this->entry = entry;
-    this->with_optimizations = with_optimizations;
+    this->options = options;
 
-    this->context = utils::make_ref<llvm::LLVMContext>();
-    this->module = utils::make_ref<llvm::Module>(name, *this->context);
-    this->builder = utils::make_ref<llvm::IRBuilder<>>(*this->context);
-    this->fpm = utils::make_ref<llvm::legacy::FunctionPassManager>(this->module.get());
+    this->context = utils::make_scope<llvm::LLVMContext>();
+    this->module = utils::make_scope<llvm::Module>(name, *this->context);
+    this->builder = utils::make_scope<llvm::IRBuilder<>>(*this->context);
+    this->fpm = utils::make_scope<llvm::legacy::FunctionPassManager>(this->module.get());
 
     this->fpm->add(llvm::createPromoteMemoryToRegisterPass());
     this->fpm->add(llvm::createInstructionCombiningPass());
@@ -28,7 +28,7 @@ Visitor::Visitor(std::string name, std::string entry, bool with_optimizations) {
 void Visitor::finalize() {
     this->fpm->doFinalization();
 
-    this->global_scope->finalize();
+    this->global_scope->finalize(this-options.dead_code_elimination);
     delete this->global_scope;
 
     auto& globals = this->module->getGlobalList();
@@ -96,12 +96,20 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
 }
 
 std::string Visitor::format_name(std::string name) {
-    if (this->current_module) { name = this->current_module->qualified_name + "." + name; }
-    if (this->current_namespace) { name = this->current_namespace->qualified_name + "." + name; }
-    if (this->current_struct) { name = this->current_struct->qualified_name + "." + name; }
-    if (this->current_function) { name = this->current_function->name + "." + name; }
-    
-    return name;
+    std::string formatted;
+    if (this->current_module) { 
+        formatted += this->current_module->get_clean_path_name(true);
+    }
+
+    if (this->current_namespace) { formatted += "." + this->current_namespace->name; }
+    if (this->current_struct) { formatted += "." + this->current_struct->name; }
+    if (this->current_function) { formatted += "." + this->current_function->name; }
+
+    return formatted.empty() ? name : FORMAT("{0}.{1}", formatted, name);
+}
+
+llvm::Constant* Visitor::to_str(const std::string& str) {
+    return this->builder->CreateGlobalStringPtr(str, ".str", 0, this->module.get());
 }
 
 llvm::AllocaInst* Visitor::create_alloca(llvm::Type* type) {
@@ -128,21 +136,21 @@ llvm::Value* Visitor::load(llvm::Value* value, llvm::Type* type) {
     return value;
 }
 
-std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Location location) {
+std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Span span) {
     llvm::Type* type = value->getType();
     if (!type->isPointerTy()) {
         if (!type->isStructTy()) {
-            ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
+            ERROR(span, "Cannot unpack value of type '{0}'", this->get_type_name(type));
         }
 
         llvm::StringRef name = type->getStructName();
         if (!name.startswith("__tuple")) {
-            ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
+            ERROR(span, "Cannot unpack value of type '{0}'", this->get_type_name(type));
         }
 
         uint32_t elements = type->getStructNumElements();
         if (n > elements) {
-            ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
+            ERROR(span, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
         }
 
         std::vector<llvm::Value*> values;
@@ -165,13 +173,13 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
 
     type = type->getPointerElementType();
     if (!type->isAggregateType()) {
-        ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
+        ERROR(span, "Cannot unpack value of type '{0}'", this->get_type_name(type));
     }
 
     if (type->isArrayTy()) {
         uint32_t elements = type->getArrayNumElements();
         if (n > elements) {
-            ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
+            ERROR(span, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
         }
 
         llvm::Type* ty = type->getArrayElementType();
@@ -193,12 +201,12 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
     llvm::StringRef name = type->getStructName();
     // Maybe i should allow it either way??
     if (!name.startswith("__tuple")) {
-        ERROR(location, "Cannot unpack value of type '{0}'", this->get_type_name(type));
+        ERROR(span, "Cannot unpack value of type '{0}'", this->get_type_name(type));
     }
 
     uint32_t elements = type->getStructNumElements();
     if (n > elements) {
-        ERROR(location, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
+        ERROR(span, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
     }
 
     std::vector<llvm::Value*> values;
@@ -214,33 +222,45 @@ std::vector<llvm::Value*> Visitor::unpack(llvm::Value* value, uint32_t n, Locati
     return values;
 }
 
+llvm::Value* Visitor::as_reference(llvm::Value* value) {
+    if (value->getType()->isPointerTy()) {
+        return value;
+    }
 
-ScopeLocal Visitor::as_reference(ast::Expr* expr) {
+    if (!llvm::isa<llvm::LoadInst>(value)) {
+        return nullptr;
+    }
+    
+    llvm::LoadInst* load = llvm::cast<llvm::LoadInst>(value);
+    return load->getPointerOperand();
+}
+
+ScopeLocal Visitor::as_reference(utils::Scope<ast::Expr>& expr) {
     switch (expr->kind()) {
         case ast::ExprKind::Variable: {
-            ast::VariableExpr* variable = expr->cast<ast::VariableExpr>();
+            ast::VariableExpr* variable = expr->as<ast::VariableExpr>();
             return this->scope->get_local(variable->name);
         }
         case ast::ExprKind::Element: {
-            ast::ElementExpr* element = expr->cast<ast::ElementExpr>();
+            ast::ElementExpr* element = expr->as<ast::ElementExpr>();
 
-            ScopeLocal parent = this->as_reference(element->value.get());
+            ScopeLocal parent = this->as_reference(element->value);
             if (parent.is_null()) {
                 return parent;
             }
 
             llvm::Type* type = parent.type;
             if (!type->isPointerTy() && !type->isArrayTy()) {
-                ERROR(element->value->start, "Cannot index into value of type '{0}'", this->get_type_name(type));
+                ERROR(element->value->span, "Cannot index into value of type '{0}'", this->get_type_name(type));
             }
 
             if (this->get_pointer_depth(type) > 1) {
                 parent.value = this->load(parent.value, type);
             }
 
-            llvm::Value* index = element->index->accept(*this).unwrap(element->index->start);
+            llvm::Value* index = element->index->accept(*this).unwrap(element->index->span);
             if (!index->getType()->isIntegerTy()) {
-                ERROR(element->index->start, "Indicies must be integers");
+                ERROR(element->index->span, "Indicies must be integers");
             }
 
             llvm::Value* ptr = nullptr;
@@ -253,9 +273,9 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
             return ScopeLocal::from_scope_local(parent, ptr);
         }
         case ast::ExprKind::Attribute: {
-            ast::AttributeExpr* attribute = expr->cast<ast::AttributeExpr>();
+            ast::AttributeExpr* attribute = expr->as<ast::AttributeExpr>();
 
-            ScopeLocal parent = this->as_reference(attribute->parent.get());
+            ScopeLocal parent = this->as_reference(attribute->parent);
             if (parent.is_null()) {
                 return parent;
             }
@@ -266,12 +286,12 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
 
             auto structure = this->get_struct(parent.type);
             if (!structure) {
-                ERROR(attribute->parent->start, "Cannot access attribute of type '{0}'", this->get_type_name(parent.type));
+                ERROR(attribute->parent->span, "Cannot access attribute of type '{0}'", this->get_type_name(parent.type));
             }
 
             int index = structure->get_field_index(attribute->attribute);
             if (index < 0) {
-                ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
+                ERROR(expr->span, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
             }
 
             llvm::Value* value = parent.value;
@@ -284,6 +304,18 @@ ScopeLocal Visitor::as_reference(ast::Expr* expr) {
                 this->builder->CreateStructGEP(structure->type, value, index),
                 structure->type->getStructElementType(index)
             );
+        }
+        case ast::ExprKind::UnaryOp: {
+            ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
+            if (unary->op != TokenKind::BinaryAnd) {
+                return ScopeLocal::null();
+            }
+
+            return this->as_reference(unary->value);
+        }
+        case ast::ExprKind::Maybe: {
+            ast::MaybeExpr* maybe = expr->as<ast::MaybeExpr>();
+            return this->as_reference(maybe->value);
         }
         default:
             return ScopeLocal::null();
@@ -342,7 +374,36 @@ void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
     global->setLinkage(llvm::GlobalValue::AppendingLinkage);
 }
 
-void Visitor::visit(std::vector<utils::Ref<ast::Expr>> statements) {
+void Visitor::panic(const std::string& message, Span span) {
+    llvm::Function* function = this->module->getFunction("__quart_panic");
+    if (!function) {
+        function = this->create_function(
+            "__quart_panic",
+            this->builder->getVoidTy(),
+            {
+                this->builder->getInt8PtrTy(), // file
+                this->builder->getInt32Ty(),   // line
+                this->builder->getInt32Ty(),   // column
+                this->builder->getInt8PtrTy()  // message
+            },
+            false,
+            llvm::Function::LinkageTypes::ExternalLinkage
+        );
+
+        function->setDoesNotReturn();
+    }
+
+    this->builder->CreateCall(function, {
+        this->to_str(span.filename), 
+        this->builder->getInt32(span.start.line), 
+        this->builder->getInt32(span.start.column), 
+        this->to_str(message)
+    });
+
+    this->builder->CreateUnreachable();
+}
+
+void Visitor::visit(std::vector<utils::Scope<ast::Expr>> statements) {
     for (auto& stmt : statements) {
         if (!stmt) {
             continue;
@@ -367,7 +428,8 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
         llvm::Type* type = expr->bits == 32 ? this->builder->getFloatTy() : this->builder->getDoubleTy();
         constant = llvm::ConstantFP::get(type, expr->value);
     } else {
-        constant = this->builder->getInt(llvm::APInt(expr->bits, str, radix));
+        llvm::APInt value(expr->bits, str, radix);
+        constant = this->builder->getInt(value);
     }
 
     return Value(constant, true);
@@ -396,7 +458,9 @@ Value Visitor::visit(ast::StringExpr* expr) {
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
+    // Scope* scope = this->create_scope("block", ScopeType::Anonymous);
     Value last = nullptr;
+
     for (auto& stmt : expr->block) {
         if (!stmt) {
             continue;
@@ -405,20 +469,21 @@ Value Visitor::visit(ast::BlockExpr* expr) {
         last = stmt->accept(*this);
     }
 
+    // scope->exit(this);
     return last;
 }
 
 Value Visitor::visit(ast::OffsetofExpr* expr) {
     Value value = expr->value->accept(*this);
     if (!value.structure) {
-        ERROR(expr->start, "Expected a structure");
+        ERROR(expr->span, "Expected a structure");
     }
 
     auto structure = value.structure;
     int index = structure->get_field_index(expr->field);
 
     if (index < 0) {
-        ERROR(expr->start, "Field '{1}' does not exist in struct '{0}'", expr->field, structure->name);
+        ERROR(expr->span, "Field '{1}' does not exist in struct '{0}'", expr->field, structure->name);
     }
 
     StructField field = structure->fields[expr->field];
@@ -426,16 +491,16 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
 }
 
 Value Visitor::visit(ast::StaticAssertExpr* expr) {
-    llvm::Value* value = expr->condition->accept(*this).unwrap(expr->condition->start);
+    llvm::Value* value = expr->condition->accept(*this).unwrap(expr->condition->span);
     if (!llvm::isa<llvm::ConstantInt>(value)) {
-        ERROR(expr->condition->start, "Expected a constant integer expression");
+        ERROR(expr->condition->span, "Expected a constant integer expression");
     }
 
     if (llvm::cast<llvm::ConstantInt>(value)->isZero()) {
         if (!expr->message.empty()) {
-            ERROR(expr->condition->start, "Static assertion failed: {0}", expr->message);
+            ERROR(expr->condition->span, "Static assertion failed: {0}", expr->message);
         } else {
-            ERROR(expr->condition->start, "Static assertion failed");
+            ERROR(expr->condition->span, "Static assertion failed");
         }
     }
 
@@ -443,55 +508,21 @@ Value Visitor::visit(ast::StaticAssertExpr* expr) {
 }
 
 Value Visitor::visit(ast::MaybeExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->start);
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->span);
     if (llvm::isa<llvm::Constant>(value)) {
         llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
         if (constant->isZeroValue()) {
-            ERROR(expr->value->start, "Expected a value of type '{0}' but got 'null'", this->get_type_name(constant->getType()));
+            ERROR(expr->value->span, "Expected a value of type '{0}' but got a null operand", this->get_type_name(constant->getType()));
         }
 
         return Value(constant, true);
     }
 
-    llvm::Value* is_null = this->builder->CreateIsNull(value);
-
-    llvm::BasicBlock* block = this->builder->GetInsertBlock();
-    llvm::Function* function = block->getParent();
-
-    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
-    llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context);
-
-    this->builder->CreateCondBr(is_null, then, merge);
-    this->builder->SetInsertPoint(then);
+    llvm::BasicBlock* merge = this->create_if_statement(this->builder->CreateIsNull(value));
     
-    this->builder->CreateUnreachable(); // TODO: Error message
+    const char* fmt = "Expected a value of type '{0}' but got got a null operand";
+    this->panic(FORMAT(fmt, this->get_type_name(value->getType())), expr->value->span);
 
-    function->getBasicBlockList().push_back(merge);
-    this->builder->SetInsertPoint(merge);
-
+    this->set_insert_point(merge);
     return value;
-
-}
-
-Value Visitor::visit(ast::WhereExpr* expr) {
-    Value value = expr->expr->accept(*this);
-    Location location;
-
-    if (value.function) {
-        location = value.function->start;
-    } else if (value.structure) {
-        location = value.structure->start;
-    } else if (value.namespace_) {
-        location = value.namespace_->start;
-    } else if (value.enumeration) {
-        location = value.enumeration->start;
-    } else {
-        location = expr->expr->start;
-    }
-
-    llvm::Value* str = this->builder->CreateGlobalStringPtr(
-        location.format(), ".str", 0, this->module.get()
-    );
-    
-    return Value(str, true);
 }

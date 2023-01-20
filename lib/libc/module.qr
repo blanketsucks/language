@@ -78,6 +78,8 @@ extern "C" {
     func strsep(s: i8*, delim: i8*) -> i8*;
     func strcoll(s1: i8*, s2: i8*) -> i32;
     func strncpy(dest: i8*, src: i8*, n: i32) -> i8*;
+    func strcat(dest: i8*, src: i8*) -> i8*;
+    func strncat(dest: i8*, src: i8*, n: i32) -> i8*;
 
     func isalnum(c: i32) -> i32;
     func isalpha(c: i32) -> i32;

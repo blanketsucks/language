@@ -22,8 +22,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::fstream file(filename, std::ios::in);
-    Lexer lexer(file, filename);
+    Lexer lexer(path);
 
     Preprocessor preprocessor(lexer.lex(), {"lib/"});
     auto tokens = preprocessor.process();
@@ -31,7 +30,7 @@ int main(int argc, char** argv) {
     Parser parser(tokens);
     auto ast = parser.parse();
 
-    Visitor visitor(filename, "main", true);
+    Visitor visitor(filename, "main");
     visitor.visit(std::move(ast));
 
     auto entry = visitor.global_scope->functions["main"];

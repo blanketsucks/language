@@ -6,8 +6,16 @@ filesystem::Path::Path(const std::string& name) {
     this->name = name;
 }
 
+filesystem::Path::Path() {
+    this->name = "";
+}
+
 filesystem::Path filesystem::Path::empty() {
     return Path("");
+}
+
+std::string filesystem::Path::str() {
+    return this->name;
 }
 
 filesystem::Path filesystem::Path::cwd() {
@@ -173,6 +181,23 @@ std::fstream filesystem::Path::open(filesystem::OpenMode mode) {
     } else {
         return std::fstream(this->name, std::fstream::out);
     }
+}
+
+std::stringstream filesystem::Path::read(bool binary) {
+    assert(this->isfile() && "Path is not a file");
+
+    std::fstream::openmode mode = std::fstream::in;
+    if (binary) {
+        mode |= std::fstream::binary;
+    }
+
+    std::fstream file(this->name, mode);
+    std::stringstream buffer;
+
+    buffer << file.rdbuf();
+    file.close();
+
+    return buffer;
 }
 
 filesystem::Path filesystem::Path::join(const std::string& path) {

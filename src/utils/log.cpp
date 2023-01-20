@@ -1,7 +1,19 @@
 #include "utils/log.h"
 
+#include <algorithm>
+#include <bits/floatn-common.h>
+#include <sstream>
+
+std::string format_location_span(const Span& span) {
+    return FORMAT("{0}:{1}:{2}", span.filename, span.start.line, span.start.column);
+}
+
 bool utils::has_color_support() {
     return isatty(fileno(stdout));
+}
+
+std::string utils::color_to_str(Color color) {
+    return FORMAT("\033[1;{0}m", int(color));
 }
 
 std::string utils::color(Color color, const std::string& str) {
@@ -12,21 +24,49 @@ std::string utils::color(Color color, const std::string& str) {
     }
 }
 
-void utils::error(Location location, const std::string& message, bool fatal) {
-    std::cout << utils::color(WHITE, location.format()) << ' ';
-    std::cout << utils::color(RED, "error:") << ' ';
+void utils::error(Span span, const std::string& message, bool fatal) {
+    std::stringstream stream;
 
-    std::cout << message << std::endl;
+    stream << utils::color(WHITE, format_location_span(span)) << ' ';
+    stream << utils::color(RED, "error:") << ' ';
+
+    stream << message << '\n';
+
+    std::string fmt = FORMAT("{0} | ", span.start.line);
+    stream << utils::color(WHITE, fmt) << span.line << '\n';
+
+    size_t len = span.line.length();
+    size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
+
+    for (size_t i = 0; i < offset; i++) stream << ' ';
+    for (size_t i = 0; i < span.length(); i++) stream << '^';
+
+    stream << '\n';
+
+    std::cout << stream.str() << std::endl;
     if (fatal) {
-
         exit(1);
     }
 }
 
-void utils::note(Location location, const std::string& message) {
-    std::cout << utils::color(WHITE, location.format()) << ' ';
-    std::cout << utils::color(MAGENTA, "note:") << ' ';
+void utils::note(Span span, const std::string& message) {
+    std::stringstream stream;
 
-    std::cout << message << std::endl;
+    stream << utils::color(WHITE, format_location_span(span)) << ' ';
+    stream << utils::color(MAGENTA, "note:") << ' ';
+
+    stream << message << '\n';
+
+    std::string fmt = FORMAT("{0} | ", span.start.line);
+    stream << utils::color(WHITE, fmt) << span.line << '\n';
+
+    size_t len = span.line.length();
+    size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
+
+    for (size_t i = 0; i < offset; i++) stream << ' ';
+    for (size_t i = 0; i < span.length(); i++) stream << '^';
+
+    stream << '\n';
+    std::cout << stream.str() << std::endl;
 }
 

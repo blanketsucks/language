@@ -30,13 +30,12 @@ struct Struct {
     std::map<std::string, StructField> fields;
     Scope* scope;
 
-    std::vector<utils::Shared<Struct>> parents;
-    std::vector<utils::Shared<Struct>> children;
+    std::vector<utils::Ref<Struct>> parents;
+    std::vector<utils::Ref<Struct>> children;
 
     bool opaque;
 
-    Location start;
-    Location end;
+    Span span;
 
     Struct(
         std::string name,
@@ -51,9 +50,9 @@ struct Struct {
     std::vector<StructField> get_fields(bool with_private = false);
 
     bool has_method(std::string name);
-    utils::Shared<Function> get_method(std::string name);
+    utils::Ref<Function> get_method(std::string name);
 
-    std::vector<utils::Shared<Struct>> expand();
+    std::vector<utils::Ref<Struct>> expand();
 };
 
 #endif

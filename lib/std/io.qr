@@ -1,14 +1,58 @@
 import libc;
+import libc::errno;
 
-struct Writer {
-    private handle: libc::FILE*;
+enum SeekMode {
+    SET,
+    CUR,
+    END
+}
 
-    func new(handle: libc::FILE*) -> Writer {
+struct IOBase {
+    readonly handle: libc::FILE*;
+
+    func fileno(self) -> i32 { 
+        return libc::fileno(self.handle);
+    }
+
+    func seek(self, offset: i32, whence: SeekMode = SeekMode::SET) -> i32 {
+        return libc::fseek(self.handle, offset, whence);
+    }
+
+    func tell(self) -> i32 { 
+        return libc::ftell(self.handle);
+    }
+
+    func close(self) -> i32 {
+        return libc::fclose(self.handle);
+    }
+
+    func is_open(self) -> bool {
+        if (!self.handle) {
+            return false;
+        }
+
+        return self.fileno() >= 0;
+    }
+
+    func error(self) -> i8* {
+        let errno: i32;
+        if (!self.is_open()) {
+            errno = *libc::errno::__errno_location();
+        } else {
+            errno = libc::ferror(self.handle);
+        }
+
+        return libc::errno::strerror(errno);     
+    }
+}
+
+struct Writer(IOBase) {
+    func from_handle(handle: libc::FILE*) -> Writer {
         return Writer { handle };
     }
 
-    func fileno(self) -> i32 {
-        return libc::fileno(self.handle);
+    func flush(self) -> i32 {
+        return libc::fflush(self.handle);
     }
 
     func write(self, buffer: i8*, *, size: i32 = -1) -> i32 {
@@ -20,6 +64,43 @@ struct Writer {
     }
 }
 
+struct Reader(IOBase) {
+    func from_handle(handle: libc::FILE*) -> Reader {
+        return Reader { handle };
+    }
+
+    func read(self, buffer: i8*, *, size: i32 = -1) -> i32 {
+        if (size < 0) {
+            size = libc::strlen(buffer);
+        }
+
+        return libc::fread(buffer, 1, size, self.handle);
+    }
+
+    func readline(self, buffer: i8*, *, size: i32 = -1) -> i8* {
+        if (size < 0) {
+            size = libc::strlen(buffer);
+        }
+
+        return libc::fgets(buffer, size, self.handle);
+    }
+}
+
+struct IOFile(Writer, Reader) {}
+
+func stdin() -> Reader {
+    return Reader::from_handle(libc::fdopen(0, "r"));
+}
+
 func stdout() -> Writer {
-    return Writer::new(libc::fdopen(1, "w"));
+    return Writer::from_handle(libc::fdopen(1, "w"));
+}
+
+func stderr() -> Writer {
+    return Writer::from_handle(libc::fdopen(2, "w"));
+}
+
+func open(path: i8*, *, mode: i8* = "r") -> IOFile {
+    let handle = libc::fopen(path, mode);
+    return null if !handle else IOFile { handle: handle };
 }

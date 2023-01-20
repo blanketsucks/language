@@ -8,11 +8,11 @@
 
 class Mangler {
 public:
-    static const char PREFIX = 'P';
-    static const char SEPARATOR = '3';
-    static const char ARGS_SEPARATOR = '.';
-    static const char VARIADIC = 'e';
-    static const char END = 'E';
+    static const char* PREFIX;
+    static const char* SEPARATOR;
+    static const char* ARGS_SEPARATOR;
+    static const char* VARIADIC;
+    static const char* END;
 
     // replaces all of the . with SEPARATOR
     static std::string replace(std::string str);
@@ -23,9 +23,9 @@ public:
         std::vector<llvm::Type*> args, 
         bool is_variadic = false,
         llvm::Type* ret = nullptr,
-        utils::Shared<Namespace> ns = nullptr, 
-        utils::Shared<Struct> structure = nullptr, 
-        utils::Shared<Module> module = nullptr
+        utils::Ref<Namespace> ns = nullptr, 
+        utils::Ref<Struct> structure = nullptr, 
+        utils::Ref<Module> module = nullptr
     );
 
     static std::string demangle_type(std::string name);

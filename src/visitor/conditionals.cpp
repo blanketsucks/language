@@ -1,7 +1,20 @@
 #include "visitor.h"
 
+llvm::BasicBlock* Visitor::create_if_statement(llvm::Value* condition) {
+    llvm::BasicBlock* block = this->builder->GetInsertBlock();
+    llvm::Function* function = block->getParent();
+
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
+    llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context);
+
+    this->builder->CreateCondBr(condition, then, merge);
+    this->builder->SetInsertPoint(then);
+
+    return merge;
+}
+
 Value Visitor::visit(ast::IfExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
+    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->span);
 
     auto func = this->current_function;
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
@@ -88,9 +101,9 @@ Value Visitor::visit(ast::IfExpr* expr) {
 }
 
 Value Visitor::visit(ast::TernaryExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->start);
+    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->span);
     if (!this->is_compatible(this->builder->getInt1Ty(), condition->getType())) {
-        ERROR(expr->condition->start, "Expected a boolean expression in the condition of a ternary expression");
+        ERROR(expr->condition->span, "Expected a boolean expression in the condition of a ternary expression");
     }
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context);
@@ -100,18 +113,18 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
     this->builder->CreateCondBr(condition, then, else_);
     this->set_insert_point(then);
 
-    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->start);
+    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->span);
 
     this->builder->CreateBr(merge);
     this->set_insert_point(else_);
 
-    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->start);
+    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->span);
 
     this->builder->CreateBr(merge);
     this->set_insert_point(merge);
 
     if (!this->is_compatible(true_value->getType(), false_value->getType())) {
-        ERROR(expr->start, "The true and false expressions of a ternary expression must have the same type");
+        ERROR(expr->false_expr->span, "The true and false expressions of a ternary expression must have the same type");
     }
 
     llvm::PHINode* phi = this->builder->CreatePHI(true_value->getType(), 2);

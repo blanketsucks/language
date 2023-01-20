@@ -7,8 +7,9 @@
 namespace utils {
 
 std::string join(const std::string& sep, std::vector<std::string> strings);
-std::vector<std::string> split(std::string str, char delimiter);
 std::string replace(std::string str, const std::string& from, const std::string& to);
+
+std::vector<std::string> split(std::string str, const std::string& delim);
 
 }
 

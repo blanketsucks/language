@@ -1,4 +1,5 @@
 #include "visitor.h"
+#include <llvm-14/llvm/IR/Constants.h>
 
 bool Visitor::is_struct(llvm::Value* value) {
     return this->is_struct(value->getType());
@@ -19,11 +20,11 @@ bool Visitor::is_struct(llvm::Type* type) {
     return true;
 }
 
-utils::Shared<Struct> Visitor::get_struct(llvm::Value* value) {
+utils::Ref<Struct> Visitor::get_struct(llvm::Value* value) {
     return this->get_struct(value->getType());
 }
 
-utils::Shared<Struct> Visitor::get_struct(llvm::Type* type) {
+utils::Ref<Struct> Visitor::get_struct(llvm::Type* type) {
     if (!this->is_struct(type)) {
         return nullptr;
     }
@@ -40,22 +41,30 @@ utils::Shared<Struct> Visitor::get_struct(llvm::Type* type) {
     return this->structs[name.str()];
 }
 
+void Visitor::check_struct_self(llvm::Value* value, Span span) {
+    // TODO: Disable in release mode
+    llvm::BasicBlock* merge = this->create_if_statement(this->builder->CreateIsNull(value));
+
+    this->panic("Cannot access methods or fields of a null struct", span);
+    this->set_insert_point(merge);
+}
+
 Value Visitor::visit(ast::StructExpr* expr) {
     std::map<std::string, StructField> fields;
     if (expr->opaque) {
         std::string name = this->format_name(expr->name);
         llvm::StructType* type = llvm::StructType::create(*this->context, name);
         
-        this->scope->structs[expr->name] = utils::make_shared<Struct>(
+        this->scope->structs[expr->name] = utils::make_ref<Struct>(
             expr->name, name, true, type, fields
         );
 
         return nullptr;
     }
 
-    std::vector<utils::Shared<Struct>> parents;
+    std::vector<utils::Ref<Struct>> parents;
     std::vector<llvm::Type*> types;
-    utils::Shared<Struct> structure = nullptr;
+    utils::Ref<Struct> structure = nullptr;
 
     bool exists = this->scope->structs.find(expr->name) != this->scope->structs.end();
     if (!exists) {
@@ -63,12 +72,11 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
         // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
         llvm::StructType* type = llvm::StructType::create(*this->context, {}, name, expr->attributes.has("packed"));
-        structure = utils::make_shared<Struct>(
+        structure = utils::make_ref<Struct>(
             expr->name, name, false, type, fields
         );
 
-        structure->start = expr->start;
-        structure->end = expr->end;
+        structure->span = expr->span;
 
         this->scope->structs[expr->name] = structure;
         this->structs[name] = structure;
@@ -77,7 +85,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
         for (auto& parent : expr->parents) {
             Value value = parent->accept(*this);
             if (!value.structure) {
-                ERROR(parent->start, "Expected a structure");
+                ERROR(parent->span, "Expected a structure");
             }
 
             auto expanded = value.structure->expand();
@@ -91,6 +99,10 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
         for (auto& parent : parents) {
             for (auto& pair : parent->fields) {
+                if (fields.find(pair.first) != fields.end()) {
+                    continue; // Ignore for now, fix later
+                }
+
                 types.push_back(pair.second.type);
                 fields[pair.first] = pair.second;
             }
@@ -108,20 +120,31 @@ Value Visitor::visit(ast::StructExpr* expr) {
             offset = last.offset + this->getsizeof(last.type);
         }
 
-        std::vector<ast::StructField> sfields;
-        for (auto& entry : expr->fields) {
-            sfields.push_back(std::move(entry.second));
-        }
+        std::sort(
+            expr->fields.begin(), expr->fields.end(), 
+            [](auto& a, auto& b) { return a.index < b.index; }
+        );
 
-        std::sort(sfields.begin(), sfields.end(), [](auto& a, auto& b) { return a.index < b.index; });        
-        for (auto& field : sfields) {
+        for (auto& field : expr->fields) {
             llvm::Type* ty = field.type->accept(*this).type.value;
             if (ty == type) {
-                ERROR(expr->start, "Cannot have a field of the same type as the struct itself");
+                ERROR(expr->span, "Cannot define a field of the same type as the struct itself");
+            } else if (!this->is_valid_sized_type(ty)) {
+                ERROR(expr->span, "Cannot define a field of type '{0}'", this->get_type_name(ty));
             }
 
-            fields[field.name] = {field.name, ty, field.is_private, field.is_readonly, index, offset};
-            index++;
+            if (fields.find(field.name) != fields.end()) {
+                ERROR(expr->span, "Duplicate field '{0}'", field.name);
+            }
+
+            fields[field.name] = {
+                field.name, 
+                ty, 
+                field.is_private, 
+                field.is_readonly, 
+                index++, 
+                offset,
+            };
 
             offset += this->getsizeof(ty);
             types.push_back(ty);
@@ -131,11 +154,11 @@ Value Visitor::visit(ast::StructExpr* expr) {
         structure->fields = fields;
     } else {
         if (expr->fields.size()) {
-            ERROR(expr->start, "Re-definitions of structures must not define extra fields");
+            ERROR(expr->span, "Re-definitions of structures must not define extra fields");
         }
 
         if (expr->parents.size()) {
-            ERROR(expr->start, "Re-defintions of structures must not add new inheritance");
+            ERROR(expr->span, "Re-defintions of structures must not add new inheritance");
         }
 
         structure = this->scope->structs[expr->name];
@@ -156,22 +179,34 @@ Value Visitor::visit(ast::StructExpr* expr) {
 }
 
 Value Visitor::visit(ast::AttributeExpr* expr) {
-    auto ref = this->as_reference(expr->parent.get());
-    if (ref.is_null()) {
-        ERROR(expr->start, "Cannot access attributes of non-struct types");
+    llvm::Value* self = expr->parent->accept(*this).unwrap(expr->parent->span);
+    llvm::Type* type = self->getType();
+
+    if (!this->is_struct(type)) {
+        ERROR(expr->parent->span, "Cannot access attributes of non-struct type '{0}'", this->get_type_name(type));
     }
 
-    auto structure = this->get_struct(ref.type);
-
-    llvm::Value* self = ref.value;
-    if (this->get_pointer_depth(ref.type) >= 1) {
-        self = this->builder->CreateLoad(ref.type, self);
+    if (this->get_pointer_depth(type) > 1) {
+        self = this->builder->CreateLoad(type, self);
+        type = type->getPointerElementType();
     }
+
+    bool is_pointer = type->isPointerTy();
+    auto structure = this->get_struct(type);
 
     if (structure->scope->has_function(expr->attribute)) {
+        if (!is_pointer) {
+            self = this->as_reference(self);
+            if (!self) {
+                ERROR(expr->parent->span, "Cannot access method '{0}' of a temporary structure", expr->attribute);
+            }
+        }
+
+        this->check_struct_self(self, expr->parent->span);
+
         auto function = structure->scope->functions[expr->attribute];
         if (this->current_struct != structure && function->is_private) {
-            ERROR(expr->parent->start, "Cannot access private method '{0}'", expr->attribute);
+            ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
         }
 
         if (function->parent && function->parent != structure) {
@@ -183,26 +218,28 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
 
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {
-        ERROR(expr->start, "Field '{0}' does not exist in struct '{1}'", expr->attribute, name);
+        ERROR(expr->span, "Field '{0}' does not exist in struct '{1}'", expr->attribute, structure->name);
     }
 
     StructField field = structure->fields.at(expr->attribute);
     if (this->current_struct != structure && field.is_private) {
-        ERROR(expr->start, "Cannot access private field '{0}'", expr->attribute);
+        ERROR(expr->span, "Cannot access private field '{0}'", expr->attribute);
     }
     
-    if (ref.is_constant) {
-        llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
-        return Value(constant->getAggregateElement(index), true);
+    if (is_pointer) {
+        this->check_struct_self(self, expr->parent->span);
+        return this->load(this->builder->CreateStructGEP(
+            type->getPointerElementType(), self, index
+        ));
     }
 
-    return this->load(this->builder->CreateStructGEP(ref.type, self, index));
+    return this->builder->CreateExtractValue(self, index);
 }
 
 Value Visitor::visit(ast::ConstructorExpr* expr) {
     Value parent = expr->parent->accept(*this);
     if (!parent.structure) {
-        ERROR(expr->start, "Expected a struct");
+        ERROR(expr->span, "Expected a struct");
     }
 
     auto structure = parent.structure;
@@ -211,7 +248,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     });
 
     if (all_private && this->current_struct != structure) {
-        ERROR(expr->start, "No public default constructor for struct '{0}'", structure->name);
+        ERROR(expr->span, "No public default constructor for struct '{0}'", structure->name);
     }
 
     std::map<int, llvm::Value*> args;
@@ -225,14 +262,14 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         if (!entry.name.empty()) {
             i = structure->get_field_index(entry.name);
             if (i < 0) {
-                ERROR(entry.value->start, "Field '{0}' does not exist in struct '{1}'", entry.name, structure->name);
+                ERROR(entry.value->span, "Field '{0}' does not exist in struct '{1}'", entry.name, structure->name);
             } else if (args.find(i) != args.end()) {
-                ERROR(entry.value->start, "Field '{0}' already initialized", entry.name);
+                ERROR(entry.value->span, "Field '{0}' already initialized", entry.name);
             }
 
             field = structure->fields.at(entry.name);
             if (this->current_struct != structure && field.is_private) {
-                ERROR(entry.value->start, "Field '{1}' is private and cannot be initialized", entry.name);
+                ERROR(entry.value->span, "Field '{1}' is private and cannot be initialized", entry.name);
             }
         } else {
             field = structure->get_field_at(index);
@@ -242,7 +279,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         Value val = entry.value->accept(*this);
 
         is_const &= val.is_constant;
-        llvm::Value* value = val.unwrap(entry.value->start);
+        llvm::Value* value = val.unwrap(entry.value->span);
 
         args[i] = value;
         index++;
@@ -258,7 +295,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     }
 
     if (args.size() != fields.size()) {
-        ERROR(expr->start, "Expected {0} fields, found {1}", fields.size(), args.size());
+        ERROR(expr->span, "Expected {0} fields, found {1}", fields.size(), args.size());
     }
 
     if (is_const) {
@@ -274,24 +311,25 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         return llvm::ConstantAggregateZero::get(structure->type);
     }
 
-    llvm::Value* instance = llvm::ConstantAggregateZero::get(structure->type);
+    llvm::Value* alloca = this->create_alloca(structure->type);
     for (auto& arg : args) {
-        instance = this->builder->CreateInsertValue(instance, arg.second, arg.first);
+        llvm::Value* ptr = this->builder->CreateStructGEP(structure->type, alloca, arg.first);
+        this->builder->CreateStore(arg.second, ptr);
     }
 
-    return instance;
+    return this->load(alloca);
 }
 
-void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr> value) {
-    auto ref = this->as_reference(expr->parent.get());
+void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Expr> value) {
+    auto ref = this->as_reference(expr->parent);
     llvm::Value* parent = ref.value;
 
     if (!this->is_struct(ref.type)) {
-        ERROR(expr->parent->start, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(ref.type));
+        ERROR(expr->parent->span, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(ref.type));
     }
 
     if (ref.is_immutable) {
-        ERROR(expr->parent->start, "Cannot modify immutable value '{0}'", ref.name);
+        ERROR(expr->parent->span, "Cannot modify immutable value '{0}'", ref.name);
     }
 
     if (ref.type->isPointerTy()) {
@@ -301,22 +339,22 @@ void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Ref<ast::Expr>
     auto structure = this->get_struct(ref.type);
     int index = structure->get_field_index(expr->attribute);
     if (index < 0) {
-        ERROR(expr->start, "Attribute '{0}' does not exist in structure '{1}'", expr->attribute, name);
+        ERROR(expr->span, "Attribute '{0}' does not exist in structure '{1}'", expr->attribute, name);
     }
 
     StructField field = structure->fields.at(expr->attribute);
     if (this->current_struct != structure && field.is_private) {
-        ERROR(expr->start, "Cannot access private field '{0}'", expr->attribute);
+        ERROR(expr->span, "Cannot access private field '{0}'", expr->attribute);
     }
 
     if (this->current_struct != structure && field.is_readonly) {
-        ERROR(expr->start, "Cannot modify readonly field '{0}'", expr->attribute);
+        ERROR(expr->span, "Cannot modify readonly field '{0}'", expr->attribute);
     }
 
-    llvm::Value* attr = value->accept(*this).unwrap(value->start);
+    llvm::Value* attr = value->accept(*this).unwrap(value->span);
     if (!this->is_compatible(field.type, attr->getType())) {
         ERROR(
-            value->start, 
+            value->span, 
             "Cannot assign value of type '{0}' to type '{1}' for struct field '{2}'", 
             this->get_type_name(attr->getType()), this->get_type_name(field.type), field.name
         );

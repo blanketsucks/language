@@ -199,8 +199,13 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     return this->builder->CreateBitCast(value, type);
 }
 
+bool Visitor::is_valid_sized_type(llvm::Type* type) {
+    // There is no way to get a non-pointer function type currently but it's good to check for it regardless.
+    return !type->isVoidTy() && !type->isFunctionTy();
+}
+
 Value Visitor::visit(ast::CastExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(expr->start);
+    llvm::Value* value = expr->value->accept(*this).unwrap(expr->span);
 
     llvm::Type* from = value->getType();
     llvm::Type* to = expr->to->accept(*this).type.value;
@@ -215,9 +220,9 @@ Value Visitor::visit(ast::CastExpr* expr) {
     );
     
     if (from->isPointerTy() && !(to->isPointerTy() || to->isIntegerTy())) {
-        utils::error(expr->end, err);
+        utils::error(expr->value->span, err);
     } else if (from->isAggregateType() && !to->isAggregateType()) {
-        utils::error(expr->end, err);
+        utils::error(expr->value->span, err);
     }
 
     if (llvm::isa<llvm::Constant>(value)) {
@@ -241,7 +246,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
             if (bits < to->getIntegerBitWidth()) {
                 return this->builder->CreateZExt(value, to);
             } else if (bits > to->getIntegerBitWidth()) {
-                ERROR(expr->end, "Cannot cast value of type '{0}' to '{1}'", this->get_type_name(from), this->get_type_name(to));
+                ERROR(expr->value->span, "Cannot cast value of type '{0}' to '{1}'", this->get_type_name(from), this->get_type_name(to));
             }
         } else if (to->isPointerTy()) {
             return this->builder->CreateIntToPtr(value, to);
@@ -265,7 +270,7 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
     uint32_t size = 0;
 
     if (expr->value->kind() == ast::ExprKind::Variable) {
-        ast::VariableExpr* id = expr->value->cast<ast::VariableExpr>();
+        ast::VariableExpr* id = expr->value->as<ast::VariableExpr>();
         if (TYPE_SIZES.find(id->name) != TYPE_SIZES.end()) {
             return Value(this->builder->getInt32(TYPE_SIZES[id->name]), true);
         }
@@ -277,7 +282,7 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
     } else if (val.enumeration) {
         size = this->getsizeof(val.enumeration->type);
     } else {
-        size = this->getsizeof(val.unwrap(expr->value->start));
+        size = this->getsizeof(val.unwrap(expr->value->span));
     }
 
     return Value(this->builder->getInt32(size), true);
@@ -303,20 +308,19 @@ Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
             return Value::from_type(this->builder->getFloatTy());
         case ast::BuiltinType::f64:
             return Value::from_type(this->builder->getDoubleTy());
-        default:
-            _UNREACHABLE
+        default: __UNREACHABLE
     }
 }
 
 Value Visitor::visit(ast::IntegerTypeExpr* expr) {
-    llvm::Value* value = expr->size->accept(*this).unwrap(expr->size->start);
+    llvm::Value* value = expr->size->accept(*this).unwrap(expr->size->span);
     if (!llvm::isa<llvm::ConstantInt>(value)) {
-        ERROR(expr->size->start, "Integer type size must be a constant");
+        ERROR(expr->size->span, "Integer type size must be a constant");
     }
 
     int64_t size = llvm::cast<llvm::ConstantInt>(value)->getSExtValue();
     if (size < 1 || size > LLVM_MAX_INT_BITS) {
-        ERROR(expr->size->start, "Integer type size must be between 1 and {0} bits", LLVM_MAX_INT_BITS);
+        ERROR(expr->size->span, "Integer type size must be between 1 and {0} bits", LLVM_MAX_INT_BITS);
     }
 
     return Value::from_type(this->builder->getIntNTy(size));
@@ -333,7 +337,7 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
         } else if (this->scope->has_module(name)) {
             scope = this->scope->get_module(name)->scope;
         } else {
-            ERROR(expr->start, "Unrecognised namespace '{0}'", name);
+            ERROR(expr->span, "Unrecognised namespace '{0}'", name);
         }
     }
 
@@ -345,23 +349,31 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
         return Value::from_type(scope->get_enum(expr->name)->type);
     }
 
-    ERROR(expr->start, "Unrecognised type '{0}'", expr->name);
+    ERROR(expr->span, "Unrecognised type '{0}'", expr->name);
 }
 
 Value Visitor::visit(ast::PointerTypeExpr* expr) {
     Value ret = expr->element->accept(*this);
+    if (ret.type->isPointerTy()) {
+        // If the type that it's pointing to is a function, we don't want to double up on the pointer
+        llvm::Type* element = ret.type->getNonOpaquePointerElementType();
+        if (element->isFunctionTy()) {
+            return ret;
+        }
+    }
+
     return Value::from_type(ret.type->getPointerTo());
 }
 
 Value Visitor::visit(ast::ArrayTypeExpr* expr) {
     llvm::Type* element = expr->element->accept(*this).type.value;
     if (element->isVoidTy()) {
-        ERROR(expr->start, "Cannot create an array of type 'void'");
+        ERROR(expr->span, "Cannot create an array of type 'void'");
     }
 
-    llvm::Value* size = expr->size->accept(*this).unwrap(expr->start);
+    llvm::Value* size = expr->size->accept(*this).unwrap(expr->span);
     if (!llvm::isa<llvm::ConstantInt>(size)) {
-        ERROR(expr->size->start, "Array size must be a constant integer");
+        ERROR(expr->size->span, "Array size must be a constant integer");
     }
 
     llvm::ConstantInt* csize = llvm::cast<llvm::ConstantInt>(size);
@@ -373,7 +385,7 @@ Value Visitor::visit(ast::TupleTypeExpr* expr) {
     for (auto& element : expr->elements) {
         llvm::Type* type = element->accept(*this).type.value;
         if (type->isVoidTy()) {
-            ERROR(element->start, "Cannot create a tuple with a 'void' element");
+            ERROR(element->span, "Cannot create a tuple with a 'void' element");
         }
 
         types.push_back(type);
@@ -392,19 +404,20 @@ Value Visitor::visit(ast::FunctionTypeExpr* expr) {
     for (auto& param : expr->args) {
         llvm::Type* ty = param->accept(*this).type.value;
         if (ty->isVoidTy()) {
-            ERROR(param->start, "Function parameter type cannot be of type 'void'");
+            ERROR(param->span, "Function parameter type cannot be of type 'void'");
         }
 
         types.push_back(ty);
     }
 
-    return Value::from_type(llvm::FunctionType::get(ret, types, false));
+    auto f = llvm::FunctionType::get(ret, types, false);
+    return Value::from_type(f->getPointerTo());
 }
 
 Value Visitor::visit(ast::ReferenceTypeExpr* expr) {
     llvm::Type* type = expr->type->accept(*this).type.value;
     if (type->isVoidTy()) {
-        ERROR(expr->start, "Cannot create a reference to type 'void'");
+        ERROR(expr->span, "Cannot create a reference to type 'void'");
     }
 
     return Value::from_type(Type(type->getPointerTo(), true));
@@ -412,7 +425,7 @@ Value Visitor::visit(ast::ReferenceTypeExpr* expr) {
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
     llvm::Type* type = expr->type->accept(*this).type.value;
-    this->scope->types[expr->name] = TypeAlias { expr->name, type, nullptr, expr->start, expr->end };
+    this->scope->types[expr->name] = TypeAlias { expr->name, type, nullptr, expr->span };
 
     return nullptr;
 }

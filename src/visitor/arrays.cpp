@@ -12,19 +12,19 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         Value value = element->accept(*this);
         is_const &= value.is_constant;
 
-        elements.push_back(value.unwrap(element->start));
+        elements.push_back(value.unwrap(element->span));
     }
 
     if (elements.size() == 0) {
         if (!this->ctx) {
-            utils::note(expr->start, "The type of empty arrays defaults to [int; 0]");
+            utils::note(expr->span, "The type of empty arrays defaults to [int; 0]");
              return llvm::ConstantAggregateZero::get(
                 llvm::ArrayType::get(llvm::Type::getInt32Ty(*this->context), 0)
             );
         }
 
         if (!this->ctx->isArrayTy()) {
-            ERROR(expr->start, "Expected an array type");
+            ERROR(expr->span, "Expected an array type");
         }
 
         return llvm::ConstantAggregateZero::get(this->ctx);
@@ -35,7 +35,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     for (size_t i = 1; i < elements.size(); i++) {
         llvm::Value* element = elements[i];
         if (!this->is_compatible(etype, element->getType())) {
-            ERROR(expr->start, "All elements of an array must be of the same type");
+            ERROR(expr->span, "All elements of an array must be of the same type");
         } else {
             elements[i] = this->cast(element, etype);
         }
@@ -60,11 +60,11 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
 }
 
 Value Visitor::visit(ast::ArrayFillExpr* expr) {
-    llvm::Value* element = expr->element->accept(*this).unwrap(expr->element->start);
-    llvm::Value* count = expr->count->accept(*this).unwrap(expr->count->start);
+    llvm::Value* element = expr->element->accept(*this).unwrap(expr->element->span);
+    llvm::Value* count = expr->count->accept(*this).unwrap(expr->count->span);
 
     if (!llvm::isa<llvm::ConstantInt>(count)) {
-        ERROR(expr->count->start, "Expected a constant integer");
+        ERROR(expr->count->span, "Expected a constant integer");
     }
 
     uint32_t size = llvm::cast<llvm::ConstantInt>(count)->getZExtValue();
@@ -83,11 +83,11 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
 }
 
 Value Visitor::visit(ast::ElementExpr* expr) {
-    auto ref = this->as_reference(expr->value.get());
+    auto ref = this->as_reference(expr->value);
     if (ref.is_null()) {
-        llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->start);
+        llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->span);
         if (!value->getType()->isPointerTy()) {
-            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(value->getType()));
+            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(value->getType()));
         }
 
         ref.value = value;
@@ -101,40 +101,40 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     if (ref.type->isStructTy() && !this->is_tuple(ref.type)) {
         auto structure = this->get_struct(ref.type);
         if (!structure->has_method("getitem")) {
-            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
+            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
         }
 
         auto method = structure->get_method("getitem");
         if (!method->is_operator) {
-            ERROR(expr->value->start, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
+            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
         }
 
         if (method->argc() != 2) { // 2 with self
-            ERROR(expr->value->start, "Method 'getitem' of type '{0}' must take exactly one argument", this->get_type_name(ref.type));
+            ERROR(expr->value->span, "Method 'getitem' of type '{0}' must take exactly one argument", this->get_type_name(ref.type));
         }
 
-        return this->call(method->value, { expr->index->accept(*this).unwrap(expr->index->start) }, ref.value);
+        return this->call(method->value, { expr->index->accept(*this).unwrap(expr->index->span) }, ref.value);
     }
 
     if (ref.type->isStructTy()) {
         llvm::StringRef name = ref.type->getStructName();
         if (!name.startswith("__tuple")) {
-            ERROR(expr->value->start, "Expected a pointer, array or tuple");
+            ERROR(expr->value->span, "Expected a pointer, array or tuple");
         }
 
-        llvm::Value* val = expr->index->accept(*this).unwrap(expr->index->start);
+        llvm::Value* val = expr->index->accept(*this).unwrap(expr->index->span);
         if (!llvm::isa<llvm::ConstantInt>(val)) {
-            ERROR(expr->index->start, "Tuple indices must be integer constants");
+            ERROR(expr->index->span, "Tuple indices must be integer constants");
         }
 
         int64_t index = llvm::cast<llvm::ConstantInt>(val)->getSExtValue();
         if (index < 0) {
-            ERROR(expr->index->start, "Tuple indices must be a positive integer");
+            ERROR(expr->index->span, "Tuple indices must be a positive integer");
         }
 
         uint32_t elements = ref.type->getStructNumElements();
         if (index > elements) {
-            ERROR(expr->index->start, "Element index out of bounds");
+            ERROR(expr->index->span, "Element index out of bounds");
         }
 
         if (ref.is_constant) {
@@ -145,9 +145,9 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         return this->load(this->builder->CreateStructGEP(ref.type, ref.value, index));
     }
 
-    llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->start);
+    llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->span);
     if (!index->getType()->isIntegerTy()) {
-        ERROR(expr->index->start, "Indicies must be integers");
+        ERROR(expr->index->span, "Indicies must be integers");
     }
 
     if (ref.is_constant && llvm::isa<llvm::ConstantInt>(index)) {
@@ -156,7 +156,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 
         int64_t size = array->getType()->getArrayNumElements();
         if (idx > size - 1) {
-            ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
+            ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
         }
 
         return Value(array->getAggregateElement(idx), true);
@@ -173,10 +173,12 @@ Value Visitor::visit(ast::ElementExpr* expr) {
             int64_t size = ref.type->getArrayNumElements();
 
             if (idx == size) {
-                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
+                ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
             } else if (idx > size - 1) {
-                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
+                ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
+        } else {
+            this->create_bounds_check(index, ref.type->getArrayNumElements(), expr->index->span);
         }
 
         ptr = this->builder->CreateGEP(
@@ -187,16 +189,26 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     return this->load(ptr);
 }
 
-void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> value) {
-    auto ref = this->as_reference(expr->value.get());
+void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, Span span) {
+    // TODO: Disable in release mode
+    llvm::BasicBlock* merge = this->create_if_statement(
+        this->builder->CreateICmpSGT(index, this->builder->getInt32(count - 1))
+    );
+
+    this->panic("Index out of bounds.", span);
+    this->set_insert_point(merge);
+}
+
+void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr> value) {
+    auto ref = this->as_reference(expr->value);
     llvm::Value* parent = ref.value;
 
     if (!ref.type->isPointerTy() && !ref.type->isArrayTy()) {
-        ERROR(expr->value->start, "Value of type '{0}' does not support item assignment", this->get_type_name(ref.type));
+        ERROR(expr->value->span, "Value of type '{0}' does not support item assignment", this->get_type_name(ref.type));
     }
 
     if (ref.is_immutable) {
-        ERROR(expr->value->start, "Cannot modify immutable value '{0}'", ref.name);
+        ERROR(expr->value->span, "Cannot modify immutable value '{0}'", ref.name);
     }
 
     llvm::Type* type = ref.type;
@@ -204,17 +216,17 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
         parent = this->load(parent, ref.type);
     }
 
-    llvm::Value* index = expr->index->accept(*this).unwrap(expr->start);
+    llvm::Value* index = expr->index->accept(*this).unwrap(expr->span);
     if (!index->getType()->isIntegerTy()) {
-        ERROR(expr->index->start, "Indices must be integers");
+        ERROR(expr->index->span, "Indices must be integers");
     }
 
-    llvm::Value* element = value->accept(*this).unwrap(value->start);
+    llvm::Value* element = value->accept(*this).unwrap(value->span);
     llvm::Type* ty = type->isArrayTy() ? type->getArrayElementType() : type->getPointerElementType();
 
     if (!this->is_compatible(ty, element->getType())) {
         ERROR(
-            value->start, 
+            value->span, 
             "Cannot assign value of type '{0}' to {1} of type '{2}'", 
             this->get_type_name(element->getType()),
             type->isArrayTy() ? "an array" : "a pointer",
@@ -231,10 +243,12 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Ref<ast::Expr> 
             int64_t size = type->getArrayNumElements();
 
             if (idx == size) {
-                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
+                ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
             } else if (idx > size - 1) {
-                ERROR(expr->index->start, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
+                ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
+        } else {
+            this->create_bounds_check(index, type->getArrayNumElements(), expr->index->span);
         }
 
         std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
