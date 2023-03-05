@@ -9,17 +9,17 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* end = llvm::BasicBlock::Create(*this->context);
 
-    Branch* branch = func->branch;
+    Branch* branch = func->current_branch;
 
     this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
     this->set_insert_point(loop, false);
 
-    func->branch = func->create_branch("while.loop", loop, end);
+    func->current_branch = func->create_branch(loop, end);
     expr->body->accept(*this);
 
-    if (func->branch->has_jump()) {
+    if (func->current_branch->has_jump()) {
         this->set_insert_point(end);
-        func->branch = branch;
+        func->current_branch = branch;
 
         return nullptr;
     }
@@ -28,7 +28,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
 
     this->set_insert_point(end);
-    func->branch = branch;
+    func->current_branch = branch;
 
     return nullptr;
 }
@@ -40,7 +40,7 @@ Value Visitor::visit(ast::ForExpr* expr) {
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* stop = llvm::BasicBlock::Create(*this->context);
 
-    Branch* branch = func->branch;
+    Branch* branch = func->current_branch;
 
     expr->start->accept(*this).unwrap(expr->start->span);
     llvm::Value* end = expr->end->accept(*this).unwrap(expr->end->span);
@@ -48,12 +48,12 @@ Value Visitor::visit(ast::ForExpr* expr) {
     this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
     this->set_insert_point(loop, false);
 
-    func->branch = func->create_branch("for.loop", loop, stop); 
+    func->current_branch = func->create_branch(loop, stop); 
     expr->body->accept(*this);
 
-    if (func->branch->has_jump()) {
+    if (func->current_branch->has_jump()) {
         this->set_insert_point(stop);
-        func->branch = branch;
+        func->current_branch = branch;
 
         return nullptr;
     }
@@ -64,23 +64,23 @@ Value Visitor::visit(ast::ForExpr* expr) {
     this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
     this->set_insert_point(stop);
 
-    func->branch = branch;
+    func->current_branch = branch;
     return nullptr;
 }
 
 Value Visitor::visit(ast::BreakExpr*) {
     auto func = this->current_function;
-    func->branch->has_break = true;
+    func->current_branch->has_break = true;
 
-    this->builder->CreateBr(func->branch->end);
+    this->builder->CreateBr(func->current_branch->end);
     return nullptr;
 }
 
 Value Visitor::visit(ast::ContinueExpr*) {
     auto func = this->current_function;
-    func->branch->has_continue = true;
+    func->current_branch->has_continue = true;
 
-    this->builder->CreateBr(func->branch->loop);
+    this->builder->CreateBr(func->current_branch->loop);
     return nullptr;
 }
 
@@ -97,6 +97,10 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
 
     if (!itype->isPointerTy()) {
         self = this->as_reference(self);
+        if (!self) {
+            self = this->create_alloca(itype);
+            this->builder->CreateStore(iterable, self);
+        }
     }
 
     auto structure = this->get_struct(itype);
@@ -116,6 +120,10 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
         self = iterable;
         if (!itype->isPointerTy()) {
             self = this->as_reference(self);
+            if (!self) {
+                self = this->create_alloca(itype);
+                this->builder->CreateStore(iterable, self);
+            }
         }
 
         structure = this->get_struct(itype);
@@ -152,19 +160,19 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function);
     llvm::BasicBlock* stop = llvm::BasicBlock::Create(*this->context);
 
-    Branch* branch = func->branch;
+    Branch* branch = func->current_branch;
 
     this->builder->CreateCondBr(ok, loop, stop);
     this->set_insert_point(loop, false);
 
-    func->branch = func->create_branch("foreach.loop", loop, stop);
+    func->current_branch = func->create_branch(loop, stop);
 
     this->scope->variables[expr->name] = Variable::from_alloca(expr->name, alloca);
     expr->body->accept(*this);
 
-    if (func->branch->has_jump()) {
+    if (func->current_branch->has_jump()) {
         this->set_insert_point(stop);
-        func->branch = branch;
+        func->current_branch = branch;
 
         return nullptr;
     }
@@ -179,6 +187,6 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
     this->builder->CreateCondBr(ok, loop, stop);
     this->set_insert_point(stop);
 
-    func->branch = branch;
+    func->current_branch = branch;
     return nullptr;
 }

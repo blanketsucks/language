@@ -7,6 +7,7 @@ from typing import Iterable, List, Any, Tuple, Union, TypedDict
 import os
 import pathlib
 import subprocess
+import sys
 import shlex
 import json
 
@@ -43,7 +44,7 @@ class Example:
             print(stderr)
 
             print('-----------------------------------------')
-            print(f'Failed to compile: {file}. Update the example of fix the compiler.')
+            print(f'Failed to compile: {self.file}. Update the example of fix the compiler.')
 
             exit(returncode)        
 
@@ -99,19 +100,39 @@ class Example:
                 'stderr': stderr
             }, f, indent=4)
 
-i = 0
-for file in examples.iterdir():
-    if file.suffix != '.qr':
-        continue
+def get(l: List[str], index: int, default: Any = None) -> Any:
+    try:
+        return l[index]
+    except IndexError:
+        return default
 
-    example = Example(file)
-    print(f'Running example {i} ({str(file)!r})')
+def main() -> None:
+    do_update = (get(sys.argv, 1) == 'update')
 
-    if not example.has_output_file():
-        example.update()
-        continue
+    i = 0
+    for file in examples.iterdir():
+        if file.suffix != '.qr':
+            continue
 
-    example.run()
-    i += 1
+        example = Example(file)
+        print(f'Running example {i} ({str(file)!r})')
 
-print(f'\nSuccessfully compiled and tested {i} examples.')
+        if not example.has_output_file() or do_update:
+            example.update()
+            print('Updated output file.')
+
+            i += 1
+            continue
+
+        example.run()
+        i += 1
+
+    if do_update:
+        action = 'updated'
+    else:
+        action = 'compiled and tested'
+
+    print(f'\nSuccessfully {action} {i} examples.')
+
+if __name__ == '__main__':
+    main()

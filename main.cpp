@@ -28,10 +28,10 @@ llvm::cl::opt<OutputFormat> format(
 llvm::cl::opt<MangleStyle> mangling(
     "mangle-style", 
     llvm::cl::desc("Set the mangling style"), 
-    llvm::cl::init(MangleStyle::Full), 
+    llvm::cl::init(MangleStyle::Minimal), 
     llvm::cl::values(
-        clEnumValN(MangleStyle::Full, "full", "Use the default mangling style"),
-        clEnumValN(MangleStyle::Minimal, "minimal", "Use a minimal mangling style"),
+        clEnumValN(MangleStyle::Full, "full", "Fully mangle names"),
+        clEnumValN(MangleStyle::Minimal, "minimal", "Use a minimal mangling style (default)"),
         clEnumValN(MangleStyle::None, "none", "Do not mangle names")
     ),
     llvm::cl::cat(category)
@@ -56,7 +56,7 @@ llvm::cl::list<std::string> libraries(
 llvm::cl::list<std::string> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::OneOrMore);
 
 struct Arguments {
-    utils::filesystem::Path file;
+    utils::fs::Path file;
     std::string output;
     std::string entry;
     std::string target;
@@ -93,25 +93,25 @@ Arguments parse_arguments(int argc, char** argv) {
         args.output = args.file.with_extension("o").str();
         switch (args.format) {
             case OutputFormat::LLVM:
-                args.output = utils::filesystem::replace_extension(args.output, "ll"); break;
+                args.output = utils::fs::replace_extension(args.output, "ll"); break;
             case OutputFormat::Bitcode:
-                args.output = utils::filesystem::replace_extension(args.output, "bc"); break;
+                args.output = utils::fs::replace_extension(args.output, "bc"); break;
             case OutputFormat::Assembly:
-                args.output = utils::filesystem::replace_extension(args.output, "s"); break;
+                args.output = utils::fs::replace_extension(args.output, "s"); break;
             case OutputFormat::SharedLibrary:
             #if _WIN32 || _WIN64
-                args.output = utils::filesystem::replace_extension(args.output, "lib"); break;
+                args.output = utils::fs::replace_extension(args.output, "lib"); break;
             #else
-                args.output = utils::filesystem::replace_extension(args.output, "so"); break;
+                args.output = utils::fs::replace_extension(args.output, "so"); break;
             #endif
             case OutputFormat::Executable:
             #if _WIN32 || _WIN64
-                args.output = utils::filesystem::replace_extension(args.output, "exe"); break;
+                args.output = utils::fs::replace_extension(args.output, "exe"); break;
             #else
-                args.output = utils::filesystem::remove_extension(args.output); break;
+                args.output = utils::fs::remove_extension(args.output); break;
             #endif
             default:
-                args.output = utils::filesystem::replace_extension(args.output, "o"); break;
+                args.output = utils::fs::replace_extension(args.output, "o"); break;
         }
     } else {
         args.output = output;
@@ -144,7 +144,7 @@ int main(int argc, char** argv) {
 
     Compiler compiler(options);    
     for (auto& include : args.includes) {
-        utils::filesystem::Path inc(include);
+        utils::fs::Path inc(include);
         if (!inc.exists()) {
             Compiler::error("Could not find include path '{0}'", include); exit(1);
         }
@@ -163,10 +163,8 @@ int main(int argc, char** argv) {
 
     compiler.add_object_file("lib/panic.o");
 
-    compiler.define_preprocessor_macro("__file__", args.file.filename());
-
     compiler.compile().unwrap();
 
-    llvm::llvm_shutdown();
+    Compiler::shutdown();
     return 0;
 }

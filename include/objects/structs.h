@@ -26,6 +26,7 @@ struct Struct {
     std::string qualified_name;
 
     llvm::StructType* type;
+    llvm::Type* impl;
 
     std::map<std::string, StructField> fields;
     Scope* scope;
@@ -44,6 +45,8 @@ struct Struct {
         llvm::StructType* type, 
         std::map<std::string, StructField> fields
     );
+
+    llvm::Type* get_self_type();
 
     int get_field_index(std::string name);
     StructField get_field_at(uint32_t index);

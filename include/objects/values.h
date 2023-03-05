@@ -10,6 +10,7 @@
 #include "objects/namespaces.h"
 #include "objects/enums.h"
 #include "objects/types.h"
+#include "builtins.h"
 
 #include "llvm/IR/Value.h"
 
@@ -29,6 +30,8 @@ struct Value {
     utils::Ref<Namespace> namespace_;
     utils::Ref<Module> module;
 
+    BuiltinFunction builtin;
+
     Type type = Type::null();
 
     Value(llvm::Value* value, bool is_constant = false, llvm::Value* self = nullptr);
@@ -44,6 +47,7 @@ struct Value {
     static Value from_namespace(utils::Ref<Namespace> namespace_);
     static Value from_enum(utils::Ref<Enum> enumeration);
     static Value from_type(Type type);
+    static Value from_builtin(BuiltinFunction builtin);
 
     static Value as_early_function_call();
     static Value as_reference(

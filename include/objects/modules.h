@@ -8,7 +8,7 @@ struct Scope;
 
 struct Module {
     std::string name;
-    utils::filesystem::Path path;
+    utils::fs::Path path;
 
     bool is_ready;
     bool is_stdlib;
@@ -16,7 +16,7 @@ struct Module {
     Scope* scope;
 
     Module(
-        std::string name, utils::filesystem::Path path
+        std::string name, utils::fs::Path path
     ) : name(name), path(path), is_ready(false) {
         auto parts = this->path.parts();
         this->is_stdlib = parts[0] == "lib";

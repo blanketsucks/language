@@ -134,6 +134,52 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
                 return nullptr;
             }
+        } else if (expr->left->kind() == ast::ExprKind::Tuple) {
+            auto* tuple = expr->left->as<ast::TupleExpr>();
+            bool check = std::all_of(
+                tuple->elements.begin(),
+                tuple->elements.end(),
+                [](auto& e) { return e->kind() == ast::ExprKind::Variable; }
+            );
+
+            if (!check) {
+                // TODO: idk what should the error message be
+                ERROR(expr->span, "Left hand side of assignment must be a variable, struct field or array element");
+            }
+
+            llvm::Value* right = expr->right->accept(*this).unwrap(expr->span);
+            if (!this->is_tuple(right->getType())) {
+                ERROR(expr->right->span, "Expected a tuple but got '{0}'", this->get_type_name(right->getType()));
+            }
+
+            std::vector<llvm::Value*> values = this->unpack(right, tuple->elements.size());
+            for (size_t i = 0; i < tuple->elements.size(); i++) {
+                auto* var = tuple->elements[i]->as<ast::VariableExpr>();
+                auto ref = this->scope->get_local(var->name, true);
+                
+                if (ref.is_null()) {
+                    ERROR(var->span, "Variable '{0}' is not defined", var->name);
+                } else if (ref.is_constant) {
+                    ERROR(var->span, "Cannot assign to constant");
+                } else if (ref.is_immutable) {
+                    ERROR(var->span, "Cannot assign to immutable variable '{0}'", ref.name);
+                }
+
+                llvm::Value* inst = ref.value;
+                llvm::Value* value = values[i];
+
+                if (!this->is_compatible(ref.type, value->getType())) {
+                    ERROR(
+                        var->span, 
+                        "Cannot assign variable of type '{0}' to value of type '{1}'", 
+                        this->get_type_name(ref.type), this->get_type_name(value->getType())
+                    );
+                }
+
+                this->builder->CreateStore(this->cast(value, ref.type), inst);
+            }
+
+            return nullptr;
         }
 
         auto ref = this->as_reference(expr->left);
@@ -179,27 +225,34 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
     if (this->is_struct(ltype)) {
         auto structure = this->get_struct(ltype);
-        if (STRUCT_OP_MAPPING.find(expr->op) == STRUCT_OP_MAPPING.end()) {
-            TODO("Not implemented");
-        }
+        if (STRUCT_OP_MAPPING.find(expr->op) != STRUCT_OP_MAPPING.end()) {
+            auto method = structure->scope->functions[STRUCT_OP_MAPPING[expr->op]];
+            if (!method) {
+                if (!structure->impl) {
+                    utils::error(expr->span, err);
+                }
 
-        auto method = structure->scope->functions[STRUCT_OP_MAPPING[expr->op]];
-        if (!method) {
-            utils::error(expr->span, err);
-        }
+                goto __continue; // TODO: Find a better way to do this.
+            }
 
-        if (!method->is_operator) {
-            utils::error(expr->span, err);
-        }
+            if (!method->is_operator) {
+                if (!structure->impl) {
+                    utils::error(expr->span, err);
+                }
 
-        llvm::Value* self = lhs;
-        if (!ltype->isPointerTy()) {
-            self = this->as_reference(lhs);
-        }
+                goto __continue; // TODO: Find a better way to do this.
+            }
 
-        return this->call(method, {rhs}, self);
+            llvm::Value* self = lhs;
+            if (!ltype->isPointerTy()) {
+                self = this->as_reference(lhs); // TODO: Find a better way to do this too.
+            }
+
+            return this->call(method, {rhs}, self);
+        }
     }
 
+__continue:
     if (!this->is_compatible(ltype, rtype)) {
         utils::error(expr->span, err);
     } else {

@@ -48,7 +48,7 @@ struct IOBase {
 
 struct Writer(IOBase) {
     func from_handle(handle: libc::FILE*) -> Writer {
-        return Writer { handle };
+        return Writer { handle: handle };
     }
 
     func flush(self) -> i32 {
@@ -66,7 +66,7 @@ struct Writer(IOBase) {
 
 struct Reader(IOBase) {
     func from_handle(handle: libc::FILE*) -> Reader {
-        return Reader { handle };
+        return Reader { handle: handle };
     }
 
     func read(self, buffer: i8*, *, size: i32 = -1) -> i32 {

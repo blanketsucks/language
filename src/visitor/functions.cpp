@@ -31,16 +31,18 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     std::map<std::string, utils::Scope<ast::Expr>>& kwargs
 ) {
     uint32_t argc = args.size() + kwargs.size() + (self ? 1 : 0);
+    bool is_variadic = function->is_variadic() || function->is_c_variadic();
+
     if (function->has_any_default_value()) {
         if (argc + function->get_default_arguments_count() < function->argc()) {
             ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
-        } else if (argc > function->argc() && !function->is_variadic()) {
+        } else if (argc > function->argc() && !is_variadic) {
             ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
         }
     } else {
         if (argc < function->argc()) {
             ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
-        } else if (argc > function->argc() && !function->is_variadic()) {
+        } else if (argc > function->argc() && !is_variadic) {
             ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
         }
     }
@@ -50,16 +52,35 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     }
 
     std::map<int64_t, llvm::Value*> values;
-    std::vector<llvm::Value*> varargs;
+
+    std::vector<llvm::Value*> c_variadic_values; // For the ...
+    std::vector<llvm::Value*> variadic_values;   // For the *args
 
     uint32_t i = self ? 1 : 0;
     auto params = function->params();
+
+    bool encountered_variadic = false;
+    llvm::Type* variadic_type = nullptr;
 
     // Name is only used for kwargs when they are not in order
     const auto& visit = [&](
         utils::Scope<ast::Expr>& expr, const std::string& name = ""
     ) {
         llvm::Value* value = nullptr;
+        if (encountered_variadic) {
+            value = expr->accept(*this).unwrap(expr->span);
+            if (!this->is_compatible(variadic_type, value->getType())) {
+                ERROR(
+                    expr->span, 
+                    "Cannot pass value of type '{0}' to variadic parameter of type '{1}'", 
+                    this->get_type_name(value->getType()), 
+                    this->get_type_name(variadic_type)
+                );
+            }
+
+            variadic_values.push_back(this->cast(value, variadic_type)); return;
+        }
+
         if (i < params.size()) {
             FunctionArgument param;
             if (!name.empty()) {
@@ -84,6 +105,21 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                         this->get_type_name(param.type->getPointerElementType())
                     );
                 }
+            } else if (param.is_variadic) {
+                encountered_variadic = true;
+                variadic_type = param.type->getStructElementType(1)->getPointerElementType();
+
+                value = expr->accept(*this).unwrap(expr->span);
+                if (!this->is_compatible(variadic_type, value->getType())) {
+                    ERROR(
+                        expr->span, 
+                        "Cannot pass value of type '{0}' to variadic parameter of type '{1}'", 
+                        this->get_type_name(value->getType()), 
+                        this->get_type_name(variadic_type)
+                    );
+                }
+
+                variadic_values.push_back(this->cast(value, variadic_type)); return;
             } else {
                 Value val = expr->accept(*this);
                 value = val.unwrap(expr->span);
@@ -103,16 +139,16 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                 this->ctx = nullptr;
             }
         } else {
-            if (!function->is_variadic()) {
+            if (!is_variadic) {
                 ERROR(
                     expr->span, 
-                    "Function call expects {0} arguments but got {1}", 
+                    "Function expects {0} arguments but got {1}", 
                     function->value->size(), i
                 );
             }
 
             value = expr->accept(*this).unwrap(expr->span);
-            varargs.push_back(value);
+            c_variadic_values.push_back(value);
         }
 
         i++; 
@@ -120,6 +156,35 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 
     for (auto& arg : args) {
         visit(arg);
+    }
+
+    if (encountered_variadic) {
+        FunctionArgument param = params[i];
+
+        // Refers to the `data` field in the struct
+        llvm::Type* type = param.type->getStructElementType(1)->getPointerElementType();
+        size_t count = variadic_values.size();
+
+        llvm::Type* array = llvm::ArrayType::get(type, count);
+        llvm::Value* alloca = this->create_alloca(array);
+
+        for (size_t i = 0; i < count; i++) {
+            llvm::Value* ptr = this->builder->CreateGEP(
+                array, alloca, { this->builder->getInt32(0), this->builder->getInt32(i) }
+            );
+
+            this->builder->CreateStore(variadic_values[i], ptr);
+        }
+
+        llvm::Value* ptr = this->builder->CreateBitCast(alloca, type->getPointerTo());
+
+        llvm::Value* value = llvm::Constant::getNullValue(param.type.value);
+
+        value = this->builder->CreateInsertValue(value, this->builder->getInt32(count), 0);
+        value = this->builder->CreateInsertValue(value, ptr, 1);
+
+        values[i] = value;
+        encountered_variadic = false;
     }
 
     for (auto& entry : kwargs) {
@@ -131,7 +196,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     }
 
     std::vector<llvm::Value*> ret;
-    ret.reserve(function->argc());
+    ret.reserve(argc);
 
     for (auto& param : params) {
         if (param.is_self) {
@@ -144,11 +209,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
         ret.push_back(value);
     }
 
-    for (auto& value : varargs) {
-        ret.push_back(value);
-    }
-
-
+    ret.insert(ret.end(), c_variadic_values.begin(), c_variadic_values.end());
     return ret;
 }
 
@@ -186,11 +247,8 @@ llvm::Value* Visitor::call(
 }
 
 Value Visitor::visit(ast::PrototypeExpr* expr) {
-    if (!this->current_struct && expr->attributes.has("private")) {
-        ERROR(expr->span, "Cannot declare private function outside of a struct");
-    }
-
     std::string name;
+
     bool is_anonymous = false;
     bool is_llvm_intrinsic = false;
 
@@ -207,9 +265,9 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         }
     }
 
-    if (expr->attributes.has("llvm_intrinsic")) {
+    if (expr->attributes.has(Attribute::LLVMIntrinsic)) {
         is_llvm_intrinsic = true;
-        name = expr->attributes.get("llvm_intrinsic").value;
+        name = expr->attributes.get(Attribute::LLVMIntrinsic).value;
     }
 
     switch (expr->linkage) {
@@ -248,7 +306,11 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         Type type = nullptr;
         if (arg.is_self) {
             utils::Ref<Struct> structure = this->current_struct;
-            type = Type(structure->type->getPointerTo(), true);
+            llvm::Type* self = structure->get_self_type();
+
+            type = Type(self->isPointerTy() ? self : self->getPointerTo(), true);
+        } else if (arg.is_variadic) {
+            type = this->create_variadic_struct(arg.type->accept(*this).type.value);
         } else {
             type = arg.type->accept(*this).type;
         }
@@ -286,7 +348,8 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
                 index,
                 false,
                 arg.is_immutable,
-                arg.is_self
+                arg.is_self,
+                arg.is_variadic
             };
         } else {
             args.push_back({
@@ -296,7 +359,8 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
                 index,
                 false,
                 arg.is_immutable,
-                arg.is_self
+                arg.is_self,
+                arg.is_variadic
             });
         }
 
@@ -304,9 +368,6 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
-    if (expr->attributes.has("internal")) {
-        linkage = llvm::Function::LinkageTypes::InternalLinkage;
-    }
 
     std::string fn = name;
     if (
@@ -319,7 +380,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         fn = Mangler::mangle(
             expr->name, 
             llvm_args, 
-            expr->is_variadic, 
+            expr->is_c_variadic, 
             ret.value, 
             this->current_namespace, 
             this->current_struct, 
@@ -332,11 +393,11 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     llvm::Function* function = this->create_function(
-        fn, ret.value, llvm_args, expr->is_variadic, linkage
+        fn, ret.value, llvm_args, expr->is_c_variadic, linkage
     );
 
     auto func = utils::make_ref<Function>(
-        name, 
+        expr->name, 
         args,
         kwargs,
         ret, 
@@ -385,8 +446,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     llvm::BasicBlock* block = llvm::BasicBlock::Create(*this->context, "", function);
     this->set_insert_point(block, false);
 
-    Branch* branch = func->create_branch(name);
-    func->branch = branch;
+    Branch* branch = func->create_branch();
+    func->current_branch = branch;
 
     if (!func->ret.type->isVoidTy()) {
         func->ret.value = this->builder->CreateAlloca(func->ret.type.value);
@@ -425,11 +486,6 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             stmt->accept(*this);
         }
 
-        for (auto& dtor : func->dtors) {
-            llvm::Function* fn = dtor.structure->get_method("destructor")->value;
-            this->call(fn, {}, dtor.self);
-        }
-        
         if (!func->has_return()) {
             if (func->ret->isVoidTy() || func->is_entry) {
                 if (func->is_entry) {
@@ -502,7 +558,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             this->builder->CreateStore(ref.value, func->ret.value);
             this->builder->CreateBr(func->ret.block);
 
-            func->branch->has_return = true;
+            func->current_branch->has_return = true;
             return nullptr;
         }
 
@@ -522,7 +578,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             value = this->cast(value, func->ret.type);
         }
 
-        func->branch->has_return = true;
+        func->current_branch->has_return = true;
         this->builder->CreateStore(value, func->ret.value);
 
         this->builder->CreateBr(func->ret.block);
@@ -534,7 +590,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
 
-        func->branch->has_return = true;
+        func->current_branch->has_return = true;
         this->builder->CreateBr(func->ret.block);
         
         return nullptr;
@@ -553,6 +609,10 @@ Value Visitor::visit(ast::DeferExpr* expr) {
 
 Value Visitor::visit(ast::CallExpr* expr) {
     Value callable = expr->callee->accept(*this);
+    if (callable.builtin) {
+        return callable.builtin(*this, expr);
+    }
+
     auto func = callable.function;
 
     if (!func && !expr->kwargs.empty()) {

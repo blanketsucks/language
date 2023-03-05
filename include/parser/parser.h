@@ -10,16 +10,28 @@
 
 #include <map>
 
+struct Path {
+    std::string name;
+    std::deque<std::string> path;
+};
+
 class Parser {
 public:
+    typedef Attribute (*AttributeHandler)(Parser&);
+
+    static std::map<std::string, ast::BuiltinType> TYPES;
+    
     Parser(std::vector<Token> tokens);
 
     void end();
 
     Token next();
-    Token peek();
+
+    Token peek(uint32_t offset = 1);
 
     Token expect(TokenKind type, std::string value);
+
+    bool is_valid_attribute(std::string name);
 
     int get_token_precendence();
     
@@ -43,6 +55,9 @@ public:
     utils::Scope<ast::TypeAliasExpr> parse_type_alias();
     utils::Scope<ast::Expr> parse_anonymous_function();
 
+    // Parses `foo::bar::baz` into a deque of strings
+    Path parse_path(llvm::Optional<std::string> name = llvm::None);
+
     utils::Scope<ast::Expr> parse_immediate_binary_op(utils::Scope<ast::Expr> right, utils::Scope<ast::Expr> left, TokenKind op);
     utils::Scope<ast::Expr> parse_immediate_unary_op(utils::Scope<ast::Expr> expr, TokenKind op);
 
@@ -59,7 +74,6 @@ public:
     utils::Scope<ast::Expr> element(Span start, utils::Scope<ast::Expr> expr);
     utils::Scope<ast::Expr> factor();
 
-private:
     uint32_t index;
     Token current;
 
@@ -69,7 +83,8 @@ private:
 
     std::vector<Token> tokens;
     std::map<TokenKind, int> precedences;
-    std::map<std::string, ast::BuiltinType> types;
+
+    std::map<std::string, AttributeHandler> attributes;
 };
 
 #endif

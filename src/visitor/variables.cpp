@@ -13,11 +13,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
             return Value(local.value, local.is_constant);
         }
 
-        if (local.type->isArrayTy()) {
-            return this->builder->CreateGEP(local.type, local.value, this->builder->getInt32(0));
-        }
-            
-        return Value(this->load(local.value, local.type), local.is_constant);
+        return this->builder->CreateLoad(local.type, local.value);
     }
 
     if (scope->has_struct(expr->name)) {
@@ -30,6 +26,10 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value::from_function(scope->get_function(expr->name));
     } else if (scope->has_module(expr->name)) {
         return Value::from_module(scope->get_module(expr->name));
+    }
+
+    if (this->builtins.count(expr->name)) {
+        return Value::from_builtin(this->builtins[expr->name]);
     }
 
     ERROR(expr->span, "Undefined variable '{0}'", expr->name);
@@ -217,17 +217,6 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             true,
             expr->span
         };
-
-        if (auto structure = this->get_struct(type)) {
-            if (!structure->has_method("destructor")) {
-                return nullptr;
-            }
-
-            this->current_function->dtors.push_back({
-                inst, structure.get()
-            });
-        }
-
     } else {
         this->store_tuple(expr->span, this->current_function, value, expr->names, expr->consume_rest);
     }

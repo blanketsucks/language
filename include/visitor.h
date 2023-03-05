@@ -15,8 +15,10 @@
 #include "objects/values.h"
 #include "mangler.h"
 #include "llvm.h"
+#include "builtins.h"
 
 #include <functional>
+#include <llvm-14/llvm/IR/Instructions.h>
 #include <map>
 #include <stdint.h>
 #include <string>
@@ -67,7 +69,7 @@ public:
     llvm::Constant* to_str(const char* str);
     llvm::Constant* to_str(const std::string& str);
 
-    llvm::Constant* to_int(uint64_t value, uint32_t bits = 64);
+    llvm::Constant* to_int(uint64_t value, uint32_t bits = 32);
 
     llvm::Constant* to_float(double value);
 
@@ -83,6 +85,8 @@ public:
     uint32_t getsizeof(llvm::Value* value);
     uint32_t getsizeof(llvm::Type* type);
 
+    llvm::Type* get_builtin_type(ast::BuiltinType type);
+
     llvm::StructType* create_tuple_type(std::vector<llvm::Type*> types);
     void store_tuple(
        Span span, utils::Ref<Function> func, llvm::Value* value, std::vector<std::string> names, std::string consume_rest
@@ -93,6 +97,9 @@ public:
     std::vector<llvm::Value*> unpack(
         llvm::Value* value, uint32_t n, Span span = Span()
     );
+
+    llvm::StructType* make_struct(std::string name, std::map<std::string, llvm::Type*> fields);
+    llvm::StructType* create_variadic_struct(llvm::Type* type);
 
     void store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Expr> value);
 
@@ -105,7 +112,6 @@ public:
 
     utils::Ref<Struct> get_struct(llvm::Value* value);
     utils::Ref<Struct> get_struct(llvm::Type* type);
-    void check_struct_self(llvm::Value* value, Span span);
 
     llvm::AllocaInst* create_alloca(llvm::Type* type);
 
@@ -160,9 +166,15 @@ public:
 
     bool is_valid_sized_type(llvm::Type* type);
 
+    llvm::AllocaInst* repack_struct(llvm::Value* value);
+
     void panic(const std::string& message, Span span = Span());
 
-    void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
+    utils::Ref<Module> import(const std::string& name, bool is_relative = false, Span span = Span());
+
+    static void sort(std::vector<utils::Scope<ast::Expr>>& statements);
+
+    void visit(std::vector<utils::Scope<ast::Expr>> statements);
 
     Value visit(ast::BlockExpr* expr);
 
@@ -243,6 +255,8 @@ public:
     std::map<std::string, utils::Ref<Struct>> structs;
     std::map<std::string, utils::Ref<Module>> modules;
     std::map<TupleKey, llvm::StructType*> tuples;
+    std::map<llvm::Type*, llvm::StructType*> variadics;
+    std::map<llvm::Type*, utils::Ref<Struct>> impls;
 
     std::vector<FunctionCall> constructors;
 
@@ -253,6 +267,8 @@ public:
     utils::Ref<Struct> current_struct = nullptr;
     utils::Ref<Namespace> current_namespace = nullptr;
     utils::Ref<Module> current_module = nullptr;
+
+    std::map<std::string, BuiltinFunction> builtins;
 
     llvm::Type* ctx = nullptr;
 

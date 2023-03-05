@@ -1,7 +1,6 @@
 #include "compiler.h"
 #include "llvm.h"
 #include "visitor.h"
-#include "preprocessor.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "utils/string.h"
@@ -47,6 +46,10 @@ void Compiler::init() {
     llvm::InitializeAllAsmPrinters();
 }
 
+void Compiler::shutdown() {
+    llvm::llvm_shutdown();
+}
+
 void Compiler::add_library(std::string name) { this->options.libs.names.push_back(name); }
 void Compiler::add_library_path(std::string path) { this->options.libs.paths.push_back(path); }
 void Compiler::set_libraries(std::vector<std::string> names) { this->options.libs.names = names; }
@@ -56,7 +59,7 @@ void Compiler::set_output_format(OutputFormat format) { this->options.format = f
 void Compiler::set_output_file(std::string output) { this->options.output = output; }
 void Compiler::set_optimization_level(OptimizationLevel level) { this->options.optimization = level; }
 void Compiler::set_optimization_options(OptimizationOptions options) { this->options.opts = options; }
-void Compiler::set_input_file(const utils::filesystem::Path& input) { this->options.input = input; }
+void Compiler::set_input_file(const utils::fs::Path& input) { this->options.input = input; }
 void Compiler::set_entry_point(std::string entry) { this->options.entry = entry; }
 void Compiler::set_target(std::string target) { this->options.target = target; }
 void Compiler::set_verbose(bool verbose) { this->options.verbose = verbose; }
@@ -64,20 +67,6 @@ void Compiler::set_linker(std::string linker) { this->options.linker = linker; }
 void Compiler::add_extra_linker_option(std::string name, std::string value) { this->options.extras.push_back({name, value}); }
 void Compiler::add_extra_linker_option(std::string name) { this->options.extras.push_back({name, ""}); }
 void Compiler::add_object_file(std::string file) { this->options.object_files.push_back(file); }
-
-void Compiler::define_preprocessor_macro(std::string name, int value) {
-    Span span = { Location(), Location(), "<compiler>", "" };
-    Token token = {TokenKind::Integer, std::to_string(value), span};
-
-    this->macros.push_back(Macro(name, {}, {token}));
-}
-
-void Compiler::define_preprocessor_macro(std::string name, std::string value) {
-    Span span = { Location(), Location(), "<compiler>", "" };
-    Token token = {TokenKind::String, value, span};
-
-    this->macros.push_back(Macro(name, {}, {token}));
-}
 
 void Compiler::dump() {
     std::stringstream stream;
@@ -177,15 +166,8 @@ CompilerError Compiler::compile() {
     std::vector<Token> tokens = lexer.lex();
 
     auto start = Compiler::now();
-
-    Preprocessor preprocessor(tokens, this->options.includes);
-    for (auto& macro : this->macros) {
-        preprocessor.macros[macro.name] = macro;
-    }
-
-    tokens = preprocessor.process();
     if (this->options.verbose) {
-        Compiler::log_duration("Lexing and Preprocessing", start);
+        Compiler::log_duration("Lexing", start);
     }
 
     Parser parser(tokens);

@@ -140,6 +140,14 @@ Value CallExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+utils::Scope<ast::Expr>& CallExpr::get(uint32_t index) {
+    return args[index];
+}
+
+utils::Scope<ast::Expr>& CallExpr::get(const std::string& name) {
+    return kwargs[name];
+}
+
 ReturnExpr::ReturnExpr(Span span, utils::Scope<Expr> value) : ExprMixin(span) {
     this->value = std::move(value);
 }
@@ -153,10 +161,10 @@ PrototypeExpr::PrototypeExpr(
     std::string name, 
     std::vector<Argument> args,
     utils::Scope<TypeExpr> return_type,
-    bool is_variadic,
+    bool is_c_variadic,
     bool is_operator,
     ExternLinkageSpecifier linkage
-) : ExprMixin(span), name(name), is_variadic(is_variadic), is_operator(is_operator), linkage(linkage) {
+) : ExprMixin(span), name(name), is_c_variadic(is_c_variadic), is_operator(is_operator), linkage(linkage) {
     this->args = std::move(args);
     this->return_type = std::move(return_type);
 }

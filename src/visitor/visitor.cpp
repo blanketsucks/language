@@ -3,6 +3,8 @@
 #include "llvm/IR/Constant.h"
 
 Visitor::Visitor(std::string name, std::string entry, const OptimizationOptions& options) {
+    Builtins::init(*this);
+
     this->name = name;
     this->entry = entry;
     this->options = options;
@@ -98,12 +100,16 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
 std::string Visitor::format_name(std::string name) {
     std::string formatted;
     if (this->current_module) { 
-        formatted += this->current_module->get_clean_path_name(true);
+        formatted += this->current_module->get_clean_path_name(true) + ".";
     }
 
-    if (this->current_namespace) { formatted += "." + this->current_namespace->name; }
-    if (this->current_struct) { formatted += "." + this->current_struct->name; }
-    if (this->current_function) { formatted += "." + this->current_function->name; }
+    if (this->current_namespace) { formatted += this->current_namespace->name + "."; }
+    if (this->current_struct) { formatted += this->current_struct->name + "."; }
+    if (this->current_function) { formatted += this->current_function->name; }
+
+    if (!formatted.empty() && formatted.back() == '.') {
+        formatted.pop_back();
+    }
 
     return formatted.empty() ? name : FORMAT("{0}.{1}", formatted, name);
 }

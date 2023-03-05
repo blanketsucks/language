@@ -23,9 +23,9 @@ jit::QuartJIT::QuartJIT(
     auto& dylib = this->jit->getMainJITDylib();
     const llvm::DataLayout& layout = this->jit->getDataLayout();
 
-    dylib.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(layout.getGlobalPrefix())));
+    auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(layout.getGlobalPrefix());
+    dylib.addGenerator(llvm::cantFail(std::move(generator)));
     
-    // Add a default error reporter function
     this->set_error_reporter(jit::checkError);
 }
 
@@ -54,7 +54,7 @@ void jit::QuartJIT::dump() const {
 int jit::QuartJIT::run(int argc, char** argv) {
     auto& dylib = this->jit->getMainJITDylib();
 
-    llvm::cantFail(dylib.define(absoluteSymbols(symbols)));
+    llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(symbols)));
     jit::ExitOnError(this->jit->addIRModule(std::move(module)));
 
     // Make sure global constructors are properly called

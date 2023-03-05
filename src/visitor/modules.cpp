@@ -1,38 +1,37 @@
 #include "visitor.h"
 #include "lexer/lexer.h"
-#include "preprocessor.h"
 
 static const std::vector<std::string> SEARCH_PATHS = {"lib/"};
 
-utils::filesystem::Path search_file_paths(utils::filesystem::Path path) {
+utils::fs::Path search_file_paths(utils::fs::Path path) {
     for (auto& p : SEARCH_PATHS) {
-        auto full_path = utils::filesystem::Path(p + path.name);
+        auto full_path = utils::fs::Path(p + path.name);
         if (full_path.exists()) {
             return full_path;
         }
     }
     
-    return utils::filesystem::Path::empty();
+    return utils::fs::Path::empty();
 }
 
-Value Visitor::visit(ast::ImportExpr* expr) {
+utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Span span) {
     Scope* scope = this->scope;
     auto outer = this->current_module;
 
     std::string current_path;
-    if (expr->is_relative && outer) {
+    if (is_relative && outer) {
         current_path = outer->path.parent();
     }
 
-    auto names = utils::split(expr->name, "::");
+    auto parts = utils::split(name, "::");
 
-    std::string module_name = names.back();
-    names.pop_back();
+    std::string module_name = parts.back();
+    parts.pop_back();
 
-    if (this->modules.find(expr->name) != this->modules.end()) {
-        auto module = this->modules[expr->name];
+    if (this->modules.find(name) != this->modules.end()) {
+        auto module = this->modules[name];
         if (!module->is_ready) {
-            ERROR(expr->span, "Could not import '{0}' because a circular dependency was detected", expr->name);
+            ERROR(span, "Could not import '{0}' because a circular dependency was detected", name);
         }
 
         this->scope->modules[module_name] = module;
@@ -43,16 +42,16 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         return nullptr;
     }
 
-    for (auto it = names.begin(); it != names.end(); ++it) {
+    for (auto it = parts.begin(); it != parts.end(); ++it) {
         std::string current = *it;
 
         current_path += current;
-        utils::filesystem::Path path(current_path);
+        utils::fs::Path path(current_path);
 
         if (!path.exists()) {
             path = search_file_paths(current_path);
             if (path.isempty()) {
-                ERROR(expr->span, "Could not find module '{0}'", expr->name);
+                ERROR(span, "Could not find module '{0}'", name);
             }
 
             current_path = current_path.substr(0, current_path.size() - current.size());
@@ -60,7 +59,7 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         }
 
         if (!path.isdir()) {
-            ERROR(expr->span, "Expected a directory, got a file");
+            ERROR(span, "Expected a directory, got a file");
         }
 
         if (this->current_module) {
@@ -87,20 +86,20 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         current_path += "/";
     }
 
-    utils::filesystem::Path path(current_path + module_name + FILE_EXTENSION);
+    utils::fs::Path path(current_path + module_name + FILE_EXTENSION);
     std::string path_name = path.name;
 
     if (!path.exists()) {
-        utils::filesystem::Path dir = path.with_extension();
+        utils::fs::Path dir = path.with_extension();
         if (!dir.exists()) {
             dir = search_file_paths(dir);
             if (dir.isempty()) {
-                ERROR(expr->span, "Could not find module '{0}'", expr->name);
+                ERROR(span, "Could not find module '{0}'", name);
             }
         }
 
         if (!dir.isdir()) {
-            ERROR(expr->span, "Expected a directory, got a file");
+            ERROR(span, "Expected a directory, got a file");
         }
 
         path_name = dir.name;
@@ -120,21 +119,17 @@ Value Visitor::visit(ast::ImportExpr* expr) {
         }
 
         if (!path.isfile()) {
-            ERROR(expr->span, "Expected a file, got a directory");
+            ERROR(span, "Expected a file, got a directory");
         }
         
     }
     
     if (path_name == this->name) {
-        ERROR(expr->span, "Could not import '{0}' because a circular dependency was detected", expr->name);
+        ERROR(span, "Could not import '{0}' because a circular dependency was detected", name);
     }
 
     Lexer lexer(path);
-
-    Preprocessor preprocessor(lexer.lex());
-    preprocessor.define("__file__", path.filename());
-
-    auto tokens = preprocessor.process();
+    auto tokens = lexer.lex();
 
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -142,7 +137,7 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     auto module = utils::make_ref<Module>(module_name, path);
     
     this->scope->modules[module_name] = module;
-    this->modules[expr->name] = module;
+    this->modules[name] = module;
 
     module->scope = this->create_scope(module_name, ScopeType::Module);
     this->current_module = module;
@@ -150,12 +145,13 @@ Value Visitor::visit(ast::ImportExpr* expr) {
     this->visit(std::move(ast));
     this->scope = scope;
 
-    if (expr->is_wildcard) {
-        
-    }
-
     module->is_ready = true;
     this->current_module = outer;
 
+    return module;
+}
+
+Value Visitor::visit(ast::ImportExpr* expr) {
+    this->import(expr->name, expr->is_relative, expr->span);
     return nullptr;
 }

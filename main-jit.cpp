@@ -1,8 +1,6 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include "preprocessor.h"
 #include "visitor.h"
-
 #include "jit.h"
 
 int main(int argc, char** argv) {
@@ -16,16 +14,14 @@ int main(int argc, char** argv) {
 
     std::string filename = argv[1];
 
-    utils::filesystem::Path path(filename);
+    utils::fs::Path path(filename);
     if (!path.exists()) {
         Compiler::error("File not found '{0}'", filename);
         return 1;
     }
 
     Lexer lexer(path);
-
-    Preprocessor preprocessor(lexer.lex(), {"lib/"});
-    auto tokens = preprocessor.process();
+    auto tokens = lexer.lex();
 
     Parser parser(tokens);
     auto ast = parser.parse();
@@ -35,11 +31,11 @@ int main(int argc, char** argv) {
 
     auto entry = visitor.global_scope->functions["main"];
     if (!entry) {
-        Compiler::error("Missing main entry point function");
+        Compiler::error("Missing main entry point function"); exit(1);
     }
 
     if (entry->args.size() > 2) {
-        Compiler::error("Main entry point function takes no more than 2 arguments");
+        Compiler::error("Main entry point function takes no more than 2 arguments"); exit(1);
     }
 
     // Apparently, we can only access the global ctor function only if it has the external linkage

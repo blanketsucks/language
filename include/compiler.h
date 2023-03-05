@@ -1,7 +1,6 @@
 #ifndef _COMPILER_H
 #define _COMPILER_H
 
-#include "preprocessor.h"
 #include "utils/log.h"
 #include "utils/filesystem.h"
 #include "visitor.h"
@@ -51,7 +50,7 @@ struct CompilerError {
 struct CompilerOptions {
     using Extra = std::pair<std::string, std::string>;
 
-    utils::filesystem::Path input;
+    utils::fs::Path input;
     std::string output;
     std::string entry;
     std::string target;
@@ -82,6 +81,7 @@ public:
     static void log_duration(const char* message, TimePoint start);
 
     static void init();
+    static void shutdown();
 
     template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
         std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
@@ -103,8 +103,6 @@ public:
     void set_library_paths(std::vector<std::string> paths);
 
     void add_include_path(std::string path);
-    void define_preprocessor_macro(std::string name, int value);
-    void define_preprocessor_macro(std::string name, std::string value);
 
     void set_output_format(OutputFormat format);
     void set_output_file(std::string output);
@@ -112,7 +110,7 @@ public:
     void set_optimization_level(OptimizationLevel level);
     void set_optimization_options(OptimizationOptions opts);
 
-    void set_input_file(const utils::filesystem::Path& input);
+    void set_input_file(const utils::fs::Path& input);
     void set_entry_point(std::string entry);
 
     void set_target(std::string target);
@@ -134,7 +132,6 @@ public:
 
 private:
     CompilerOptions options;
-    std::vector<Macro> macros;
 };
 
 

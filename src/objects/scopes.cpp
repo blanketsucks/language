@@ -1,5 +1,6 @@
 #include "objects/scopes.h"
 #include "visitor.h"
+#include <algorithm>
 
 ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_value) {
     llvm::Value* value = use_store_value ? variable.value : variable.constant;
@@ -61,7 +62,7 @@ llvm::Constant* ScopeLocal::get_constant_value() {
     return nullptr;
 }
 
-Scope::Scope(std::string name, ScopeType type, Scope* parent) : name(name), type(type), parent(parent) {
+Scope::Scope(const std::string& name, ScopeType type, Scope* parent) : name(name), type(type), parent(parent) {
     this->namespaces = {};
     this->structs = {};
     this->functions = {};
@@ -71,7 +72,7 @@ Scope::Scope(std::string name, ScopeType type, Scope* parent) : name(name), type
     this->modules = {};
 }
 
-bool Scope::has_namespace(std::string name) { 
+bool Scope::has_namespace(const std::string& name) { 
     if (this->namespaces.find(name) != this->namespaces.end()) {
         return true;
     }
@@ -83,7 +84,7 @@ bool Scope::has_namespace(std::string name) {
     return false;
 }
 
-bool Scope::has_struct(std::string name) { 
+bool Scope::has_struct(const std::string& name) { 
     if (this->structs.find(name) != this->structs.end()) {
         return true;
     }
@@ -95,7 +96,7 @@ bool Scope::has_struct(std::string name) {
     return false;
 }
 
-bool Scope::has_function(std::string name) { 
+bool Scope::has_function(const std::string& name) { 
     if (this->functions.find(name) != this->functions.end()) {
         return true;
     }
@@ -107,7 +108,7 @@ bool Scope::has_function(std::string name) {
     return false;
 }
 
-bool Scope::has_constant(std::string name) {
+bool Scope::has_constant(const std::string& name) {
     if (this->constants.find(name) != this->constants.end()) {
         return true;
     }
@@ -119,7 +120,7 @@ bool Scope::has_constant(std::string name) {
     return false;
 }
 
-bool Scope::has_enum(std::string name) {
+bool Scope::has_enum(const std::string& name) {
     if (this->enums.find(name) != this->enums.end()) {
         return true;
     }
@@ -131,7 +132,7 @@ bool Scope::has_enum(std::string name) {
     return false;
 }
 
-bool Scope::has_variable(std::string name) {
+bool Scope::has_variable(const std::string& name) {
     if (this->variables.find(name) != this->variables.end()) {
         return true;
     }
@@ -143,7 +144,7 @@ bool Scope::has_variable(std::string name) {
     return false;
 }
 
-bool Scope::has_module(std::string name) {
+bool Scope::has_module(const std::string& name) {
     if (this->modules.find(name) != this->modules.end()) {
         return true;
     }
@@ -155,7 +156,7 @@ bool Scope::has_module(std::string name) {
     return false;
 }
 
-bool Scope::has_type(std::string name) {
+bool Scope::has_type(const std::string& name) {
     if (this->types.find(name) != this->types.end()) {
         return true;
     }
@@ -167,7 +168,7 @@ bool Scope::has_type(std::string name) {
     return false;
 }
 
-ScopeLocal Scope::get_local(std::string name, bool use_store_value) {
+ScopeLocal Scope::get_local(const std::string& name, bool use_store_value) {
     if (this->variables.find(name) != this->variables.end()) {
         auto& variable = this->variables[name];
         return ScopeLocal::from_variable(variable, use_store_value);
@@ -186,7 +187,7 @@ ScopeLocal Scope::get_local(std::string name, bool use_store_value) {
     }
 }
 
-Variable Scope::get_variable(std::string name) {
+Variable Scope::get_variable(const std::string& name) {
     if (this->variables.find(name) != this->variables.end()) {
         return this->variables[name];
     }
@@ -198,7 +199,7 @@ Variable Scope::get_variable(std::string name) {
     return Variable::null();
 }
 
-Constant Scope::get_constant(std::string name) {
+Constant Scope::get_constant(const std::string& name) {
     if (this->constants.find(name) != this->constants.end()) {
         return this->constants[name];
     }
@@ -210,7 +211,7 @@ Constant Scope::get_constant(std::string name) {
     return Constant::null();
 }
 
-utils::Ref<Function> Scope::get_function(std::string name) {
+utils::Ref<Function> Scope::get_function(const std::string& name) {
     if (this->functions.find(name) != this->functions.end()) {
         return this->functions[name];
     }
@@ -222,7 +223,7 @@ utils::Ref<Function> Scope::get_function(std::string name) {
     return nullptr;
 }
 
-utils::Ref<Struct> Scope::get_struct(std::string name) {
+utils::Ref<Struct> Scope::get_struct(const std::string& name) {
     if (this->structs.find(name) != this->structs.end()) {
         return this->structs[name];
     }
@@ -234,7 +235,7 @@ utils::Ref<Struct> Scope::get_struct(std::string name) {
     return nullptr;
 }
 
-utils::Ref<Enum> Scope::get_enum(std::string name) {
+utils::Ref<Enum> Scope::get_enum(const std::string& name) {
     if (this->enums.find(name) != this->enums.end()) {
         return this->enums[name];
     }
@@ -246,7 +247,7 @@ utils::Ref<Enum> Scope::get_enum(std::string name) {
     return nullptr;
 }
 
-utils::Ref<Module> Scope::get_module(std::string name) {
+utils::Ref<Module> Scope::get_module(const std::string& name) {
     if (this->modules.find(name) != this->modules.end()) {
         return this->modules[name];
     }
@@ -258,7 +259,7 @@ utils::Ref<Module> Scope::get_module(std::string name) {
     return nullptr;
 }
 
-utils::Ref<Namespace> Scope::get_namespace(std::string name) {
+utils::Ref<Namespace> Scope::get_namespace(const std::string& name) {
     if (this->namespaces.find(name) != this->namespaces.end()) {
         return this->namespaces[name];
     }
@@ -270,7 +271,7 @@ utils::Ref<Namespace> Scope::get_namespace(std::string name) {
     return nullptr;
 }
 
-TypeAlias Scope::get_type(std::string name) {
+TypeAlias Scope::get_type(const std::string& name) {
     if (this->types.find(name) != this->types.end()) {
         return this->types[name];
     }
@@ -289,6 +290,8 @@ void Scope::exit(Visitor* visitor) {
 void Scope::finalize(bool eliminate_dead_functions) {
     if (eliminate_dead_functions) {
         for (auto& entry : this->functions) {
+            if (!entry.second) continue; // TODO: fix this (it's a bug probably)
+
             if (entry.second->is_finalized) {
                 continue;
             }
@@ -313,7 +316,6 @@ void Scope::finalize(bool eliminate_dead_functions) {
                 }
             }
             
-            for (auto branch : func->branches) delete branch;
             func->is_finalized = true;
         }
     }

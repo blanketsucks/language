@@ -7,7 +7,18 @@ Struct::Struct(
     bool opaque,
     llvm::StructType* type,
     std::map<std::string, StructField> fields
-) : name(name), qualified_name(qualified_name), type(type), fields(fields), opaque(opaque) {}
+) : name(name), qualified_name(qualified_name), type(type), fields(fields), opaque(opaque) {
+    this->impl = nullptr;
+    this->scope = nullptr;
+}
+
+llvm::Type* Struct::get_self_type() {
+    if (!this->impl) {
+        return this->type;
+    }
+
+    return this->impl;
+}
 
 bool Struct::has_method(std::string name) { 
     return this->scope->functions.find(name) != this->scope->functions.end(); 

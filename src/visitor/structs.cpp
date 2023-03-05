@@ -1,11 +1,16 @@
+// TODO: Rewrite when possible
+
 #include "visitor.h"
-#include <llvm-14/llvm/IR/Constants.h>
 
 bool Visitor::is_struct(llvm::Value* value) {
     return this->is_struct(value->getType());
 }
 
 bool Visitor::is_struct(llvm::Type* type) {
+    if (this->impls.find(type) != this->impls.end()) {
+        return true;
+    }
+
     if (!type->isStructTy()) {
         if (!type->isPointerTy()) {
             return false;
@@ -29,6 +34,10 @@ utils::Ref<Struct> Visitor::get_struct(llvm::Type* type) {
         return nullptr;
     }
 
+    if (this->impls.find(type) != this->impls.end()) {
+        return this->impls[type];
+    }
+
     if (type->isPointerTy()) {
         type = type->getPointerElementType();
     }
@@ -41,12 +50,49 @@ utils::Ref<Struct> Visitor::get_struct(llvm::Type* type) {
     return this->structs[name.str()];
 }
 
-void Visitor::check_struct_self(llvm::Value* value, Span span) {
-    // TODO: Disable in release mode
-    llvm::BasicBlock* merge = this->create_if_statement(this->builder->CreateIsNull(value));
+llvm::StructType* Visitor::make_struct(std::string name, std::map<std::string, llvm::Type*> fields) {
+    std::map<std::string, StructField> sfields;
+    std::vector<llvm::Type*> types;
 
-    this->panic("Cannot access methods or fields of a null struct", span);
-    this->set_insert_point(merge);
+    uint32_t index = 0;
+    uint32_t offset = 0;
+
+    for (auto& entry : fields) {
+        sfields[entry.first] = StructField {
+            entry.first,
+            entry.second,
+            false,
+            false,
+            index,
+            offset
+        };
+
+        types.push_back(entry.second);
+
+        index++;
+        offset += this->getsizeof(entry.second);
+    }
+
+    llvm::StructType* type = llvm::StructType::create(*this->context, types, name, false);
+    this->structs[name] = utils::make_ref<Struct>(
+        name, name, false, type, sfields
+    );
+
+    return type;
+}
+
+llvm::StructType* Visitor::create_variadic_struct(llvm::Type* type) {
+    if (this->variadics.find(type) != this->variadics.end()) {
+        return this->variadics[type];
+    }
+
+    return this->make_struct(
+        FORMAT("__variadic.{0}", this->id++),
+        { 
+            { "count", this->builder->getInt32Ty() },
+            { "data", type->getPointerTo() }
+        }
+    );
 }
 
 Value Visitor::visit(ast::StructExpr* expr) {
@@ -71,7 +117,13 @@ Value Visitor::visit(ast::StructExpr* expr) {
         std::string name = this->format_name(expr->name);
 
         // We do this to avoid an infinite loop when the struct has a field of the same type as the struct itself.
-        llvm::StructType* type = llvm::StructType::create(*this->context, {}, name, expr->attributes.has("packed"));
+        llvm::StructType* type = llvm::StructType::create(
+            *this->context, 
+            {}, 
+            name, 
+            expr->attributes.has(Attribute::Packed)
+        );
+
         structure = utils::make_ref<Struct>(
             expr->name, name, false, type, fields
         );
@@ -165,6 +217,36 @@ Value Visitor::visit(ast::StructExpr* expr) {
         this->scope = structure->scope;
     }
 
+    if (expr->attributes.has(Attribute::Impl)) {
+        // TODO: [[impl(i32)]] struct Foo { ... }, Here whenever Foo is referenced inside the struct body it will reference the actual
+        // struct type itself instead of the type that is being implemented. 
+        // I don't know if i should keep it this way or change it so that it references the impl type.
+        auto& impl = expr->attributes.get(Attribute::Impl);
+        llvm::Type* type = impl.expr->accept(*this).type.value;
+
+        if (type->isStructTy() || type->isArrayTy() || type->isFunctionTy()) {
+            ERROR(impl.expr->span, "Cannot implement type '{0}'", this->get_type_name(type));
+        }
+
+        if (type->isPointerTy()) {
+            llvm::Type* element = type->getPointerElementType();
+            if (element->isStructTy() || element->isArrayTy() || element->isFunctionTy()) {
+                ERROR(impl.expr->span, "Cannot implement type '{0}'", this->get_type_name(type));
+            }
+        }
+        
+        if (this->impls.find(type) != this->impls.end()) {
+            ERROR(expr->span, "Cannot implement '{0}' for '{1}' because it is already implemented.", this->get_type_name(type));
+        }
+
+        if (!structure->fields.empty()) {
+            ERROR(expr->span, "Cannot have fields in an implementation struct");
+        }
+
+        structure->impl = type;
+        this->impls[type] = structure;
+    }
+
     this->scope->structs["Self"] = structure;
     this->current_struct = structure;
 
@@ -179,11 +261,20 @@ Value Visitor::visit(ast::StructExpr* expr) {
 }
 
 Value Visitor::visit(ast::AttributeExpr* expr) {
-    llvm::Value* self = expr->parent->accept(*this).unwrap(expr->parent->span);
-    llvm::Type* type = self->getType();
+    llvm::Value* self = nullptr;
+    llvm::Type* type = nullptr;
+
+    auto ref = this->as_reference(expr->parent);
+    if (!ref.is_null()) {
+        self = ref.value;
+        type = ref.type->getPointerTo();
+    } else {
+        self = expr->parent->accept(*this).unwrap(expr->parent->span);
+        type = self->getType();
+    }
 
     if (!this->is_struct(type)) {
-        ERROR(expr->parent->span, "Cannot access attributes of non-struct type '{0}'", this->get_type_name(type));
+        ERROR(expr->parent->span, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(type));
     }
 
     if (this->get_pointer_depth(type) > 1) {
@@ -194,26 +285,35 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     bool is_pointer = type->isPointerTy();
     auto structure = this->get_struct(type);
 
-    if (structure->scope->has_function(expr->attribute)) {
-        if (!is_pointer) {
-            self = this->as_reference(self);
-            if (!self) {
-                ERROR(expr->parent->span, "Cannot access method '{0}' of a temporary structure", expr->attribute);
+    if (structure->scope) {
+        if (structure->scope->has_function(expr->attribute)) {
+            if (!is_pointer) {
+                llvm::Value* tmp = this->as_reference(self);
+                if (!tmp) {
+                    if (!structure->impl) {
+                        ERROR(expr->parent->span, "Cannot access method '{0}' of a temporary structure", expr->attribute);
+                    }
+                    
+                    llvm::Value* alloca = this->create_alloca(structure->impl);
+                    this->builder->CreateStore(self, alloca);
+                    
+                    self = alloca;
+                } else {
+                    self = tmp;
+                }
             }
+
+            auto function = structure->scope->functions[expr->attribute];
+            if (this->current_struct != structure && function->is_private) {
+                ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
+            }
+
+            if (function->parent && function->parent != structure) {
+                self = this->builder->CreateBitCast(self, function->parent->type->getPointerTo());
+            }
+
+            return Value::from_function(function, self);
         }
-
-        this->check_struct_self(self, expr->parent->span);
-
-        auto function = structure->scope->functions[expr->attribute];
-        if (this->current_struct != structure && function->is_private) {
-            ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
-        }
-
-        if (function->parent && function->parent != structure) {
-            self = this->builder->CreateBitCast(self, function->parent->type->getPointerTo());
-        }
-
-        return Value::from_function(function, self);
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -227,7 +327,6 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     }
     
     if (is_pointer) {
-        this->check_struct_self(self, expr->parent->span);
         return this->load(this->builder->CreateStructGEP(
             type->getPointerElementType(), self, index
         ));

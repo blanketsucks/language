@@ -99,6 +99,7 @@ enum class TokenKind {
     Ellipsis,
     Newline,
     Maybe,
+    Range, // ..
     
     EOS
 };
@@ -161,14 +162,14 @@ static std::map<std::string, TokenKind> KEYWORDS = {
 static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {
     {TokenKind::Assign, 5},
 
-    {TokenKind::Lt, 10},
-    {TokenKind::Gt, 10},
-    {TokenKind::Lte, 10},
-    {TokenKind::Gte, 10},
-    {TokenKind::Eq, 10},
-    {TokenKind::Neq, 10},
     {TokenKind::And, 10},
     {TokenKind::Or, 10},
+    {TokenKind::Lt, 15},
+    {TokenKind::Gt, 15},
+    {TokenKind::Lte, 15},
+    {TokenKind::Gte, 15},
+    {TokenKind::Eq, 15},
+    {TokenKind::Neq, 15},
 
     {TokenKind::BinaryAnd, 20},
     {TokenKind::BinaryOr, 20},

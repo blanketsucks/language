@@ -62,29 +62,29 @@ struct Scope {
     std::map<std::string, utils::Ref<Module>> modules;
     std::map<std::string, TypeAlias> types;
 
-    Scope(std::string name, ScopeType type, Scope* parent = nullptr);
+    Scope(const std::string& name, ScopeType type, Scope* parent = nullptr);
 
-    ScopeLocal get_local(std::string name, bool use_store_value = true);
+    ScopeLocal get_local(const std::string& name, bool use_store_value = true);
 
-    bool has_variable(std::string name);
-    bool has_constant(std::string name);
-    bool has_function(std::string name);
-    bool has_struct(std::string name);
-    bool has_enum(std::string name);
-    bool has_namespace(std::string name);
-    bool has_module(std::string name);
-    bool has_type(std::string name);
+    bool has_variable(const std::string& name);
+    bool has_constant(const std::string& name);
+    bool has_function(const std::string& name);
+    bool has_struct(const std::string& name);
+    bool has_enum(const std::string& name);
+    bool has_namespace(const std::string& name);
+    bool has_module(const std::string& name);
+    bool has_type(const std::string& name);
 
-    Variable get_variable(std::string name);
-    Constant get_constant(std::string name);
+    Variable get_variable(const std::string& name);
+    Constant get_constant(const std::string& name);
 
-    utils::Ref<Function> get_function(std::string name);
-    utils::Ref<Struct> get_struct(std::string name);
-    utils::Ref<Enum> get_enum(std::string name);
-    utils::Ref<Namespace> get_namespace(std::string name);
-    utils::Ref<Module> get_module(std::string name);
+    utils::Ref<Function> get_function(const std::string& name);
+    utils::Ref<Struct> get_struct(const std::string& name);
+    utils::Ref<Enum> get_enum(const std::string& name);
+    utils::Ref<Namespace> get_namespace(const std::string& name);
+    utils::Ref<Module> get_module(const std::string& name);
 
-    TypeAlias get_type(std::string name);
+    TypeAlias get_type(const std::string& name);
 
     void exit(Visitor* visitor);
 

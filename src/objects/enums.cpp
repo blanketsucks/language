@@ -4,7 +4,7 @@
 Enum::Enum(std::string name, llvm::Type* type) : name(name), type(type) {}
 
 void Enum::add_field(std::string name, llvm::Constant* value) {
-    this->scope->constants[name] = { name, value->getType(), nullptr, value, Location(), Location() };
+    this->scope->constants[name] = { name, value->getType(), nullptr, value, Span() };
 }
 
 bool Enum::has_field(std::string name) {

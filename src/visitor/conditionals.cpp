@@ -29,8 +29,8 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateCondBr(condition, then, else_);
     this->set_insert_point(then, false);
 
-    Branch* branch = func->branch;
-    func->branch = func->create_branch("if.then", branch->loop, branch->end);
+    Branch* branch = func->current_branch;
+    func->current_branch = func->create_branch(branch->loop, branch->end);
 
     expr->body->accept(*this);
 
@@ -54,27 +54,28 @@ Value Visitor::visit(ast::IfExpr* expr) {
             - In this case, unlike 2.3 we don't branch to the merge block, we just set it as the insert point.
 
     A jump can be either a `return`, `break` or a `continue` since these statements cause a branch in the LLVM IR.
+    
     */
     if (!expr->ebody) {
-        if (!func->branch->has_jump()) {
+        if (!func->current_branch->has_jump()) {
             this->builder->CreateBr(else_);
             this->set_insert_point(else_);
 
-            func->branch = branch;
+            func->current_branch = branch;
             return nullptr; 
         } else {
             this->set_insert_point(else_);
-            func->branch = branch;
+            func->current_branch = branch;
 
             return nullptr;
         }
     }
 
-    if (func->branch->has_jump()) {
+    if (func->current_branch->has_jump()) {
         this->set_insert_point(else_);
         expr->ebody->accept(*this);
 
-        func->branch = branch;
+        func->current_branch = branch;
         return nullptr;
     }
 
@@ -83,12 +84,12 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     this->set_insert_point(else_);
     
-    func->branch = func->create_branch("if.else", branch->loop, branch->end);
+    func->current_branch = func->create_branch(branch->loop, branch->end);
     expr->ebody->accept(*this);
 
-    if (func->branch->has_jump()) {
+    if (func->current_branch->has_jump()) {
         this->set_insert_point(merge);
-        func->branch = branch;
+        func->current_branch = branch;
 
         return nullptr;
     }
@@ -96,7 +97,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateBr(merge);
     this->set_insert_point(merge);
 
-    func->branch = branch;
+    func->current_branch = branch;
     return nullptr;
 }
 

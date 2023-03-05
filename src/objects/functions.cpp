@@ -18,9 +18,10 @@ Function::Function(
     this->used = false;
     this->is_finalized = false;
     this->current_block = nullptr;
+    this->current_branch = nullptr;
 
-    this->is_private = attrs.has("private");
-    this->noreturn = attrs.has("noreturn");
+    this->is_private = false;
+    this->noreturn = attrs.has(Attribute::Noreturn);
     this->attrs = attrs;
 
     this->calls = {};
@@ -34,12 +35,18 @@ uint32_t Function::argc() {
     return this->args.size() + this->kwargs.size();
 }
 
-bool Function::is_variadic() {
+bool Function::is_c_variadic() {
     return this->value->isVarArg();
 }
 
-Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::BasicBlock* end) {
-    Branch* branch = new Branch(name);
+bool Function::is_variadic() {
+    return std::any_of(this->args.begin(), this->args.end(), [](FunctionArgument& arg) {
+        return arg.is_variadic;
+    });
+}
+
+Branch* Function::create_branch(llvm::BasicBlock* loop, llvm::BasicBlock* end) {
+    Branch* branch = new Branch();
     
     branch->loop = loop;
     branch->end = end;
@@ -49,9 +56,11 @@ Branch* Function::create_branch(std::string name, llvm::BasicBlock* loop, llvm::
 }
 
 bool Function::has_return() {
-    return std::any_of(this->branches.begin(), this->branches.end(), [](Branch* branch) {
-        return branch->has_return;
-    });
+    return std::any_of(
+        this->branches.begin(), this->branches.end(), [](auto& branch) {
+            return branch->has_return;
+        }
+    );
 }
 
 bool Function::has_kwarg(std::string name) {

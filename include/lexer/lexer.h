@@ -15,7 +15,7 @@
 class Lexer {
 public:
     Lexer(const std::string& source, std::string filename);
-    Lexer(utils::filesystem::Path path);
+    Lexer(utils::fs::Path path);
 
     static bool is_keyword(std::string word);
     static TokenKind get_keyword_kind(std::string word);

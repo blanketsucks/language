@@ -2,6 +2,8 @@
 #include "utils/log.h"
 
 #include <cctype>
+#include <ios>
+#include <iterator>
 #include <string>
 
 Lexer::Lexer(const std::string& source, std::string filename) {
@@ -12,9 +14,9 @@ Lexer::Lexer(const std::string& source, std::string filename) {
     this->next();
 }
 
-Lexer::Lexer(utils::filesystem::Path path) {
+Lexer::Lexer(utils::fs::Path path) {
     this->filename = path.str();
-    this->source = path.read(true).str();
+    this->source = path.read().str();
 
     this->reset();
     this->next();
@@ -332,9 +334,7 @@ std::vector<Token> Lexer::lex() {
             this->line++;
             this->column = 0;
 
-            tokens.push_back(this->create_token(TokenKind::Newline, "\n"));
             this->next();
-
             continue;
         }
 
@@ -533,10 +533,13 @@ std::vector<Token> Lexer::lex() {
             Location start = this->loc();
             Token token;
 
-            char next = this->next();
+            char next = this->next();            
             if (next == '.' && this->peek() == '.') {
                 this->next(); this->next();
                 token = this->create_token(TokenKind::Ellipsis, start, "...");
+            } else if (next == '.') {
+                this->next();
+                token = this->create_token(TokenKind::Range, start, "..");
             } else {
                 token = this->create_token(TokenKind::Dot, ".");
             }

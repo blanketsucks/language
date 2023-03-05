@@ -30,7 +30,7 @@
     #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
-namespace utils { namespace filesystem {
+namespace utils { namespace fs {
 
 enum class OpenMode {
     Read,

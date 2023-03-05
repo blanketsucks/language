@@ -15,7 +15,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         elements.push_back(value.unwrap(element->span));
     }
 
-    if (elements.size() == 0) {
+    if (elements.empty()) {
         if (!this->ctx) {
             utils::note(expr->span, "The type of empty arrays defaults to [int; 0]");
              return llvm::ConstantAggregateZero::get(
@@ -30,14 +30,13 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         return llvm::ConstantAggregateZero::get(this->ctx);
     }
 
-    // The type of the array is determined from the first element.
     llvm::Type* etype = elements[0]->getType();
     for (size_t i = 1; i < elements.size(); i++) {
-        llvm::Value* element = elements[i];
+        auto& element = elements[i];
         if (!this->is_compatible(etype, element->getType())) {
             ERROR(expr->span, "All elements of an array must be of the same type");
         } else {
-            elements[i] = this->cast(element, etype);
+            element = this->cast(element, etype);
         }
     }
 
@@ -84,40 +83,31 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
 
 Value Visitor::visit(ast::ElementExpr* expr) {
     auto ref = this->as_reference(expr->value);
+
+    llvm::Type* type = ref.type;
+    llvm::Value* value = ref.value;
+    bool is_const = ref.is_constant;
+
+    llvm::Type* elem = type;
     if (ref.is_null()) {
-        llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->span);
+        value = expr->value->accept(*this).unwrap(expr->value->span);
         if (!value->getType()->isPointerTy()) {
             ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(value->getType()));
         }
 
-        ref.value = value;
-        ref.type = value->getType();
+        type = value->getType();
+        elem = type->getPointerElementType();
     } else {
-        if (this->get_pointer_depth(ref.type) >= 1) {
-            ref.value = this->load(ref.value);
+        if (this->get_pointer_depth(type) >= 1) {
+            value = this->load(value);
+            type = type->getPointerElementType();
         }
+
+        elem = type;
     }
 
-    if (ref.type->isStructTy() && !this->is_tuple(ref.type)) {
-        auto structure = this->get_struct(ref.type);
-        if (!structure->has_method("getitem")) {
-            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
-        }
-
-        auto method = structure->get_method("getitem");
-        if (!method->is_operator) {
-            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(ref.type));
-        }
-
-        if (method->argc() != 2) { // 2 with self
-            ERROR(expr->value->span, "Method 'getitem' of type '{0}' must take exactly one argument", this->get_type_name(ref.type));
-        }
-
-        return this->call(method->value, { expr->index->accept(*this).unwrap(expr->index->span) }, ref.value);
-    }
-
-    if (ref.type->isStructTy()) {
-        llvm::StringRef name = ref.type->getStructName();
+    if (type->isStructTy()) {
+        llvm::StringRef name = type->getStructName();
         if (!name.startswith("__tuple")) {
             ERROR(expr->value->span, "Expected a pointer, array or tuple");
         }
@@ -132,17 +122,17 @@ Value Visitor::visit(ast::ElementExpr* expr) {
             ERROR(expr->index->span, "Tuple indices must be a positive integer");
         }
 
-        uint32_t elements = ref.type->getStructNumElements();
+        uint32_t elements = type->getStructNumElements();
         if (index > elements) {
             ERROR(expr->index->span, "Element index out of bounds");
         }
 
-        if (ref.is_constant) {
+        if (is_const) {
             llvm::ConstantStruct* tuple = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
             return Value(tuple->getAggregateElement(index), true);
         }
 
-        return this->load(this->builder->CreateStructGEP(ref.type, ref.value, index));
+        return this->load(this->builder->CreateStructGEP(type, value, index));
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->span);
@@ -150,7 +140,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         ERROR(expr->index->span, "Indicies must be integers");
     }
 
-    if (ref.is_constant && llvm::isa<llvm::ConstantInt>(index)) {
+    if (is_const && llvm::isa<llvm::ConstantInt>(index)) {
         int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
         llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(ref.get_constant_value());
 
@@ -163,14 +153,13 @@ Value Visitor::visit(ast::ElementExpr* expr) {
     }
 
     llvm::Value* ptr = nullptr;
-    if (!ref.type->isArrayTy()) {
-        ptr = this->builder->CreateGEP(
-            ref.type->getPointerElementType(), ref.value, index
-        );
+    if (!type->isArrayTy()) {
+        elem->dump(); value->dump();
+        ptr = this->builder->CreateGEP(elem, value, index);
     } else {
         if (llvm::isa<llvm::ConstantInt>(index)) {
             int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
-            int64_t size = ref.type->getArrayNumElements();
+            int64_t size = type->getArrayNumElements();
 
             if (idx == size) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
@@ -178,11 +167,11 @@ Value Visitor::visit(ast::ElementExpr* expr) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
         } else {
-            this->create_bounds_check(index, ref.type->getArrayNumElements(), expr->index->span);
+            this->create_bounds_check(index, type->getArrayNumElements(), expr->index->span);
         }
 
         ptr = this->builder->CreateGEP(
-            ref.type, ref.value, {this->builder->getInt32(0), index}
+            type, value, {this->builder->getInt32(0), index}
         );
     }
     

@@ -26,8 +26,6 @@ struct FunctionReturn {
 };
 
 struct Branch {
-    std::string name;
-
     bool has_return;
     bool has_break;
     bool has_continue;
@@ -35,7 +33,7 @@ struct Branch {
     llvm::BasicBlock* loop;
     llvm::BasicBlock* end;
 
-    Branch(std::string name) : name(name), has_return(false), has_break(false), has_continue(false) {}
+    Branch() : has_return(false), has_break(false), has_continue(false) {}
 
     bool has_jump() { return this->has_return || this->has_break || this->has_continue; }
 };
@@ -51,6 +49,7 @@ struct FunctionArgument {
     bool is_kwarg;
     bool is_immutable;
     bool is_self;
+    bool is_variadic;
 
     bool is_reference() { return this->type.is_reference; }
 };
@@ -68,20 +67,7 @@ struct Function {
     std::vector<FunctionArgument> args;
     std::map<std::string, FunctionArgument> kwargs;
 
-    Scope* scope;
-
-    std::vector<Branch*> branches;
-    Branch* branch;
-
-    llvm::BasicBlock* current_block;
-
-    std::vector<llvm::Function*> calls;
-
-    utils::Ref<Struct> parent;
     bool is_private;
-
-    ast::Attributes attrs;
-
     bool is_entry;
     bool is_intrinsic;
     bool is_anonymous;
@@ -90,7 +76,18 @@ struct Function {
     bool is_finalized;
     bool is_operator;
 
-    std::vector<StructDeconstructor> dtors;
+    std::vector<Branch*> branches;
+
+    Branch* current_branch;
+    llvm::BasicBlock* current_block;
+
+    std::vector<llvm::Function*> calls;
+
+    utils::Ref<Struct> parent;
+
+    Scope* scope;
+
+    ast::Attributes attrs;
 
     Span span;
 
@@ -109,11 +106,13 @@ struct Function {
 
     std::string get_mangled_name();
 
-    Branch* create_branch(std::string name, llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
+    Branch* create_branch(llvm::BasicBlock* loop = nullptr, llvm::BasicBlock* end = nullptr);
+
     bool has_return();
 
     uint32_t argc();
-    bool is_variadic();
+    bool is_c_variadic(); // (arg1, arg2, ...)
+    bool is_variadic();   // (arg1, arg2, *args)
 
     bool has_any_default_value();
     uint32_t get_default_arguments_count();

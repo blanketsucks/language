@@ -194,6 +194,9 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     llvm::Type* from = value->getType();
     if (from->isIntegerTy() && type->isIntegerTy()) {
         return this->builder->CreateIntCast(value, type, true);
+    } else if (from->isArrayTy() && type->isPointerTy()) {
+        assert(from->getArrayElementType() == type->getPointerElementType());
+        value = this->as_reference(value);
     }
 
     return this->builder->CreateBitCast(value, type);
@@ -202,6 +205,30 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
 bool Visitor::is_valid_sized_type(llvm::Type* type) {
     // There is no way to get a non-pointer function type currently but it's good to check for it regardless.
     return !type->isVoidTy() && !type->isFunctionTy();
+}
+
+llvm::Type* Visitor::get_builtin_type(ast::BuiltinType value) {
+    switch (value) {
+        case ast::BuiltinType::Void:
+            return this->builder->getVoidTy();
+        case ast::BuiltinType::Bool:
+            return this->builder->getInt1Ty();
+        case ast::BuiltinType::i8:
+            return this->builder->getInt8Ty();
+        case ast::BuiltinType::i16:
+            return this->builder->getInt16Ty();
+        case ast::BuiltinType::i32:
+            return this->builder->getInt32Ty();
+        case ast::BuiltinType::i64:
+            return this->builder->getInt64Ty();
+        case ast::BuiltinType::i128:
+            return this->builder->getIntNTy(128);
+        case ast::BuiltinType::f32:
+            return this->builder->getFloatTy();
+        case ast::BuiltinType::f64:
+            return this->builder->getDoubleTy();
+        default: __UNREACHABLE
+    }
 }
 
 Value Visitor::visit(ast::CastExpr* expr) {
@@ -219,6 +246,15 @@ Value Visitor::visit(ast::CastExpr* expr) {
         this->get_type_name(from), this->get_type_name(to)
     );
     
+    if (from->isArrayTy() && to->isPointerTy()) {
+        if (from->getArrayElementType() != to->getPointerElementType()) {
+            utils::error(expr->span, err);
+        }
+
+        value = this->as_reference(value);
+        return this->builder->CreateBitCast(value, to);
+    }
+
     if (from->isPointerTy() && !(to->isPointerTy() || to->isIntegerTy())) {
         utils::error(expr->value->span, err);
     } else if (from->isAggregateType() && !to->isAggregateType()) {
@@ -289,27 +325,7 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
 }
 
 Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
-    switch (expr->value) {
-        case ast::BuiltinType::Void:
-            return Value::from_type(this->builder->getVoidTy());
-        case ast::BuiltinType::Bool:
-            return Value::from_type(this->builder->getInt1Ty());
-        case ast::BuiltinType::i8:
-            return Value::from_type(this->builder->getInt8Ty());
-        case ast::BuiltinType::i16:
-            return Value::from_type(this->builder->getInt16Ty());
-        case ast::BuiltinType::i32:
-            return Value::from_type(this->builder->getInt32Ty());
-        case ast::BuiltinType::i64:
-            return Value::from_type(this->builder->getInt64Ty());
-        case ast::BuiltinType::i128:
-            return Value::from_type(this->builder->getIntNTy(128));
-        case ast::BuiltinType::f32:
-            return Value::from_type(this->builder->getFloatTy());
-        case ast::BuiltinType::f64:
-            return Value::from_type(this->builder->getDoubleTy());
-        default: __UNREACHABLE
-    }
+    return Value::from_type(this->get_builtin_type(expr->value));
 }
 
 Value Visitor::visit(ast::IntegerTypeExpr* expr) {
@@ -332,10 +348,10 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
         std::string name = expr->parents.front();
         expr->parents.pop_front();
 
-        if (this->scope->has_namespace(name)) {
-            scope = this->scope->get_namespace(name)->scope;
-        } else if (this->scope->has_module(name)) {
-            scope = this->scope->get_module(name)->scope;
+        if (scope->has_namespace(name)) {
+            scope = scope->get_namespace(name)->scope;
+        } else if (scope->has_module(name)) {
+            scope = scope->get_module(name)->scope;
         } else {
             ERROR(expr->span, "Unrecognised namespace '{0}'", name);
         }
@@ -356,7 +372,7 @@ Value Visitor::visit(ast::PointerTypeExpr* expr) {
     Value ret = expr->element->accept(*this);
     if (ret.type->isPointerTy()) {
         // If the type that it's pointing to is a function, we don't want to double up on the pointer
-        llvm::Type* element = ret.type->getNonOpaquePointerElementType();
+        llvm::Type* element = ret.type->getPointerElementType();
         if (element->isFunctionTy()) {
             return ret;
         }

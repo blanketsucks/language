@@ -4,6 +4,7 @@
 #include "lexer/location.h"
 #include "lexer/tokens.h"
 #include "utils/pointer.h"
+#include "parser/attrs.h"
 #include "llvm.h"
 
 #include <iostream>
@@ -15,6 +16,8 @@ class Visitor;
 class Value;
 
 namespace ast {
+
+class Expr;
 
 enum class ExternLinkageSpecifier {
     None,
@@ -91,40 +94,19 @@ enum class BuiltinType {
     Void
 };
 
-enum class AttributeValueType {
-    Empty,
-    String,
-    Integer,
-    Identifier
-};
-
-struct Attribute {
-    AttributeValueType type;
-    std::string name;
-    std::string value;
-};
-
 struct Attributes {
-    std::map<std::string, Attribute> values;
+    std::map<Attribute::Type, Attribute> values;
 
     void add(const Attribute& attr) {
-        values[attr.name] = attr;
+        values[attr.type] = attr;
     }
 
-    void add(
-        const std::string& name,
-        AttributeValueType type = AttributeValueType::Empty, 
-        const std::string& value = ""
-    ) {
-        this->add({ type, name, value });
+    bool has(Attribute::Type type) const {
+        return this->values.find(type) != values.end();
     }
 
-    bool has(const std::string& name) const {
-        return this->values.find(name) != values.end();
-    }
-
-    Attribute get(const std::string& name) const {
-        return this->values.at(name);
+    Attribute& get(Attribute::Type type) {
+        return this->values[type];
     }
 
     void update(const Attributes& other) {
@@ -144,9 +126,6 @@ public:
     }
 
     ExprKind kind() const { return this->_kind; }
-    bool is_constant() { 
-        return this->kind() == ExprKind::Integer || this->kind() == ExprKind::Float || this->kind() == ExprKind::String;
-    }
 
     template<typename T> T* as() {
         assert(T::classof(this) && "Invalid cast.");
@@ -177,6 +156,7 @@ struct Argument {
     bool is_self;
     bool is_kwarg;
     bool is_immutable;
+    bool is_variadic;
 };
 
 class BlockExpr : public ExprMixin<ExprKind::Block> {
@@ -315,8 +295,8 @@ public:
 
     Value accept(Visitor& visitor) override;
 
-    const Expr* get_arg(uint32_t index) const;
-    const Expr* get_kwarg(const std::string& name) const;
+    utils::Scope<Expr>& get(uint32_t index);
+    utils::Scope<Expr>& get(const std::string& name);
 };
 
 class ReturnExpr : public ExprMixin<ExprKind::Return> {
@@ -333,7 +313,7 @@ public:
     std::vector<Argument> args;
     utils::Scope<TypeExpr> return_type;
 
-    bool is_variadic;
+    bool is_c_variadic;
     bool is_operator;
 
     ExternLinkageSpecifier linkage;
@@ -343,7 +323,7 @@ public:
         std::string name, 
         std::vector<Argument> args, 
         utils::Scope<TypeExpr> return_type, 
-        bool is_variadic,
+        bool is_c_variadic,
         bool is_operator,
         ExternLinkageSpecifier linkage
     );

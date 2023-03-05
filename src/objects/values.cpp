@@ -17,6 +17,7 @@ Value::Value(
     this->is_stack_allocated = false;
 
     this->type = nullptr;
+    this->builtin = nullptr;
 }
 
 bool Value::is_null() {
@@ -73,6 +74,13 @@ Value Value::from_module(utils::Ref<Module> module) {
 Value Value::from_type(Type type) {
     auto value = Value::null();
     value.type = type;
+
+    return value;
+}
+
+Value Value::from_builtin(BuiltinFunction builtin) {
+    auto value = Value::null();
+    value.builtin = builtin;
 
     return value;
 }

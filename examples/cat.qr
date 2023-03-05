@@ -5,11 +5,10 @@ const stderr = libc::fdopen(2, "w");
 
 func read_from_filename(filename: i8*) -> i8* {
     let file = libc::fopen(filename, "r");
-    if (!file) {
-        # We don't have access to `errno` so we use `__errno_location` instead, we can have `errno` to be a macro
-        # but idk about that. We could also use `perror` instead of doing all of this.
-
+    if !file {
+        # We don't have access to `errno` so we use `__errno_location` instead.
         # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
+
         let errno = *libc::errno::__errno_location();
         libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, libc::errno::strerror(errno));
 
@@ -19,7 +18,7 @@ func read_from_filename(filename: i8*) -> i8* {
     libc::fseek(file, 0, libc::SEEK_END);
     let size = libc::ftell(file);
     
-    if (!size) { # Empty file
+    if !size { # Empty file
         libc::fclose(file); return null;
     }
 
@@ -27,8 +26,8 @@ func read_from_filename(filename: i8*) -> i8* {
     let buffer = libc::malloc(size) as i8*;
 
     let n = libc::fread(buffer, 1, size, file);
-    if (n != size) {
-        if (libc::ferror(file)) {
+    if n != size {
+        if libc::ferror(file) {
             let errno = *libc::errno::__errno_location();
             libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::errno::strerror(errno));
 
@@ -44,7 +43,7 @@ func read_from_filename(filename: i8*) -> i8* {
 }
 
 func main(argc: i32, argv: i8**) -> i32 {
-    if (argc < 2) {
+    if argc < 2 {
         libc::fprintf(stderr, "Usage: %s [filenames...]\n", argv[0]);
         return 1;
     }
