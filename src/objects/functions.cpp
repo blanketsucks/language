@@ -1,4 +1,5 @@
-#include "objects/functions.h"
+#include <quart/objects/functions.h>
+#include <quart/visitor.h>
 
 #include <algorithm>
 
@@ -15,6 +16,7 @@ Function::Function(
     ast::Attributes attrs
 ) : name(name), value(value), ret(return_type, nullptr, nullptr), args(args), kwargs(kwargs), attrs(attrs), 
     is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous), is_operator(is_operator) {
+
     this->used = false;
     this->is_finalized = false;
     this->current_block = nullptr;
@@ -92,4 +94,11 @@ uint32_t Function::get_default_arguments_count() {
     return std::count_if(params.begin(), params.end(), [](FunctionArgument arg) {
         return arg.default_value != nullptr;
     });
+}
+
+void Function::destruct(Visitor& visitor) {
+    for (auto& destructor : this->destructors) {
+        auto& method = destructor.structure->scope->functions["destructor"];
+        visitor.call(method->value, {}, destructor.self);
+    }
 }

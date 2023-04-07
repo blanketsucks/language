@@ -1,16 +1,12 @@
 // TODO: Rewrite when possible
 
-#include "visitor.h"
+#include <quart/visitor.h>
 
 bool Visitor::is_struct(llvm::Value* value) {
     return this->is_struct(value->getType());
 }
 
 bool Visitor::is_struct(llvm::Type* type) {
-    if (this->impls.find(type) != this->impls.end()) {
-        return true;
-    }
-
     if (!type->isStructTy()) {
         if (!type->isPointerTy()) {
             return false;
@@ -32,10 +28,6 @@ utils::Ref<Struct> Visitor::get_struct(llvm::Value* value) {
 utils::Ref<Struct> Visitor::get_struct(llvm::Type* type) {
     if (!this->is_struct(type)) {
         return nullptr;
-    }
-
-    if (this->impls.find(type) != this->impls.end()) {
-        return this->impls[type];
     }
 
     if (type->isPointerTy()) {
@@ -217,36 +209,6 @@ Value Visitor::visit(ast::StructExpr* expr) {
         this->scope = structure->scope;
     }
 
-    if (expr->attributes.has(Attribute::Impl)) {
-        // TODO: [[impl(i32)]] struct Foo { ... }, Here whenever Foo is referenced inside the struct body it will reference the actual
-        // struct type itself instead of the type that is being implemented. 
-        // I don't know if i should keep it this way or change it so that it references the impl type.
-        auto& impl = expr->attributes.get(Attribute::Impl);
-        llvm::Type* type = impl.expr->accept(*this).type.value;
-
-        if (type->isStructTy() || type->isArrayTy() || type->isFunctionTy()) {
-            ERROR(impl.expr->span, "Cannot implement type '{0}'", this->get_type_name(type));
-        }
-
-        if (type->isPointerTy()) {
-            llvm::Type* element = type->getPointerElementType();
-            if (element->isStructTy() || element->isArrayTy() || element->isFunctionTy()) {
-                ERROR(impl.expr->span, "Cannot implement type '{0}'", this->get_type_name(type));
-            }
-        }
-        
-        if (this->impls.find(type) != this->impls.end()) {
-            ERROR(expr->span, "Cannot implement '{0}' for '{1}' because it is already implemented.", this->get_type_name(type));
-        }
-
-        if (!structure->fields.empty()) {
-            ERROR(expr->span, "Cannot have fields in an implementation struct");
-        }
-
-        structure->impl = type;
-        this->impls[type] = structure;
-    }
-
     this->scope->structs["Self"] = structure;
     this->current_struct = structure;
 
@@ -264,56 +226,77 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     llvm::Value* self = nullptr;
     llvm::Type* type = nullptr;
 
+    bool is_immutable = true;
     auto ref = this->as_reference(expr->parent);
+
     if (!ref.is_null()) {
         self = ref.value;
         type = ref.type->getPointerTo();
+
+        is_immutable = ref.is_immutable;
     } else {
         self = expr->parent->accept(*this).unwrap(expr->parent->span);
         type = self->getType();
     }
 
-    if (!this->is_struct(type)) {
-        ERROR(expr->parent->span, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(type));
-    }
-
     if (this->get_pointer_depth(type) > 1) {
-        self = this->builder->CreateLoad(type, self);
+        self = this->load(self);
         type = type->getPointerElementType();
     }
 
+    if (!this->is_struct(type) && this->impls.find(type) == this->impls.end()) {
+        ERROR(expr->parent->span, "Cannot access attribute of type '{0}'", this->get_type_name(type));
+    }
+
+    Scope* scope = nullptr;
+    utils::Ref<Struct> structure = nullptr;
+    
+    if (this->is_struct(type)) {
+        structure = this->get_struct(type);
+        scope = structure->scope;
+    } else {
+        scope = this->impls[type].scope;
+    }
+
     bool is_pointer = type->isPointerTy();
-    auto structure = this->get_struct(type);
+    if (scope->has_function(expr->attribute)) {
+        if (!is_pointer) {
+            llvm::Value* alloca = this->alloca(type);
+            this->builder->CreateStore(self, alloca);
 
-    if (structure->scope) {
-        if (structure->scope->has_function(expr->attribute)) {
-            if (!is_pointer) {
-                llvm::Value* tmp = this->as_reference(self);
-                if (!tmp) {
-                    if (!structure->impl) {
-                        ERROR(expr->parent->span, "Cannot access method '{0}' of a temporary structure", expr->attribute);
-                    }
-                    
-                    llvm::Value* alloca = this->create_alloca(structure->impl);
-                    this->builder->CreateStore(self, alloca);
-                    
-                    self = alloca;
-                } else {
-                    self = tmp;
-                }
-            }
-
-            auto function = structure->scope->functions[expr->attribute];
-            if (this->current_struct != structure && function->is_private) {
-                ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
-            }
-
-            if (function->parent && function->parent != structure) {
-                self = this->builder->CreateBitCast(self, function->parent->type->getPointerTo());
-            }
-
-            return Value::from_function(function, self);
+            self = alloca; type = type->getPointerTo();
         }
+
+        auto function = scope->functions[expr->attribute];
+        if (this->current_struct != structure && function->is_private) {
+            ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
+        }
+
+        if (function->parent && function->parent != structure) {
+            self = this->builder->CreateBitCast(self, function->parent->type->getPointerTo());
+        }
+
+        auto& arg = function->args[0];
+        if (!arg.is_immutable && is_immutable) {
+            ERROR(expr->span, "Cannot pass immutable reference to mutable argument '{0}'", arg.name);
+        }
+
+        if (arg.type != type) {
+            llvm::Value* alloca = this->alloca(type);
+            this->builder->CreateStore(self, alloca);
+
+            self = alloca;
+        }
+
+        if (this->scope->has_variable(ref.name) && !arg.is_immutable) {
+            this->mark_as_mutated(ref);
+        }
+
+        return Value::from_function(function, self);
+    }
+
+    if (!structure) {
+        ERROR(expr->span, "Cannot access attribute '{0}' of type '{1}'", expr->attribute, this->get_type_name(type));
     }
 
     int index = structure->get_field_index(expr->attribute);
@@ -321,11 +304,11 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         ERROR(expr->span, "Field '{0}' does not exist in struct '{1}'", expr->attribute, structure->name);
     }
 
-    StructField field = structure->fields.at(expr->attribute);
+    StructField& field = structure->fields[expr->attribute];
     if (this->current_struct != structure && field.is_private) {
         ERROR(expr->span, "Cannot access private field '{0}'", expr->attribute);
     }
-    
+
     if (is_pointer) {
         return this->load(this->builder->CreateStructGEP(
             type->getPointerElementType(), self, index
@@ -397,32 +380,40 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         ERROR(expr->span, "Expected {0} fields, found {1}", fields.size(), args.size());
     }
 
-    if (is_const) {
-        std::vector<llvm::Constant*> constants;
-        for (auto& pair : args) {
-            constants.push_back(llvm::cast<llvm::Constant>(pair.second));
+    if (args.size() != structure->fields.size()) {
+        for (auto& entry : structure->fields) {
+            if (args.find(entry.second.index) == args.end()) {
+                args[entry.second.index] = llvm::Constant::getNullValue(entry.second.type);
+            }
         }
-
-        return Value(llvm::ConstantStruct::get(structure->type, constants), true);
     }
     
     if (args.empty()) {
         return llvm::ConstantAggregateZero::get(structure->type);
     }
 
-    llvm::Value* alloca = this->create_alloca(structure->type);
+    llvm::Value* alloca = this->alloca(structure->type);
     for (auto& arg : args) {
         llvm::Value* ptr = this->builder->CreateStructGEP(structure->type, alloca, arg.first);
         this->builder->CreateStore(arg.second, ptr);
     }
 
-    return this->load(alloca);
+    return Value::as_aggregate(alloca);
 }
 
 void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Expr> value) {
     auto ref = this->as_reference(expr->parent);
-    llvm::Value* parent = ref.value;
+    if (ref.is_null()) {
+        llvm::Value* parent = expr->parent->accept(*this).unwrap(expr->parent->span);
+        if (!parent->getType()->isPointerTy()) {
+            ERROR(expr->parent->span, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(parent->getType()));
+        }
 
+        ref.value = parent;
+        ref.type = parent->getType()->getPointerElementType();
+    }
+
+    llvm::Value* parent = ref.value;
     if (!this->is_struct(ref.type)) {
         ERROR(expr->parent->span, "Cannot access attribute of non-struct type '{0}'", this->get_type_name(ref.type));
     }
@@ -460,6 +451,8 @@ void Visitor::store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Exp
     } else {
         attr = this->cast(attr, field.type);
     }
+
+    this->mark_as_mutated(ref);
 
     llvm::Value* ptr = this->builder->CreateStructGEP(structure->type, parent, field.index);
     this->builder->CreateStore(attr, ptr);

@@ -1,7 +1,8 @@
-#include "objects/values.h"
-#include "parser/ast.h"
-#include "visitor.h"
-#include "utils/string.h"
+#include <quart/utils/utils.h>
+#include <quart/objects/values.h>
+#include <quart/parser/ast.h>
+#include <quart/visitor.h>
+#include <quart/utils/string.h>
 
 #include "llvm/IR/Instructions.h"
 #include <functional>
@@ -55,60 +56,57 @@ std::string Visitor::get_type_name(Type type) {
 }
 
 std::string Visitor::get_type_name(llvm::Type* type) {
-    if (type->isVoidTy()) {
-        return "void";
-    } else if (type->isFloatTy()) {
-        return "f32";
-    } else if (type->isDoubleTy()) {
-        return "f64";
-    } else if (type->isIntegerTy(1)) {
-        return "bool";
-    } else if (type->isIntegerTy(8)) {
-        return "i8";
-    } else if (type->isIntegerTy(16)) {
-        return "i16";
-    } else if (type->isIntegerTy(32)) {
-        return "i32";
-    } else if (type->isIntegerTy(64)) {
-        return "i64";
-    } else if (type->isIntegerTy(128)) {
-        return "i128";
-    } else if (type->isPointerTy()) {
-        return Visitor::get_type_name(type->getPointerElementType()) + "*";
-    } else if (type->isArrayTy()) {
-        std::string name = Visitor::get_type_name(type->getArrayElementType());
-        return FORMAT("[{0}; {1}]", name, type->getArrayNumElements());
-    } else if (type->isStructTy()) {
-        llvm::StructType* ty = llvm::cast<llvm::StructType>(type);
-        llvm::StringRef name = ty->getName();
+    switch (type->getTypeID()) {
+        case llvm::Type::VoidTyID: return "void";
+        case llvm::Type::FloatTyID: return "f32";
+        case llvm::Type::DoubleTyID: return "f64";
+        case llvm::Type::IntegerTyID: {
+            uint32_t bits = type->getIntegerBitWidth();
+            if (bits == 1) {
+                return "bool";
+            } else if (bits > 128) {
+                return FORMAT("int({0})", bits);
+            } else {
+                return FORMAT("i{0}", bits);
+            }
+        }
+        case llvm::Type::PointerTyID: return Visitor::get_type_name(type->getPointerElementType()) + "*";
+        case llvm::Type::ArrayTyID: {
+            std::string name = Visitor::get_type_name(type->getArrayElementType());
+            return FORMAT("[{0}; {1}]", name, type->getArrayNumElements());
+        }
+        case llvm::Type::StructTyID: {
+            llvm::StructType* ty = llvm::cast<llvm::StructType>(type);
+            llvm::StringRef name = ty->getName();
 
-        if (name.startswith("__tuple")) {
-            std::vector<std::string> names;
-            for (auto& field : ty->elements()) {
-                names.push_back(Visitor::get_type_name(field));
+            if (name.startswith("__tuple")) {
+                std::vector<std::string> names;
+                for (auto& field : ty->elements()) {
+                    names.push_back(Visitor::get_type_name(field));
+                }
+
+                return FORMAT("({0})", llvm::make_range(names.begin(), names.end()));
             }
 
-            return FORMAT("({0})", llvm::make_range(names.begin(), names.end()));
+            return utils::replace(name.str(), ".", "::");
         }
+        case llvm::Type::FunctionTyID: {
+            llvm::FunctionType* ty = llvm::cast<llvm::FunctionType>(type);
+            std::string ret = Visitor::get_type_name(ty->getReturnType());
 
-        return utils::replace(name.str(), ".", "::");
-    } else if (type->isFunctionTy()) {
-        llvm::FunctionType* ty = llvm::cast<llvm::FunctionType>(type);
-        std::string ret = Visitor::get_type_name(ty->getReturnType());
+            std::vector<std::string> args;
+            for (auto& arg : ty->params()) {
+                args.push_back(Visitor::get_type_name(arg));
+            }
 
-        std::vector<std::string> args;
-        for (auto& arg : ty->params()) {
-            args.push_back(Visitor::get_type_name(arg));
+            if (ty->isVarArg()) {
+                args.push_back("...");
+            }
+
+            return FORMAT("func({0}) -> {1}", llvm::make_range(args.begin(), args.end()), ret);
         }
-
-        if (ty->isVarArg()) {
-            args.push_back("...");
-        }
-
-        return FORMAT("func({0}) -> {1}", llvm::make_range(args.begin(), args.end()), ret);
+        default: return "";
     }
-  
-    return "";
 }
 
 bool Visitor::is_compatible(Type t1, llvm::Type* t2) {
@@ -315,8 +313,6 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
     Value val = expr->value->accept(*this);
     if (val.structure) {
         size = this->getsizeof(val.structure->type);
-    } else if (val.enumeration) {
-        size = this->getsizeof(val.enumeration->type);
     } else {
         size = this->getsizeof(val.unwrap(expr->value->span));
     }
@@ -358,7 +354,8 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
     }
 
     if (scope->has_struct(expr->name)) {
-        return Value::from_type(scope->get_struct(expr->name)->type);
+        auto structure = scope->get_struct(expr->name);
+        return Value::from_type(structure->type, structure);
     } else if (scope->has_type(expr->name)) {
         return Value::from_type(scope->get_type(expr->name).type);
     } else if (scope->has_enum(expr->name)) {
@@ -436,7 +433,7 @@ Value Visitor::visit(ast::ReferenceTypeExpr* expr) {
         ERROR(expr->span, "Cannot create a reference to type 'void'");
     }
 
-    return Value::from_type(Type(type->getPointerTo(), true));
+    return Value::from_type(Type(type->getPointerTo(), true, expr->is_immutable));
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {

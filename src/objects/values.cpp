@@ -1,6 +1,5 @@
-#include "objects/values.h"
-
-#include "utils/log.h"
+#include <quart/objects/values.h>
+#include <quart/utils/log.h>
 
 Value::Value(
     llvm::Value* value, 
@@ -15,6 +14,7 @@ Value::Value(
     this->is_reference = false;
     this->is_immutable = false;
     this->is_stack_allocated = false;
+    this->is_aggregate = false;
 
     this->type = nullptr;
     this->builtin = nullptr;
@@ -45,34 +45,24 @@ Value Value::from_function(utils::Ref<Function> function, llvm::Value* self) {
 
 Value Value::from_struct(utils::Ref<Struct> structure) {
     auto value = Value::null();
+    
     value.structure = structure;
+    value.scope = structure->scope;
 
     return value;
 }
 
-Value Value::from_namespace(utils::Ref<Namespace> ns) {
+Value Value::from_scope(Scope* scope) {
     auto value = Value::null();
-    value.namespace_ = ns;
+    value.scope = scope;
 
     return value;
 }
 
-Value Value::from_enum(utils::Ref<Enum> enumeration) {
+Value Value::from_type(Type type, utils::Ref<Struct> structure) {
     auto value = Value::null();
-    value.enumeration = enumeration;
-
-    return value;
-}
-
-Value Value::from_module(utils::Ref<Module> module) {
-    auto value = Value::null();
-    value.module = module;
-
-    return value;
-}
-
-Value Value::from_type(Type type) {
-    auto value = Value::null();
+    
+    value.structure = structure;
     value.type = type;
 
     return value;
@@ -98,6 +88,13 @@ Value Value::as_reference(llvm::Value* ref_value, bool is_immutable, bool is_sta
     value.is_reference = true;
     value.is_immutable = is_immutable;
     value.is_stack_allocated = is_stack_allocated;
+
+    return value;
+}
+
+Value Value::as_aggregate(llvm::Value* val) {
+    auto value = Value(val, false);
+    value.is_aggregate = true;
 
     return value;
 }

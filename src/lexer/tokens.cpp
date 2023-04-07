@@ -1,4 +1,4 @@
-#include "lexer/tokens.h"
+#include <quart/lexer/tokens.h>
 
 std::string Token::get_type_value(TokenKind type) {
     switch (type) {

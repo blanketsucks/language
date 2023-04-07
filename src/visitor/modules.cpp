@@ -1,5 +1,5 @@
-#include "visitor.h"
-#include "lexer/lexer.h"
+#include <quart/visitor.h>
+#include <quart/lexer/lexer.h>
 
 static const std::vector<std::string> SEARCH_PATHS = {"lib/"};
 
@@ -20,7 +20,7 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
 
     std::string current_path;
     if (is_relative && outer) {
-        current_path = outer->path.parent();
+        current_path = outer->path.parent().str();
     }
 
     auto parts = utils::split(name, "::");
@@ -139,7 +139,10 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
     this->scope->modules[module_name] = module;
     this->modules[name] = module;
 
-    module->scope = this->create_scope(module_name, ScopeType::Module);
+    module->scope = new Scope(module_name, ScopeType::Module);
+    this->scope->children.push_back(module->scope);
+
+    this->scope = module->scope;
     this->current_module = module;
 
     this->visit(std::move(ast));
@@ -149,6 +152,25 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
     this->current_module = outer;
 
     return module;
+}
+
+Value Visitor::visit(ast::ModuleExpr* expr) {
+    if (this->scope->modules.find(expr->name) != this->scope->modules.end()) {
+        ERROR(expr->span, "Module '{0}' already exists", expr->name);
+    }
+
+    auto module = utils::make_ref<Module>(expr->name, expr->name);
+    this->scope->modules[expr->name] = module;
+
+    module->scope = this->create_scope(expr->name, ScopeType::Module);
+    this->current_module = module;
+
+    this->visit(std::move(expr->body));
+
+    this->current_module = nullptr;
+    this->scope = this->scope->parent;
+
+    return nullptr;
 }
 
 Value Visitor::visit(ast::ImportExpr* expr) {

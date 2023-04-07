@@ -1,4 +1,4 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
     std::vector<llvm::Value*> elements;
@@ -73,12 +73,16 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
         return llvm::ConstantArray::get(type, std::vector<llvm::Constant*>(size, llvm::cast<llvm::Constant>(element)));
     }
 
-    llvm::Value* array = llvm::ConstantAggregateZero::get(type);
+    llvm::Value* alloca = this->alloca(type);
     for (uint32_t i = 0; i < size; i++) {
-        array = this->builder->CreateInsertValue(array, element, {0, i});
+        llvm::Value* ptr = this->builder->CreateGEP(
+            type, alloca, {this->builder->getInt32(0), this->builder->getInt32(i)}
+        );
+        
+        this->builder->CreateStore(element, ptr);
     }
 
-    return array;
+    return Value::as_aggregate(alloca);
 }
 
 Value Visitor::visit(ast::ElementExpr* expr) {
@@ -154,7 +158,6 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 
     llvm::Value* ptr = nullptr;
     if (!type->isArrayTy()) {
-        elem->dump(); value->dump();
         ptr = this->builder->CreateGEP(elem, value, index);
     } else {
         if (llvm::isa<llvm::ConstantInt>(index)) {
@@ -179,7 +182,10 @@ Value Visitor::visit(ast::ElementExpr* expr) {
 }
 
 void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, Span span) {
-    // TODO: Disable in release mode
+    if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
+        return;
+    }
+
     llvm::BasicBlock* merge = this->create_if_statement(
         this->builder->CreateICmpSGT(index, this->builder->getInt32(count - 1))
     );
@@ -250,5 +256,6 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr
         ptr = this->builder->CreateGEP(type, parent, index);
     }
 
+    this->mark_as_mutated(ref);
     this->builder->CreateStore(element, ptr);
 }

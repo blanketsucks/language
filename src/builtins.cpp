@@ -1,7 +1,7 @@
-#include "builtins.h"
-#include "visitor.h"
-#include "utils/filesystem.h"
-#include "utils/log.h"
+#include <quart/builtins.h>
+#include <quart/visitor.h>
+#include <quart/utils/filesystem.h>
+#include <quart/utils/log.h>
 
 #define ENTRY(n) { "__builtin_"#n, builtin_##n }
 

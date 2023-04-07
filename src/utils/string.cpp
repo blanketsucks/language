@@ -1,4 +1,4 @@
-#include "utils/string.h"
+#include <quart/utils/string.h>
 
 std::string utils::join(const std::string& sep, std::vector<std::string> strings) {
     std::string result;
@@ -32,4 +32,8 @@ std::string utils::replace(std::string str, const std::string& from, const std::
     }
 
     return str;
+}
+
+bool utils::startswith(const std::string& str, const std::string& prefix) {
+    return str.rfind(prefix, 0) == 0;
 }

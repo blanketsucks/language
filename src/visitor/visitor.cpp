@@ -1,13 +1,10 @@
-#include "visitor.h"
-#include "parser/ast.h"
-#include "llvm/IR/Constant.h"
+#include <quart/visitor.h>
+#include <quart/parser/ast.h>
 
-Visitor::Visitor(std::string name, std::string entry, const OptimizationOptions& options) {
+Visitor::Visitor(std::string name, CompilerOptions& options) : options(options) {
     Builtins::init(*this);
 
     this->name = name;
-    this->entry = entry;
-    this->options = options;
 
     this->context = utils::make_scope<llvm::LLVMContext>();
     this->module = utils::make_scope<llvm::Module>(name, *this->context);
@@ -30,7 +27,7 @@ Visitor::Visitor(std::string name, std::string entry, const OptimizationOptions&
 void Visitor::finalize() {
     this->fpm->doFinalization();
 
-    this->global_scope->finalize(this-options.dead_code_elimination);
+    this->global_scope->finalize(this->options.opts.dead_code_elimination);
     delete this->global_scope;
 
     auto& globals = this->module->getGlobalList();
@@ -130,11 +127,11 @@ llvm::Constant* Visitor::to_float(double value) {
     return llvm::ConstantFP::get(*this->context, llvm::APFloat(value));
 }
 
-llvm::AllocaInst* Visitor::create_alloca(llvm::Type* type) {
+llvm::AllocaInst* Visitor::alloca(llvm::Type* type) {
     llvm::BasicBlock* block = this->builder->GetInsertBlock();
     llvm::Function* function = block->getParent();
 
-    assert(function && "`create_alloca` cannot be called from a global scope");
+    assert(function && "`alloca` cannot be called from the global scope");
 
     llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
     return tmp.CreateAlloca(type, nullptr);
@@ -317,11 +314,18 @@ ScopeLocal Visitor::as_reference(utils::Scope<ast::Expr>& expr) {
                 value = this->load(parent.value, parent.type);
             }
 
-            return ScopeLocal::from_scope_local(
+            auto ref = ScopeLocal::from_scope_local(
                 parent,
                 this->builder->CreateStructGEP(structure->type, value, index),
                 structure->type->getStructElementType(index)
             );
+
+            StructField& field = structure->fields[attribute->attribute];
+            if (this->current_struct != structure) {
+                ref.is_immutable |= field.is_readonly;
+            }
+
+            return ref;
         }
         case ast::ExprKind::UnaryOp: {
             ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
@@ -390,6 +394,19 @@ void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
 
     global->setInitializer(llvm::ConstantArray::get(array, init));
     global->setLinkage(llvm::GlobalValue::AppendingLinkage);
+}
+
+void Visitor::mark_as_mutated(const std::string& name) {
+    Variable& var = this->scope->get_variable(name);
+    var.is_mutated = true;
+}
+
+void Visitor::mark_as_mutated(const ScopeLocal& local) {
+    if (local.name.empty()) {
+        return;
+    }
+
+    this->mark_as_mutated(local.name);
 }
 
 void Visitor::visit(std::vector<utils::Scope<ast::Expr>> statements) {

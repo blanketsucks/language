@@ -1,5 +1,5 @@
-#include "parser/ast.h"
-#include "visitor.h"
+#include <quart/parser/ast.h>
+#include <quart/visitor.h>
 
 #include <vector>
 
@@ -55,15 +55,14 @@ Value VariableExpr::accept(Visitor& visitor) {
 
 VariableAssignmentExpr::VariableAssignmentExpr(
     Span span, 
-    std::vector<std::string> names, 
+    std::vector<Ident> names, 
     utils::Scope<TypeExpr> type, 
     utils::Scope<Expr> value, 
     std::string consume_rest,
     bool external,
-    bool is_multiple_variables,
-    bool is_immutable
+    bool is_multiple_variables
 ) : ExprMixin(span), names(names), external(external), 
-    is_multiple_variables(is_multiple_variables), is_immutable(is_immutable), consume_rest(consume_rest) {
+    is_multiple_variables(is_multiple_variables), consume_rest(consume_rest) {
     this->value = std::move(value);
     this->type = std::move(type);
 }
@@ -385,6 +384,16 @@ Value ImportExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
+ModuleExpr::ModuleExpr(
+    Span span, std::string name, std::vector<utils::Scope<Expr>> body
+) : ExprMixin(span), name(name) {
+    this->body = std::move(body);
+}
+
+Value ModuleExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
 TernaryExpr::TernaryExpr(
     Span span, utils::Scope<Expr> condition, utils::Scope<Expr> true_expr, utils::Scope<Expr> false_expr
 ) : ExprMixin(span) {
@@ -466,8 +475,8 @@ Value FunctionTypeExpr::accept(Visitor& visitor) {
 }
 
 ReferenceTypeExpr::ReferenceTypeExpr(
-    Span span, utils::Scope<TypeExpr> type
-) : TypeExpr(span, TypeKind::Reference) {
+    Span span, utils::Scope<TypeExpr> type, bool is_immutable
+) : TypeExpr(span, TypeKind::Reference), is_immutable(is_immutable) {
     this->type = std::move(type);
 }
 
@@ -476,7 +485,7 @@ Value ReferenceTypeExpr::accept(Visitor& visitor) {
 }
 
 ForeachExpr::ForeachExpr(
-    Span span, std::string name, utils::Scope<Expr> iterable, utils::Scope<Expr> body
+    Span span, Ident name, utils::Scope<Expr> iterable, utils::Scope<Expr> body
 ) : ExprMixin(span), name(name) {
     this->iterable = std::move(iterable);
     this->body = std::move(body);
@@ -524,5 +533,16 @@ MaybeExpr::MaybeExpr(
 }
 
 Value MaybeExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ImplExpr::ImplExpr(
+    Span span, utils::Scope<TypeExpr> type, ExprList<FunctionExpr> body
+) : ExprMixin(span) {
+    this->type = std::move(type);
+    this->body = std::move(body);
+}
+
+Value ImplExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

@@ -1,4 +1,4 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 Value Visitor::visit(ast::EnumExpr* expr) {
     llvm::Type* type = nullptr;

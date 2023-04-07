@@ -1,0 +1,25 @@
+
+struct Range {
+    readonly start: i32;
+    readonly end: i32;
+
+    private current: i32;
+
+    func new(start: i32, end: i32) -> Self {
+        return Self {
+            start: start,
+            end: end,
+            current: start,
+        };
+    }
+
+    operator func next(mut self) -> (i32, bool) {
+        if self.current < self.end {
+            let value = self.current;
+            self.current += 1;
+            return (value, true);
+        } else {
+            return (0, false);
+        }
+    }
+}

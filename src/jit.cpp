@@ -1,4 +1,4 @@
-#include "jit.h"
+#include <quart/jit.h>
 
 void jit::checkError(llvm::Error error) {
     if (error) {
@@ -14,7 +14,9 @@ void jit::ExitOnError(llvm::Error error) {
 }
 
 jit::QuartJIT::QuartJIT(
-    std::string filename, utils::Scope<llvm::Module> module, utils::Scope<llvm::LLVMContext> context
+    std::string filename, 
+    utils::Scope<llvm::Module> module, 
+    utils::Scope<llvm::LLVMContext> context
 ) {
     this->filename = filename;
     this->jit = jit::ExitOnError(llvm::orc::LLJITBuilder().create());
@@ -23,9 +25,12 @@ jit::QuartJIT::QuartJIT(
     auto& dylib = this->jit->getMainJITDylib();
     const llvm::DataLayout& layout = this->jit->getDataLayout();
 
-    auto generator = llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(layout.getGlobalPrefix());
-    dylib.addGenerator(llvm::cantFail(std::move(generator)));
+    auto generator = llvm::cantFail(
+        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(layout.getGlobalPrefix())
+    );
     
+    dylib.addGenerator(std::move(generator));
+
     this->set_error_reporter(jit::checkError);
 }
 
@@ -33,11 +38,11 @@ llvm::orc::JITDylib& jit::QuartJIT::dylib() const {
     return this->jit->getMainJITDylib();
 }
 
-llvm::orc::SymbolMap jit::QuartJIT::getSymbolMap() const {
+llvm::orc::SymbolMap jit::QuartJIT::get_symbol_map() const {
     return this->symbols;
 }
 
-llvm::orc::SymbolStringPtr jit::QuartJIT::mangle(std::string name) {
+llvm::orc::SymbolStringPtr jit::QuartJIT::mangle(const std::string& name) {
     return this->jit->mangleAndIntern(name);
 }
 

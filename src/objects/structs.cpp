@@ -1,5 +1,5 @@
-#include "objects/structs.h"
-#include "objects/scopes.h"
+#include <quart/objects/structs.h>
+#include <quart/objects/scopes.h>
 
 Struct::Struct(
     std::string name,
@@ -8,27 +8,18 @@ Struct::Struct(
     llvm::StructType* type,
     std::map<std::string, StructField> fields
 ) : name(name), qualified_name(qualified_name), type(type), fields(fields), opaque(opaque) {
-    this->impl = nullptr;
     this->scope = nullptr;
 }
 
-llvm::Type* Struct::get_self_type() {
-    if (!this->impl) {
-        return this->type;
-    }
-
-    return this->impl;
-}
-
-bool Struct::has_method(std::string name) { 
+bool Struct::has_method(const std::string& name) { 
     return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
-utils::Ref<Function> Struct::get_method(std::string name) { 
+utils::Ref<Function> Struct::get_method(const std::string& name) {
     return this->scope->functions[name]; 
 }
 
-int Struct::get_field_index(std::string name) {
+int Struct::get_field_index(const std::string& name) {
     if (this->fields.find(name) == this->fields.end()) {
         return -1;
     }
@@ -37,13 +28,13 @@ int Struct::get_field_index(std::string name) {
 }
 
 StructField Struct::get_field_at(uint32_t index) {
-    for (auto pair : this->fields) {
-        if (pair.second.index == index) {
-            return pair.second;
+    for (auto& entry : this->fields) {
+        if (entry.second.index == index) {
+            return entry.second;
         }
     }
 
-    return { "", nullptr, false, false, 0, 0 };
+    return {};
 }
 
 std::vector<StructField> Struct::get_fields(bool with_private) {

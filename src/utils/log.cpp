@@ -1,7 +1,6 @@
-#include "utils/log.h"
+#include <quart/utils/log.h>
 
 #include <algorithm>
-#include <bits/floatn-common.h>
 #include <sstream>
 
 std::string format_location_span(const Span& span) {
@@ -38,8 +37,9 @@ void utils::error(Span span, const std::string& message, bool fatal) {
     size_t len = span.line.length();
     size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
 
+    uint32_t padding = span.length() <= 0 ? 1 : span.length();
     for (size_t i = 0; i < offset; i++) stream << ' ';
-    for (size_t i = 0; i < span.length(); i++) stream << '^';
+    for (size_t i = 0; i < padding; i++) stream << '^';
 
     stream << '\n';
 

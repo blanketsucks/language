@@ -1,14 +1,15 @@
-#include "lexer/lexer.h"
-#include "parser/parser.h"
-#include "visitor.h"
-#include "jit.h"
+#include <quart/lexer.h>
+#include <quart/parser.h>
+#include <quart/visitor.h>
+#include <quart/jit.h>
 
 int main(int argc, char** argv) {
     Compiler::init();
 
     // TODO: Proper compiler interface
+    // TODO: Incorporate into the main executable
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <file>" << std::endl;
+        Compiler::error("No input file specified");
         return 1;
     }
 
@@ -26,10 +27,13 @@ int main(int argc, char** argv) {
     Parser parser(tokens);
     auto ast = parser.parse();
 
-    Visitor visitor(filename, "main");
+    CompilerOptions options;
+    options.entry = "main";
+
+    Visitor visitor(filename, options);
     visitor.visit(std::move(ast));
 
-    auto entry = visitor.global_scope->functions["main"];
+    auto& entry = visitor.global_scope->functions["main"];
     if (!entry) {
         Compiler::error("Missing main entry point function"); exit(1);
     }
@@ -42,7 +46,10 @@ int main(int argc, char** argv) {
     visitor.create_global_constructors(llvm::Function::ExternalLinkage);
     visitor.finalize();
 
-    jit::QuartJIT jit = jit::QuartJIT(filename, std::move(visitor.module), std::move(visitor.context));
+    jit::QuartJIT jit = jit::QuartJIT(
+        filename, std::move(visitor.module), std::move(visitor.context)
+    );
+    
     int code = jit.run(argc - 1, argv + sizeof(char));
 
     llvm::llvm_shutdown();

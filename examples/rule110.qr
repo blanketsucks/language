@@ -2,20 +2,23 @@
 
 import libc;
 
+import std::range;
+using Range from std::range;
+
 const SIZE = 100;
-let state: [i32; SIZE];
+let mut state: [i32; SIZE];
 
 func main() -> i32 { 
     state[SIZE - 2] = 1;
-    for (i = 0; i < (SIZE - 2); i++) {
-        for (j = 0; j < SIZE; j++) {
+    for i in Range::new(0, SIZE - 2) {
+        for j in Range::new(0, SIZE) {
             libc::putchar(" *"[state[j]]);
         }
 
         libc::putchar('\n');
 
-        let pattern = (state[0] << 1) | state[1];
-        for (j = 1; j < (SIZE - 1); j++) {
+        let mut pattern = (state[0] << 1) | state[1];
+        for j in Range::new(0, SIZE - 1) {
             pattern = ((pattern << 1) & 7) | state[j + 1];
             state[j] = (110 >> pattern) & 1;
         }

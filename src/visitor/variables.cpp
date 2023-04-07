@@ -1,4 +1,4 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 Value Visitor::visit(ast::VariableExpr* expr) {
     if (expr->name == "null") {
@@ -19,13 +19,16 @@ Value Visitor::visit(ast::VariableExpr* expr) {
     if (scope->has_struct(expr->name)) {
         return Value::from_struct(scope->get_struct(expr->name));
     } else if (scope->has_namespace(expr->name)) {
-        return Value::from_namespace(scope->get_namespace(expr->name));
+        auto ns = scope->get_namespace(expr->name);
+        return Value::from_scope(ns->scope);
     } else if (scope->has_enum(expr->name)) {
-        return Value::from_enum(scope->get_enum(expr->name));
+        auto enumeration = scope->get_enum(expr->name);
+        return Value::from_scope(enumeration->scope);
     } else if (scope->has_function(expr->name)) {
         return Value::from_function(scope->get_function(expr->name));
     } else if (scope->has_module(expr->name)) {
-        return Value::from_module(scope->get_module(expr->name));
+        auto module = scope->get_module(expr->name);
+        return Value::from_scope(module->scope);
     }
 
     if (this->builtins.count(expr->name)) {
@@ -38,7 +41,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     llvm::Type* type = nullptr;
     if (expr->external) {
-        std::string name = expr->names[0];
+        std::string name = expr->names[0].value;
 
         type = expr->type->accept(*this).type.value;
         this->module->getOrInsertGlobal(name, type);
@@ -56,6 +59,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     bool is_reference = false;
     bool is_immutable = false;
     bool is_stack_allocated = false;
+    bool is_aggregate = false;
     bool has_initializer = !!expr->value;
 
     if (!expr->value) {
@@ -82,6 +86,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         is_reference = val.is_reference;
         is_immutable = val.is_immutable;
         is_stack_allocated = val.is_stack_allocated;
+        is_aggregate = val.is_aggregate;
 
         llvm::Type* vtype = nullptr;
         if (!is_early_function_call) {
@@ -125,13 +130,13 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     }
 
     if (!expr->is_multiple_variables) {
-        std::string first = expr->names[0];
+        ast::Ident& ident = expr->names[0];
         if (!this->current_function) {
             if (!llvm::isa<llvm::Constant>(value)) {
                 ERROR(expr->value->span, "Cannot store non-constant value in a global variable");
             }
 
-            std::string name = FORMAT("__global.{0}", first);
+            std::string name = FORMAT("__global.{0}", ident.value);
             this->module->getOrInsertGlobal(name, type);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -145,13 +150,15 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 call.store = global;
             }
 
-            this->scope->variables[first] = Variable { 
-                first, 
+            this->scope->variables[ident.value] = Variable { 
+                ident.value, 
                 type, 
                 global, 
                 constant, 
                 false,
-                expr->is_immutable,
+                ident.is_immutable,
+                false,
+                false,
                 false,
                 expr->span
             };
@@ -160,25 +167,25 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         if (is_reference) {
-            if (expr->is_immutable && !is_immutable) {
-                ERROR(expr->span, "Cannot assign mutable reference to immutable reference variable '{0}'", first);
+            if (ident.is_immutable && !is_immutable) {
+                ERROR(expr->span, "Cannot assign mutable reference to immutable reference variable '{0}'", ident.value);
             }
 
-            this->scope->variables[first] = Variable::from_value(
-                first, 
+            this->scope->variables[ident.value] = Variable::from_value(
+                ident.value, 
                 value, 
-                expr->is_immutable, 
+                ident.is_immutable, 
                 true, 
                 is_stack_allocated, 
-                expr->span
+                ident.span
             );
 
             return nullptr;
         }
 
-        llvm::AllocaInst* inst = this->create_alloca(type);
+        llvm::Value* alloca = this->alloca(type);
         if (is_constant && type->isAggregateType() && has_initializer) {
-            std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, first);
+            std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, ident.value);
             this->module->getOrInsertGlobal(name, type);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -187,35 +194,39 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             global->setInitializer(llvm::cast<llvm::Constant>(value));
 
             this->builder->CreateMemCpy(
-                inst, llvm::MaybeAlign(0),
+                alloca, llvm::MaybeAlign(0),
                 global, llvm::MaybeAlign(0),
                 this->getsizeof(type)
             );
         } else {
             if (!has_initializer) {
                 this->builder->CreateMemSet(
-                    inst, this->builder->getInt8(0), 
+                    alloca, this->builder->getInt8(0), 
                     this->getsizeof(type), llvm::MaybeAlign(0)
                 );
+            } else if (is_aggregate) {
+                alloca = value;
             } else {
-                this->builder->CreateStore(value, inst);
+                this->builder->CreateStore(value, alloca);
             }
 
             if (is_early_function_call) {
                 auto& call = this->constructors.back();
-                call.store = inst;
+                call.store = alloca;
             }
         }
 
-        this->scope->variables[first] = Variable {
-            first, 
-            type, 
-            inst, 
-            is_constant ? llvm::cast<llvm::Constant>(value) : nullptr, 
-            false, 
-            expr->is_immutable,
+        this->scope->variables[ident.value] = Variable {
+            ident.value,
+            type,
+            alloca,
+            is_constant ? llvm::cast<llvm::Constant>(value) : nullptr,
+            false,
+            ident.is_immutable,
             true,
-            expr->span
+            false,
+            false,
+            ident.span
         };
     } else {
         this->store_tuple(expr->span, this->current_function, value, expr->names, expr->consume_rest);

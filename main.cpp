@@ -1,4 +1,6 @@
-#include "compiler.h"
+#include <llvm-14/llvm/MC/TargetRegistry.h>
+#include <quart/compiler.h>
+#include <quart/llvm.h>
 
 #include "llvm/Support/CommandLine.h"
 
@@ -9,6 +11,12 @@ llvm::cl::opt<bool> verbose(
 );
 llvm::cl::opt<bool> optimize(
     "optimize", llvm::cl::desc("Enable optimizations"), llvm::cl::init(false), llvm::cl::cat(category)
+);
+llvm::cl::opt<bool> standalone(
+    "standalone", llvm::cl::desc("Link with libc"), llvm::cl::init(false), llvm::cl::cat(category)
+);
+llvm::cl::opt<bool> print_all_targets(
+    "print-all-targets", llvm::cl::desc("Print all available targets"), llvm::cl::init(false), llvm::cl::cat(category)
 );
 llvm::cl::opt<OutputFormat> format(
     "format", 
@@ -39,6 +47,7 @@ llvm::cl::opt<MangleStyle> mangling(
 
 llvm::cl::opt<std::string> entry("entry", llvm::cl::desc("Set an entry point for the program"), llvm::cl::init("main"), llvm::cl::cat(category));
 llvm::cl::opt<std::string> output("output", llvm::cl::desc("Set an output file"), llvm::cl::Optional, llvm::cl::cat(category));
+llvm::cl::opt<std::string> target("target", llvm::cl::desc("Set the target triple for which the code is compiled"), llvm::cl::Optional, llvm::cl::cat(category));
 llvm::cl::list<std::string> includes(
     "I", 
     llvm::cl::Prefix,
@@ -53,7 +62,7 @@ llvm::cl::list<std::string> libraries(
     llvm::cl::value_desc("name"), 
     llvm::cl::cat(category)
 );
-llvm::cl::list<std::string> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::OneOrMore);
+llvm::cl::list<std::string> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::ZeroOrMore);
 
 struct Arguments {
     utils::fs::Path file;
@@ -67,14 +76,25 @@ struct Arguments {
     OutputFormat format;
     bool optimize;
     bool verbose;
+    bool standalone;
+    bool print_all_targets;
+    bool jit;
 };
-
 
 Arguments parse_arguments(int argc, char** argv) {
     Arguments args;
 
     llvm::cl::HideUnrelatedOptions(category);
     llvm::cl::ParseCommandLineOptions(argc, argv);
+
+    if (files.empty() && !print_all_targets) {
+        Compiler::error("No input files"); exit(1);
+    }
+
+    if (print_all_targets) {
+        args.print_all_targets = true;
+        return args;
+    }
 
     args.file = files.front(); 
     if (!args.file.exists()) {
@@ -86,8 +106,10 @@ Arguments parse_arguments(int argc, char** argv) {
     args.optimize = optimize;
     args.verbose = verbose;
     args.includes = includes;
+    args.standalone = standalone;
+    args.target = target;
 
-    args.libraries.names = libraries;
+    args.libraries.names = std::set<std::string>(libraries.begin(), libraries.end());
 
     if (output.empty()) {
         args.output = args.file.with_extension("o").str();
@@ -124,6 +146,11 @@ int main(int argc, char** argv) {
     Arguments args = parse_arguments(argc, argv);
     Compiler::init();
 
+    if (args.print_all_targets) {
+        llvm::TargetRegistry::printRegisteredTargetsForVersion(llvm::outs());
+        return 0;
+    }
+
     CompilerOptions options = {
         .input = args.file,
         .output = args.output,
@@ -138,6 +165,7 @@ int main(int argc, char** argv) {
             .mangle_style = mangling
         },
         .verbose = args.verbose,
+        .standalone = args.standalone,
         .object_files = {},
         .extras = {}
     };
@@ -156,15 +184,19 @@ int main(int argc, char** argv) {
         compiler.add_include_path(include);
     }
 
-    compiler.add_library("c");
-    compiler.add_library("pthread");
+    if (!args.standalone) {
+        compiler.add_library("c");
+        compiler.add_library("pthread");
+
+        compiler.add_object_file("lib/panic.o");
+    } else {
+        compiler.set_linker("ld");
+    }
 
     compiler.add_include_path("lib/");
 
-    compiler.add_object_file("lib/panic.o");
-
     compiler.compile().unwrap();
-
+    
     Compiler::shutdown();
     return 0;
 }

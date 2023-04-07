@@ -1,4 +1,4 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 Value Visitor::visit(ast::NamespaceExpr* expr) {
     utils::Ref<Namespace> ns = nullptr;
@@ -43,28 +43,12 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
 
 Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     Value value = expr->parent->accept(*this);
-    if (!value.namespace_ && !value.structure && !value.enumeration && !value.module) {
+    if (!value.scope && !value.structure) {
         ERROR(expr->span, "Expected a namespace, struct, enum or module");
     }
 
-    if (value.enumeration) {
-        if (value.enumeration->has_field(expr->attribute)) {
-            return value.enumeration->get_field(expr->attribute);
-        }
 
-        std::string name = value.enumeration->name;
-        ERROR(expr->span, "Field '{0}' does not exist in enum '{1}'", expr->attribute, name);
-    }
-
-    Scope* scope = nullptr;
-    if (value.namespace_) {
-        scope = value.namespace_->scope;
-    } else if (value.structure) {
-        scope = value.structure->scope;
-    } else {
-        scope = value.module->scope;
-    }
-
+    Scope* scope = value.scope ? value.scope : value.structure->scope;
     if (scope->has_constant(expr->attribute)) {
         return Value(this->load(scope->constants[expr->attribute].value), true);
     } else if (scope->has_function(expr->attribute)) {
@@ -72,11 +56,14 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
     } else if (scope->has_struct(expr->attribute)) {
         return Value::from_struct(scope->get_struct(expr->attribute));
     } else if (scope->has_enum(expr->attribute)) {
-        return Value::from_enum(scope->get_enum(expr->attribute));
+        auto& enumeration = scope->enums[expr->attribute];
+        return Value::from_scope(enumeration->scope);
     } else if (scope->has_module(expr->attribute)) {
-        return Value::from_module(scope->get_module(expr->attribute));
+        auto& module = scope->modules[expr->attribute];
+        return Value::from_scope(module->scope);
     } else if (scope->has_namespace(expr->attribute)) {
-        return Value::from_namespace(scope->get_namespace(expr->attribute));
+        auto& ns = scope->namespaces[expr->attribute];
+        return Value::from_scope(ns->scope);
     } else if (scope->has_type(expr->attribute)) {
         return Value::from_type(scope->get_type(expr->attribute).type);
     }
@@ -86,17 +73,11 @@ Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
 
 Value Visitor::visit(ast::UsingExpr* expr) {
     Value parent = expr->parent->accept(*this);
-    if (!parent.namespace_ && !parent.module) {
+    if (!parent.scope) {
         ERROR(expr->span, "Expected a namespace or module");
     }
 
-    Scope* scope = nullptr;
-    if (parent.namespace_) {
-        scope = parent.namespace_->scope;
-    } else {
-        scope = parent.module->scope;
-    }
-
+    Scope* scope = parent.scope;
     for (auto member : expr->members) {
         if (scope->structs.find(member) != scope->structs.end()) {
             this->scope->structs[member] = scope->structs[member];

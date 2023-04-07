@@ -1,4 +1,3 @@
-
 struct sockaddr {
     sa_len: i8;
     sa_family: i8;
@@ -10,7 +9,6 @@ struct in_addr {
 }
 
 struct sockaddr_in {
-    sin_len: i8;
     sin_family: i8;
     sin_port: i16;
     sin_addr: in_addr;
@@ -46,31 +44,43 @@ extern "C" {
     func connect(sockfd: i32, addr: sockaddr*, addrlen: i32) -> i32;
 
     func htons(hostshort: i16) -> i16;
+    func htonl(hostlong: i32) -> i32;
+    func ntohs(netshort: i16) -> i16;
+    func ntohl(netlong: i32) -> i32;
     
     func inet_pton(af: i32, src: i8*, dst: i8*) -> i32;
+    func inet_ntoa(addr: in_addr) -> i8*;
+    func inet_addr(cp: i8*) -> i32;
 
     func gethostbyname(name: i8*) -> hostent*;
     func getaddrinfo(node: i8*, service: i8*, hints: addrinfo*, res: addrinfo**) -> i32;
     func freeaddrinfo(res: addrinfo*) -> i32;
+
+    func getpeername(sockfd: i32, addr: sockaddr*, addrlen: i32*) -> i32;
+    func getsockname(sockfd: i32, addr: sockaddr*, addrlen: i32*) -> i32;
+
+    func getsockopt(sockfd: i32, level: i32, optname: i32, optval: i8*, optlen: i32*) -> i32;
+    func setsockopt(sockfd: i32, level: i32, optname: i32, optval: i8*, optlen: i32) -> i32;
+
+    func shutdown(sockfd: i32, how: i32) -> i32;
 }
 
-enum SocketDomain {
-    UNIX = 1,
-    INET = 2,
-    INET6 = 10,
-}
+const AF_UNSPEC = 0;
+const AF_UNIX = 1;
+const AF_INET = 2;
+const AF_INET6 = 10;
 
-enum SocketType {
-    STREAM = 1,
-    DGRAM = 2,
-    RAW = 3,
-}
+const SOCK_STREAM = 1;
+const SOCK_DGRAM = 2;
+const SOCK_RAW = 3;
 
-enum SocketProtocol {
-    TCP = 6,
-    UDP = 17,
-}
+const SHUT_RD = 0;
+const SHUT_WR = 1;
+const SHUT_RDWR = 2;
 
-enum SocketFlag {
-    NONBLOCK = 64
-}
+const SOL_SOCKET = 1;
+const SO_REUSEADDR = 2;
+const SO_REUSEPORT = 15;
+const SO_KEEPALIVE = 9;
+const SO_LINGER = 13;
+const SO_RCVBUF = 8;

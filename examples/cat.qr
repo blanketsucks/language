@@ -1,6 +1,9 @@
 import libc;
 import libc::errno;
 
+import std::range;
+using Range from std::range;
+
 const stderr = libc::fdopen(2, "w");
 
 func read_from_filename(filename: i8*) -> i8* {
@@ -48,7 +51,7 @@ func main(argc: i32, argv: i8**) -> i32 {
         return 1;
     }
 
-    for (i = 1; i < argc; i += 1) {
+    for i in Range::new(1, argc) {
         let filename = argv[i];
         let buffer = read_from_filename(filename);
 

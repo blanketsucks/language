@@ -4,6 +4,8 @@ const SEEK_SET = 0;
 struct FILE;
 
 extern "C" {
+    func read(fd: i32, buf: void*, n: i32) -> i32;
+    func write(fd: i32, buf: void*, n: i32) -> i32;
     func close(fd: i32) -> i32;
 
     func fopen(path: i8*, mode: i8*) -> FILE*;

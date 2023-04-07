@@ -1,9 +1,8 @@
-#include "compiler.h"
-#include "llvm.h"
-#include "visitor.h"
-#include "lexer/lexer.h"
-#include "parser/parser.h"
-#include "utils/string.h"
+#include <quart/compiler.h>
+#include <quart/visitor.h>
+#include <quart/lexer.h>
+#include <quart/parser.h>
+#include <quart/utils/string.h>
 
 #include "llvm/Passes/PassBuilder.h"
 
@@ -50,10 +49,10 @@ void Compiler::shutdown() {
     llvm::llvm_shutdown();
 }
 
-void Compiler::add_library(std::string name) { this->options.libs.names.push_back(name); }
-void Compiler::add_library_path(std::string path) { this->options.libs.paths.push_back(path); }
-void Compiler::set_libraries(std::vector<std::string> names) { this->options.libs.names = names; }
-void Compiler::set_library_paths(std::vector<std::string> paths) { this->options.libs.paths = paths; }
+void Compiler::add_library(std::string name) { this->options.libs.names.insert(name); }
+void Compiler::add_library_path(std::string path) { this->options.libs.paths.insert(path); }
+void Compiler::set_libraries(std::set<std::string> names) { this->options.libs.names = names; }
+void Compiler::set_library_paths(std::set<std::string> paths) { this->options.libs.paths = paths; }
 void Compiler::add_include_path(std::string path) { this->options.includes.push_back(path); }
 void Compiler::set_output_format(OutputFormat format) { this->options.format = format; }
 void Compiler::set_output_file(std::string output) { this->options.output = output; }
@@ -180,7 +179,7 @@ CompilerError Compiler::compile() {
         Compiler::log_duration("Parsing", start);
     }
 
-    Visitor visitor(this->options.input.str(), this->options.entry, this->options.opts);
+    Visitor visitor(this->options.input.str(), this->options);
     if (this->options.verbose) {
         start = Compiler::now();
     }

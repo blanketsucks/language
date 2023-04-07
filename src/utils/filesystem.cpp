@@ -1,4 +1,6 @@
-#include "utils/filesystem.h"
+#include <quart/utils/filesystem.h>
+
+#include <cerrno>
 
 using namespace utils;
 
@@ -32,6 +34,20 @@ fs::Path fs::Path::cwd() {
 #endif
 }
 
+fs::Path fs::Path::home() {
+#if _WIN32 || _WIN64
+    char buffer[MAX_PATH];
+    GetEnvironmentVariableA("USERPROFILE", buffer, MAX_PATH);
+
+    return Path(buffer);
+#else
+    char* buffer = getenv("HOME");
+    assert(buffer && "getenv() error");
+
+    return Path(buffer);
+#endif
+}
+
 bool fs::Path::operator==(const Path& other) const {
     return this->name == other.name;
 }
@@ -48,21 +64,39 @@ fs::Path fs::Path::operator/(const Path& other) {
     return this->join(other.name);
 }
 
+fs::Path::operator std::string() const {
+    return this->name;
+}
+
+struct stat fs::Path::stat() {
+    struct stat buffer;
+    ::stat(this->name.c_str(), &buffer);
+
+    return buffer;
+}
+
+struct stat fs::Path::stat(int& err) {
+    struct stat buffer;
+    err = ::stat(this->name.c_str(), &buffer);
+
+    return buffer;
+}
+
 bool fs::Path::exists() const {
     struct stat buffer;
-    return (stat(this->name.c_str(), &buffer) == 0);
+    return ::stat(this->name.c_str(), &buffer) == 0;
 }
 
 bool fs::Path::isfile() const {
     struct stat buffer;
-    stat(this->name.c_str(), &buffer);
+    ::stat(this->name.c_str(), &buffer);
 
     return S_ISREG(buffer.st_mode);
 }
 
 bool fs::Path::isdir() const {
     struct stat buffer;
-    stat(this->name.c_str(), &buffer);
+    ::stat(this->name.c_str(), &buffer);
 
     return S_ISDIR(buffer.st_mode);
 }
@@ -84,7 +118,7 @@ std::string fs::Path::filename() {
     return this->name.substr(pos + 1);
 }
 
-std::string fs::Path::parent() {
+fs::Path fs::Path::parent() {
     if (this->isdir()) {
         return this->name;
     }
@@ -138,8 +172,11 @@ std::vector<fs::Path> fs::Path::listdir() {
     }
 #else
     DIR* dir = opendir(this->name.c_str());
-    struct dirent* entry;
+    if (!dir) {
+        return paths;
+    }
 
+    struct dirent* entry;
     while ((entry = readdir(dir))) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;

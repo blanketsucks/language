@@ -1,4 +1,4 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 static std::map<TokenKind, std::string> STRUCT_OP_MAPPING = {
     {TokenKind::Add, "add"},
@@ -117,7 +117,9 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             auto* unary = expr->left->as<ast::UnaryOpExpr>();
             if (unary->op == TokenKind::Mul) { // *a = b
                 llvm::Value* value = expr->right->accept(*this).unwrap(expr->span);
-                llvm::Value* parent = unary->value->accept(*this).unwrap(expr->span);
+
+                Value val = unary->value->accept(*this);
+                llvm::Value* parent = val.unwrap(expr->span);
 
                 llvm::Type* type = parent->getType();
                 if (!type->isPointerTy()) {
@@ -127,6 +129,10 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                 type = type->getPointerElementType();
                 if (!this->is_compatible(type, value->getType())) {
                     ERROR(expr->right->span, "Cannot assign value of type '{0}' to variable of type '{1}'", this->get_type_name(value->getType()), this->get_type_name(type));
+                }
+
+                if (val.is_immutable) {
+                    ERROR(expr->span, "Cannot assign to immutable value");
                 }
 
                 value = this->cast(value, type);
@@ -143,8 +149,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             );
 
             if (!check) {
-                // TODO: idk what should the error message be
-                ERROR(expr->span, "Left hand side of assignment must be a variable, struct field or array element");
+                ERROR(expr->span, "Expected a tuple of identifiers");
             }
 
             llvm::Value* right = expr->right->accept(*this).unwrap(expr->span);
@@ -177,6 +182,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
                 }
 
                 this->builder->CreateStore(this->cast(value, ref.type), inst);
+                this->mark_as_mutated(ref);
             }
 
             return nullptr;
@@ -204,7 +210,9 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
             );
         }
 
+        this->mark_as_mutated(ref);
         this->builder->CreateStore(value, inst);
+
         return value;
     }
 
@@ -228,19 +236,11 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         if (STRUCT_OP_MAPPING.find(expr->op) != STRUCT_OP_MAPPING.end()) {
             auto method = structure->scope->functions[STRUCT_OP_MAPPING[expr->op]];
             if (!method) {
-                if (!structure->impl) {
-                    utils::error(expr->span, err);
-                }
-
-                goto __continue; // TODO: Find a better way to do this.
+                utils::error(expr->span, err);
             }
 
             if (!method->is_operator) {
-                if (!structure->impl) {
-                    utils::error(expr->span, err);
-                }
-
-                goto __continue; // TODO: Find a better way to do this.
+                utils::error(expr->span, err);
             }
 
             llvm::Value* self = lhs;
@@ -252,7 +252,6 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         }
     }
 
-__continue:
     if (!this->is_compatible(ltype, rtype)) {
         utils::error(expr->span, err);
     } else {
@@ -359,13 +358,15 @@ __continue:
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->span);
-    auto local = this->as_reference(expr->left);
-    if (local.is_constant) {
+    auto ref = this->as_reference(expr->left);
+    if (ref.is_constant) {
         ERROR(expr->span, "Cannot assign to constant");
+    } else if (ref.is_immutable) {
+        ERROR(expr->span, "Cannot assign to immutable variable '{0}'", ref.name);
     }
 
-    llvm::Value* parent = local.value;
-    llvm::Value* lhs = this->load(parent, local.type);
+    llvm::Value* parent = ref.value;
+    llvm::Value* lhs = this->load(parent, ref.type);
 
     llvm::Value* result = nullptr;
     switch (expr->op) {
@@ -380,6 +381,8 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
         default: __UNREACHABLE
     }
 
+    this->mark_as_mutated(ref);
     this->builder->CreateStore(result, parent);
+    
     return result;
 }

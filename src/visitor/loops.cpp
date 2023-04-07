@@ -1,7 +1,11 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 Value Visitor::visit(ast::WhileExpr* expr) {
     llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->span);
+    if (!condition->getType()->isIntegerTy(1)) {
+        condition = this->builder->CreateIsNotNull(condition);
+    }
+
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
 
     auto func = this->current_function;
@@ -11,7 +15,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
 
     Branch* branch = func->current_branch;
 
-    this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
+    this->builder->CreateCondBr(condition, loop, end);
     this->set_insert_point(loop, false);
 
     func->current_branch = func->create_branch(loop, end);
@@ -25,7 +29,11 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     }
 
     condition = expr->condition->accept(*this).unwrap(expr->condition->span);
-    this->builder->CreateCondBr(this->cast(condition, this->builder->getInt1Ty()), loop, end);
+    if (!condition->getType()->isIntegerTy(1)) {
+        condition = this->builder->CreateIsNotNull(condition);
+    }
+
+    this->builder->CreateCondBr(condition, loop, end);
 
     this->set_insert_point(end);
     func->current_branch = branch;
@@ -85,52 +93,72 @@ Value Visitor::visit(ast::ContinueExpr*) {
 }
 
 Value Visitor::visit(ast::ForeachExpr* expr) {
-    llvm::Value* iterable = expr->iterable->accept(*this).unwrap(expr->iterable->span);
-    std::string err = FORMAT("Cannot iterate over value of type '{0}'", this->get_type_name(iterable->getType()));
+    auto ref = this->as_reference(expr->iterable);
+    if (ref.is_null()) {
+        llvm::Value* value = expr->iterable->accept(*this).unwrap(expr->iterable->span);
 
-    if (!this->is_struct(iterable->getType())) {
-        utils::error(expr->iterable->span, err);
-    }
+        ref.value = value;
+        ref.type = value->getType();
 
-    llvm::Value* self = iterable;
-    llvm::Type* itype = iterable->getType();
+        if (!ref.type->isPointerTy()) {
+            ref.value = this->alloca(ref.type);
+            this->builder->CreateStore(value, ref.value);
 
-    if (!itype->isPointerTy()) {
-        self = this->as_reference(self);
-        if (!self) {
-            self = this->create_alloca(itype);
-            this->builder->CreateStore(iterable, self);
+            ref.type = ref.type->getPointerTo();
+        }
+    } else {
+        ref.type = ref.value->getType();
+
+        if (this->get_pointer_depth(ref.type) > 1) {
+            ref.value = this->load(ref.value);
+            ref.type = ref.value->getType();
         }
     }
 
-    auto structure = this->get_struct(itype);
+    if (!this->is_struct(ref.type)) {
+        ERROR(expr->iterable->span, "Cannot iterate over value of type '{0}'", this->get_type_name(ref.type));
+    }
+
+    auto structure = this->get_struct(ref.type);
     if (structure->has_method("iter")) {
-        auto iter = structure->get_method("iter");
-        if (!iter->is_operator) {
-            utils::error(expr->iterable->span, err);
+        auto method = structure->get_method("iter");
+        if (!method->is_operator) {
+            ERROR(expr->iterable->span, "Cannot iterate over value of type '{0}'", this->get_type_name(ref.type));
         }
 
-        iterable = this->call(iter->value, {}, self);
-        itype = iterable->getType();
-
-        if (!this->is_struct(itype)) {
-            utils::error(expr->iterable->span, err);
+        FunctionArgument& self = method->args[0];
+        if (!self.is_immutable && ref.is_immutable) {
+            ERROR(expr->iterable->span, "Cannot pass immutable reference to mutable argument 'self' to call to 'iter'");
         }
 
-        self = iterable;
-        if (!itype->isPointerTy()) {
-            self = this->as_reference(self);
-            if (!self) {
-                self = this->create_alloca(itype);
-                this->builder->CreateStore(iterable, self);
-            }
+        if (!ref.is_immutable) {
+            this->mark_as_mutated(ref);
         }
 
-        structure = this->get_struct(itype);
+        Value value = this->call(method, {}, ref.value);
+        llvm::Value* iterable = value.unwrap(expr->iterable->span);
+
+        if (!this->is_struct(iterable->getType())) {
+            ERROR(expr->iterable->span, "Cannot iterate over value of type '{0}'", this->get_type_name(ref.type));
+        }
+
+        ref.type = iterable->getType();
+        ref.is_immutable = value.is_immutable;
+
+        if (!ref.type->isPointerTy()) {
+            ref.value = this->alloca(ref.type);
+            this->builder->CreateStore(iterable, ref.value);
+
+            ref.type = ref.type->getPointerTo();
+        } else {
+            ref.value = iterable;
+        }
+
+        structure = this->get_struct(ref.type);
     }
 
     if (!structure->has_method("next")) {
-        utils::error(expr->iterable->span, err);
+        ERROR(expr->iterable->span, "Cannot iterate over value of type '{0}'", this->get_type_name(ref.type));
     }
 
     auto next = structure->get_method("next");
@@ -143,14 +171,23 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
         ERROR(next->span, "Return value of next() must be a tuple of T and bool");
     }
 
+    FunctionArgument& self = next->args[0];
+    if (!self.is_immutable && ref.is_immutable) {
+        ERROR(expr->iterable->span, "Cannot pass immutable reference to mutable argument 'self' to call to 'next'");
+    }
+
+    if (!ref.is_immutable) {
+        this->mark_as_mutated(ref);
+    }
+
     llvm::Type* type = next->ret->getStructElementType(0);
     
-    llvm::Value* tuple = this->call(next->value, {}, self);
+    llvm::Value* tuple = this->call(next->value, {}, ref.value);
 
     llvm::Value* ok = this->builder->CreateExtractValue(tuple, 1);
     llvm::Value* value = this->builder->CreateExtractValue(tuple, 0);
 
-    llvm::AllocaInst* alloca = this->create_alloca(type);
+    llvm::AllocaInst* alloca = this->alloca(type);
     this->builder->CreateStore(value, alloca);
 
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
@@ -167,7 +204,10 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
 
     func->current_branch = func->create_branch(loop, stop);
 
-    this->scope->variables[expr->name] = Variable::from_alloca(expr->name, alloca);
+    this->scope->variables[expr->name.value] = Variable::from_alloca(
+        expr->name.value, alloca, expr->name.is_immutable, expr->name.span
+    );
+
     expr->body->accept(*this);
 
     if (func->current_branch->has_jump()) {
@@ -177,7 +217,7 @@ Value Visitor::visit(ast::ForeachExpr* expr) {
         return nullptr;
     }
 
-    tuple = this->call(next->value, {}, self);
+    tuple = this->call(next->value, {}, ref.value);
 
     ok = this->builder->CreateExtractValue(tuple, 1);
     value = this->builder->CreateExtractValue(tuple, 0);

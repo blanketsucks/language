@@ -1,5 +1,5 @@
-#include "objects/enums.h"
-#include "objects/scopes.h"
+#include <quart/objects/enums.h>
+#include <quart/objects/scopes.h>
 
 Enum::Enum(std::string name, llvm::Type* type) : name(name), type(type) {}
 

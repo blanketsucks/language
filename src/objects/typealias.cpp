@@ -1,4 +1,4 @@
-#include "objects/typealias.h"
+#include <quart/objects/typealias.h>
 
 TypeAlias TypeAlias::from_enum(utils::Ref<Enum> enumeration) {
     return { enumeration->name, enumeration->type, enumeration, enumeration->span };

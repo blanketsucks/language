@@ -1,6 +1,10 @@
-#include "visitor.h"
+#include <quart/visitor.h>
 
 void Visitor::panic(const std::string& message, Span span) {
+    if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
+        this->builder->CreateUnreachable(); return;
+    }
+
     llvm::Function* function = this->module->getFunction("__quart_panic"); // Defined in lib/panic.c
     if (!function) {
         function = this->create_function(

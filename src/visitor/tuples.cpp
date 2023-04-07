@@ -1,5 +1,14 @@
-#include "visitor.h"
-#include "utils/utils.h"
+#include <quart/visitor.h>
+#include <quart/utils/utils.h>
+
+struct TupleElement {
+    std::string name;
+    llvm::Value* value;
+
+    bool is_immutable;
+
+    Span span;
+};
 
 bool Visitor::is_tuple(llvm::Type* type) {
     return type->isStructTy() && type->getStructName().startswith("__tuple");
@@ -71,24 +80,27 @@ void Visitor::store_tuple(
     Span span, 
     utils::Ref<Function> func, 
     llvm::Value* value, 
-    std::vector<std::string> names,
+    const std::vector<ast::Ident>& names,
     std::string consume_rest
 ) {
     std::vector<llvm::Value*> values;
     if (consume_rest.empty()) {
         values = this->unpack(value, names.size(), span);
-        for (auto& pair : utils::zip(names, values)) {
-            llvm::AllocaInst* alloca = this->create_alloca(pair.second->getType());
-            this->builder->CreateStore(pair.second, alloca);
+        for (auto& entry : utils::zip(names, values)) {
+            llvm::AllocaInst* alloca = this->alloca(entry.second->getType());
+            this->builder->CreateStore(entry.second, alloca);
 
-            func->scope->variables[pair.first] = Variable::from_alloca(pair.first, alloca);
+            ast::Ident& ident = entry.first;
+            func->scope->variables[ident.value] = Variable::from_alloca(
+                ident.value, alloca, ident.is_immutable, ident.span
+            );
         }
 
         return;
     }
 
     if (!consume_rest.empty() && names.size() == 1) {
-        llvm::AllocaInst* alloca = this->create_alloca(value->getType());
+        llvm::AllocaInst* alloca = this->alloca(value->getType());
         this->builder->CreateStore(value, alloca);
 
         func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
@@ -114,7 +126,9 @@ void Visitor::store_tuple(
     // We need to know how many variables are before and after the consume rest and it's position, from there
     // we can chop off the values and store them in their respective variables and the values left will be
     // stored in the consume rest variable as a tuple.
-    auto iter = std::find(names.begin(), names.end(), consume_rest);
+    auto iter = std::find_if(names.begin(), names.end(), [consume_rest](const ast::Ident& ident) {
+        return ident.value == consume_rest;
+    });
 
     size_t index = iter - names.begin();
     size_t rest = names.size() - index - 1;
@@ -127,14 +141,18 @@ void Visitor::store_tuple(
         values.pop_back();
     }
 
-    std::vector<std::pair<std::string, llvm::Value*>> finals;
+    std::vector<TupleElement> finals;
     for (size_t i = 0; i < index; i++) {
-        finals.push_back({names[i], values[i]});
+        const ast::Ident& ident = names[i];
+
+        finals.push_back({ident.value, values[i], ident.is_immutable, ident.span});
         values.erase(values.begin());
     }
 
     for (size_t i = index + 1; i < names.size(); i++) {
-        finals.push_back({names[i], last.back()});
+        const ast::Ident& ident = names[i];
+
+        finals.push_back({ident.value, last.back(), ident.is_immutable, ident.span});
         last.pop_back();
     }
 
@@ -147,7 +165,7 @@ void Visitor::store_tuple(
     }
 
     llvm::StructType* type = this->create_tuple_type(types);
-    llvm::AllocaInst* alloca = this->create_alloca(type);
+    llvm::AllocaInst* alloca = this->alloca(type);
 
     for (size_t i = 0; i < values.size(); i++) {
         llvm::Value* ptr = this->builder->CreateStructGEP(type, alloca, i);
@@ -155,10 +173,12 @@ void Visitor::store_tuple(
     }
 
     func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
-    for (auto& pair : finals) {
-        alloca = this->create_alloca(pair.second->getType());
-        this->builder->CreateStore(pair.second, alloca);
+    for (auto& entry : finals) {
+        alloca = this->alloca(entry.value->getType());
+        this->builder->CreateStore(entry.value, alloca);
 
-        func->scope->variables[pair.first] = Variable::from_alloca(pair.first, alloca);
+        func->scope->variables[entry.name] = Variable::from_alloca(
+            entry.name, alloca, entry.is_immutable, entry.span
+        );
     }
 }

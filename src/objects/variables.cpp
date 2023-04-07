@@ -1,4 +1,4 @@
-#include "objects/variables.h"
+#include <quart/objects/variables.h>
 
 Variable Variable::from_alloca(
     std::string name, llvm::AllocaInst* alloca, bool is_immutable, Span span
@@ -11,6 +11,8 @@ Variable Variable::from_alloca(
         false, 
         is_immutable,
         true,
+        false,
+        false,
         span
     };
 }
@@ -34,12 +36,14 @@ Variable Variable::from_value(
         is_reference, 
         is_immutable,
         is_stack_allocated,
+        false,
+        false,
         span
     };
 }
 
 Variable Variable::null() {
-    return { "", nullptr, nullptr, nullptr, false, false, false, Span() };
+    return { "", nullptr, nullptr, nullptr, false, false, false, false, false, Span() };
 }
 
 bool Variable::is_null() {

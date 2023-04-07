@@ -1,10 +1,28 @@
-#include "lexer/lexer.h"
-#include "utils/log.h"
+#include <quart/lexer/lexer.h>
+#include <quart/utils/log.h>
 
 #include <cctype>
 #include <ios>
 #include <iterator>
 #include <string>
+
+static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
+    {'~', TokenKind::BinaryNot},
+    {'(', TokenKind::LParen},
+    {')', TokenKind::RParen},
+    {'{', TokenKind::LBrace},
+    {'}', TokenKind::RBrace},
+    {'[', TokenKind::LBracket},
+    {']', TokenKind::RBracket},
+    {';', TokenKind::SemiColon},
+    {',', TokenKind::Comma},
+    {'?', TokenKind::Maybe},
+    {'%', TokenKind::Mod}
+};
+
+bool isxdigit(char c) {
+    return std::isxdigit(c);
+}
 
 Lexer::Lexer(const std::string& source, std::string filename) {
     this->source = source;
@@ -103,52 +121,82 @@ Span Lexer::make_span(const Location& start, const Location& end) {
     };
 }
 
+char Lexer::validate_hex_escape() {
+    char hex[3] = {
+        this->next(),
+        this->next(),
+        0
+    };
+
+    int i = 0;
+    while (hex[i]) {
+        if (hex[i] >= '0' && hex[i] <= '9') {
+            hex[i] -= '0';
+        } else if (hex[i] >= 'a' && hex[i] <= 'f') {
+            hex[i] -= 'a' - 10;
+        } else if (hex[i] >= 'A' && hex[i] <= 'F') {
+            hex[i] -= 'A' - 10;
+        } else {
+            ERROR(this->make_span(), "Invalid hex escape sequence");
+        }
+
+        i++;
+    }
+
+    return (char)(hex[0] * 16 + hex[1]);
+}
+
 char Lexer::escape(char current) {
     if (current != '\\') {
         return current;
     }
 
-    char next = this->next();
-    if (next == 'n') {
-        return '\n';
-    } else if (next == 't') {
-        return '\t';
-    } else if (next == 'r') {
-        return '\r';
-    } else if (next == '\\') {
-        return '\\';
-    } else if (next == '\'') {
-        return '\'';
-    } else if (next == '0') {
-        return '\0';
-    } else if (next == '"') {
-        return '"';
-    } else if (next == 'x') {
-        char hex[3];
+    switch (this->next()) {
+        case 'n':
+            return '\n';
+        case 't':
+            return '\t';
+        case 'r':
+            return '\r';
+        case '\\':
+            return '\\';
+        case '\'':
+            return '\'';
+        case '0':
+            return '\0';
+        case '"':
+            return '"';
+        case 'x':
+            return this->validate_hex_escape();
+        case 'u': case 'U': {
+            uint32_t expected = current == 'u' ? 4 : 8;
+            uint32_t codepoint = 0;
 
-        hex[0] = this->next();
-        hex[1] = this->next();
-        hex[2] = 0;
+            for (uint32_t i = 0; i < expected; i++) {
+                char c = this->next();
+                if (!std::isxdigit(c)) {
+                    ERROR(this->make_span(), "Invalid unicode escape sequence");
+                }
 
-        int i = 0;
-        while (hex[i]) {
-            if (hex[i] >= '0' && hex[i] <= '9') {
-                hex[i] -= '0';
-            } else if (hex[i] >= 'a' && hex[i] <= 'f') {
-                hex[i] -= 'a' - 10;
-            } else if (hex[i] >= 'A' && hex[i] <= 'F') {
-                hex[i] -= 'A' - 10;
-            } else {
-                ERROR(this->make_span(), "Invalid hex escape sequence");
+                codepoint *= 16;
+                if (c >= '0' && c <= '9') {
+                    codepoint += c - '0';
+                } else if (c >= 'a' && c <= 'f') {
+                    codepoint += c - 'a' + 10;
+                } else if (c >= 'A' && c <= 'F') {
+                    codepoint += c - 'A' + 10;
+                }
             }
 
-            i++;
+            if (codepoint > 0x10FFFF) {
+                ERROR(this->make_span(), "Invalid unicode escape sequence");
+            }
+
+            return (uint8_t)codepoint;
         }
-
-        return (char)(hex[0] * 16 + hex[1]);
+        default:
+            ERROR(this->make_span(), "Invalid escape sequence");
     }
-
-    ERROR(this->make_span(), "Invalid escape sequence"); exit(1);
 }
 
 bool Lexer::is_valid_identifier(uint8_t c) {
@@ -205,6 +253,18 @@ std::string Lexer::parse_unicode(uint8_t current) {
     return unicode;
 }
 
+std::string Lexer::parse_while(
+    std::string& buffer,
+    const Predicate predicate
+) {
+    while (predicate(this->current)) {
+        buffer += this->current;
+        this->next();
+    }
+
+    return buffer;
+}
+
 void Lexer::skip_comment() {
     while (this->current != '\n' && this->current != 0) {
         this->next();
@@ -226,10 +286,6 @@ Token Lexer::parse_identifier() {
     if (Lexer::is_keyword(value)) {
         return this->create_token(Lexer::get_keyword_kind(value), start, value);
     } else {
-        if (value[0] == '$') {
-            ERROR(this->make_span(start, this->loc()), "Identifiers starting with '$' are reserved for keywords.");
-        }
-
         return this->create_token(TokenKind::Identifier, start, value);
     }
 }
@@ -273,16 +329,11 @@ Token Lexer::parse_number() {
     if (value == "0") {
         if (next == 'x' || next == 'b') {
             value += next; this->next();
+
             if (next == 'x') {
-                while (std::isxdigit(this->current)) {
-                    value += this->current;
-                    this->next();
-                }
+                this->parse_while(value, isxdigit);
             } else {
-                while (this->current == '0' || this->current == '1') {
-                    value += this->current;
-                    this->next();
-                }
+                this->parse_while(value, [](char c) { return c == '0' || c == '1'; });
             }
 
             return this->create_token(TokenKind::Integer, start, value);
@@ -300,13 +351,20 @@ Token Lexer::parse_number() {
         next = this->next();
     }
 
-    while (std::isdigit(next) || next == '.') {
+    while (std::isdigit(next) || next == '.' || next == '_') {
         if (next == '.') {
             if (dot) {
                 break;
             }
 
             dot = true;
+        } else if (next == '_') {
+            if (this->peek() == '_') {
+                ERROR(this->make_span(start, this->loc()), "Invalid number literal");
+            }
+
+            next = this->next();
+            continue;
         }
 
         value += next;
@@ -320,12 +378,152 @@ Token Lexer::parse_number() {
     }
 }
 
+Token Lexer::once() {
+    char current = this->current;
+    Location start = this->loc();
+
+    if (std::isdigit(current)) {
+        return this->parse_number();
+    } else if (this->is_valid_identifier(current)) {
+        return this->parse_identifier();
+    } else if (CHAR_TO_TOKENKIND.find(current) != CHAR_TO_TOKENKIND.end()) {
+        TokenKind kind = CHAR_TO_TOKENKIND.at(current);
+        this->next();
+
+        return this->create_token(kind, start, std::string(1, current));
+    }
+
+    switch (current) {
+        case '+': {
+            char next = this->next();
+            if (next == '+') {
+                this->next();
+                return this->create_token(TokenKind::Inc, start, "++");
+            } else if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::IAdd, start, "+=");
+            }
+
+            return this->create_token(TokenKind::Add, start, "+");
+        } case '-': {
+            char next = this->next();
+            if (next == '>') {
+                this->next();
+                return this->create_token(TokenKind::Arrow, start, "->");
+            } else if (next == '-') {
+                this->next();
+                return this->create_token(TokenKind::Dec, start, "--");
+            } else if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::IMinus, start, "-=");
+            }
+            
+            return this->create_token(TokenKind::Minus, "-");
+        } case '*': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::IMul, start, "*=");
+            }
+                
+            return this->create_token(TokenKind::Mul, "*");
+        } case '/': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::IDiv, start, "/=");
+            }
+                
+            return this->create_token(TokenKind::Div, "/");
+        } case '=': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::Eq, start, "==");
+            } else if (next == '>') {
+                this->next();
+                return this->create_token(TokenKind::DoubleArrow, start, "=>");
+            }
+
+            return this->create_token(TokenKind::Assign, "=");
+        } case '>': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::Gte, start, ">=");
+            } else if (next == '>') {
+                this->next();
+                return this->create_token(TokenKind::Rsh, start, ">>");
+            }
+
+            return this->create_token(TokenKind::Gt, start, ">");
+        } case '<': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::Lte, start, "<=");
+            } else if (next == '<') {
+                this->next();
+                return this->create_token(TokenKind::Lsh, start, "<<");
+            }
+                
+            return this->create_token(TokenKind::Lt, start, "<");
+        } case '!': {
+            char next = this->next();
+            if (next == '=') {
+                this->next();
+                return this->create_token(TokenKind::Neq, start, "!=");
+            }
+            
+            return this->create_token(TokenKind::Not, start, "!");
+        } case '|': {
+            char next = this->next();
+            if (next == '|') {
+                this->next();
+                return this->create_token(TokenKind::Or, start, "||");
+            }
+                
+            return this->create_token(TokenKind::BinaryOr, start, "|");
+        } case '&': {
+            char next = this->next();
+            if (next == '&') {
+                this->next();
+                return this->create_token(TokenKind::And, start, "&&");
+            }
+            
+            return this->create_token(TokenKind::BinaryAnd, start, "&");
+        } case '.': {
+            char next = this->next();    
+            if (next == '.' && this->peek() == '.') {
+                this->next(); this->next();
+                return this->create_token(TokenKind::Ellipsis, start, "...");
+            } else if (next == '.') {
+                this->next();
+                return this->create_token(TokenKind::Range, start, "..");
+            }
+            
+            return this->create_token(TokenKind::Dot, ".");
+        } case ':': {
+            char next = this->next();
+            if (next == ':') {
+                this->next();
+                return this->create_token(TokenKind::DoubleColon, start, "::");
+            }
+            
+            return this->create_token(TokenKind::Colon, ":");
+        } 
+        case '"':
+        case '\'':
+            return this->parse_string();
+        default:
+            ERROR(this->make_span(), "Unexpected character '{0}'", this->current);
+    }
+}
+
 std::vector<Token> Lexer::lex() {
     std::vector<Token> tokens;
 
-    while (true) {
-        if (this->eof) break;
-
+    while (!this->eof) {
         if (this->current == '\n') {
             if (this->line == UINT32_MAX) {
                 ERROR(this->make_span(), "Lexer line overflow. Too many lines in file.");
@@ -336,239 +534,19 @@ std::vector<Token> Lexer::lex() {
 
             this->next();
             continue;
-        }
-
-        if (std::isspace(this->current)) {
+        } else if (std::isspace(this->current)) {
             this->next();
             if (this->current == '\t') {
                 this->column += 3;
             }
 
             continue;
-        } else if (std::isdigit(this->current)) {
-            tokens.push_back(this->parse_number());
-        } else if (this->is_valid_identifier(this->current)) {
-            tokens.push_back(this->parse_identifier());
         } else if (this->current == '#') {
             this->skip_comment();
-        } else if (this->current == '+') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '+') {
-                this->next();
-                token = this->create_token(TokenKind::Inc, start, "++");
-            } else if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::IAdd, start, "+=");
-            } else {
-                token = this->create_token(TokenKind::Add, start, "+");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '-') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '>') {
-                this->next();
-                token = this->create_token(TokenKind::Arrow, start, "->");
-            } else if (next == '-') {
-                this->next();
-                token = this->create_token(TokenKind::Dec, start, "--");
-            } else if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::IMinus, start, "-=");
-            } else {
-                token = this->create_token(TokenKind::Minus, "-");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '*') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::IMul, start, "*=");
-            } else {
-                token = this->create_token(TokenKind::Mul, "*");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '/') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::IDiv, start, "/=");
-            } else {
-                token = this->create_token(TokenKind::Div, "/");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '%') {
-            tokens.push_back(this->create_token(TokenKind::Mod, "%"));
-            this->next();
-        } else if (this->current == '=') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::Eq, start, "==");
-            } else if (next == '>') {
-                this->next();
-                token = this->create_token(TokenKind::DoubleArrow, start, "=>");
-            } else {
-                token = this->create_token(TokenKind::Assign, "=");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '>') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::Gte, start, ">=");
-            } else if (next == '>') {
-                this->next();
-                token = this->create_token(TokenKind::Rsh, start, ">>");
-            } else {
-                token = this->create_token(TokenKind::Gt, start, ">");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '<') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::Lte, start, "<=");
-            } else if (next == '<') {
-                this->next();
-                token = this->create_token(TokenKind::Lsh, start, "<<");
-            } else {
-                token = this->create_token(TokenKind::Lt, start, "<");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '!') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                token = this->create_token(TokenKind::Neq, start, "!=");
-            } else {
-                token = this->create_token(TokenKind::Not, start, "!");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '|') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '|') {
-                this->next();
-                token = this->create_token(TokenKind::Or, start, "||");
-            } else {
-                token = this->create_token(TokenKind::BinaryOr, start, "|");
-            }
-            
-            tokens.push_back(token);
-        } else if (this->current == '&') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == '&') {
-                this->next();
-                token = this->create_token(TokenKind::And, start, "&&");
-            } else {
-                token = this->create_token(TokenKind::BinaryAnd, start, "&");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '~') {
-            tokens.push_back(this->create_token(TokenKind::BinaryNot, "~"));
-            this->next();
-        } else if (this->current == '^') {
-            tokens.push_back(this->create_token(TokenKind::Xor, "^"));
-            this->next();
-        } else if (this->current == '(') {
-            tokens.push_back(this->create_token(TokenKind::LParen, "("));
-            this->next();
-        } else if (this->current == ')') {
-            tokens.push_back(this->create_token(TokenKind::RParen, ")"));
-            this->next();
-        } else if (this->current == '{') {
-            tokens.push_back(this->create_token(TokenKind::LBrace, "{"));
-            this->next();
-        } else if (this->current == '}') {
-            tokens.push_back(this->create_token(TokenKind::RBrace, "}"));
-            this->next();
-        } else if (this->current == '[') {
-            tokens.push_back(this->create_token(TokenKind::LBracket, "["));
-            this->next();
-        } else if (this->current == ']') {
-            tokens.push_back(this->create_token(TokenKind::RBracket, "]"));
-            this->next();
-        } else if (this->current == ',') {
-            tokens.push_back(this->create_token(TokenKind::Comma, ","));
-            this->next();
-        } else if (this->current == '.') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();            
-            if (next == '.' && this->peek() == '.') {
-                this->next(); this->next();
-                token = this->create_token(TokenKind::Ellipsis, start, "...");
-            } else if (next == '.') {
-                this->next();
-                token = this->create_token(TokenKind::Range, start, "..");
-            } else {
-                token = this->create_token(TokenKind::Dot, ".");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == ';') {
-            tokens.push_back(this->create_token(TokenKind::SemiColon, ";"));
-            this->next();
-        } else if (this->current == ':') {
-            Location start = this->loc();
-            Token token;
-
-            char next = this->next();
-            if (next == ':') {
-                this->next();
-                token = this->create_token(TokenKind::DoubleColon, start, "::");
-            } else {
-                token = this->create_token(TokenKind::Colon, ":");
-            }
-
-            tokens.push_back(token);
-        } else if (this->current == '"' || this->current == '\'') {
-            tokens.push_back(this->parse_string());
-        } else if (this->current == '?') {
-            tokens.push_back(this->create_token(TokenKind::Maybe, "?"));
-            this->next();
-        } else {
-            ERROR(this->make_span(), "Unexpected character '{0}'", this->current);
+            continue;
         }
+
+        tokens.push_back(this->once());
     }
 
     Token eof = {TokenKind::EOS, "\0", this->make_span()};

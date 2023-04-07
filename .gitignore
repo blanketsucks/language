@@ -1,7 +1,6 @@
 .vscode
 .clangd
 
-quart
 quart-jit
 
 *.o

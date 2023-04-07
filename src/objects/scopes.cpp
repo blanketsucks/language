@@ -1,5 +1,6 @@
-#include "objects/scopes.h"
-#include "visitor.h"
+#include <quart/objects/scopes.h>
+#include <quart/visitor.h>
+
 #include <algorithm>
 
 ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_value) {
@@ -171,6 +172,8 @@ bool Scope::has_type(const std::string& name) {
 ScopeLocal Scope::get_local(const std::string& name, bool use_store_value) {
     if (this->variables.find(name) != this->variables.end()) {
         auto& variable = this->variables[name];
+        variable.is_used = true; // TODO: Track this in a better way
+
         return ScopeLocal::from_variable(variable, use_store_value);
     } else if (this->constants.find(name) != this->constants.end()) {
         auto& constant = this->constants[name];
@@ -187,7 +190,7 @@ ScopeLocal Scope::get_local(const std::string& name, bool use_store_value) {
     }
 }
 
-Variable Scope::get_variable(const std::string& name) {
+Variable& Scope::get_variable(const std::string& name) {
     if (this->variables.find(name) != this->variables.end()) {
         return this->variables[name];
     }
@@ -196,10 +199,10 @@ Variable Scope::get_variable(const std::string& name) {
         return this->parent->get_variable(name);
     }
     
-    return Variable::null();
+    assert(false && "Variable not found");
 }
 
-Constant Scope::get_constant(const std::string& name) {
+Constant& Scope::get_constant(const std::string& name) {
     if (this->constants.find(name) != this->constants.end()) {
         return this->constants[name];
     }
@@ -208,7 +211,7 @@ Constant Scope::get_constant(const std::string& name) {
         return this->parent->get_constant(name);
     }
     
-    return Constant::null();
+    assert(false && "Constant not found");
 }
 
 utils::Ref<Function> Scope::get_function(const std::string& name) {
@@ -287,36 +290,36 @@ void Scope::exit(Visitor* visitor) {
     visitor->scope = this->parent;
 }
 
+void finalize(utils::Ref<Function>& func) {
+    if (!func) return;
+    if (func->is_finalized) return;
+
+    if (!func->has_return()) {
+        delete func->ret.block;
+    }
+
+    llvm::Function* function = func->value;
+    if (function->use_empty() && !func->is_entry) {
+        if (function->getParent()) {
+            function->eraseFromParent();
+        }
+
+        for (auto& call : func->calls) {
+            if (call->use_empty()) {
+                if (call->getParent()) {
+                    call->eraseFromParent();
+                }
+            }
+        }
+    }
+
+    func->is_finalized = true;
+}
+
 void Scope::finalize(bool eliminate_dead_functions) {
     if (eliminate_dead_functions) {
         for (auto& entry : this->functions) {
-            if (!entry.second) continue; // TODO: fix this (it's a bug probably)
-
-            if (entry.second->is_finalized) {
-                continue;
-            }
-
-            auto func = entry.second;
-            if (!func->has_return()) {
-                delete func->ret.block;
-            }
-
-            llvm::Function* function = func->value;
-            if (function->use_empty() && !func->is_entry) {
-                if (function->getParent()) {
-                    function->eraseFromParent();
-                }
-
-                for (auto& call : func->calls) {
-                    if (call->use_empty()) {
-                        if (call->getParent()) {
-                            call->eraseFromParent();
-                        }
-                    }
-                }
-            }
-            
-            func->is_finalized = true;
+            ::finalize(entry.second);
         }
     }
 
