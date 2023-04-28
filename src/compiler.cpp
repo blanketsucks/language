@@ -162,9 +162,9 @@ CompilerError Compiler::compile() {
     }
 
     Lexer lexer(this->options.input);
-    std::vector<Token> tokens = lexer.lex();
+    TimePoint start = Compiler::now();
 
-    auto start = Compiler::now();
+    std::vector<Token> tokens = lexer.lex();
     if (this->options.verbose) {
         Compiler::log_duration("Lexing", start);
     }
@@ -175,6 +175,7 @@ CompilerError Compiler::compile() {
     }
 
     auto ast = parser.parse();
+    std::cout << "Parsed " << ast.size() << " nodes" << '\n';
     if (this->options.verbose) {
         Compiler::log_duration("Parsing", start);
     }
