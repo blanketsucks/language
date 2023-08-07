@@ -1,9 +1,7 @@
-#ifndef _OBJECTS_VALUES_H
-#define _OBJECTS_VALUES_H
+#pragma once
 
 #include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
-
 #include <quart/objects/functions.h>
 #include <quart/objects/structs.h>
 #include <quart/objects/enums.h>
@@ -11,7 +9,7 @@
 #include <quart/objects/scopes.h>
 #include <quart/builtins.h>
 
-#include "llvm/IR/Value.h"
+#include <llvm/IR/Value.h>
 
 struct Value {
     llvm::Value* value;
@@ -51,5 +49,3 @@ struct Value {
     );
     static Value as_aggregate(llvm::Value* value);
 };
-
-#endif

@@ -4,7 +4,7 @@
 #include <algorithm>
 
 Function::Function(
-    std::string name,
+    const std::string& name,
     std::vector<FunctionArgument> args,
     std::map<std::string, FunctionArgument> kwargs,
     Type return_type,
@@ -13,6 +13,7 @@ Function::Function(
     bool is_intrinsic,
     bool is_anonymous,
     bool is_operator,
+    Span span,
     ast::Attributes attrs
 ) : name(name), value(value), ret(return_type, nullptr, nullptr), args(args), kwargs(kwargs), attrs(attrs), 
     is_entry(is_entry), is_intrinsic(is_intrinsic), is_anonymous(is_anonymous), is_operator(is_operator) {
@@ -24,7 +25,7 @@ Function::Function(
 
     this->is_private = false;
     this->noreturn = attrs.has(Attribute::Noreturn);
-    this->attrs = attrs;
+    this->span = span;
 
     this->calls = {};
 }
@@ -65,7 +66,7 @@ bool Function::has_return() {
     );
 }
 
-bool Function::has_kwarg(std::string name) {
+bool Function::has_kwarg(const std::string& name) {
     return this->kwargs.find(name) != this->kwargs.end();
 }
 

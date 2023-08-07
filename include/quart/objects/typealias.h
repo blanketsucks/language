@@ -1,11 +1,10 @@
-#ifndef _OBJECTS_TYPEALIAS_H
-#define _OBJECTS_TYPEALIAS_H
+#pragma once
 
 #include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
 #include <quart/objects/enums.h>
 
-#include "llvm/IR/Type.h"
+#include <llvm/IR/Type.h>
 
 struct TypeAlias {
     std::string name;
@@ -20,5 +19,3 @@ struct TypeAlias {
 
     bool is_null();
 };
-
-#endif

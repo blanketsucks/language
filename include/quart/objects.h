@@ -1,5 +1,4 @@
-#ifndef _OBJECTS_H
-#define _OBJECTS_H
+#pragma once
 
 #include <quart/objects/scopes.h>
 #include <quart/objects/functions.h>
@@ -9,5 +8,3 @@
 #include <quart/objects/values.h>
 #include <quart/objects/variables.h>
 #include <quart/objects/enums.h>
-
-#endif

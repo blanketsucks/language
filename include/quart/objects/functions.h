@@ -1,6 +1,4 @@
-#ifndef _OBJECTS_FUNCTIONS_H
-#define _OBJECTS_FUNCTIONS_H
-
+#pragma once
 
 #include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
@@ -14,6 +12,7 @@ struct Struct;
 struct FunctionCall {
     llvm::Function* function;
     std::vector<llvm::Value*> args;
+    llvm::Value* self;
     llvm::Value* store;
 };
 
@@ -88,6 +87,7 @@ struct Function {
 
     std::vector<llvm::Function*> calls;
     std::vector<StructDestructor> destructors;
+    std::vector<utils::Scope<ast::Expr>> defers;
 
     utils::Ref<Struct> parent;
 
@@ -98,7 +98,7 @@ struct Function {
     Span span;
 
     Function(
-        std::string name,
+        const std::string& name,
         std::vector<FunctionArgument> args,
         std::map<std::string, FunctionArgument> kwargs,
         Type return_type,
@@ -107,6 +107,7 @@ struct Function {
         bool is_intrinsic,
         bool is_anonymous, 
         bool is_operator,
+        Span span,
         ast::Attributes attrs
     );
 
@@ -123,11 +124,8 @@ struct Function {
     bool has_any_default_value();
     uint32_t get_default_arguments_count();
     
-    bool has_kwarg(std::string name);
+    bool has_kwarg(const std::string& name);
     std::vector<FunctionArgument> params();
 
     void destruct(Visitor& visitor);
 };
-
-
-#endif

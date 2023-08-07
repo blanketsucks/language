@@ -12,7 +12,6 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         if (!this->current_function) {
             return Value(local.value, local.is_constant);
         }
-
         return this->builder->CreateLoad(local.type, local.value);
     }
 
@@ -43,7 +42,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     if (expr->external) {
         std::string name = expr->names[0].value;
 
-        type = expr->type->accept(*this).type.value;
+        type = expr->type->accept(*this).value;
         this->module->getOrInsertGlobal(name, type);
 
         llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
@@ -63,7 +62,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     bool has_initializer = !!expr->value;
 
     if (!expr->value) {
-        type = expr->type->accept(*this).type.value;
+        type = expr->type->accept(*this).value;
         if (type->isAggregateType()) {
             value = llvm::ConstantAggregateZero::get(type);
         } else if (type->isPointerTy()) {
@@ -75,7 +74,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         is_constant = true;
     } else {
         if (expr->type) {
-            type = expr->type->accept(*this).type.value;
+            type = expr->type->accept(*this).value;
             this->ctx = type;
         }
 
@@ -166,11 +165,12 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             return nullptr;
         }
 
-        if (is_reference) {
-            if (ident.is_immutable && !is_immutable) {
-                ERROR(expr->span, "Cannot assign mutable reference to immutable reference variable '{0}'", ident.value);
-            }
+        // We only want to check for immutability if the type is a reference/pointer while ignoring aggregates
+        if ((!ident.is_immutable && is_immutable) && (is_reference || type->isPointerTy()) && !is_aggregate) {
+            ERROR(expr->value->span, "Cannot assign immutable value to mutable variable '{0}'", ident.value);
+        }
 
+        if (is_reference) {
             this->scope->variables[ident.value] = Variable::from_value(
                 ident.value, 
                 value, 
@@ -206,6 +206,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 );
             } else if (is_aggregate) {
                 alloca = value;
+                type = type->getPointerElementType();
             } else {
                 this->builder->CreateStore(value, alloca);
             }
@@ -217,16 +218,16 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         this->scope->variables[ident.value] = Variable {
-            ident.value,
-            type,
-            alloca,
-            is_constant ? llvm::cast<llvm::Constant>(value) : nullptr,
-            false,
-            ident.is_immutable,
-            true,
-            false,
-            false,
-            ident.span
+            .name = ident.value,
+            .type = type,
+            .value = alloca,
+            .constant = is_constant ? llvm::cast<llvm::Constant>(value) : nullptr,
+            .is_reference = false,
+            .is_immutable = ident.is_immutable,
+            .is_stack_allocated = true,
+            .is_used = false,
+            .is_mutated = false,
+            .span = ident.span
         };
     } else {
         this->store_tuple(expr->span, this->current_function, value, expr->names, expr->consume_rest);
@@ -247,20 +248,13 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         if (!expr->type) {
             type = value->getType();
         } else {
-            type = expr->type->accept(*this).type.value;
+            type = expr->type->accept(*this).value;
         }
     } else {
         type = this->constructors.back().function->getReturnType();
     }
 
-    std::string name = expr->name;
-    if (this->current_namespace) {
-        name = this->current_namespace->name + "." + name;
-    } else if (this->current_function) {
-        name = this->current_function->name + "." + name;
-    }
-
-    name = "__const." + name;
+    std::string name = FORMAT("__const.{0}", this->format_symbol(expr->name));
 
     this->module->getOrInsertGlobal(name, type);
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);

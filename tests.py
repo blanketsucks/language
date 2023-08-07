@@ -11,11 +11,20 @@ import sys
 import shlex
 import json
 
-examples = pathlib.Path(__file__).parent / 'examples'
 cwd = pathlib.Path(__file__).parent
-if not (cwd / 'quart').exists():
+
+examples = cwd / 'examples'
+bin = cwd / 'bin'
+
+if not bin.exists():
     print('Quart executable not found. Please run "make" before running this script.')
     exit(1)
+
+if not (bin / 'quart').exists():
+    print('Quart executable not found. Please run "make" before running this script.')
+    exit(1)
+
+EXECUTABLE = bin / 'quart'
 
 def run(executable: Union[str, os.PathLike[str]], args: Iterable[Any]) -> Tuple[int, str, str]:
     new: List[str] = [shlex.quote(str(arg)) for arg in args]
@@ -38,7 +47,7 @@ class Example:
         self.file = file
 
     def compile(self) -> None:
-        returncode, stdout, stderr = run('./quart', [self.file])
+        returncode, stdout, stderr = run(EXECUTABLE, [self.file])
         if returncode != 0:
             print(stdout)
             print(stderr)
@@ -119,12 +128,14 @@ def main() -> None:
 
         if not example.has_output_file() or do_update:
             example.update()
-            print('Updated output file.')
+            print('Updated output file.\n')
 
             i += 1
             continue
-
+        
         example.run()
+        print()
+        
         i += 1
 
     if do_update:

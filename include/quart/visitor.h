@@ -1,5 +1,4 @@
-#ifndef _VISITOR_H
-#define _VISITOR_H
+#pragma once
 
 #include <quart/lexer/location.h>
 #include <quart/utils.h>
@@ -31,7 +30,7 @@ public:
     using TupleKey = std::vector<llvm::Type*>;
     using Finalizer = std::function<void(Visitor&)>;
 
-    Visitor(std::string name, CompilerOptions& options);
+    Visitor(const std::string& name, CompilerOptions& options);
 
     void finalize();
     void add_finalizer(Finalizer finalizer);
@@ -40,13 +39,10 @@ public:
 
     void set_insert_point(llvm::BasicBlock* block, bool push = true);
 
-    Scope* create_scope(std::string name, ScopeType type);
+    Scope* create_scope(const std::string&, ScopeType type);
 
-    std::string format_name(std::string name);
+    std::string format_symbol(const std::string& name);
     std::pair<std::string, bool> format_intrinsic_function(std::string name);
-    
-    std::pair<llvm::Value*, bool> get_variable(std::string name);
-    Function* get_function(std::string name);
 
     llvm::Constant* to_str(const char* str);
     llvm::Constant* to_str(const std::string& str);
@@ -84,7 +80,7 @@ public:
         llvm::Value* value, uint32_t n, Span span = Span()
     );
 
-    llvm::StructType* make_struct(std::string name, std::map<std::string, llvm::Type*> fields);
+    utils::Ref<Struct> make_struct(const std::string& name, const std::map<std::string, llvm::Type*>& fields);
     llvm::StructType* create_variadic_struct(llvm::Type* type);
 
     void store_struct_field(ast::AttributeExpr* expr, utils::Scope<ast::Expr> value);
@@ -101,9 +97,9 @@ public:
 
     llvm::AllocaInst* alloca(llvm::Type* type);
 
-    bool is_reserved_function(std::string name);
+    bool is_reserved_function(const std::string& name);
     llvm::Function* create_function(
-        std::string name, 
+        const std::string& name, 
         llvm::Type* ret,
         std::vector<llvm::Type*> args, 
         bool is_variadic, 
@@ -146,13 +142,11 @@ public:
 
     bool is_reference_expr(utils::Scope<ast::Expr>& expr); // if it's a &expr or not
     llvm::Value* as_reference(llvm::Value* value);
-    ScopeLocal as_reference(utils::Scope<ast::Expr>& expr);
+    ScopeLocal as_reference(utils::Scope<ast::Expr>& expr, bool require_ampersand = false);
 
     uint32_t get_pointer_depth(llvm::Type* type);
 
     bool is_valid_sized_type(llvm::Type* type);
-
-    llvm::AllocaInst* repack_struct(llvm::Value* value);
 
     void panic(const std::string& message, Span span = Span());
 
@@ -160,8 +154,6 @@ public:
 
     void mark_as_mutated(const std::string& name);
     void mark_as_mutated(const ScopeLocal& local);
-
-    static void sort(std::vector<utils::Scope<ast::Expr>>& statements);
 
     void visit(std::vector<utils::Scope<ast::Expr>> statements);
 
@@ -194,26 +186,27 @@ public:
 
     Value visit(ast::WhileExpr* expr);
     Value visit(ast::ForExpr* expr);
+    Value visit(ast::RangeForExpr* expr);
     Value visit(ast::BreakExpr* expr);
     Value visit(ast::ContinueExpr* expr);
-    Value visit(ast::ForeachExpr* expr);
 
     Value visit(ast::StructExpr* expr);
     Value visit(ast::ConstructorExpr* expr);
+    Value visit(ast::EmptyConstructorExpr* expr);
     Value visit(ast::AttributeExpr* expr);
 
     Value visit(ast::ArrayExpr* expr);
     Value visit(ast::ArrayFillExpr* expr);
     Value visit(ast::ElementExpr* expr);
 
-    Value visit(ast::BuiltinTypeExpr* expr);
-    Value visit(ast::IntegerTypeExpr* expr);
-    Value visit(ast::NamedTypeExpr* expr);
-    Value visit(ast::TupleTypeExpr* expr);
-    Value visit(ast::ArrayTypeExpr* expr);
-    Value visit(ast::PointerTypeExpr* expr);
-    Value visit(ast::FunctionTypeExpr* expr);
-    Value visit(ast::ReferenceTypeExpr* expr);
+    Type visit(ast::BuiltinTypeExpr* expr);
+    Type visit(ast::IntegerTypeExpr* expr);
+    Type visit(ast::NamedTypeExpr* expr);
+    Type visit(ast::TupleTypeExpr* expr);
+    Type visit(ast::ArrayTypeExpr* expr);
+    Type visit(ast::PointerTypeExpr* expr);
+    Type visit(ast::FunctionTypeExpr* expr);
+    Type visit(ast::ReferenceTypeExpr* expr);
     Value visit(ast::TypeAliasExpr* expr);
 
     Value visit(ast::CastExpr* expr);
@@ -221,12 +214,13 @@ public:
     Value visit(ast::OffsetofExpr* expr);
 
     Value visit(ast::NamespaceExpr* expr);
-    Value visit(ast::NamespaceAttributeExpr* expr);
+    Value visit(ast::PathExpr* expr);
     Value visit(ast::UsingExpr* expr);
 
     Value visit(ast::TupleExpr* expr);
 
     Value visit(ast::EnumExpr* expr);
+    Value visit(ast::MatchExpr* expr);
 
     Value visit(ast::ImportExpr* expr);
     Value visit(ast::ModuleExpr* expr);
@@ -245,6 +239,8 @@ public:
 
     std::map<std::string, utils::Ref<Struct>> structs;
     std::map<std::string, utils::Ref<Module>> modules;
+    std::map<std::string, utils::Ref<Function>> functions;
+
     std::map<TupleKey, llvm::StructType*> tuples;
     std::map<llvm::Type*, llvm::StructType*> variadics;
     std::map<llvm::Type*, Impl> impls;
@@ -266,6 +262,6 @@ public:
     llvm::Type* self = nullptr;
 
     std::vector<Finalizer> finalizers;
-};
 
-#endif
+    bool link_panic = false;
+};

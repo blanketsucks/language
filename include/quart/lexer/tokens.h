@@ -1,5 +1,4 @@
-#ifndef _TOKENS_H
-#define _TOKENS_H
+#pragma once
 
 #include <quart/lexer/location.h>
 
@@ -49,6 +48,7 @@ enum class TokenKind {
     Readonly,
     Operator,
     Impl,
+    Match,
 
     Reserved,
 
@@ -100,7 +100,7 @@ enum class TokenKind {
     Ellipsis,
     Newline,
     Maybe,
-    Range, // ..
+    DoubleDot, // ..
     
     EOS
 };
@@ -113,7 +113,7 @@ struct Token {
 
     static std::string get_type_value(TokenKind type);
 
-    bool match(TokenKind type, std::string value);
+    bool match(TokenKind type, const std::string& value);
     bool match(TokenKind type, std::vector<std::string> values);
     bool match(std::vector<TokenKind> types);
 
@@ -156,12 +156,13 @@ static std::map<std::string, TokenKind> KEYWORDS = {
     {"readonly", TokenKind::Readonly},
     {"operator", TokenKind::Operator},
     {"impl", TokenKind::Impl},
+    {"match", TokenKind::Match},
 
     // Reserved words
     {"__tuple", TokenKind::Reserved}
 };
 
-static std::vector<std::pair<TokenKind, int>> PRECEDENCES = {
+static std::map<TokenKind, int> PRECEDENCES = {
     {TokenKind::Assign, 5},
 
     {TokenKind::And, 10},
@@ -209,6 +210,3 @@ static std::map<TokenKind, TokenKind> INPLACE_OPERATORS {
     {TokenKind::IDiv, TokenKind::Div},
     // TODO: add more
 };  
-
-
-#endif

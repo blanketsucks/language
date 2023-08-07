@@ -2,6 +2,7 @@
 #include <quart/parser.h>
 #include <quart/visitor.h>
 #include <quart/jit.h>
+#include <quart/objects/scopes.h>
 
 int main(int argc, char** argv) {
     Compiler::init();
@@ -28,30 +29,13 @@ int main(int argc, char** argv) {
     auto ast = parser.parse();
 
     CompilerOptions options;
+
     options.entry = "main";
+    options.input = path;
 
-    Visitor visitor(filename, options);
-    visitor.visit(std::move(ast));
-
-    auto& entry = visitor.global_scope->functions["main"];
-    if (!entry) {
-        Compiler::error("Missing main entry point function"); exit(1);
-    }
-
-    if (entry->args.size() > 2) {
-        Compiler::error("Main entry point function takes no more than 2 arguments"); exit(1);
-    }
-
-    // Apparently, we can only access the global ctor function only if it has the external linkage
-    visitor.create_global_constructors(llvm::Function::ExternalLinkage);
-    visitor.finalize();
-
-    jit::QuartJIT jit = jit::QuartJIT(
-        filename, std::move(visitor.module), std::move(visitor.context)
-    );
+    Compiler compiler(options);
+    int code = compiler.jit(argc - 1, argv + 1);
     
-    int code = jit.run(argc - 1, argv + sizeof(char));
-
-    llvm::llvm_shutdown();
+    Compiler::shutdown();
     return code;
 }

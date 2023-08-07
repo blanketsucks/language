@@ -2,8 +2,8 @@
 #include <quart/objects/scopes.h>
 
 Struct::Struct(
-    std::string name,
-    std::string qualified_name,
+    const std::string& name,
+    const std::string& qualified_name,
     bool opaque,
     llvm::StructType* type,
     std::map<std::string, StructField> fields

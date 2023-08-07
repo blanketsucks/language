@@ -1,5 +1,4 @@
-#ifndef _LEXER_LEXER_H
-#define _LEXER_LEXER_H
+#pragma once
 
 #include <quart/lexer/tokens.h>
 #include <quart/utils/filesystem.h>
@@ -16,20 +15,21 @@ class Lexer {
 public:
     typedef bool (*Predicate)(char);
 
-    Lexer(const std::string& source, std::string filename);
+    Lexer(const std::string& source, const std::string& filename);
     Lexer(utils::fs::Path path);
 
-    static bool is_keyword(std::string word);
-    static TokenKind get_keyword_kind(std::string word);
+    static bool is_keyword(const std::string& word);
+    static TokenKind get_keyword_kind(const std::string& word);
 
     char next();
     char peek(uint32_t offset = 0);
     char prev();
+    char rewind(uint32_t offset = 1);
 
     void reset();
 
-    Token create_token(TokenKind type, std::string value);
-    Token create_token(TokenKind type, Location start, std::string value);
+    Token create_token(TokenKind type, const std::string& value);
+    Token create_token(TokenKind type, Location start, const std::string& value);
 
     Location loc();
 
@@ -46,10 +46,10 @@ public:
 
     bool is_valid_identifier(uint8_t current);
 
-    std::string parse_unicode(uint8_t current);
+    uint8_t parse_unicode(std::string& buffer, uint8_t current);
 
     void skip_comment();
-    Token parse_identifier();
+    Token parse_identifier(bool accept_keywords = true);
     Token parse_string();
     Token parse_number();
 
@@ -58,7 +58,7 @@ public:
 
     uint32_t line;
     uint32_t column;
-    uint32_t index;
+    size_t index;
     
     bool eof;
     char current;
@@ -66,5 +66,3 @@ public:
     std::string filename;
     std::string source;
 };
-
-#endif

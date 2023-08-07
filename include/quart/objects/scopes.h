@@ -1,8 +1,6 @@
-#ifndef _OBJECTS_SCOPES_H
-#define _OBJECTS_SCOPES_H
+#pragma once
 
 #include <quart/utils/pointer.h>
-
 #include <quart/objects/variables.h>
 #include <quart/objects/functions.h>
 #include <quart/objects/structs.h>
@@ -91,6 +89,3 @@ struct Scope {
 
     void finalize(bool eliminate_dead_functions = true);
 };
-
-
-#endif

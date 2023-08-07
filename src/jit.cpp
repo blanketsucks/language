@@ -14,11 +14,14 @@ void jit::ExitOnError(llvm::Error error) {
 }
 
 jit::QuartJIT::QuartJIT(
-    std::string filename, 
+    const std::string& filename,
+    const std::string& entry,
     utils::Scope<llvm::Module> module, 
     utils::Scope<llvm::LLVMContext> context
 ) {
     this->filename = filename;
+    this->entry = entry;
+
     this->jit = jit::ExitOnError(llvm::orc::LLJITBuilder().create());
     this->module = llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 
@@ -62,11 +65,10 @@ int jit::QuartJIT::run(int argc, char** argv) {
     llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(symbols)));
     jit::ExitOnError(this->jit->addIRModule(std::move(module)));
 
-    // Make sure global constructors are properly called
     if (auto ctor = this->jit->lookup("__global_constructors_init")) {
         ((CtorFunction*)ctor->getAddress())();
     }
 
-    auto entry = this->lookup<EntryFunction*>("main");
+    auto entry = this->lookup<EntryFunction*>(this->entry);
     return entry(argc, argv);
 }

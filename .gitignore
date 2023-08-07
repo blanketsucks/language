@@ -1,7 +1,7 @@
 .vscode
 .clangd
 
-quart-jit
+bin/
 
 *.o
 main

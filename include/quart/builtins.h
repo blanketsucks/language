@@ -1,5 +1,4 @@
-#ifndef _BUILTINS_H
-#define _BUILTINS_H
+#pragma once
 
 #include <quart/parser/ast.h>
 #include <quart/llvm.h>
@@ -14,5 +13,3 @@ class Builtins {
 public:
     static void init(Visitor& visitor);
 };
-
-#endif

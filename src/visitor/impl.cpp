@@ -1,11 +1,8 @@
 #include <quart/visitor.h>
 
 Value Visitor::visit(ast::ImplExpr* expr) {
-    Value value = expr->type->accept(*this);
-
-    auto structure = value.structure;
-    Type type = value.type;
-
+    Type type = expr->type->accept(*this);
+    auto structure = this->get_struct(type);
     if (!structure) {
         if (type.is_reference) {
             ERROR(expr->type->span, "Cannot implement a reference type");

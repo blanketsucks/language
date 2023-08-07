@@ -29,7 +29,7 @@ std::string Token::get_type_value(TokenKind type) {
     }
 }
 
-bool Token::match(TokenKind type, std::string value) {
+bool Token::match(TokenKind type, const std::string& value) {
     return this->type == type && this->value == value;
 }
 

@@ -16,14 +16,6 @@ ATTR(llvm_intrinsic) {
     return Attribute(Attribute::LLVMIntrinsic, name);
 }
 
-ATTR(impl) {
-    parser.expect(TokenKind::LParen, "(");
-    auto type = parser.parse_type();
-    parser.expect(TokenKind::RParen, ")");
-
-    return Attribute(Attribute::Impl, std::move(type));
-}
-
 ATTR(link) {
     static std::vector<std::string> VALID_LINK_KEYS = {"name", "export", "arch", "section"};
 
@@ -64,7 +56,6 @@ void Attributes::init(Parser& parser) {
         ENTRY(noreturn),
         ENTRY(packed),
         ENTRY(llvm_intrinsic),
-        ENTRY(impl),
         ENTRY(link)
     };
 }

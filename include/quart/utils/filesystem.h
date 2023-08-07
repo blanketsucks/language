@@ -1,5 +1,4 @@
-#ifndef _UTILS_FILESYSTEM_H
-#define _UTILS_FILESYSTEM_H
+#pragma once
 
 #include <string>
 #include <cstring>
@@ -56,6 +55,7 @@ struct Path {
     static Path home();
 
     static Path from_parts(const std::vector<std::string>& parts);
+    static Path from_env(const std::string& env);
 
     struct stat stat();
     struct stat stat(int& err);
@@ -89,6 +89,6 @@ bool has_extension(const std::string& filename);
 std::string remove_extension(const std::string& filename);
 std::string replace_extension(const std::string& filename, std::string extension);
 
-} }
+} 
 
-#endif
+}

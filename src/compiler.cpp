@@ -3,15 +3,17 @@
 #include <quart/lexer.h>
 #include <quart/parser.h>
 #include <quart/utils/string.h>
+#include <quart/jit.h>
 
-#include "llvm/Passes/PassBuilder.h"
+#include <llvm/Passes/PassBuilder.h>
 
 #include <ratio>
 #include <sstream>
 #include <vector>
+#include <fstream>
 #include <iomanip>
 
-CompilerError::CompilerError(uint32_t code, std::string message) : code(code), message(message) {}
+CompilerError::CompilerError(uint32_t code, const std::string& message) : code(code), message(message) {}
 
 CompilerError CompilerError::success() {
     return CompilerError(0, "Success");
@@ -49,23 +51,23 @@ void Compiler::shutdown() {
     llvm::llvm_shutdown();
 }
 
-void Compiler::add_library(std::string name) { this->options.libs.names.insert(name); }
-void Compiler::add_library_path(std::string path) { this->options.libs.paths.insert(path); }
+void Compiler::add_library(const std::string& name) { this->options.libs.names.insert(name); }
+void Compiler::add_library_path(const std::string& path) { this->options.libs.paths.insert(path); }
 void Compiler::set_libraries(std::set<std::string> names) { this->options.libs.names = names; }
 void Compiler::set_library_paths(std::set<std::string> paths) { this->options.libs.paths = paths; }
-void Compiler::add_include_path(std::string path) { this->options.includes.push_back(path); }
+void Compiler::add_include_path(const std::string& path) { this->options.includes.push_back(path); }
 void Compiler::set_output_format(OutputFormat format) { this->options.format = format; }
-void Compiler::set_output_file(std::string output) { this->options.output = output; }
+void Compiler::set_output_file(const std::string& output) { this->options.output = output; }
 void Compiler::set_optimization_level(OptimizationLevel level) { this->options.optimization = level; }
 void Compiler::set_optimization_options(OptimizationOptions options) { this->options.opts = options; }
 void Compiler::set_input_file(const utils::fs::Path& input) { this->options.input = input; }
-void Compiler::set_entry_point(std::string entry) { this->options.entry = entry; }
-void Compiler::set_target(std::string target) { this->options.target = target; }
+void Compiler::set_entry_point(const std::string& entry) { this->options.entry = entry; }
+void Compiler::set_target(const std::string& target) { this->options.target = target; }
 void Compiler::set_verbose(bool verbose) { this->options.verbose = verbose; }
-void Compiler::set_linker(std::string linker) { this->options.linker = linker; }
-void Compiler::add_extra_linker_option(std::string name, std::string value) { this->options.extras.push_back({name, value}); }
-void Compiler::add_extra_linker_option(std::string name) { this->options.extras.push_back({name, ""}); }
-void Compiler::add_object_file(std::string file) { this->options.object_files.push_back(file); }
+void Compiler::set_linker(const std::string& linker) { this->options.linker = linker; }
+void Compiler::add_extra_linker_option(const std::string& name, const std::string& value) { this->options.extras.push_back({name, value}); }
+void Compiler::add_extra_linker_option(const std::string& name) { this->options.extras.push_back({name, ""}); }
+void Compiler::add_object_file(const std::string& file) { this->options.object_files.push_back(file); }
 
 void Compiler::dump() {
     std::stringstream stream;
@@ -175,7 +177,6 @@ CompilerError Compiler::compile() {
     }
 
     auto ast = parser.parse();
-    std::cout << "Parsed " << ast.size() << " nodes" << '\n';
     if (this->options.verbose) {
         Compiler::log_duration("Parsing", start);
     }
@@ -193,6 +194,11 @@ CompilerError Compiler::compile() {
 
     visitor.create_global_constructors();
     visitor.finalize();
+
+    if (visitor.link_panic) {
+        this->add_library("pthread");
+        this->add_object_file("lib/panic.o");
+    }
 
     if (this->options.verbose) {
         start = Compiler::now();
@@ -289,15 +295,48 @@ CompilerError Compiler::compile() {
         std::cout << "Linker command: " << std::quoted(command) << '\n';
         start = Compiler::now();
     }
-
-    uint32_t code = std::system(command.c_str());
+    
+    int code = std::system(command.c_str());
     if (this->options.verbose) {
         Compiler::log_duration("Linking", start);
     }
-
+    
     if (code != 0) {
         return CompilerError(code, FORMAT("Linker exited with code {0}", code));
     }
 
     return CompilerError::success();
+}
+
+int Compiler::jit(int argc, char** argv) {
+    Lexer lexer(this->options.input);
+    auto tokens = lexer.lex();
+
+    Parser parser(tokens);
+    auto ast = parser.parse();
+
+    Visitor visitor(this->options.input, options);
+    visitor.visit(std::move(ast));
+
+    auto& entry = visitor.global_scope->functions[this->options.entry];
+    if (!entry) {
+        Compiler::error("Missing main entry point function"); exit(1);
+    }
+
+    if (entry->args.size() > 2) {
+        Compiler::error("Main entry point function takes no more than 2 arguments"); exit(1);
+    }
+
+    // Apparently, we can only access the global ctor function only if it has the external linkage
+    visitor.create_global_constructors(llvm::Function::ExternalLinkage);
+    visitor.finalize();
+
+    jit::QuartJIT jit = jit::QuartJIT(
+        this->options.input,
+        this->options.entry,
+        std::move(visitor.module), 
+        std::move(visitor.context)
+    );
+
+    return jit.run(argc, argv);
 }

@@ -1,5 +1,4 @@
-#ifndef _PARSER_ATTRS_H
-#define _PARSER_ATTRS_H
+#pragma once
 
 #define ATTR(n) Attribute handle_##n##_attribute(Parser& parser)
 
@@ -7,7 +6,7 @@
 
 #include <quart/utils/pointer.h>
 
-#include "llvm/ADT/Any.h"
+#include <llvm/ADT/Any.h>
 
 #include <vector>
 #include <string>
@@ -22,7 +21,6 @@ struct Attribute {
     enum Type {
         Invalid = -1,
         Noreturn,
-        Impl,
         LLVMIntrinsic,
         Packed,
         Link
@@ -45,5 +43,3 @@ class Attributes {
 public:
     static void init(Parser& parser);
 };
-
-#endif

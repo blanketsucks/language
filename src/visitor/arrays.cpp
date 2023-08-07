@@ -102,7 +102,7 @@ Value Visitor::visit(ast::ElementExpr* expr) {
         type = value->getType();
         elem = type->getPointerElementType();
     } else {
-        if (this->get_pointer_depth(type) >= 1) {
+        if (this->get_pointer_depth(type) > 1) {
             value = this->load(value);
             type = type->getPointerElementType();
         }
@@ -196,19 +196,21 @@ void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, Span span)
 
 void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr> value) {
     auto ref = this->as_reference(expr->value);
-    llvm::Value* parent = ref.value;
 
-    if (!ref.type->isPointerTy() && !ref.type->isArrayTy()) {
-        ERROR(expr->value->span, "Value of type '{0}' does not support item assignment", this->get_type_name(ref.type));
+    llvm::Value* parent = ref.value;
+    llvm::Type* type = ref.type;
+
+    if (!type->isPointerTy() && !type->isArrayTy()) {
+        ERROR(expr->value->span, "Value of type '{0}' does not support item assignment", this->get_type_name(type));
     }
 
     if (ref.is_immutable) {
-        ERROR(expr->value->span, "Cannot modify immutable value '{0}'", ref.name);
+        ERROR(expr->value->span, "Cannot mutate immutable value '{0}'", ref.name);
     }
 
-    llvm::Type* type = ref.type;
-    if (this->get_pointer_depth(ref.type) >= 1) {
-        parent = this->load(parent, ref.type);
+    if (this->get_pointer_depth(type) >= 1) {
+        parent = this->load(parent);
+        type = type->getPointerElementType();
     }
 
     llvm::Value* index = expr->index->accept(*this).unwrap(expr->span);
@@ -216,9 +218,17 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr
         ERROR(expr->index->span, "Indices must be integers");
     }
 
-    llvm::Value* element = value->accept(*this).unwrap(value->span);
-    llvm::Type* ty = type->isArrayTy() ? type->getArrayElementType() : type->getPointerElementType();
+    llvm::Type* ty = type->isArrayTy() ? type->getArrayElementType() : type;
+    this->ctx = ty;
 
+    Value val = value->accept(*this);
+    llvm::Value* element = val.unwrap(value->span);
+
+    if (val.is_aggregate) {
+        element = this->load(element);
+    }
+
+    // llvm::Value* element = value->accept(*this).unwrap(value->span);
     if (!this->is_compatible(ty, element->getType())) {
         ERROR(
             value->span, 
@@ -231,7 +241,9 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr
         element = this->cast(element, ty);
     }
 
+    this->ctx = nullptr;
     llvm::Value* ptr = nullptr;
+    
     if (ref.type->isArrayTy()) {
         if (llvm::isa<llvm::ConstantInt>(index)) {
             int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
@@ -249,9 +261,9 @@ void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr
         std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
         ptr = this->builder->CreateGEP(type, parent, indicies);
     } else {
-        if (this->get_pointer_depth(type) <= 1) {
-            type = type->getPointerElementType();
-        }
+        // if (this->get_pointer_depth(type) <= 1) {
+        //     type = type->getPointerElementType();
+        // }
 
         ptr = this->builder->CreateGEP(type, parent, index);
     }

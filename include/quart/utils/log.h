@@ -1,10 +1,9 @@
-#ifndef _UTILS_LOG_H
-#define _UTILS_LOG_H
+#pragma once
 
 #include <quart/lexer/lexer.h>
 #include <quart/utils/filesystem.h>
 
-#include "llvm/Support/FormatVariadic.h"
+#include <llvm/Support/FormatVariadic.h>
 
 #define FORMAT(fmt, ...) llvm::formatv(fmt, __VA_ARGS__).str()
 
@@ -45,9 +44,7 @@ void underline_error(
     uint32_t start_column
 );
 
-void error(Span span, const std::string& message, bool fatal = true);
-void note(Span span, const std::string& message);
+void error(const Span& span, const std::string& message, bool fatal = true);
+void note(const Span& span, const std::string& message);
 
 }
-
-#endif

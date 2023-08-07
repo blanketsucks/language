@@ -1,5 +1,4 @@
-#ifndef _MANGLER_H
-#define _MANGLER_H
+#pragma once
 
 #include <quart/llvm.h>
 #include <quart/objects/modules.h>
@@ -19,7 +18,7 @@ public:
 
     static std::string mangle(llvm::Type* type);
     static std::string mangle(
-        std::string name, 
+        const std::string& name, 
         std::vector<llvm::Type*> args, 
         bool is_variadic = false,
         llvm::Type* ret = nullptr,
@@ -32,5 +31,3 @@ public:
     static std::string demangle(std::string name);
 
 };
-
-#endif

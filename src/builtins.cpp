@@ -22,8 +22,6 @@ BUILTIN(include_str) {
     return visitor.to_str(stream.str());
 }
 
-
-
 void Builtins::init(Visitor& visitor) {
     visitor.builtins = {
         ENTRY(include_str)

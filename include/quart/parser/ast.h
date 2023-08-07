@@ -1,5 +1,4 @@
-#ifndef _AST_H
-#define _AST_H
+#pragma once
 
 #include <quart/lexer/tokens.h>
 #include <quart/utils/pointer.h>
@@ -12,7 +11,8 @@
 #include <deque>
 
 class Visitor;
-class Value;
+struct Value;
+struct Type;
 
 namespace ast {
 
@@ -49,6 +49,7 @@ enum class ExprKind {
     Continue,
     Struct,
     Constructor,
+    EmptyConstructor,
     Attribute,
     Element,
     Cast,
@@ -56,20 +57,21 @@ enum class ExprKind {
     Offsetof,
     Assembly,
     Namespace,
-    NamespaceAttribute,
+    Path,
     Using,
     Tuple,
     Enum,
     Import,
     Ternary,
-    Foreach,
     Type,
     ArrayFill,
     TypeAlias,
     StaticAssert,
     Maybe,
     Module,
-    Impl
+    Impl,
+    Match,
+    RangeFor
 };
 
 enum class TypeKind {
@@ -379,24 +381,6 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-class ForExpr : public ExprMixin<ExprKind::For> {
-public:
-    utils::Scope<Expr> start;
-    utils::Scope<Expr> end;
-    utils::Scope<Expr> step;
-    utils::Scope<Expr> body;
-
-    ForExpr(
-        Span span, 
-        utils::Scope<Expr> start_,
-        utils::Scope<Expr> end_,
-        utils::Scope<Expr> step, 
-        utils::Scope<Expr> body
-    );
-    
-    Value accept(Visitor& visitor) override;  
-};
-
 class BreakExpr : public ExprMixin<ExprKind::Break> {
 public:
     BreakExpr(Span span);
@@ -450,6 +434,14 @@ public:
     std::vector<ConstructorField> fields;
 
     ConstructorExpr(Span span, utils::Scope<Expr> parent, std::vector<ConstructorField> fields);
+    Value accept(Visitor& visitor) override;
+};
+
+class EmptyConstructorExpr : public ExprMixin<ExprKind::EmptyConstructor> {
+public:
+    utils::Scope<Expr> parent;
+
+    EmptyConstructorExpr(Span span, utils::Scope<Expr> parent);
     Value accept(Visitor& visitor) override;
 };
 
@@ -509,12 +501,12 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-class NamespaceAttributeExpr : public ExprMixin<ExprKind::NamespaceAttribute> {
+class PathExpr : public ExprMixin<ExprKind::Path> {
 public:
     utils::Scope<Expr> parent;
-    std::string attribute;
+    std::string name;
 
-    NamespaceAttributeExpr(Span span, std::string attribute, utils::Scope<Expr> parent);
+    PathExpr(Span span, std::string name, utils::Scope<Expr> parent);
     Value accept(Visitor& visitor) override;
 };
 
@@ -582,20 +574,36 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
-class ForeachExpr : public ExprMixin<ExprKind::Foreach> {
+class ForExpr : public ExprMixin<ExprKind::For> {
 public:
     Ident name;
     utils::Scope<Expr> iterable;
     utils::Scope<Expr> body;
 
-    ForeachExpr(Span span, Ident name, utils::Scope<Expr> iterable, utils::Scope<Expr> body);
+    ForExpr(Span span, Ident name, utils::Scope<Expr> iterable, utils::Scope<Expr> body);
     Value accept(Visitor& visitor) override;
 };
 
-class TypeExpr : public ExprMixin<ExprKind::Type> {
+class RangeForExpr : public ExprMixin<ExprKind::RangeFor> {
 public:
-    TypeKind type;
-    TypeExpr(Span span, TypeKind type) : ExprMixin(span), type(type) {}
+    Ident name;
+    
+    utils::Scope<Expr> start;
+    utils::Scope<Expr> end;
+    utils::Scope<Expr> body;
+
+    RangeForExpr(Span span, Ident name, utils::Scope<Expr> start, utils::Scope<Expr> end, utils::Scope<Expr> body);
+    Value accept(Visitor& visitor) override;
+};
+
+class TypeExpr {
+public:
+    Span span;
+    TypeKind kind;
+
+    TypeExpr(Span span, TypeKind kind) : span(span), kind(kind) {}
+
+    virtual Type accept(Visitor& visitor) = 0;
 };
 
 class BuiltinTypeExpr : public TypeExpr {
@@ -603,7 +611,7 @@ public:
     BuiltinType value;
 
     BuiltinTypeExpr(Span span, BuiltinType value);
-    Value accept(Visitor& visitor) override;
+    Type accept(Visitor& visitor) override;
 };
 
 class IntegerTypeExpr : public TypeExpr {
@@ -611,7 +619,7 @@ public:
     utils::Scope<Expr> size;
 
     IntegerTypeExpr(Span span, utils::Scope<Expr> size);
-    Value accept(Visitor& visitor) override;
+    Type accept(Visitor& visitor) override;
 };
 
 class NamedTypeExpr : public TypeExpr {
@@ -620,32 +628,33 @@ public:
     std::deque<std::string> parents;
 
     NamedTypeExpr(Span span, std::string name, std::deque<std::string> parents);
-    Value accept(Visitor& visitor) override;
+    Type accept(Visitor& visitor) override;
 };
 
 class TupleTypeExpr : public TypeExpr {
 public:
-    std::vector<utils::Scope<TypeExpr>> elements;
+    std::vector<utils::Scope<TypeExpr>> types;
 
-    TupleTypeExpr(Span span, std::vector<utils::Scope<TypeExpr>> elements);
-    Value accept(Visitor& visitor) override;
+    TupleTypeExpr(Span span, std::vector<utils::Scope<TypeExpr>> types);
+    Type accept(Visitor& visitor) override;
 };
 
 class ArrayTypeExpr : public TypeExpr {
 public:
-    utils::Scope<TypeExpr> element;
+    utils::Scope<TypeExpr> type;
     utils::Scope<Expr> size;
 
-    ArrayTypeExpr(Span span, utils::Scope<TypeExpr> element, utils::Scope<Expr> size);
-    Value accept(Visitor& visitor) override;
+    ArrayTypeExpr(Span span, utils::Scope<TypeExpr> type, utils::Scope<Expr> size);
+    Type accept(Visitor& visitor) override;
 };
 
 class PointerTypeExpr : public TypeExpr {
 public:
-    utils::Scope<TypeExpr> element;
+    utils::Scope<TypeExpr> type;
+    bool is_immutable;
 
-    PointerTypeExpr(Span span, utils::Scope<TypeExpr> element);
-    Value accept(Visitor& visitor) override;
+    PointerTypeExpr(Span span, utils::Scope<TypeExpr> type, bool is_immutable);
+    Type accept(Visitor& visitor) override;
 };
 
 class FunctionTypeExpr : public TypeExpr {
@@ -654,7 +663,7 @@ public:
     utils::Scope<TypeExpr> ret;
 
     FunctionTypeExpr(Span span, std::vector<utils::Scope<TypeExpr>> args, utils::Scope<TypeExpr> ret);
-    Value accept(Visitor& visitor) override;
+    Type accept(Visitor& visitor) override;
 };
 
 class ReferenceTypeExpr : public TypeExpr {
@@ -663,7 +672,7 @@ public:
     bool is_immutable;
 
     ReferenceTypeExpr(Span span, utils::Scope<TypeExpr> type, bool is_immutable);
-    Value accept(Visitor& visitor) override;
+    Type accept(Visitor& visitor) override;
 };
 
 class ArrayFillExpr : public ExprMixin<ExprKind::ArrayFill> {
@@ -711,6 +720,30 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+struct MatchPattern {
+    std::vector<utils::Scope<Expr>> values; // A | B | C
+
+    Span span() {
+        if (this->values.size() < 2) {
+            return this->values[0]->span;
+        } else {
+            return Span::merge(values[0]->span, values[values.size() - 1]->span);
+        }
+    }
 };
 
-#endif
+struct MatchArm {
+    MatchPattern pattern;
+    utils::Scope<Expr> body;
+};
+
+class MatchExpr : public ExprMixin<ExprKind::Match> {
+public:
+    utils::Scope<Expr> value;
+    std::vector<MatchArm> arms;
+
+    MatchExpr(Span span, utils::Scope<Expr> value, std::vector<MatchArm> arms);
+    Value accept(Visitor& visitor) override;
+};
+
+};

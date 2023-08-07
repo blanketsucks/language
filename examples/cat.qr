@@ -1,21 +1,15 @@
 import libc;
 import libc::errno;
 
-import std::range;
-using Range from std::range;
-
 const stderr = libc::fdopen(2, "w");
 
-func read_from_filename(filename: i8*) -> i8* {
+func read_from_filename(filename: *i8) -> *i8 {
     let file = libc::fopen(filename, "r");
     if !file {
-        # We don't have access to `errno` so we use `__errno_location` instead.
-        # https://refspecs.linuxbase.org/LSB_3.1.0/LSB-generic/LSB-generic/baselib-errno-location-1.html
-
         let errno = *libc::errno::__errno_location();
         libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, libc::errno::strerror(errno));
 
-        libc::exit(1);
+        return null;
     }
 
     libc::fseek(file, 0, libc::SEEK_END);
@@ -26,32 +20,34 @@ func read_from_filename(filename: i8*) -> i8* {
     }
 
     libc::fseek(file, 0, libc::SEEK_SET);
-    let buffer = libc::malloc(size) as i8*;
+    let buffer = libc::malloc(size) as *i8;
 
     let n = libc::fread(buffer, 1, size, file);
     if n != size {
         if libc::ferror(file) {
             let errno = *libc::errno::__errno_location();
             libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::errno::strerror(errno));
-
-            libc::fclose(file); libc::exit(1);
+        } else {
+            libc::fprintf(stderr, "Could not read file '%s': Unknown error.\n", filename);
         }
 
-        libc::fprintf(stderr, "Could not read file '%s': Unknown error.", filename);
-        libc::fclose(file); libc::exit(1);
+        libc::fclose(file);
+        libc::free(buffer);
+
+        return null;
     }
 
     libc::fclose(file);
     return buffer;
 }
 
-func main(argc: i32, argv: i8**) -> i32 {
+func main(argc: i32, argv: **i8) -> i32 {
     if argc < 2 {
         libc::fprintf(stderr, "Usage: %s [filenames...]\n", argv[0]);
         return 1;
     }
 
-    for i in Range::new(1, argc) {
+    for i in 1..argc {
         let filename = argv[i];
         let buffer = read_from_filename(filename);
 

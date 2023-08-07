@@ -4,8 +4,9 @@ Type::Type() : value(nullptr), is_reference(false), is_immutable(true) {};
 Type::Type(
     llvm::Type* type,
     bool is_reference,
-    bool is_immutable  // Only valid when is_reference is true
-) : value(type), is_reference(is_reference), is_immutable(is_immutable) {};
+    bool is_pointer,
+    bool is_immutable
+) : value(type), is_reference(is_reference), is_pointer(is_pointer), is_immutable(is_immutable) {};
 
 Type Type::null() { return Type(nullptr); }
 

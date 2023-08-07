@@ -14,7 +14,7 @@ func fib(n: i32) -> i32 {
 }
 
 func main() {
-    for i in Range::new(0, 21) {
+    for i in 0..21 {
         libc::printf("%d\n", fib(i));
     }
 }

@@ -8,7 +8,7 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
 
         ns = this->scope->namespaces[name];
         if (!ns) {
-            ns = utils::make_ref<Namespace>(name, this->format_name(name));
+            ns = utils::make_ref<Namespace>(name, this->format_symbol(name));
 
             this->scope->namespaces[name] = ns;
             ns->scope = this->create_scope(name, ScopeType::Namespace);
@@ -23,7 +23,7 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
         ns = this->scope->namespaces[expr->name];
         this->scope = ns->scope;
     } else {
-        ns =  utils::make_ref<Namespace>(name, this->format_name(expr->name));
+        ns =  utils::make_ref<Namespace>(name, this->format_symbol(expr->name));
         ns->span = expr->span;
 
         this->scope->namespaces[expr->name] = ns;
@@ -41,34 +41,33 @@ Value Visitor::visit(ast::NamespaceExpr* expr) {
     return nullptr;
 }
 
-Value Visitor::visit(ast::NamespaceAttributeExpr* expr) {
+Value Visitor::visit(ast::PathExpr* expr) {
     Value value = expr->parent->accept(*this);
     if (!value.scope && !value.structure) {
         ERROR(expr->span, "Expected a namespace, struct, enum or module");
     }
 
-
     Scope* scope = value.scope ? value.scope : value.structure->scope;
-    if (scope->has_constant(expr->attribute)) {
-        return Value(this->load(scope->constants[expr->attribute].value), true);
-    } else if (scope->has_function(expr->attribute)) {
-        return Value::from_function(scope->get_function(expr->attribute));
-    } else if (scope->has_struct(expr->attribute)) {
-        return Value::from_struct(scope->get_struct(expr->attribute));
-    } else if (scope->has_enum(expr->attribute)) {
-        auto& enumeration = scope->enums[expr->attribute];
+    if (scope->has_constant(expr->name)) {
+        return Value(this->load(scope->constants[expr->name].value), true);
+    } else if (scope->has_function(expr->name)) {
+        return Value::from_function(scope->get_function(expr->name));
+    } else if (scope->has_struct(expr->name)) {
+        return Value::from_struct(scope->get_struct(expr->name));
+    } else if (scope->has_enum(expr->name)) {
+        auto& enumeration = scope->enums[expr->name];
         return Value::from_scope(enumeration->scope);
-    } else if (scope->has_module(expr->attribute)) {
-        auto& module = scope->modules[expr->attribute];
+    } else if (scope->has_module(expr->name)) {
+        auto& module = scope->modules[expr->name];
         return Value::from_scope(module->scope);
-    } else if (scope->has_namespace(expr->attribute)) {
-        auto& ns = scope->namespaces[expr->attribute];
+    } else if (scope->has_namespace(expr->name)) {
+        auto& ns = scope->namespaces[expr->name];
         return Value::from_scope(ns->scope);
-    } else if (scope->has_type(expr->attribute)) {
-        return Value::from_type(scope->get_type(expr->attribute).type);
+    } else if (scope->has_type(expr->name)) {
+        return Value::from_type(scope->get_type(expr->name).type);
     }
 
-    ERROR(expr->span, "Member '{0}' does not exist in namespace '{1}'", expr->attribute, scope->name);
+    ERROR(expr->span, "Member '{0}' does not exist in namespace '{1}'", expr->name, scope->name);
 }
 
 Value Visitor::visit(ast::UsingExpr* expr) {
@@ -79,6 +78,7 @@ Value Visitor::visit(ast::UsingExpr* expr) {
 
     Scope* scope = parent.scope;
     for (auto member : expr->members) {
+        // TODO: Improve this somehow??
         if (scope->structs.find(member) != scope->structs.end()) {
             this->scope->structs[member] = scope->structs[member];
         } else if (scope->functions.find(member) != scope->functions.end()) {

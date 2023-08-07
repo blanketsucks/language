@@ -216,23 +216,6 @@ Value WhileExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-ForExpr::ForExpr(
-    Span span,
-    utils::Scope<Expr> start_,
-    utils::Scope<Expr> end_,
-    utils::Scope<Expr> step, 
-    utils::Scope<Expr> body
-) : ExprMixin(span) {
-    this->start = std::move(start_);
-    this->end = std::move(end_);
-    this->step = std::move(step);
-    this->body = std::move(body);
-}
-
-Value ForExpr::accept(Visitor& visitor) {
-    return visitor.visit(this);
-}
-
 BreakExpr::BreakExpr(Span span) : ExprMixin(span) {}
 
 Value BreakExpr::accept(Visitor& visitor) {
@@ -270,6 +253,16 @@ ConstructorExpr::ConstructorExpr(
 }
 
 Value ConstructorExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
+EmptyConstructorExpr::EmptyConstructorExpr(
+    Span span, utils::Scope<Expr> parent
+) : ExprMixin(span) {
+    this->parent = std::move(parent);
+}
+
+Value EmptyConstructorExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -335,13 +328,13 @@ Value NamespaceExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-NamespaceAttributeExpr::NamespaceAttributeExpr(
-    Span span, std::string attribute, utils::Scope<Expr> parent
-) : ExprMixin(span), attribute(attribute) {
+PathExpr::PathExpr(
+    Span span, std::string name, utils::Scope<Expr> parent
+) : ExprMixin(span), name(name) {
     this->parent = std::move(parent);
 }
 
-Value NamespaceAttributeExpr::accept(Visitor& visitor) {
+Value PathExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -410,7 +403,7 @@ BuiltinTypeExpr::BuiltinTypeExpr(
     Span span, BuiltinType value
 ) : TypeExpr(span, TypeKind::Builtin), value(value) {}
 
-Value BuiltinTypeExpr::accept(Visitor &visitor) {
+Type BuiltinTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
@@ -420,7 +413,7 @@ IntegerTypeExpr::IntegerTypeExpr(
     this->size = std::move(size);
 }
 
-Value IntegerTypeExpr::accept(Visitor &visitor) {
+Type IntegerTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
@@ -428,38 +421,38 @@ NamedTypeExpr::NamedTypeExpr(
     Span span, std::string name, std::deque<std::string> parents
 ) : TypeExpr(span, TypeKind::Named), name(name), parents(parents) {}
 
-Value NamedTypeExpr::accept(Visitor &visitor) {
+Type NamedTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
 TupleTypeExpr::TupleTypeExpr(
-    Span span, std::vector<utils::Scope<TypeExpr>> elements
+    Span span, std::vector<utils::Scope<TypeExpr>> types
 ) : TypeExpr(span, TypeKind::Tuple) {
-    this->elements = std::move(elements);
+    this->types = std::move(types);
 }
 
-Value TupleTypeExpr::accept(Visitor &visitor) {
+Type TupleTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
 ArrayTypeExpr::ArrayTypeExpr(
-    Span span, utils::Scope<TypeExpr> element, utils::Scope<Expr> size
+    Span span, utils::Scope<TypeExpr> type, utils::Scope<Expr> size
 ) : TypeExpr(span, TypeKind::Array) {
-    this->element = std::move(element);
+    this->type = std::move(type);
     this->size = std::move(size);
 }
 
-Value ArrayTypeExpr::accept(Visitor &visitor) {
+Type ArrayTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
 PointerTypeExpr::PointerTypeExpr(
-    Span span, utils::Scope<TypeExpr> element
-) : TypeExpr(span, TypeKind::Pointer) {
-    this->element = std::move(element);
+    Span span, utils::Scope<TypeExpr> type, bool is_immutable
+) : TypeExpr(span, TypeKind::Pointer), is_immutable(is_immutable) {
+    this->type = std::move(type);
 }
 
-Value PointerTypeExpr::accept(Visitor &visitor) {
+Type PointerTypeExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
@@ -470,7 +463,7 @@ FunctionTypeExpr::FunctionTypeExpr(
     this->ret = std::move(ret);
 }
 
-Value FunctionTypeExpr::accept(Visitor& visitor) {
+Type FunctionTypeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
@@ -480,18 +473,40 @@ ReferenceTypeExpr::ReferenceTypeExpr(
     this->type = std::move(type);
 }
 
-Value ReferenceTypeExpr::accept(Visitor& visitor) {
+Type ReferenceTypeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-ForeachExpr::ForeachExpr(
+TypeAliasExpr::TypeAliasExpr(
+    Span span, std::string name, utils::Scope<TypeExpr> type
+) : ExprMixin(span), name(name) {
+    this->type = std::move(type);
+}
+
+Value TypeAliasExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+ForExpr::ForExpr(
     Span span, Ident name, utils::Scope<Expr> iterable, utils::Scope<Expr> body
 ) : ExprMixin(span), name(name) {
     this->iterable = std::move(iterable);
     this->body = std::move(body);
 }   
 
-Value ForeachExpr::accept(Visitor &visitor) {
+Value ForExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+RangeForExpr::RangeForExpr(
+    Span span, Ident name, utils::Scope<Expr> start, utils::Scope<Expr> end, utils::Scope<Expr> body
+) : ExprMixin(span), name(name) {
+    this->start = std::move(start);
+    this->end = std::move(end);
+    this->body = std::move(body);
+}
+
+Value RangeForExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
@@ -503,16 +518,6 @@ ArrayFillExpr::ArrayFillExpr(
 }
 
 Value ArrayFillExpr::accept(Visitor &visitor) {
-    return visitor.visit(this);
-}
-
-TypeAliasExpr::TypeAliasExpr(
-    Span span, std::string name, utils::Scope<TypeExpr> type
-) : ExprMixin(span), name(name) {
-    this->type = std::move(type);
-}
-
-Value TypeAliasExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }
 
@@ -544,5 +549,16 @@ ImplExpr::ImplExpr(
 }
 
 Value ImplExpr::accept(Visitor &visitor) {
+    return visitor.visit(this);
+}
+
+MatchExpr::MatchExpr(
+    Span span, utils::Scope<Expr> value, std::vector<MatchArm> arms
+) : ExprMixin(span) {
+    this->value = std::move(value);
+    this->arms = std::move(arms);
+}
+
+Value MatchExpr::accept(Visitor &visitor) {
     return visitor.visit(this);
 }

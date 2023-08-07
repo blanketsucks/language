@@ -1,5 +1,4 @@
-#ifndef _COMPILER_H
-#define _COMPILER_H
+#pragma once
 
 #include <quart/utils/log.h>
 #include <quart/utils/filesystem.h>
@@ -54,7 +53,7 @@ struct CompilerError {
     uint32_t code;
     std::string message;
 
-    CompilerError(uint32_t code, std::string message);
+    CompilerError(uint32_t code, const std::string& message);
     static CompilerError success();
 
     void unwrap();
@@ -117,43 +116,41 @@ public:
     
     CompilerOptions& get_options() { return this->options; }
 
-    void add_library(std::string name);
-    void add_library_path(std::string path);
+    void add_library(const std::string& name);
+    void add_library_path(const std::string& path);
 
     void set_libraries(std::set<std::string> names);
     void set_library_paths(std::set<std::string> paths);
 
-    void add_include_path(std::string path);
+    void add_include_path(const std::string& path);
 
     void set_output_format(OutputFormat format);
-    void set_output_file(std::string output);
+    void set_output_file(const std::string& output);
 
     void set_optimization_level(OptimizationLevel level);
     void set_optimization_options(OptimizationOptions opts);
 
     void set_input_file(const utils::fs::Path& input);
-    void set_entry_point(std::string entry);
+    void set_entry_point(const std::string& entry);
 
-    void set_target(std::string target);
+    void set_target(const std::string& target);
 
     void set_verbose(bool verbose);
 
-    void set_linker(std::string linker);
+    void set_linker(const std::string& linker);
 
-    void add_object_file(std::string file);
+    void add_object_file(const std::string& file);
 
-    void add_extra_linker_option(std::string name, std::string value);
-    void add_extra_linker_option(std::string name);
+    void add_extra_linker_option(const std::string& name, const std::string& value);
+    void add_extra_linker_option(const std::string& name);
 
     std::vector<std::string> get_linker_arguments();
 
     void dump();
 
     CompilerError compile();
+    int jit(int argc, char** argv);
 
 private:
     CompilerOptions options;
 };
-
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef _OBJECTS_MODULES_H
-#define _OBJECTS_MODULES_H
+#pragma once
 
 #include <quart/utils/filesystem.h>
 #include <quart/utils/string.h>
@@ -35,5 +34,3 @@ struct Module {
         return replace_with_dots ? utils::replace(clean, "/", ".") : clean;
     }
 };
-
-#endif

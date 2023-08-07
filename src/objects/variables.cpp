@@ -1,24 +1,24 @@
 #include <quart/objects/variables.h>
 
 Variable Variable::from_alloca(
-    std::string name, llvm::AllocaInst* alloca, bool is_immutable, Span span
+    const std::string& name, llvm::AllocaInst* alloca, bool is_immutable, Span span
 ) {
     return { 
-        name, 
-        alloca->getAllocatedType(), 
-        alloca, 
-        nullptr, 
-        false, 
-        is_immutable,
-        true,
-        false,
-        false,
-        span
+        .name = name, 
+        .type = alloca->getAllocatedType(), 
+        .value = alloca, 
+        .constant = nullptr, 
+        .is_reference = false, 
+        .is_immutable = is_immutable,
+        .is_stack_allocated = true,
+        .is_used = false,
+        .is_mutated = false,
+        .span = span
     };
 }
 
 Variable Variable::from_value(
-    std::string name, 
+    const std::string& name, 
     llvm::Value* value,
     bool is_immutable,
     bool is_reference,
@@ -29,16 +29,16 @@ Variable Variable::from_value(
     assert(type->isPointerTy());
 
     return { 
-        name, 
-        type->getPointerElementType(), 
-        value, 
-        nullptr, 
-        is_reference, 
-        is_immutable,
-        is_stack_allocated,
-        false,
-        false,
-        span
+        .name = name, 
+        .type = type->getPointerElementType(), 
+        .value = value, 
+        .constant = nullptr, 
+        .is_reference = is_reference, 
+        .is_immutable = is_immutable,
+        .is_stack_allocated = is_stack_allocated,
+        .is_used = false,
+        .is_mutated = false,
+        .span = span
     };
 }
 

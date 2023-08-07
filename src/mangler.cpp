@@ -50,7 +50,7 @@ std::string Mangler::mangle(llvm::Type* type) {
 }
 
 std::string Mangler::mangle(
-    std::string name, 
+    const std::string& name, 
     std::vector<llvm::Type*> args,
     bool is_variadic,
     llvm::Type* ret,

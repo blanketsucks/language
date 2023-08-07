@@ -128,9 +128,9 @@ enum Error {
 }
 
 extern "C" {
-    func strerror(err: i32) -> i8*;
-    func perror(s: i8*);
+    func strerror(err: i32) -> *i8;
+    func perror(s: *i8);
 
-    func __errno_location() -> i32*;
-    func __h_errno_location() -> i32*;
+    func __errno_location() -> *i32;
+    func __h_errno_location() -> *i32;
 }

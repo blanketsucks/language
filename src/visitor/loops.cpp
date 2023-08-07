@@ -41,7 +41,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
     return nullptr;
 }
 
-Value Visitor::visit(ast::ForExpr* expr) {
+Value Visitor::visit(ast::RangeForExpr* expr) {
     llvm::Function* function = this->builder->GetInsertBlock()->getParent();
     auto func = this->current_function;
 
@@ -50,10 +50,30 @@ Value Visitor::visit(ast::ForExpr* expr) {
 
     Branch* branch = func->current_branch;
 
-    expr->start->accept(*this).unwrap(expr->start->span);
-    llvm::Value* end = expr->end->accept(*this).unwrap(expr->end->span);
+    llvm::Value* start = expr->start->accept(*this).unwrap(expr->start->span);
+    if (!start->getType()->isIntegerTy()) {
+        ERROR(expr->start->span, "Expected integer type, found '{0}'", this->get_type_name(start->getType()));
+    }
 
-    this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
+    llvm::AllocaInst* alloca = this->alloca(start->getType());
+    this->builder->CreateStore(start, alloca);
+
+    this->scope->variables[expr->name.value] = Variable::from_alloca(
+        expr->name.value, alloca, expr->name.is_immutable, expr->name.span
+    );
+
+    llvm::Value* end = nullptr;
+    if (expr->end) {
+        end = expr->end->accept(*this).unwrap(expr->end->span);
+        if (!end->getType()->isIntegerTy()) {
+            ERROR(expr->end->span, "Expected integer type, found '{0}'", this->get_type_name(end->getType()));
+        }
+
+        this->builder->CreateCondBr(this->builder->CreateICmpSLT(this->load(alloca), end), loop, stop);
+    } else {
+        this->builder->CreateBr(loop);
+    }
+
     this->set_insert_point(loop, false);
 
     func->current_branch = func->create_branch(loop, stop); 
@@ -66,13 +86,18 @@ Value Visitor::visit(ast::ForExpr* expr) {
         return nullptr;
     }
     
-    expr->step->accept(*this).unwrap(expr->step->span);
-    end = expr->end->accept(*this).unwrap(expr->end->span);
-
-    this->builder->CreateCondBr(this->cast(end, this->builder->getInt1Ty()), loop, stop);
+    llvm::Value* value = this->builder->CreateAdd(this->load(alloca), this->to_int(1));
+    this->builder->CreateStore(value, alloca);
+    
+    if (end) {
+        this->builder->CreateCondBr(this->builder->CreateICmpSLT(value, end), loop, stop);
+    } else {
+        this->builder->CreateBr(loop);
+    }
+    
     this->set_insert_point(stop);
-
     func->current_branch = branch;
+
     return nullptr;
 }
 
@@ -92,7 +117,7 @@ Value Visitor::visit(ast::ContinueExpr*) {
     return nullptr;
 }
 
-Value Visitor::visit(ast::ForeachExpr* expr) {
+Value Visitor::visit(ast::ForExpr* expr) {
     auto ref = this->as_reference(expr->iterable);
     if (ref.is_null()) {
         llvm::Value* value = expr->iterable->accept(*this).unwrap(expr->iterable->span);

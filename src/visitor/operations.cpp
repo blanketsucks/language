@@ -53,7 +53,10 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
         case TokenKind::BinaryAnd: {
             auto ref = this->as_reference(expr->value);
             if (!ref.value) {
-                ERROR(expr->span, "Expected a variable, struct member or array element");
+                llvm::Value* value = expr->value->accept(*this).unwrap(expr->span);
+                return Value::as_reference(
+                    this->alloca(value->getType()), false, true
+                );
             }
 
             return Value::as_reference(ref.value, ref.is_immutable, ref.is_stack_allocated);
@@ -358,6 +361,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
 
 Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     llvm::Value* rhs = expr->right->accept(*this).unwrap(expr->span);
+
     auto ref = this->as_reference(expr->left);
     if (ref.is_constant) {
         ERROR(expr->span, "Cannot assign to constant");

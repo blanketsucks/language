@@ -1,5 +1,4 @@
-#ifndef _LEXER_LOCATION_H
-#define _LEXER_LOCATION_H
+#pragma once
 
 #include <stdint.h>
 #include <string>
@@ -8,23 +7,20 @@
 struct Location {
     uint32_t line;
     uint32_t column;
-    uint32_t index;
+    size_t index;
 };
 
 struct Span {
     Location start;
     Location end;
 
-    const char* filename;
+    std::string filename;
     std::string line;
 
-    static Span from_span(const Span& start, const Span& end) {
-        return Span { start.start, end.end, start.filename, start.line };
-    }
+    Span() = default;
+    Span(Location start, Location end, const std::string& filename, const std::string& line);
 
-    uint32_t length() const {
-        return end.index - start.index;
-    }
+    static Span merge(const Span& start, const Span& end);
+
+    size_t length() const;
 };
-
-#endif

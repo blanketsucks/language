@@ -1,87 +1,143 @@
 const SEEK_END = 2;
 const SEEK_SET = 0;
+
+const AF_UNSPEC = 0;
+const AF_UNIX = 1;
+const AF_INET = 2;
+const AF_INET6 = 10;
+
+const SOCK_STREAM = 1;
+const SOCK_DGRAM = 2;
+const SOCK_RAW = 3;
+
+const SHUT_RD = 0;
+const SHUT_WR = 1;
+const SHUT_RDWR = 2;
+
+const SOL_SOCKET = 1;
+const SO_REUSEADDR = 2;
+const SO_REUSEPORT = 15;
+const SO_KEEPALIVE = 9;
+const SO_LINGER = 13;
+const SO_RCVBUF = 8;
     
 struct FILE;
 
+struct sockaddr {
+    sa_len: i8;
+    sa_family: i8;
+    sa_data: [i8; 14];
+}
+
+struct in_addr {
+    s_addr: i32;
+}
+
+struct sockaddr_in {
+    sin_family: i8;
+    sin_port: i16;
+    sin_addr: in_addr;
+    sin_zero: [i8; 8];
+}
+
+struct hostent {
+    h_name: *i8;
+    h_aliases: **i8;
+    h_addrtype: i16;
+    h_length: i16;
+    h_addr_list: **i8;
+}
+
+struct addrinfo {
+    ai_flags: i32;
+    ai_family: i32;
+    ai_socktype: i32;
+    ai_protocol: i32;
+    ai_addrlen: i64;
+    ai_addr: *sockaddr;
+    ai_canonname: *i8;
+    ai_next: *addrinfo;
+}
+
 extern "C" {
-    func read(fd: i32, buf: void*, n: i32) -> i32;
-    func write(fd: i32, buf: void*, n: i32) -> i32;
+    func read(fd: i32, buf: *void, n: i32) -> i32;
+    func write(fd: i32, buf: *void, n: i32) -> i32;
     func close(fd: i32) -> i32;
 
-    func fopen(path: i8*, mode: i8*) -> FILE*;
-    func fdopen(fd: i32, mode: i8*) -> FILE*;
-    func freopen(path: i8*, mode: i8*, stream: FILE*) -> FILE*;
-    func fclose(stream: FILE*) -> i32;
-    func fflush(stream: FILE*) -> i32;
+    func fopen(path: *i8, mode: *i8) -> *FILE;
+    func fdopen(fd: i32, mode: *i8) -> *FILE;
+    func freopen(path: *i8, mode: *i8, stream: *FILE) -> *FILE;
+    func fclose(stream: *FILE) -> i32;
+    func fflush(stream: *FILE) -> i32;
 
-    func fgetc(stream: FILE*) -> i32;
-    func fgets(buf: i8*, n: i32, stream: FILE*) -> i8*;
-    func getc(stream: FILE*) -> i32;
+    func fgetc(stream: *FILE) -> i32;
+    func fgets(buf: *i8, n: i32, stream: *FILE) -> *i8;
+    func getc(stream: *FILE) -> i32;
     func getchar() -> i32;
-    func ungetc(c: i32, stream: FILE*) -> i32;
+    func ungetc(c: i32, stream: *FILE) -> i32;
 
-    func fputc(c: i32, stream: FILE*) -> i32;
-    func fputs(s: i8*, stream: FILE*) -> i32;
-    func putc(c: i32, stream: FILE*) -> i32;
+    func fputc(c: i32, stream: *FILE) -> i32;
+    func fputs(s: *i8, stream: *FILE) -> i32;
+    func putc(c: i32, stream: *FILE) -> i32;
     func putchar(c: i32) -> i32;
-    func puts(s: i8*) -> i32;
+    func puts(s: *i8) -> i32;
 
-    func fread(buf: i8*, size: i32, n: i32, stream: FILE*) -> i32;
-    func fwrite(buf: i8*, size: i32, n: i32, stream: FILE*) -> i32;
+    func fread(buf: *i8, size: i32, n: i32, stream: *FILE) -> i32;
+    func fwrite(buf: *i8, size: i32, n: i32, stream: *FILE) -> i32;
 
-    func fseek(stream: FILE*, offset: i32, whence: i32) -> i32;
-    func ftell(stream: FILE*) -> i32;
-    func rewind(stream: FILE*);
-    func fgetpos(stream: FILE*, pos: i32*) -> i32;
-    func fsetpos(stream: FILE*, pos: i32*) -> i32;
+    func fseek(stream: *FILE, offset: i32, whence: i32) -> i32;
+    func ftell(stream: *FILE) -> i32;
+    func rewind(stream: *FILE);
+    func fgetpos(stream: *FILE, pos: *i32) -> i32;
+    func fsetpos(stream: *FILE, pos: *i32) -> i32;
 
-    func clearerr(stream: FILE*);
-    func feof(stream: FILE*) -> i32;
-    func ferror(stream: FILE*) -> i32;
-    func fileno(stream: FILE*) -> i32;
+    func clearerr(stream: *FILE);
+    func feof(stream: *FILE) -> i32;
+    func ferror(stream: *FILE) -> i32;
+    func fileno(stream: *FILE) -> i32;
 
-    func printf(fmt: i8*, ...) -> i32;
-    func fprintf(stream: FILE*, fmt: i8*, ...) -> i32;
-    func dprintf(fd: i32, fmt: i8*, ...) -> i32;
-    func sprintf(buf: i8*, fmt: i8*, ...) -> i32;
-    func snprintf(buf: i8*, n: i32, fmt: i8*, ...) -> i32;
+    func printf(fmt: *i8, ...) -> i32;
+    func fprintf(stream: *FILE, fmt: *i8, ...) -> i32;
+    func dprintf(fd: i32, fmt: *i8, ...) -> i32;
+    func sprintf(buf: *i8, fmt: *i8, ...) -> i32;
+    func snprintf(buf: *i8, n: i32, fmt: *i8, ...) -> i32;
 
-    func malloc(size: i32) -> void*;
-    func calloc(nmemb: i32, size: i32) -> void*;
-    func realloc(ptr: void*, size: i32) -> void*;
-    func reallocarray(ptr: void*, nmemb: i32, size: i32) -> void*;
-    func free(ptr: void*);
+    func malloc(size: i32) -> *void;
+    func calloc(nmemb: i32, size: i32) -> *void;
+    func realloc(ptr: *void, size: i32) -> *void;
+    func reallocarray(ptr: *void, nmemb: i32, size: i32) -> *void;
+    func free(ptr: *void);
 
-    func memcpy(dest: void*, src: void*, size: i32) -> void*;
-    func memset(dest: void*, c: i32, size: i32) -> void*;
-    func memmove(dest: void*, src: void*, size: i32) -> void*;
-    func memcmp(s1: void*, s2: void*, size: i32) -> i32;
-    func memchr(s: void*, c: i32, size: i32) -> void*;
-    func memrchr(s: void*, c: i32, size: i32) -> void*;
-    func memmem(s: void*, n: i32, needle: void*, m: i32) -> void*;
+    func memcpy(dest: *void, src: *void, size: i32) -> *void;
+    func memset(dest: *void, c: i32, size: i32) -> *void;
+    func memmove(dest: *void, src: *void, size: i32) -> *void;
+    func memcmp(s1: *void, s2: *void, size: i32) -> i32;
+    func memchr(s: *void, c: i32, size: i32) -> *void;
+    func memrchr(s: *void, c: i32, size: i32) -> *void;
+    func memmem(s: *void, n: i32, needle: *void, m: i32) -> *void;
 
-    func strlen(s: i8*) -> i32;
-    func strcmp(s1: i8*, s2: i8*) -> i32;
-    func strncmp(s1: i8*, s2: i8*, n: i32) -> i32;
-    func strcasecmp(s1: i8*, s2: i8*) -> i32;
-    func strncasecmp(s1: i8*, s2: i8*, n: i32) -> i32;
-    func strchr(s: i8*, c: i32) -> i8*;
-    func strrchr(s: i8*, c: i32) -> i8*;
-    func strstr(haystack: i8*, needle: i8*) -> i8*;
-    func strcasestr(haystack: i8*, needle: i8*) -> i8*;
-    func strtok(s: i8*, delim: i8*) -> i8*;
-    func strtok_r(s: i8*, delim: i8*, save_ptr: i8**) -> i8*;
-    func strdup(s: i8*) -> i8*;
-    func strndup(s: i8*, n: i32) -> i8*;
-    func strnlen(s: i8*, n: i32) -> i32;
-    func strspn(s: i8*, accept: i8*) -> i32;
-    func strcspn(s: i8*, reject: i8*) -> i32;
-    func strpbrk(s: i8*, accept: i8*) -> i8*;
-    func strsep(s: i8*, delim: i8*) -> i8*;
-    func strcoll(s1: i8*, s2: i8*) -> i32;
-    func strncpy(dest: i8*, src: i8*, n: i32) -> i8*;
-    func strcat(dest: i8*, src: i8*) -> i8*;
-    func strncat(dest: i8*, src: i8*, n: i32) -> i8*;
+    func strlen(s: *i8) -> i32;
+    func strcmp(s1: *i8, s2: *i8) -> i32;
+    func strncmp(s1: *i8, s2: *i8, n: i32) -> i32;
+    func strcasecmp(s1: *i8, s2: *i8) -> i32;
+    func strncasecmp(s1: *i8, s2: *i8, n: i32) -> i32;
+    func strchr(s: *i8, c: i32) -> *i8;
+    func strrchr(s: *i8, c: i32) -> *i8;
+    func strstr(haystack: *i8, needle: *i8) -> *i8;
+    func strcasestr(haystack: *i8, needle: *i8) -> *i8;
+    func strtok(s: *i8, delim: *i8) -> *i8;
+    func strtok_r(s: *i8, delim: *i8, save_ptr: **i8) -> *i8;
+    func strdup(s: *i8) -> *i8;
+    func strndup(s: *i8, n: i32) -> *i8;
+    func strnlen(s: *i8, n: i32) -> i32;
+    func strspn(s: *i8, accept: *i8) -> i32;
+    func strcspn(s: *i8, reject: *i8) -> i32;
+    func strpbrk(s: *i8, accept: *i8) -> *i8;
+    func strsep(s: *i8, delim: *i8) -> *i8;
+    func strcoll(s1: *i8, s2: *i8) -> i32;
+    func strncpy(dest: *i8, src: *i8, n: i32) -> *i8;
+    func strcat(dest: *i8, src: *i8) -> *i8;
+    func strncat(dest: *i8, src: *i8, n: i32) -> *i8;
 
     func isalnum(c: i32) -> i32;
     func isalpha(c: i32) -> i32;
@@ -100,12 +156,41 @@ extern "C" {
     func toupper(c: i32) -> i32;
     func toascii(c: i32) -> i32;
 
-    func atoi(s: i8*) -> i32;
-    func atol(s: i8*) -> i64;
-    func atoll(s: i8*) -> i64;
-    func atof(s: i8*) -> f32;
+    func atoi(s: *i8) -> i32;
+    func atol(s: *i8) -> i64;
+    func atoll(s: *i8) -> i64;
+    func atof(s: *i8) -> f32;
 
     func sleep(seconds: i32) -> i32;
+
+    func socket(domain: i32, typ: i32, protocol: i32) -> i32;
+    func bind(sockfd: i32, addr: *sockaddr, addrlen: i32) -> i32;
+    func listen(sockfd: i32, backlog: i32) -> i32;
+    func accept(sockfd: i32, addr: *sockaddr, addrlen: *i32) -> i32;
+    func recv(sockfd: i32, buf: *i8, len: i32, flags: i32) -> i32;
+    func send(sockfd: i32, buf: *i8, len: i32, flags: i32) -> i32;
+    func connect(sockfd: i32, addr: *sockaddr, addrlen: i32) -> i32;
+
+    func htons(hostshort: i16) -> i16;
+    func htonl(hostlong: i32) -> i32;
+    func ntohs(netshort: i16) -> i16;
+    func ntohl(netlong: i32) -> i32;
+    
+    func inet_pton(af: i32, src: *i8, dst: *i8) -> i32;
+    func inet_ntoa(addr: in_addr) -> *i8;
+    func inet_addr(cp: *i8) -> i32;
+
+    func gethostbyname(name: *i8) -> *hostent;
+    func getaddrinfo(node: *i8, service: *i8, hints: *addrinfo, res: **addrinfo) -> i32;
+    func freeaddrinfo(res: *addrinfo) -> i32;
+
+    func getpeername(sockfd: i32, addr: *sockaddr, addrlen: *i32) -> i32;
+    func getsockname(sockfd: i32, addr: *sockaddr, addrlen: *i32) -> i32;
+
+    func getsockopt(sockfd: i32, level: i32, optname: i32, optval: *i8, optlen: *i32) -> i32;
+    func setsockopt(sockfd: i32, level: i32, optname: i32, optval: *i8, optlen: i32) -> i32;
+
+    func shutdown(sockfd: i32, how: i32) -> i32;
 
     [[noreturn]] func exit(code: i32);
 

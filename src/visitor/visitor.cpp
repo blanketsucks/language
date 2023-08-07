@@ -1,7 +1,7 @@
 #include <quart/visitor.h>
 #include <quart/parser/ast.h>
 
-Visitor::Visitor(std::string name, CompilerOptions& options) : options(options) {
+Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(options) {
     Builtins::init(*this);
 
     this->name = name;
@@ -69,7 +69,7 @@ void Visitor::set_insert_point(llvm::BasicBlock* block, bool push) {
     this->builder->SetInsertPoint(block);
 }
 
-Scope* Visitor::create_scope(std::string name, ScopeType type) {
+Scope* Visitor::create_scope(const std::string& name, ScopeType type) {
     Scope* scope = new Scope(name, type, this->scope);
     this->scope->children.push_back(scope);
 
@@ -94,7 +94,7 @@ std::pair<std::string, bool> Visitor::format_intrinsic_function(std::string name
     return std::make_pair(name, is_intrinsic);
 }
 
-std::string Visitor::format_name(std::string name) {
+std::string Visitor::format_symbol(const std::string& name) {
     std::string formatted;
     if (this->current_module) { 
         formatted += this->current_module->get_clean_path_name(true) + ".";
@@ -250,7 +250,20 @@ llvm::Value* Visitor::as_reference(llvm::Value* value) {
     return load->getPointerOperand();
 }
 
-ScopeLocal Visitor::as_reference(utils::Scope<ast::Expr>& expr) {
+ScopeLocal Visitor::as_reference(utils::Scope<ast::Expr>& expr, bool require_ampersand) {
+    if (require_ampersand) {
+        if (expr->kind() != ast::ExprKind::UnaryOp) {
+            ERROR(expr->span, "Expected a reference or '&' before expression");
+        }
+
+        ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
+        if (unary->op != TokenKind::BinaryAnd) {
+            ERROR(expr->span, "Expected a reference '&' before expression");
+        }
+
+        return this->as_reference(unary->value);
+    }
+
     switch (expr->kind()) {
         case ast::ExprKind::Variable: {
             ast::VariableExpr* variable = expr->as<ast::VariableExpr>();
@@ -364,7 +377,7 @@ void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
         llvm::Value* value = this->call(
             call.function, 
             call.args, 
-            nullptr,
+            call.self,
             false,
             nullptr
         );
@@ -457,10 +470,11 @@ Value Visitor::visit(ast::FloatExpr* expr) {
 }
 
 Value Visitor::visit(ast::StringExpr* expr) {
-    return Value(
-        this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get()), 
-        true
-    );
+    llvm::Value* str = this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get());
+    Value value = Value(str, true);
+
+    value.is_immutable = true;
+    return value;
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
@@ -482,7 +496,7 @@ Value Visitor::visit(ast::BlockExpr* expr) {
 Value Visitor::visit(ast::OffsetofExpr* expr) {
     Value value = expr->value->accept(*this);
     if (!value.structure) {
-        ERROR(expr->span, "Expected a structure");
+        ERROR(expr->value->span, "Expected a structure type");
     }
 
     auto structure = value.structure;
@@ -492,7 +506,7 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
         ERROR(expr->span, "Field '{1}' does not exist in struct '{0}'", expr->field, structure->name);
     }
 
-    StructField field = structure->fields[expr->field];
+    StructField& field = structure->fields[expr->field];
     return Value(this->builder->getInt32(field.offset), true);
 }
 

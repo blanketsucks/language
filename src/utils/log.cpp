@@ -17,13 +17,13 @@ std::string utils::color_to_str(Color color) {
 
 std::string utils::color(Color color, const std::string& str) {
     if (utils::has_color_support()) {
-        return FORMAT("\033[1;{0}m", int(color)) + str + "\033[0;0m";
+        return FORMAT("\033[1;{0}m{1}\033[0;0m", int(color), str);
     } else {
         return str;
     }
 }
 
-void utils::error(Span span, const std::string& message, bool fatal) {
+void utils::error(const Span& span, const std::string& message, bool fatal) {
     std::stringstream stream;
 
     stream << utils::color(WHITE, format_location_span(span)) << ' ';
@@ -49,7 +49,7 @@ void utils::error(Span span, const std::string& message, bool fatal) {
     }
 }
 
-void utils::note(Span span, const std::string& message) {
+void utils::note(const Span& span, const std::string& message) {
     std::stringstream stream;
 
     stream << utils::color(WHITE, format_location_span(span)) << ' ';

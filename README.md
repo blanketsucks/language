@@ -13,7 +13,7 @@ func main() {
 And then:
 
 ```console
-$ ./quart hello.qr
+$ ./bin/quart hello.qr
 $ ./hello
 Hello, world!
 ```
@@ -28,10 +28,10 @@ $ cd language
 $ make 
 ```
 
-By the end of the build process, you'll have a `quart` executable in the same directory.
+By the end of the build process, a `quart` executable will be created in a `bin` directory.
 
 ```console
-$ ./quart --help
+$ ./bin/quart --help
 USAGE: quart [options] <files>
 
 OPTIONS:
@@ -65,7 +65,7 @@ Generic Options:
 
 ## Building/Running the JIT
 
-Quart has a built-in JIT Compiler, you can build this compiler using the following commands
+Quart has a built-in Just In Time Compiler, you can build this compiler using the following commands.
 
 ```console
 $ git clone https://github.com/blanketsucks/language.git
@@ -73,9 +73,9 @@ $ cd language
 $ make jit # or `make all` which will build both the JIT and the compiler
 ```
 
-After the build, you'll have a `quart-jit` executable in the same directory.
+After the build, you'll have a `quart-jit` executable in the `bin` directory.
 
 ```console
-$ ./quart-jit hello.qr
+$ ./bin/quart-jit hello.qr
 Hello, World!
 ```

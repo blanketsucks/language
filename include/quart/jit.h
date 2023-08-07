@@ -1,9 +1,9 @@
-#ifndef _JIT_H
-#define _JIT_H
+#pragma once
 
 #include <quart/utils/pointer.h>
 #include <quart/llvm.h>
 #include <quart/compiler.h>
+#include <quart/objects/scopes.h>
 
 namespace jit {
 
@@ -35,7 +35,8 @@ public:
     }
 
     QuartJIT(
-        std::string filename, 
+        const std::string& filename,
+        const std::string& entry,
         utils::Scope<llvm::Module> module, 
         utils::Scope<llvm::LLVMContext> context
     );
@@ -47,11 +48,11 @@ public:
 
     llvm::orc::SymbolMap get_symbol_map() const;
 
-    template<typename T> void define(std::string name, T* ptr) {
+    template<typename T> void define(const std::string& name, T* ptr) {
         this->symbols[this->mangle(name)] = QuartJIT::create_symbol_from_pointer<T>(ptr);
     }
 
-    template<typename T> T lookup(std::string name) {
+    template<typename T> T lookup(const std::string& name) {
         auto symbol = jit::ExitOnError(this->jit->lookup(name));
         return (T)symbol.getAddress();
     }
@@ -61,6 +62,7 @@ public:
     int run(int argc = 0, char** argv = nullptr);
 private:
     std::string filename;
+    std::string entry;
 
     utils::Scope<llvm::orc::LLJIT> jit;
     llvm::orc::ThreadSafeModule module;
@@ -69,5 +71,3 @@ private:
 };
 
 }
-
-#endif

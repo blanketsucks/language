@@ -1,5 +1,4 @@
 #include <quart/visitor.h>
-#include <quart/utils/utils.h>
 
 struct TupleElement {
     std::string name;
@@ -113,7 +112,7 @@ void Visitor::store_tuple(
     uint32_t n = 0;
     llvm::Type* vtype = value->getType();
 
-    // TODO: Array support
+    // TODO: Array support(?)
     if (vtype->isPointerTy()) {
         llvm::Type* type = vtype->getPointerElementType();
         n = type->getStructNumElements();

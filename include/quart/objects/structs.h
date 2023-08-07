@@ -1,11 +1,11 @@
-#ifndef _OBJECTS_STRUCTS_H
-#define _OBJECTS_STRUCTS_H
+#pragma once
 
 #include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
 
-#include "llvm/IR/Type.h"
-#include "llvm/IR/DerivedTypes.h"
+#include <llvm/IR/Type.h>
+#include <llvm/IR/DerivedTypes.h>
+
 #include <map>
 
 struct Scope;
@@ -17,6 +17,7 @@ struct StructField {
     
     bool is_private;
     bool is_readonly;
+    bool is_immutable;
 
     uint32_t index;
     uint32_t offset;
@@ -39,8 +40,8 @@ struct Struct {
     Span span;
 
     Struct(
-        std::string name,
-        std::string qualified_name,
+        const std::string& name,
+        const std::string& qualified_name,
         bool opaque, 
         llvm::StructType* type, 
         std::map<std::string, StructField> fields
@@ -55,5 +56,3 @@ struct Struct {
 
     std::vector<utils::Ref<Struct>> expand();
 };
-
-#endif

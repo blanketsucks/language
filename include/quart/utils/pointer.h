@@ -1,5 +1,4 @@
-#ifndef _UTILS_POINTER_H
-#define _UTILS_POINTER_H
+#pragma once
 
 #include <memory>
 
@@ -16,5 +15,3 @@ template<typename T, typename ...Args> Ref<T> make_ref(Args&& ...args) {
 }
 
 }
-
-#endif

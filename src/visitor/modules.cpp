@@ -1,13 +1,15 @@
 #include <quart/visitor.h>
 #include <quart/lexer/lexer.h>
 
-static const std::vector<std::string> SEARCH_PATHS = {"lib/"};
+static const std::vector<std::string> SEARCH_PATHS = {
+    "lib/"
+};
 
 utils::fs::Path search_file_paths(utils::fs::Path path) {
-    for (auto& p : SEARCH_PATHS) {
-        auto full_path = utils::fs::Path(p + path.name);
-        if (full_path.exists()) {
-            return full_path;
+    for (auto& dir : SEARCH_PATHS) {
+        auto p = utils::fs::Path(dir) / path;
+        if (p.exists()) {
+            return p;
         }
     }
     
@@ -39,7 +41,7 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
         this->scope = scope;
         this->current_module = outer;
 
-        return nullptr;
+        return module;
     }
 
     for (auto it = parts.begin(); it != parts.end(); ++it) {
@@ -115,7 +117,7 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
             this->scope = scope;
             this->current_module = outer;
 
-            return nullptr;
+            return module;
         }
 
         if (!path.isfile()) {
@@ -159,6 +161,8 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
         ERROR(expr->span, "Module '{0}' already exists", expr->name);
     }
 
+    auto outer = this->current_module;
+
     auto module = utils::make_ref<Module>(expr->name, expr->name);
     this->scope->modules[expr->name] = module;
 
@@ -167,7 +171,7 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
 
     this->visit(std::move(expr->body));
 
-    this->current_module = nullptr;
+    this->current_module = outer;
     this->scope = this->scope->parent;
 
     return nullptr;

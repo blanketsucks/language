@@ -5,6 +5,8 @@ void Visitor::panic(const std::string& message, Span span) {
         this->builder->CreateUnreachable(); return;
     }
 
+    if (!this->link_panic) this->link_panic = true;
+
     llvm::Function* function = this->module->getFunction("__quart_panic"); // Defined in lib/panic.c
     if (!function) {
         function = this->create_function(

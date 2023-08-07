@@ -1,5 +1,4 @@
-#ifndef _OBJECTS_NAMESPACES_H
-#define _OBJECTS_NAMESPACES_H
+#pragma once
 
 #include <quart/lexer/location.h>
 
@@ -15,7 +14,5 @@ struct Namespace {
 
     Span span;
 
-    Namespace(std::string name, std::string qualified_name) : name(name), qualified_name(qualified_name) {};
+    Namespace(const std::string& name, const std::string& qualified_name) : name(name), qualified_name(qualified_name) {};
 };
-
-#endif

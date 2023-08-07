@@ -1,18 +1,17 @@
-#ifndef _PARSER_PARSER_H
-#define _PARSER_PARSER_H
+#pragma once
 
 #include <quart/lexer/location.h>
 #include <quart/lexer/tokens.h>
 #include <quart/parser/ast.h>
 #include <quart/utils/pointer.h>
 
-#include "llvm/ADT/Optional.h"
+#include <llvm/ADT/Optional.h>
 
 #include <map>
 
 struct Path {
     std::string name;
-    std::deque<std::string> path;
+    std::deque<std::string> segments;
 };
 
 class Parser {
@@ -26,12 +25,13 @@ public:
     void end();
 
     Token next();
+    Token rewind(uint32_t n = 1);
 
     Token peek(uint32_t offset = 1);
 
-    Token expect(TokenKind type, std::string value);
+    Token expect(TokenKind type, const std::string& value);
 
-    bool is_valid_attribute(std::string name);
+    bool is_valid_attribute(const std::string& name);
 
     int get_token_precendence();
     
@@ -60,6 +60,7 @@ public:
     utils::Scope<ast::EnumExpr> parse_enum();
     utils::Scope<ast::TypeAliasExpr> parse_type_alias();
     utils::Scope<ast::Expr> parse_anonymous_function();
+    utils::Scope<ast::MatchExpr> parse_match_expr();
 
     // Parses `foo::bar::baz` into a deque of strings
     Path parse_path(llvm::Optional<std::string> name = llvm::None);
@@ -80,7 +81,7 @@ public:
     utils::Scope<ast::Expr> element(Span start, utils::Scope<ast::Expr> expr);
     utils::Scope<ast::Expr> factor();
 
-    uint32_t index;
+    size_t index;
     Token current;
 
     bool is_inside_function = false;
@@ -88,11 +89,8 @@ public:
     bool is_inside_struct = false;
     bool self_usage_allowed = false;
 
-
     std::vector<Token> tokens;
-    std::map<TokenKind, int> precedences;
 
     std::map<std::string, AttributeHandler> attributes;
 };
 
-#endif

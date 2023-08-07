@@ -1,5 +1,4 @@
-#ifndef _UTILS_UTILS_H
-#define _UTILS_UTILS_H
+#pragma once
 
 #include <assert.h>
 #include <vector>
@@ -39,5 +38,3 @@ template<typename T> bool contains(const std::vector<T>& vec, const T& value) {
 }
 
 }
-
-#endif

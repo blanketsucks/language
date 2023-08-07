@@ -1,18 +1,17 @@
-#include <quart/parser/ast.h>
 #include <quart/visitor.h>
 
 static std::vector<std::string> RESERVED_FUNCTION_NAMES = {
     "__global_constructors_init"
 };
 
-bool Visitor::is_reserved_function(std::string name) {
+bool Visitor::is_reserved_function(const std::string& name) {
     return std::find(
         RESERVED_FUNCTION_NAMES.begin(), RESERVED_FUNCTION_NAMES.end(), name
     ) != RESERVED_FUNCTION_NAMES.end();
 }
 
 llvm::Function* Visitor::create_function(
-    std::string name, 
+    const std::string& name, 
     llvm::Type* ret, 
     std::vector<llvm::Type*> args, 
     bool is_variadic, 
@@ -58,7 +57,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     uint32_t i = self ? 1 : 0;
     auto params = function->params();
 
-    bool encountered_variadic = false;
+    bool has_variadic = false;
     llvm::Type* variadic_type = nullptr;
 
     // Name is only used for kwargs when they are not in order
@@ -66,7 +65,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
         utils::Scope<ast::Expr>& expr, const std::string& name = ""
     ) {
         llvm::Value* value = nullptr;
-        if (encountered_variadic) {
+        if (has_variadic) {
             value = expr->accept(*this).unwrap(expr->span);
             if (!this->is_compatible(variadic_type, value->getType())) {
                 ERROR(
@@ -90,9 +89,13 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 
             this->ctx = param.type.value;
             if (param.is_reference()) {
-                auto ref = this->as_reference(expr);
+                auto ref = this->as_reference(expr, true);
                 if (ref.is_immutable && !param.is_immutable) {
                     ERROR(expr->span, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
+                }
+
+                if (!ref.is_immutable && !param.is_immutable) {
+                    this->mark_as_mutated(ref);
                 }
 
                 value = ref.value;
@@ -108,7 +111,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
                 values[i] = value;
                 this->ctx = nullptr;
             } else if (param.is_variadic) {
-                encountered_variadic = true;
+                has_variadic = true;
                 variadic_type = param.type->getStructElementType(1)->getPointerElementType();
 
                 value = expr->accept(*this).unwrap(expr->span);
@@ -160,7 +163,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
         visit(arg);
     }
 
-    if (encountered_variadic) {
+    if (has_variadic) {
         FunctionArgument param = params[i];
 
         // Refers to the `data` field in the struct
@@ -186,7 +189,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
         value = this->builder->CreateInsertValue(value, ptr, 1);
 
         values[i] = value;
-        encountered_variadic = false;
+        has_variadic = false;
     }
 
     for (auto& entry : kwargs) {
@@ -201,7 +204,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     ret.reserve(argc);
 
     for (auto& param : params) {
-        if (param.is_self) {
+        if (param.is_self && self) { // We want to allow calls like Foo::bar(a) to work
             continue;
         }
 
@@ -277,7 +280,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         ) {
             name = expr->name;
         } else {
-            name = this->format_name(expr->name);
+            name = this->format_symbol(expr->name);
         }
     }
 
@@ -300,7 +303,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (!expr->return_type) {
         ret = this->builder->getVoidTy();
     } else {
-        ret = expr->return_type->accept(*this).type;
+        ret = expr->return_type->accept(*this);
         if (ret->isVoidTy()) {
             NOTE(expr->return_type->span, "Redundant return type. Function return types default to 'void'");
         }
@@ -333,14 +336,14 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
                 self = structure->type;
             }
 
-            type = Type(self->getPointerTo(), true);
+            type = self->getPointerTo();
         } else if (arg.is_variadic) {
-            type = this->create_variadic_struct(arg.type->accept(*this).type);
+            type = this->create_variadic_struct(arg.type->accept(*this));
         } else {
-            type = arg.type->accept(*this).type;
-            if (type.is_reference) {
+            type = arg.type->accept(*this);
+            if (type.is_reference || type.is_pointer) {
                 if (type.is_immutable && !arg.is_immutable) {
-                    ERROR(arg.span, "Cannot mark an immutable reference as mutable");
+                    ERROR(arg.span, "Cannot mark an immutable type as mutable");
                 }
 
                 if (!type.is_immutable && !arg.is_immutable) {
@@ -400,10 +403,6 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
 
     std::string fn = export_s.empty() ? name : export_s;
-    if (this->module->getFunction(fn)) {
-        ERROR(expr->span, "Function with the name '{0}' already defined", fn);
-    }
-
     if (
         expr->linkage != ast::ExternLinkageSpecifier::C && 
         name != this->options.entry && 
@@ -421,6 +420,15 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
             this->current_struct, 
             this->current_module
         );
+    }
+
+    if (this->module->getFunction(fn)) {
+        auto function = this->functions[fn];
+
+        utils::error(expr->span, FORMAT("Function with the name '{0}' already defined", fn), false);
+        utils::note(function->span, FORMAT("Function '{0}' was previously defined here", fn));
+
+        exit(1);
     }
 
     if (this->is_reserved_function(fn)) {
@@ -441,6 +449,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         is_llvm_intrinsic,
         is_anonymous,
         expr->is_operator,
+        expr->span,
         expr->attributes
     );
 
@@ -456,8 +465,8 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         func->parent = this->current_struct;
     }
 
-    func->span = expr->span;
     this->scope->functions[expr->name] = func;
+    this->functions[fn] = func;
 
     return function;
 }
@@ -470,6 +479,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     }
 
     llvm::Function* function = func->value;
+    // TODO: Is this even necessary?
     if (!function->empty()) {
         NOTE(func->span, "Function '{0}' was previously defined here", func->name);
         ERROR(expr->span, "Function '{0}' is already defined", func->name);
@@ -510,10 +520,16 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
                     func->destructors.push_back({ alloca, structure.get() });
                 }
             }
-            
-            func->scope->variables[arg.name] = Variable::from_alloca(
+
+            auto variable = Variable::from_alloca(
                 arg.name, alloca, arg.is_immutable, arg.span
             );
+            
+            if (arg.is_self) {
+                variable.is_stack_allocated = false;
+            }
+            
+            func->scope->variables[arg.name] = variable;
         } else {
             func->scope->variables[arg.name] = Variable::from_value(
                 arg.name, argument, arg.is_immutable, true, false, arg.span
@@ -536,6 +552,10 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
         if (!func->has_return()) {
             if (func->ret->isVoidTy() || func->is_entry) {
+                for (auto& defer : func->defers) {
+                    defer->accept(*this);
+                }
+
                 if (func->is_entry) {
                     this->builder->CreateRet(this->builder->getInt32(0));
                 } else {
@@ -546,6 +566,9 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             }
         } else {
             this->set_insert_point(func->ret.block);
+            for (auto& defer : func->defers) {
+                defer->accept(*this);
+            }
  
             if (func->ret->isVoidTy()) {
                 this->builder->CreateRetVoid();
@@ -592,7 +615,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         if (func->ret.type.is_reference) {
-            auto ref = this->as_reference(expr->value);
+            auto ref = this->as_reference(expr->value, true);
             if (ref.is_null()) {
                 ERROR(expr->value->span, "Expected a variable, array or struct member");
             }
@@ -674,7 +697,11 @@ Value Visitor::visit(ast::DeferExpr* expr) {
         ERROR(expr->span, "Defer statement outside of function");
     }
 
-    TODO("Fix defer statement");
+    // TODO: Fix bug where defer gets executed if a return is before it
+    // TODO: Fix defers inside if statements and such
+    // The more i think about this, the more i regret ever adding this
+
+    TODO("Defer statements are not implemented");
     return nullptr;
 }
 
@@ -702,7 +729,12 @@ Value Visitor::visit(ast::CallExpr* expr) {
         llvm::AllocaInst* instance = this->builder->CreateAlloca(structure->type);
         callable.self = instance; // `self` parameter for the constructor
     
-        func = structure->scope->functions["constructor"];
+        auto it = structure->scope->functions.find("constructor");
+        if (it == structure->scope->functions.end()) {
+            ERROR(expr->span, "Structure '{0}' does not have a constructor", structure->name);
+        }
+
+        func = it->second;
         func->used = true;
 
         callable.value = func->value;
@@ -763,13 +795,25 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
         if (!this->current_function) {
             this->constructors.push_back(FunctionCall {
-                function, args, nullptr
+                function, args, callable.self, nullptr
             });
-
+            
             return Value::as_early_function_call();
         }
 
-        return this->call(function, args, callable.self, is_constructor, ftype);
+        llvm::Value* result = this->call(function, args, callable.self, is_constructor, ftype);
+        if (func->ret.is_reference()) {
+            return Value::as_reference(
+                result, func->ret.type.is_immutable, false
+            );
+        }
+
+        Value value = result;
+
+        value.is_immutable = func->ret.type.is_immutable;
+        value.is_stack_allocated = false;
+
+        return value;
     }
 
     if (argc > ftype->getNumParams() && !ftype->isVarArg()) {
@@ -800,12 +844,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (!this->current_function) {
         this->constructors.push_back(FunctionCall {
-            function, args, nullptr
+            function, args, callable.self, nullptr
         });
 
         return Value::as_early_function_call();
     }
-
 
     return this->call(function, args, callable.self, is_constructor, ftype);
 }

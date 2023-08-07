@@ -4,7 +4,8 @@
 #include <quart/visitor.h>
 #include <quart/utils/string.h>
 
-#include "llvm/IR/Instructions.h"
+#include <llvm/IR/Instructions.h>
+
 #include <functional>
 
 #define LLVM_MAX_INT_BITS (2 << (23 - 1)) // 2^23
@@ -70,7 +71,7 @@ std::string Visitor::get_type_name(llvm::Type* type) {
                 return FORMAT("i{0}", bits);
             }
         }
-        case llvm::Type::PointerTyID: return Visitor::get_type_name(type->getPointerElementType()) + "*";
+        case llvm::Type::PointerTyID: return "*" + Visitor::get_type_name(type->getPointerElementType());
         case llvm::Type::ArrayTyID: {
             std::string name = Visitor::get_type_name(type->getArrayElementType());
             return FORMAT("[{0}; {1}]", name, type->getArrayNumElements());
@@ -86,6 +87,9 @@ std::string Visitor::get_type_name(llvm::Type* type) {
                 }
 
                 return FORMAT("({0})", llvm::make_range(names.begin(), names.end()));
+            } else if (name.startswith("__variadic")) {
+                llvm::Type* element = ty->getElementType(0);
+                return FORMAT("({0}, ...)", Visitor::get_type_name(element));
             }
 
             return utils::replace(name.str(), ".", "::");
@@ -195,6 +199,8 @@ llvm::Value* Visitor::cast(llvm::Value* value, llvm::Type* type) {
     } else if (from->isArrayTy() && type->isPointerTy()) {
         assert(from->getArrayElementType() == type->getPointerElementType());
         value = this->as_reference(value);
+    } else if (from->isFloatingPointTy() && type->isFloatingPointTy()) {
+        return this->builder->CreateFPCast(value, type);
     }
 
     return this->builder->CreateBitCast(value, type);
@@ -233,7 +239,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
     llvm::Value* value = expr->value->accept(*this).unwrap(expr->span);
 
     llvm::Type* from = value->getType();
-    llvm::Type* to = expr->to->accept(*this).type.value;
+    llvm::Type* to = expr->to->accept(*this).value;
 
     if (from == to) {
         return value;
@@ -285,9 +291,9 @@ Value Visitor::visit(ast::CastExpr* expr) {
         } else if (to->isPointerTy()) {
             return this->builder->CreateIntToPtr(value, to);
         }
-    } else if (from->isFloatTy()) {
-        if (to->isDoubleTy()) {
-            return this->builder->CreateFPExt(value, to);
+    } else if (from->isFloatingPointTy()) {
+        if (to->isFloatingPointTy()) {
+            return this->builder->CreateFPCast(value, to);
         } else if (to->isIntegerTy()) {
             return this->builder->CreateFPToSI(value, to);
         }
@@ -297,6 +303,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
         }
     }
 
+    // TODO: Retain mutability of the value and check for `mut` types.
     return this->builder->CreateBitCast(value, to);
 }
 
@@ -320,11 +327,11 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
     return Value(this->builder->getInt32(size), true);
 }
 
-Value Visitor::visit(ast::BuiltinTypeExpr* expr) {
-    return Value::from_type(this->get_builtin_type(expr->value));
+Type Visitor::visit(ast::BuiltinTypeExpr* expr) {
+    return this->get_builtin_type(expr->value);
 }
 
-Value Visitor::visit(ast::IntegerTypeExpr* expr) {
+Type Visitor::visit(ast::IntegerTypeExpr* expr) {
     llvm::Value* value = expr->size->accept(*this).unwrap(expr->size->span);
     if (!llvm::isa<llvm::ConstantInt>(value)) {
         ERROR(expr->size->span, "Integer type size must be a constant");
@@ -335,10 +342,10 @@ Value Visitor::visit(ast::IntegerTypeExpr* expr) {
         ERROR(expr->size->span, "Integer type size must be between 1 and {0} bits", LLVM_MAX_INT_BITS);
     }
 
-    return Value::from_type(this->builder->getIntNTy(size));
+    return this->builder->getIntNTy(size);
 }
 
-Value Visitor::visit(ast::NamedTypeExpr* expr) {
+Type Visitor::visit(ast::NamedTypeExpr* expr) {
     Scope* scope = this->scope;
     while (!expr->parents.empty()) {
         std::string name = expr->parents.front();
@@ -355,32 +362,32 @@ Value Visitor::visit(ast::NamedTypeExpr* expr) {
 
     if (scope->has_struct(expr->name)) {
         auto structure = scope->get_struct(expr->name);
-        return Value::from_type(structure->type, structure);
+        return structure->type;
     } else if (scope->has_type(expr->name)) {
-        return Value::from_type(scope->get_type(expr->name).type);
+        return scope->get_type(expr->name).type;
     } else if (scope->has_enum(expr->name)) {
-        return Value::from_type(scope->get_enum(expr->name)->type);
+        return scope->get_enum(expr->name)->type;
     }
 
     ERROR(expr->span, "Unrecognised type '{0}'", expr->name);
 }
 
-Value Visitor::visit(ast::PointerTypeExpr* expr) {
-    Value ret = expr->element->accept(*this);
-    if (ret.type->isPointerTy()) {
+Type Visitor::visit(ast::PointerTypeExpr* expr) {
+    Type type = expr->type->accept(*this);
+    if (type->isPointerTy()) {
         // If the type that it's pointing to is a function, we don't want to double up on the pointer
-        llvm::Type* element = ret.type->getPointerElementType();
-        if (element->isFunctionTy()) {
-            return ret;
+        llvm::Type* elt = type->getPointerElementType();
+        if (elt->isFunctionTy()) {
+            return Type(type.value, false, true, expr->is_immutable);
         }
     }
 
-    return Value::from_type(ret.type->getPointerTo());
+    return Type(type->getPointerTo(), false, true, expr->is_immutable);
 }
 
-Value Visitor::visit(ast::ArrayTypeExpr* expr) {
-    llvm::Type* element = expr->element->accept(*this).type.value;
-    if (element->isVoidTy()) {
+Type Visitor::visit(ast::ArrayTypeExpr* expr) {
+    llvm::Type* type = expr->type->accept(*this).value;
+    if (type->isVoidTy()) {
         ERROR(expr->span, "Cannot create an array of type 'void'");
     }
 
@@ -390,32 +397,32 @@ Value Visitor::visit(ast::ArrayTypeExpr* expr) {
     }
 
     llvm::ConstantInt* csize = llvm::cast<llvm::ConstantInt>(size);
-    return Value::from_type(llvm::ArrayType::get(element, csize->getZExtValue()));
+    return llvm::ArrayType::get(type, csize->getZExtValue());
 }
 
-Value Visitor::visit(ast::TupleTypeExpr* expr) {
+Type Visitor::visit(ast::TupleTypeExpr* expr) {
     std::vector<llvm::Type*> types;
-    for (auto& element : expr->elements) {
-        llvm::Type* type = element->accept(*this).type.value;
+    for (auto& ty : expr->types) {
+        llvm::Type* type = ty->accept(*this).value;
         if (type->isVoidTy()) {
-            ERROR(element->span, "Cannot create a tuple with a 'void' element");
+            ERROR(ty->span, "Cannot create a tuple with a 'void' element");
         }
 
         types.push_back(type);
     }
 
-    return Value::from_type(this->create_tuple_type(types));
+    return this->create_tuple_type(types);
 }
 
-Value Visitor::visit(ast::FunctionTypeExpr* expr) {
+Type Visitor::visit(ast::FunctionTypeExpr* expr) {
     llvm::Type* ret = this->builder->getVoidTy();
     if (expr->ret) {
-        ret = expr->ret->accept(*this).type.value;
+        ret = expr->ret->accept(*this).value;
     }
 
     std::vector<llvm::Type*> types;
     for (auto& param : expr->args) {
-        llvm::Type* ty = param->accept(*this).type.value;
+        llvm::Type* ty = param->accept(*this).value;
         if (ty->isVoidTy()) {
             ERROR(param->span, "Function parameter type cannot be of type 'void'");
         }
@@ -424,20 +431,20 @@ Value Visitor::visit(ast::FunctionTypeExpr* expr) {
     }
 
     auto f = llvm::FunctionType::get(ret, types, false);
-    return Value::from_type(f->getPointerTo());
+    return f->getPointerTo();
 }
 
-Value Visitor::visit(ast::ReferenceTypeExpr* expr) {
-    llvm::Type* type = expr->type->accept(*this).type.value;
+Type Visitor::visit(ast::ReferenceTypeExpr* expr) {
+    llvm::Type* type = expr->type->accept(*this).value;
     if (type->isVoidTy()) {
         ERROR(expr->span, "Cannot create a reference to type 'void'");
     }
 
-    return Value::from_type(Type(type->getPointerTo(), true, expr->is_immutable));
+    return Type(type->getPointerTo(), true, false, expr->is_immutable);
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
-    llvm::Type* type = expr->type->accept(*this).type.value;
+    llvm::Type* type = expr->type->accept(*this).value;
     this->scope->types[expr->name] = TypeAlias { expr->name, type, nullptr, expr->span };
 
     return nullptr;

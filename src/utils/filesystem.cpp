@@ -68,6 +68,25 @@ fs::Path::operator std::string() const {
     return this->name;
 }
 
+fs::Path fs::Path::from_parts(const std::vector<std::string>& parts) {
+    std::string name;
+    for (size_t i = 0; i < parts.size(); i++) {
+        name.append(parts[i]);
+        if (i != parts.size() - 1) {
+            name.push_back('/');
+        }
+    }
+
+    return Path(name);
+}
+
+fs::Path fs::Path::from_env(const std::string& env) {
+    char* buffer = getenv(env.c_str());
+    assert(buffer && "getenv() error");
+
+    return Path(buffer);
+}
+
 struct stat fs::Path::stat() {
     struct stat buffer;
     ::stat(this->name.c_str(), &buffer);
@@ -140,7 +159,7 @@ std::vector<std::string> fs::Path::parts() {
             parts.push_back(part);
             part.clear();
         } else {
-            part += c;
+            part.push_back(c);
         }
     }
 
@@ -195,16 +214,14 @@ std::vector<fs::Path> fs::Path::listdir(bool recursive) {
     std::vector<fs::Path> paths;
 
     for (auto& path : this->listdir()) {
-        if (path.isdir()) {
-            if (recursive) {
-                auto subpaths = path.listdir(true);
-                paths.insert(paths.end(), subpaths.begin(), subpaths.end());
-            } else {
-                paths.push_back(path);
-            }
-        } else {
-            paths.push_back(path);
+        if (path.isdir() && recursive) {
+            auto subpaths = path.listdir(true);
+            paths.insert(paths.end(), subpaths.begin(), subpaths.end());
+
+            continue;
         }
+
+        paths.push_back(path);
     }
 
     return paths;

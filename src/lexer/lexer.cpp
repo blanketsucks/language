@@ -20,11 +20,9 @@ static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
     {'%', TokenKind::Mod}
 };
 
-bool isxdigit(char c) {
-    return std::isxdigit(c);
-}
+bool isxdigit(char c) { return std::isxdigit(c); }
 
-Lexer::Lexer(const std::string& source, std::string filename) {
+Lexer::Lexer(const std::string& source, const std::string& filename) {
     this->source = source;
     this->filename = filename;
 
@@ -35,7 +33,7 @@ Lexer::Lexer(const std::string& source, std::string filename) {
 Lexer::Lexer(utils::fs::Path path) {
     this->filename = path.str();
     this->source = path.read().str();
-
+    
     this->reset();
     this->next();
 }
@@ -69,6 +67,14 @@ char Lexer::prev() {
     return this->source[this->index - 1]; 
 }
 
+char Lexer::rewind(uint32_t offset) {
+    this->index -= offset - 1;
+    this->column -= offset;
+
+    this->current = this->source[this->index - 1];
+    return this->current;
+}
+
 void Lexer::reset() {
     this->index = 0;
     this->line = 1;
@@ -76,19 +82,19 @@ void Lexer::reset() {
     this->eof = false;
 }
 
-bool Lexer::is_keyword(std::string word) {
+bool Lexer::is_keyword(const std::string& word) {
     return KEYWORDS.find(word) != KEYWORDS.end();
 }
 
-TokenKind Lexer::get_keyword_kind(std::string word) {
+TokenKind Lexer::get_keyword_kind(const std::string& word) {
     return KEYWORDS.at(word);
 }
 
-Token Lexer::create_token(TokenKind type, std::string value) {
+Token Lexer::create_token(TokenKind type, const std::string& value) {
     return {type, value, this->make_span()};
 }
 
-Token Lexer::create_token(TokenKind type, Location start, std::string value) {
+Token Lexer::create_token(TokenKind type, Location start, const std::string& value) {
     return {type, value, this->make_span(start, this->loc())};
 }
 
@@ -116,7 +122,7 @@ Span Lexer::make_span(const Location& start, const Location& end) {
     return Span {
         start,
         end,
-        this->filename.c_str(),
+        this->filename,
         line
     };
 }
@@ -229,11 +235,12 @@ bool Lexer::is_valid_identifier(uint8_t c) {
     return true;
 }
 
-std::string Lexer::parse_unicode(uint8_t current) {  
-    uint32_t expected = 0;
+uint8_t Lexer::parse_unicode(std::string& buffer, uint8_t current) {  
+    uint8_t expected = 0;
 
+    buffer.push_back(current); 
     if (current < 0x80) {
-        return std::string(1, current);
+        return 0;
     } else if (current < 0xE0) {
         expected = 1;
     } else if (current < 0xF0) {
@@ -242,15 +249,11 @@ std::string Lexer::parse_unicode(uint8_t current) {
         expected = 3;
     }
 
-    std::string unicode;
-    unicode.reserve(expected + 1); // I'm pretty sure this doesn't improve performance that much in this case but meh
-
-    unicode += this->current;
-    for (uint32_t i = 0; i < expected; i++) {
-        unicode += this->next();
+    for (uint8_t i = 0; i < expected; i++) {
+        buffer.push_back(this->next());
     }
 
-    return unicode;
+    return expected;
 }
 
 std::string Lexer::parse_while(
@@ -258,7 +261,7 @@ std::string Lexer::parse_while(
     const Predicate predicate
 ) {
     while (predicate(this->current)) {
-        buffer += this->current;
+        buffer.push_back(this->current);
         this->next();
     }
 
@@ -271,19 +274,19 @@ void Lexer::skip_comment() {
     }
 }
 
-Token Lexer::parse_identifier() {
+Token Lexer::parse_identifier(bool accept_keywords) {
     std::string value;
     Location start = this->loc();
 
-    value += this->parse_unicode(this->current);
-
+    this->parse_unicode(value, this->current);
     char next = this->next();
+
     while (this->is_valid_identifier(next)) {
-        value += this->parse_unicode(next);
+        this->parse_unicode(value, next);
         next = this->next();
     }
 
-    if (Lexer::is_keyword(value)) {
+    if (Lexer::is_keyword(value) && accept_keywords) {
         return this->create_token(Lexer::get_keyword_kind(value), start, value);
     } else {
         return this->create_token(TokenKind::Identifier, start, value);
@@ -298,13 +301,15 @@ Token Lexer::parse_string() {
         char character = this->escape(this->next());
         this->next(); this->next();
 
-        std::string value; value.push_back(character);
+        std::string value(1, character);
         return this->create_token(TokenKind::Char, start, value);
     }
 
     char next = this->next();
     while (next && next != '"') {
-        value += this->escape(this->current);
+        char escaped = this->escape(this->current);
+        value.push_back(escaped);
+
         next = this->next();
     }
 
@@ -321,14 +326,15 @@ Token Lexer::parse_number() {
     std::string value;
     Location start = this->loc();
 
-    value += this->current;
+    value.push_back(this->current);
 
     char next = this->next();
     bool dot = false;
 
     if (value == "0") {
         if (next == 'x' || next == 'b') {
-            value += next; this->next();
+            value.push_back(next);
+            this->next();
 
             if (next == 'x') {
                 this->parse_while(value, isxdigit);
@@ -349,6 +355,11 @@ Token Lexer::parse_number() {
 
         dot = true;
         next = this->next();
+
+        if (this->current == '.') {
+            this->rewind(2);
+            return this->create_token(TokenKind::Integer, start, "0");
+        }
     }
 
     while (std::isdigit(next) || next == '.' || next == '_') {
@@ -367,8 +378,15 @@ Token Lexer::parse_number() {
             continue;
         }
 
-        value += next;
+        value.push_back(next);
         next = this->next();
+    }
+
+    if (value.back() == '.' && this->current == '.') {
+        this->rewind(2);
+        value.pop_back();
+
+        dot = false;
     }
 
     if (dot) {
@@ -394,6 +412,17 @@ Token Lexer::once() {
     }
 
     switch (current) {
+        case '`': {
+            this->next();
+            Token token = this->parse_identifier(false);
+
+            if (this->current != '`') {
+                ERROR(this->make_span(start, this->loc()), "Expected end of identifier.");
+            }
+
+            this->next();
+            return token;
+        }
         case '+': {
             char next = this->next();
             if (next == '+') {
@@ -493,13 +522,13 @@ Token Lexer::once() {
             
             return this->create_token(TokenKind::BinaryAnd, start, "&");
         } case '.': {
-            char next = this->next();    
+            char next = this->next();
             if (next == '.' && this->peek() == '.') {
                 this->next(); this->next();
                 return this->create_token(TokenKind::Ellipsis, start, "...");
             } else if (next == '.') {
                 this->next();
-                return this->create_token(TokenKind::Range, start, "..");
+                return this->create_token(TokenKind::DoubleDot, start, "..");
             }
             
             return this->create_token(TokenKind::Dot, ".");
