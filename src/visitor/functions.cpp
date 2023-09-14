@@ -81,7 +81,6 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
             return;
         }
 
-
         quart::Parameter param;
         if (!name.empty()) {
             param = function->kwargs[name]; i = param.index;
@@ -89,51 +88,26 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
             param = params[i];
         }
 
-        bool is_mutable = param.flags & Parameter::Mutable;
         this->inferred = param.type;
-
         if (param.is_reference()) {
-            auto ref = this->as_reference(expr, true);
-            if (!ref.is_mutable() && is_mutable) {
-                ERROR(expr->span, "Cannot pass immutable reference to mutable reference parameter '{0}'", param.name);
-            }
+            this->inferred = param.type->get_reference_type();
+        }
 
-            if (ref.is_mutable() && is_mutable) {
-                this->mark_as_mutated(ref);
-            }
-
-            quart::Type* type = param.type;
-            value = {ref.value, type};
-            if (!Type::can_safely_cast_to(ref.type, type)) {
-                ERROR(
-                    expr->span, 
-                    "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                    type->get_as_string(), param.type->get_as_string()
-                );
-            } else {
-                value = this->cast(value, type);
-            }
-
-            values[i] = value;
+        value = expr->accept(*this);
+        if (!Type::can_safely_cast_to(value.type, param.type)) {
+            ERROR(
+                expr->span, 
+                "Cannot pass value of type '{0}' to parameter of type '{1}'", 
+                value.type->get_as_string(), param.type->get_as_string()
+            );
         } else {
-            value = expr->accept(*this);
-            if (value.is_empty_value()) ERROR(expr->span, "Expected a value");
-
-            if (!Type::can_safely_cast_to(value.type, param.type)) {
-                ERROR(
-                    expr->span, 
-                    "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                    value.type->get_as_string(), param.type->get_as_string()
-                );
-            }
-
             value = this->cast(value, param.type);
         }
-        
-        values[i] = value;
-        this->inferred = nullptr;
 
-        i++; 
+        this->inferred = nullptr;
+        values[i] = value;
+
+        i++;
     };
 
     for (auto& arg : args) {

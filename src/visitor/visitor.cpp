@@ -257,7 +257,13 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
     switch (expr->kind()) {
         case ast::ExprKind::Variable: {
             ast::VariableExpr* variable = expr->as<ast::VariableExpr>();
-            return this->scope->get_local(variable->name);
+            ScopeLocal local = this->scope->get_local(variable->name);
+
+            if (local.is_null()) {
+                ERROR(variable->span, "Variable '{0}' does not exist in this scope", variable->name);
+            }
+
+            return local;
         }
         case ast::ExprKind::Index: {
             ast::IndexExpr* idx = expr->as<ast::IndexExpr>();
@@ -353,6 +359,20 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
         default:
             return ScopeLocal::null();
     }
+}
+
+Value Visitor::get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool require_ampersand) {
+    ScopeLocal local = this->as_reference(expr, require_ampersand);
+    if (local.is_null()) {
+        return EMPTY_VALUE;
+    }
+
+    quart::Type* type = local.type->get_reference_to(local.flags & ScopeLocal::Mutable);
+    uint16_t flags = Value::None;
+
+    if (local.flags & ScopeLocal::StackAllocated) flags |= Value::StackAllocated;
+
+    return Value(local.value, type, flags);
 }
 
 void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {

@@ -158,8 +158,10 @@ public:
 
     bool is_reference_expr(std::unique_ptr<ast::Expr>& expr); // if it's a &expr or not
     llvm::Value* as_reference(llvm::Value* value);
-    ScopeLocal as_reference(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
 
+    ScopeLocal as_reference(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
+    Value get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
+    
     uint32_t get_pointer_depth(llvm::Type* type);
 
     bool is_valid_sized_type(llvm::Type* type);

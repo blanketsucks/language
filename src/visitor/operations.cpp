@@ -225,7 +225,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             auto ref = this->as_reference(expr->value);
             if (!ref.value) {
                 llvm::AllocaInst* alloca = this->alloca(value->getType());
-                return Value(alloca, type->get_reference_to(false));
+                return Value(alloca, type->get_reference_to(true));
             }
 
             uint16_t flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;

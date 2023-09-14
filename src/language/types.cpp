@@ -41,6 +41,16 @@ bool Type::can_safely_cast_to(Type* from, Type* to) {
 
         if (to->is_void()) return is_match_mutable;
         return is_match_mutable && Type::can_safely_cast_to(from, to);
+    } else if (from->is_reference() && to->is_reference()) {
+        bool is_match_mutable = false;
+        if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
+            is_match_mutable = true;
+        }
+
+        from = from->get_reference_type();
+        to = to->get_reference_type();
+
+        return is_match_mutable && (from == to);
     } else if (from->is_array() && to->is_array()) {
         if (to->get_array_size() != from->get_array_size()) {
             return false;
