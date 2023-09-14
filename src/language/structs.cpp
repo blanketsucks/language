@@ -1,23 +1,34 @@
-#include <quart/objects/structs.h>
-#include <quart/objects/scopes.h>
+#include <quart/language/structs.h>
+#include <quart/language/scopes.h>
 
-Struct::Struct(
-    const std::string& name,
-    const std::string& qualified_name,
-    bool opaque,
-    llvm::StructType* type,
-    std::map<std::string, StructField> fields
-) : name(name), qualified_name(qualified_name), type(type), fields(fields), opaque(opaque) {
+using namespace quart;
+
+Struct::Struct(const std::string& name, quart::StructType* type, bool opaque) : name(name), type(type), opaque(opaque) {
     this->scope = nullptr;
 }
+
+Struct::Struct(
+    const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
+) : name(name), type(type), fields(fields), opaque(opaque) {
+    this->scope = nullptr;
+}
+
+StructRef Struct::create(const std::string& name, quart::StructType* type, bool opaque) {
+    return std::shared_ptr<Struct>(new Struct(name, type, opaque));
+}
+
+StructRef Struct::create(
+    const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
+) {
+    return std::shared_ptr<Struct>(new Struct(name, type, fields, opaque));
+}
+
 
 bool Struct::has_method(const std::string& name) { 
     return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
-utils::Ref<Function> Struct::get_method(const std::string& name) {
-    return this->scope->functions[name]; 
-}
+FunctionRef Struct::get_method(const std::string& name) { return this->scope->functions[name]; }
 
 int Struct::get_field_index(const std::string& name) {
     if (this->fields.find(name) == this->fields.end()) {
@@ -40,7 +51,7 @@ StructField Struct::get_field_at(uint32_t index) {
 std::vector<StructField> Struct::get_fields(bool with_private) {
     std::vector<StructField> fields;
     for (auto pair : this->fields) {
-        if (pair.second.is_private) {
+        if (pair.second.is_private()) {
             if (with_private) {
                 fields.push_back(pair.second);
             }   
@@ -52,8 +63,8 @@ std::vector<StructField> Struct::get_fields(bool with_private) {
     return fields;
 }
 
-std::vector<utils::Ref<Struct>> Struct::expand() {
-   std::vector<utils::Ref<Struct>> parents;
+std::vector<Struct*> Struct::expand() {
+   std::vector<Struct*> parents;
     for (auto parent : this->parents) {
         parents.push_back(parent);
 

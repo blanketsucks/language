@@ -1,9 +1,9 @@
 #pragma once
 
-#include <quart/utils/pointer.h>
 #include <quart/llvm.h>
 #include <quart/compiler.h>
-#include <quart/objects/scopes.h>
+
+namespace quart {
 
 namespace jit {
 
@@ -37,8 +37,8 @@ public:
     QuartJIT(
         const std::string& filename,
         const std::string& entry,
-        utils::Scope<llvm::Module> module, 
-        utils::Scope<llvm::LLVMContext> context
+        std::unique_ptr<llvm::Module> module, 
+        std::unique_ptr<llvm::LLVMContext> context
     );
 
     llvm::orc::JITDylib& dylib() const;
@@ -64,10 +64,12 @@ private:
     std::string filename;
     std::string entry;
 
-    utils::Scope<llvm::orc::LLJIT> jit;
+    std::unique_ptr<llvm::orc::LLJIT> jit;
     llvm::orc::ThreadSafeModule module;
 
     llvm::orc::SymbolMap symbols;
 };
+
+}
 
 }

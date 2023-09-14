@@ -1,43 +1,50 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 Value Visitor::visit(ast::EnumExpr* expr) {
-    llvm::Type* type = nullptr;
+    quart::Type* inner = nullptr;
     if (!expr->type) {
-        type = this->builder->getInt32Ty();
+        inner = this->registry->create_int_type(32, true);
     } else {
-        type = expr->type->accept(*this).value;
+        inner = expr->type->accept(*this);
     }
     
-    auto enumeration = utils::make_ref<Enum>(expr->name, type);
-    enumeration->span = expr->span;
+    quart::EnumType* type = this->registry->create_enum_type(expr->name, inner);
+    auto enumeration = std::make_shared<Enum>(expr->name, type);
 
     this->scope->enums[expr->name] = enumeration;
     enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
 
-    if (type->isIntegerTy()) {
+    if (inner->is_int()) {
         int64_t counter = 0;
         for (auto& field : expr->fields) {
-            llvm::Constant* constant = nullptr;
             if (field.value) {
-                llvm::Value* value = field.value->accept(*this).unwrap(field.value->span);
-                if (!llvm::isa<llvm::ConstantInt>(value)) {
+                Value value = field.value->accept(*this);
+                if (value.is_empty_value()) ERROR(field.value->span, "Expected a constant value");
+
+                llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+                if (!constant) {
                     ERROR(field.value->span, "Expected a constant integer");
                 }
 
-                llvm::ConstantInt* val = llvm::cast<llvm::ConstantInt>(value);
-                if (val->getBitWidth() > type->getIntegerBitWidth()) {
-                    val = static_cast<llvm::ConstantInt*>(
-                        llvm::ConstantInt::get(type, val->getSExtValue(), true)
+                if (constant->getBitWidth() != inner->get_int_bit_width()) {
+                    constant = static_cast<llvm::ConstantInt*>(
+                        llvm::ConstantInt::get(
+                            inner->to_llvm_type(), 
+                            constant->getSExtValue(), 
+                            !inner->is_int_unsigned()
+                        )
                     );
                 }
 
-                counter = val->getSExtValue();
-                constant = val;
+                counter = constant->getSExtValue();
+                enumeration->add_enumerator(field.name, constant, field.value->span);
             } else {
-                constant = llvm::ConstantInt::get(type, counter, true);
+                llvm::Constant* constant = llvm::ConstantInt::get(inner->to_llvm_type(), counter, true);
+                enumeration->add_enumerator(field.name, constant, expr->span);
             }
 
-            enumeration->add_field(field.name, constant);
             counter++;
         }
 
@@ -51,12 +58,14 @@ Value Visitor::visit(ast::EnumExpr* expr) {
         }
 
         Value value = field.value->accept(*this);
-        if (!value.is_constant) {
+        if (value.is_empty_value()) ERROR(field.value->span, "Expected a constant value");
+
+        llvm::Constant* constant = llvm::dyn_cast<llvm::Constant>(value.inner);
+        if (!constant) {
             ERROR(field.value->span, "Expected a constant value");
         }
 
-        llvm::Constant* constant = llvm::cast<llvm::Constant>(value.unwrap(field.value->span));
-        enumeration->add_field(field.name, constant);
+        enumeration->add_enumerator(field.name, constant, field.value->span);
     }
 
     this->scope->exit(this);
@@ -65,81 +74,129 @@ Value Visitor::visit(ast::EnumExpr* expr) {
 
 struct MatchBlock {
     llvm::BasicBlock* block;
-    llvm::Value* result;
+    Value result;
     Span span;
 };
 
 Value Visitor::visit(ast::MatchExpr* expr) {
-    llvm::Value* value = expr->value->accept(*this).unwrap(expr->value->span);
-    llvm::Type* type = value->getType();
+    Value value = expr->value->accept(*this);
+    if (value.is_empty_value()) ERROR(expr->value->span, "Expected a value");
 
-    if (!type->isIntegerTy()) {
+    quart::Type* type = value.type;
+    if (!type->is_int()) {
         ERROR(expr->value->span, "Expected an integer");
     }
 
     llvm::BasicBlock* original_block = this->builder->GetInsertBlock();
     llvm::BasicBlock* merge = llvm::BasicBlock::Create(*this->context, "");
 
-    llvm::SwitchInst* instruction = this->builder->CreateSwitch(
-        value, merge, expr->arms.size()
-    );
-
-    llvm::Type* rtype = nullptr; 
+    llvm::BasicBlock* next = nullptr;
+    
+    bool is_first = true;
+    quart::Type* rtype = nullptr; 
     llvm::Value* alloca = nullptr;
 
     std::vector<MatchBlock> blocks;
-    bool is_first = true;
 
+    const auto& verify_arm_return = [&](
+        const Value& result, llvm::BasicBlock* block, const ast::MatchArm& arm
+    ) {
+        if (arm.index == 0) {
+            rtype = result.is_empty_value() ? result.type : nullptr;
+            if (rtype) {
+                this->set_insert_point(original_block, false);
+                alloca = this->alloca(rtype->to_llvm_type());
+            }
+        }
+
+        blocks.push_back({ block, result, arm.pattern.span });
+    };
+
+    size_t i = 0;
     for (auto& arm : expr->arms) {
+        if (!arm.pattern.is_conditional) {
+            if (!is_first) is_first = false;
+            continue;
+        }
+
+        next = llvm::BasicBlock::Create(*this->context, "");
         llvm::BasicBlock* block = llvm::BasicBlock::Create(*this->context, "");
 
-        for (auto& pattern : arm.pattern.values) {
-            Value value = pattern->accept(*this);
-            if (!value.is_constant) {
-                ERROR(pattern->span, "Expected a constant value");
-            }
+        auto& expr = arm.pattern.values[0];
+        Value condition = expr->accept(*this);
+        if (condition.is_empty_value()) ERROR(expr->span, "Expected a value");
 
-            llvm::Value* v = value.unwrap(pattern->span);
-            if (!llvm::isa<llvm::ConstantInt>(v)) {
-                ERROR(pattern->span, "Expected a constant integer");
-            }
+        this->builder->CreateCondBr(condition, block, next);
+        this->set_insert_point(block);
 
-            llvm::ConstantInt* constant = llvm::cast<llvm::ConstantInt>(v);
-            if (constant->getBitWidth() != type->getIntegerBitWidth()) {
-                constant = static_cast<llvm::ConstantInt*>(
-                    llvm::ConstantInt::get(type, constant->getSExtValue(), true)
-                );
-            }
+        Value result = arm.body->accept(*this);
+        verify_arm_return(result, block, arm);
 
-            instruction->addCase(constant, block);
+        this->set_insert_point(next);
+        i++;
+    }
+
+    llvm::SwitchInst* instruction = this->builder->CreateSwitch(
+        value, merge, expr->arms.size() - i
+    );
+
+    for (auto& arm : expr->arms) {
+        if (arm.pattern.is_conditional) continue;
+
+        llvm::BasicBlock* block = llvm::BasicBlock::Create(*this->context, "");
+        if (arm.is_wildcard()) {
+            instruction->setDefaultDest(block);
+        } else {
+            for (auto& pattern : arm.pattern.values) {
+                Value value = pattern->accept(*this);
+                if (!(value.flags & Value::Constant)) {
+                    ERROR(pattern->span, "Expected a constant value");
+                }
+
+                llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+                if (!constant) {
+                    ERROR(pattern->span, "Expected a constant integer");
+                }
+
+                if (constant->getBitWidth() != type->get_int_bit_width()) {
+                    constant = static_cast<llvm::ConstantInt*>(
+                        llvm::ConstantInt::get(
+                            this->builder->getIntNTy(type->get_int_bit_width()), 
+                            constant->getSExtValue(), 
+                            !type->is_int_unsigned()
+                        )
+                    );
+                }
+
+                if (instruction->findCaseValue(constant) != instruction->case_default()) {
+                    ERROR(pattern->span, "Duplicate match arm");
+                }
+
+                instruction->addCase(constant, block);
+            }
         }
 
         this->set_insert_point(block);
-        llvm::Value* result = arm.body->accept(*this).value;
+        Value result = arm.body->accept(*this);
 
-        if (is_first) {
-            rtype = result ? result->getType() : nullptr;
-            if (rtype) {
-                this->set_insert_point(original_block, false);
-                alloca = this->alloca(rtype);
-            }
-        }
-
-        blocks.push_back({ block, result, arm.pattern.span() });
-        is_first = false;
+        verify_arm_return(result, block, arm);
     }
 
     for (auto& block : blocks) {
         this->set_insert_point(block.block, false);
 
         if (!block.result && rtype) {
-            ERROR(block.span, "Expected a value of type '{0}' from match arm", this->get_type_name(rtype));
+            ERROR(block.span, "Expected a value of type '{0}' from match arm", rtype->get_as_string());
         }
 
         if (block.result && rtype) {
-            llvm::Type* type = block.result->getType();
-            if (!this->is_compatible(rtype, type)) {
-                ERROR(block.span, "Expected a value of type '{0}' from match arm but got '{1}' instead", this->get_type_name(rtype), this->get_type_name(type));
+            quart::Type* type = block.result.type;
+            if (!Type::can_safely_cast_to(type, rtype)) {
+                ERROR(
+                    block.span, 
+                    "Expected a value of type '{0}' from match arm but got '{1}' instead", 
+                    rtype->get_as_string(), type->get_as_string()
+                );
             }
 
             block.result = this->cast(block.result, rtype);
@@ -152,5 +209,5 @@ Value Visitor::visit(ast::MatchExpr* expr) {
     }
 
     this->set_insert_point(merge);
-    return this->load(alloca);
+    return {this->load(alloca), rtype};
 }

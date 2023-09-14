@@ -4,6 +4,8 @@
 #include <string>
 #include <sstream>
 
+namespace quart {
+
 struct Location {
     uint32_t line;
     uint32_t column;
@@ -24,3 +26,5 @@ struct Span {
 
     size_t length() const;
 };
+
+}

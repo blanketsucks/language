@@ -1,10 +1,12 @@
 #pragma once
 
-#include <quart/utils/log.h>
-#include <quart/utils/filesystem.h>
+#include <quart/logging.h>
+#include <quart/filesystem.h>
 
 #include <set>
 #include <chrono>
+
+namespace quart {
 
 enum class OutputFormat {
     Object,
@@ -23,6 +25,20 @@ static std::map<OutputFormat, const char*> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Executable, "Executable"},
     {OutputFormat::SharedLibrary, "Shared Library"}
 };
+
+static std::map<OutputFormat, std::string> OUTPUT_FORMATS_TO_EXT = {
+    {OutputFormat::Object, "o"},
+    {OutputFormat::LLVM, "ll"},
+    {OutputFormat::Bitcode, "bc"},
+    {OutputFormat::Assembly, "s"},
+    {OutputFormat::Executable, ""},
+#if _WIN32 || _WIN64
+    {OutputFormat::SharedLibrary, "lib"}
+#else
+    {OutputFormat::SharedLibrary, "so"}
+#endif
+};
+
 
 enum class OptimizationLevel {
     Debug,
@@ -62,13 +78,13 @@ struct CompilerError {
 struct CompilerOptions {
     using Extra = std::pair<std::string, std::string>;
 
-    utils::fs::Path input;
+    fs::Path input;
     std::string output;
     std::string entry;
     std::string target;
 
     Libraries libs;
-    std::vector<std::string> includes;
+    std::vector<std::string> imports;
 
     std::string linker = "cc";
 
@@ -106,7 +122,7 @@ public:
     template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
         std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
         std::string message = FORMAT(
-            "{0} {1} {2}", utils::color(WHITE, "quart:"), utils::color(RED, "error:"), fmt
+            "{0} {1} {2}", logging::color(WHITE, "quart:"), logging::color(RED, "error:"), fmt
         );
 
         std::cout << message << std::endl;
@@ -122,7 +138,7 @@ public:
     void set_libraries(std::set<std::string> names);
     void set_library_paths(std::set<std::string> paths);
 
-    void add_include_path(const std::string& path);
+    void add_import_path(const std::string& path);
 
     void set_output_format(OutputFormat format);
     void set_output_file(const std::string& output);
@@ -130,7 +146,7 @@ public:
     void set_optimization_level(OptimizationLevel level);
     void set_optimization_options(OptimizationOptions opts);
 
-    void set_input_file(const utils::fs::Path& input);
+    void set_input_file(const fs::Path& input);
     void set_entry_point(const std::string& entry);
 
     void set_target(const std::string& target);
@@ -154,3 +170,5 @@ public:
 private:
     CompilerOptions options;
 };
+
+}

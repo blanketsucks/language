@@ -1,27 +1,28 @@
 #pragma once
 
 #include <quart/lexer/lexer.h>
-#include <quart/utils/filesystem.h>
 
 #include <llvm/Support/FormatVariadic.h>
 
 #define FORMAT(fmt, ...) llvm::formatv(fmt, __VA_ARGS__).str()
 
-#define RED     utils::Color::Red
-#define WHITE   utils::Color::White
-#define MAGENTA utils::Color::Magenta
-#define RESET   utils::Color::Reset
+#define RED     logging::Color::Red
+#define WHITE   logging::Color::White
+#define MAGENTA logging::Color::Magenta
+#define RESET   logging::Color::Reset
 
-#define COLOR(color, s) utils::color(color, s)
+#define COLOR(color, s) logging::color(color, s)
 
-#define ERROR(loc, ...) utils::error(loc, llvm::formatv(__VA_ARGS__)); exit(1)
-#define NOTE(loc, ...) utils::note(loc, llvm::formatv(__VA_ARGS__))
+#define ERROR(span, ...) do { logging::error(span, llvm::formatv(__VA_ARGS__)); exit(1); } while (0)
+#define NOTE(span, ...) logging::note(span, llvm::formatv(__VA_ARGS__))
 
 #define TODO(x) \
     std::cout << FORMAT("{0}:{1} in {2}: '{3}'\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, x); \
     exit(1)
 
-namespace utils {
+namespace quart {
+
+namespace logging {
 
 enum class Color {
     Reset = 0,
@@ -46,5 +47,7 @@ void underline_error(
 
 void error(const Span& span, const std::string& message, bool fatal = true);
 void note(const Span& span, const std::string& message);
+
+}
 
 }

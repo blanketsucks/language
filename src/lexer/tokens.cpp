@@ -1,5 +1,7 @@
 #include <quart/lexer/tokens.h>
 
+using namespace quart;
+
 std::string Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";

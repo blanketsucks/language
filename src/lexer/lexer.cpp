@@ -1,10 +1,12 @@
 #include <quart/lexer/lexer.h>
-#include <quart/utils/log.h>
+#include <quart/logging.h>
 
 #include <cctype>
 #include <ios>
 #include <iterator>
 #include <string>
+
+using namespace quart;
 
 static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
     {'~', TokenKind::BinaryNot},
@@ -22,23 +24,22 @@ static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
 
 bool isxdigit(char c) { return std::isxdigit(c); }
 
-Lexer::Lexer(const std::string& source, const std::string& filename) {
-    this->source = source;
+MemoryLexer::MemoryLexer(const std::string& source, const std::string& filename) : source(source) {
     this->filename = filename;
 
     this->reset();
     this->next();
 }
 
-Lexer::Lexer(utils::fs::Path path) {
-    this->filename = path.str();
+MemoryLexer::MemoryLexer(fs::Path path) {
+    this->filename = path;
     this->source = path.read().str();
     
     this->reset();
     this->next();
 }
 
-char Lexer::next() {
+char MemoryLexer::next() {
     if (this->index == UINT32_MAX) {
         ERROR(this->make_span(), "Lexer index overflow.");
     }
@@ -59,15 +60,15 @@ char Lexer::next() {
     return this->current;
 }
 
-char Lexer::peek(uint32_t offset) { 
+char MemoryLexer::peek(uint32_t offset) { 
     return this->source[this->index + offset]; 
 }
 
-char Lexer::prev() { 
+char MemoryLexer::prev() { 
     return this->source[this->index - 1]; 
 }
 
-char Lexer::rewind(uint32_t offset) {
+char MemoryLexer::rewind(uint32_t offset) {
     this->index -= offset - 1;
     this->column -= offset;
 
@@ -75,30 +76,30 @@ char Lexer::rewind(uint32_t offset) {
     return this->current;
 }
 
-void Lexer::reset() {
+void MemoryLexer::reset() {
     this->index = 0;
     this->line = 1;
     this->column = 0;
     this->eof = false;
 }
 
-bool Lexer::is_keyword(const std::string& word) {
+bool MemoryLexer::is_keyword(const std::string& word) {
     return KEYWORDS.find(word) != KEYWORDS.end();
 }
 
-TokenKind Lexer::get_keyword_kind(const std::string& word) {
+TokenKind MemoryLexer::get_keyword_kind(const std::string& word) {
     return KEYWORDS.at(word);
 }
 
-Token Lexer::create_token(TokenKind type, const std::string& value) {
+Token MemoryLexer::create_token(TokenKind type, const std::string& value) {
     return {type, value, this->make_span()};
 }
 
-Token Lexer::create_token(TokenKind type, Location start, const std::string& value) {
+Token MemoryLexer::create_token(TokenKind type, Location start, const std::string& value) {
     return {type, value, this->make_span(start, this->loc())};
 }
 
-Location Lexer::loc() {
+Location MemoryLexer::loc() {
     return Location {
         this->line,
         this->column,
@@ -106,19 +107,28 @@ Location Lexer::loc() {
     };
 }
 
-Span Lexer::make_span() {
+Span MemoryLexer::make_span() {
     return this->make_span(this->loc(), this->loc());
 }
 
-Span Lexer::make_span(const Location& start, const Location& end) {
-    uint32_t offset = start.index - start.column;
-    std::string line;
+std::string& MemoryLexer::get_line_for(const Location& location) {
+    if (this->lines.find(location.line) == this->lines.end()) {
+        size_t offset = location.index - location.column;
+        std::string line;
 
-    if (offset < this->source.size()) {
-        line = this->source.substr(offset);
-        line = line.substr(0, line.find('\n'));
+        if (offset < this->source.size()) {
+            line = this->source.substr(offset);
+            line = line.substr(0, line.find('\n'));
+        }
+
+        this->lines[location.line] = line;
     }
 
+    return this->lines[location.line];
+}
+
+Span MemoryLexer::make_span(const Location& start, const Location& end) {
+    std::string& line = this->get_line_for(start);
     return Span {
         start,
         end,
@@ -127,7 +137,7 @@ Span Lexer::make_span(const Location& start, const Location& end) {
     };
 }
 
-char Lexer::validate_hex_escape() {
+char MemoryLexer::validate_hex_escape() {
     char hex[3] = {
         this->next(),
         this->next(),
@@ -152,7 +162,7 @@ char Lexer::validate_hex_escape() {
     return (char)(hex[0] * 16 + hex[1]);
 }
 
-char Lexer::escape(char current) {
+char MemoryLexer::escape(char current) {
     if (current != '\\') {
         return current;
     }
@@ -205,7 +215,7 @@ char Lexer::escape(char current) {
     }
 }
 
-bool Lexer::is_valid_identifier(uint8_t c) {
+bool MemoryLexer::is_valid_identifier(uint8_t c) {
     if (std::isalnum(c) || c == '_') {
         return true;
     } else if (c < 128) {
@@ -235,10 +245,10 @@ bool Lexer::is_valid_identifier(uint8_t c) {
     return true;
 }
 
-uint8_t Lexer::parse_unicode(std::string& buffer, uint8_t current) {  
+uint8_t MemoryLexer::parse_unicode(std::string& buffer, uint8_t current) {  
     uint8_t expected = 0;
+    buffer.push_back(current);
 
-    buffer.push_back(current); 
     if (current < 0x80) {
         return 0;
     } else if (current < 0xE0) {
@@ -256,7 +266,7 @@ uint8_t Lexer::parse_unicode(std::string& buffer, uint8_t current) {
     return expected;
 }
 
-std::string Lexer::parse_while(
+std::string MemoryLexer::parse_while(
     std::string& buffer,
     const Predicate predicate
 ) {
@@ -268,13 +278,13 @@ std::string Lexer::parse_while(
     return buffer;
 }
 
-void Lexer::skip_comment() {
+void MemoryLexer::skip_comment() {
     while (this->current != '\n' && this->current != 0) {
         this->next();
     }
 }
 
-Token Lexer::parse_identifier(bool accept_keywords) {
+Token MemoryLexer::parse_identifier(bool accept_keywords) {
     std::string value;
     Location start = this->loc();
 
@@ -286,14 +296,14 @@ Token Lexer::parse_identifier(bool accept_keywords) {
         next = this->next();
     }
 
-    if (Lexer::is_keyword(value) && accept_keywords) {
-        return this->create_token(Lexer::get_keyword_kind(value), start, value);
+    if (MemoryLexer::is_keyword(value) && accept_keywords) {
+        return this->create_token(MemoryLexer::get_keyword_kind(value), start, value);
     } else {
         return this->create_token(TokenKind::Identifier, start, value);
     }
 }
 
-Token Lexer::parse_string() {
+Token MemoryLexer::parse_string() {
     std::string value;
     Location start = this->loc();
 
@@ -322,7 +332,7 @@ Token Lexer::parse_string() {
     return token;
 }
 
-Token Lexer::parse_number() {
+Token MemoryLexer::parse_number() {
     std::string value;
     Location start = this->loc();
 
@@ -396,7 +406,7 @@ Token Lexer::parse_number() {
     }
 }
 
-Token Lexer::once() {
+Token MemoryLexer::once() {
     char current = this->current;
     Location start = this->loc();
 
@@ -549,7 +559,7 @@ Token Lexer::once() {
     }
 }
 
-std::vector<Token> Lexer::lex() {
+std::vector<Token> MemoryLexer::lex() {
     std::vector<Token> tokens;
 
     while (!this->eof) {
@@ -582,4 +592,77 @@ std::vector<Token> Lexer::lex() {
     tokens.push_back(eof);
 
     return tokens;
+}
+
+StreamLexer::StreamLexer(std::ifstream& stream, const std::string& filename) : stream(stream) {
+    this->filename = filename;
+
+    this->reset();
+    this->next();
+}
+
+char StreamLexer::next() {
+    if (this->index == UINT32_MAX) {
+        ERROR(this->make_span(), "Lexer index overflow.");
+    }
+
+    this->current = this->stream.get();
+    this->index++;
+
+    if (!this->stream.good()) {
+        this->eof = true;
+        return this->current;
+    }
+
+    this->column++;
+    if (this->column == UINT32_MAX) {
+        ERROR(this->make_span(), "Lexer column overflow.");
+    }
+
+    return this->current;
+}
+
+char StreamLexer::peek(uint32_t offset) { 
+    return this->stream.peek(); 
+}
+
+char StreamLexer::prev() { 
+    this->stream.seekg(this->index - 1, std::ifstream::beg);
+    char c = this->stream.get();
+
+    this->stream.seekg(this->index, std::ifstream::beg);
+    return c;
+}
+
+char StreamLexer::rewind(uint32_t offset) {
+    this->index -= offset - 1;
+    this->column -= offset;
+
+    this->stream.seekg(this->index - 1, std::ifstream::beg);
+    this->current = this->stream.get();
+
+    this->stream.seekg(this->index, std::ifstream::beg);
+    return this->current;
+}
+
+void StreamLexer::reset() {
+    this->index = 0;
+    this->line = 1;
+    this->column = 0;
+    this->eof = false;
+}
+
+std::string& StreamLexer::get_line_for(const Location& location) {
+    if (this->lines.find(location.line) == this->lines.end()) {
+        size_t offset = location.index - location.column;
+        this->stream.seekg(offset, std::ifstream::beg);
+
+        std::string line;
+        std::getline(this->stream, line);
+
+        this->stream.seekg(this->index, std::ifstream::beg);
+        this->lines[location.line] = line;
+    }
+
+    return this->lines[location.line];
 }

@@ -1,34 +1,48 @@
 #include <quart/visitor.h>
 #include <quart/lexer/lexer.h>
 
-static const std::vector<std::string> SEARCH_PATHS = {
-    "lib/"
-};
+using namespace quart;
 
-utils::fs::Path search_file_paths(utils::fs::Path path) {
-    for (auto& dir : SEARCH_PATHS) {
-        auto p = utils::fs::Path(dir) / path;
-        if (p.exists()) {
-            return p;
-        }
+static fs::Path SEARCH_PATH = fs::Path(QUART_PATH);
+
+std::vector<std::string> split(std::string s, const std::string& delimiter) {
+    std::vector<std::string> result;
+
+    size_t pos = 0;
+    std::string token;
+    while ((pos = s.find(delimiter)) != std::string::npos) {
+        token = s.substr(0, pos);
+        result.push_back(token);
+
+        s.erase(0, pos + delimiter.length());
     }
-    
-    return utils::fs::Path::empty();
+
+    result.push_back(s);
+    return result;
 }
 
-utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Span span) {
+fs::Path search_file_paths(fs::Path path) {
+    fs::Path p = SEARCH_PATH / path;
+    if (p.exists()) {
+        return p;
+    }
+
+    return fs::Path::empty();
+}
+
+std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relative, const Span& span) {
     Scope* scope = this->scope;
     auto outer = this->current_module;
 
     std::string current_path;
     if (is_relative && outer) {
-        current_path = outer->path.parent().str();
+        current_path = outer->path.parent();
     }
 
-    auto parts = utils::split(name, "::");
+    std::vector<std::string> paths = split(name, "::");
 
-    std::string module_name = parts.back();
-    parts.pop_back();
+    std::string module_name = paths.back();
+    paths.pop_back();
 
     if (this->modules.find(name) != this->modules.end()) {
         auto module = this->modules[name];
@@ -44,11 +58,11 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
         return module;
     }
 
-    for (auto it = parts.begin(); it != parts.end(); ++it) {
+    for (auto it = paths.begin(); it != paths.end(); ++it) {
         std::string current = *it;
 
         current_path += current;
-        utils::fs::Path path(current_path);
+        fs::Path path(current_path);
 
         if (!path.exists()) {
             path = search_file_paths(current_path);
@@ -75,7 +89,7 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
             if (this->modules.find(current_path) != this->modules.end()) {
                 module = this->modules[current_path];
             } else {
-                module = utils::make_ref<Module>(current, current_path);
+                module = std::make_shared<Module>(current, path);
                 module->scope = new Scope(current, ScopeType::Module);
 
                 this->scope->children.push_back(module->scope);
@@ -88,11 +102,11 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
         current_path += "/";
     }
 
-    utils::fs::Path path(current_path + module_name + FILE_EXTENSION);
+    fs::Path path = fs::Path(current_path + module_name + FILE_EXTENSION);
     std::string path_name = path.name;
 
     if (!path.exists()) {
-        utils::fs::Path dir = path.with_extension();
+        fs::Path dir = path.with_extension();
         if (!dir.exists()) {
             dir = search_file_paths(dir);
             if (dir.isempty()) {
@@ -108,7 +122,7 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
 
         path = dir.join("module.qr");
         if (!path.exists()) {
-            auto module = utils::make_ref<Module>(module_name, dir);
+            auto module = std::make_shared<Module>(module_name, dir);
             module->scope = new Scope(module_name, ScopeType::Module);
 
             this->scope->children.push_back(module->scope);
@@ -123,20 +137,19 @@ utils::Ref<Module> Visitor::import(const std::string& name, bool is_relative, Sp
         if (!path.isfile()) {
             ERROR(span, "Expected a file, got a directory");
         }
-        
     }
-    
+
     if (path_name == this->name) {
         ERROR(span, "Could not import '{0}' because a circular dependency was detected", name);
     }
 
-    Lexer lexer(path);
+    MemoryLexer lexer(path);
     auto tokens = lexer.lex();
 
     Parser parser(tokens);
     auto ast = parser.parse();
 
-    auto module = utils::make_ref<Module>(module_name, path);
+    auto module = std::make_shared<Module>(module_name, path);
     
     this->scope->modules[module_name] = module;
     this->modules[name] = module;
@@ -163,7 +176,7 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
 
     auto outer = this->current_module;
 
-    auto module = utils::make_ref<Module>(expr->name, expr->name);
+    auto module = std::make_shared<Module>(expr->name, expr->name);
     this->scope->modules[expr->name] = module;
 
     module->scope = this->create_scope(expr->name, ScopeType::Module);

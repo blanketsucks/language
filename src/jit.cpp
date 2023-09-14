@@ -1,9 +1,11 @@
 #include <quart/jit.h>
 
+using namespace quart;
+
 void jit::checkError(llvm::Error error) {
     if (error) {
-        llvm::outs() << utils::color(WHITE, "quart: ");
-        llvm::outs() << utils::color(RED, "error: ") << error << '\n';
+        llvm::outs() << logging::color(WHITE, "quart: ");
+        llvm::outs() << logging::color(RED, "error: ") << error << '\n';
 
         exit(1);
     }
@@ -16,8 +18,8 @@ void jit::ExitOnError(llvm::Error error) {
 jit::QuartJIT::QuartJIT(
     const std::string& filename,
     const std::string& entry,
-    utils::Scope<llvm::Module> module, 
-    utils::Scope<llvm::LLVMContext> context
+    std::unique_ptr<llvm::Module> module, 
+    std::unique_ptr<llvm::LLVMContext> context
 ) {
     this->filename = filename;
     this->entry = entry;

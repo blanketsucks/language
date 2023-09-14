@@ -1,40 +1,17 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 struct TupleElement {
     std::string name;
-    llvm::Value* value;
+    quart::Value value;
 
-    bool is_immutable;
+    bool is_mutable;
 
     Span span;
 };
 
-bool Visitor::is_tuple(llvm::Type* type) {
-    return type->isStructTy() && type->getStructName().startswith("__tuple");
-}
-
-llvm::StructType* Visitor::create_tuple_type(std::vector<llvm::Type*> types) {
-    llvm::StructType* type = nullptr;
-    if (this->tuples.find(types) == this->tuples.end()) {
-        type = llvm::StructType::create(*this->context, types, "__tuple");
-        this->tuples[types] = type;
-    } else {
-        type = this->tuples[types];
-    }
-
-    return type;
-}
-
 llvm::Value* Visitor::make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type) {
-    if (!type) {
-        std::vector<llvm::Type*> types;
-        for (auto& value : values) {
-            types.push_back(value->getType());
-        }
-
-        type = this->create_tuple_type(types);
-    }
-
     llvm::Value* tuple = llvm::UndefValue::get(type);
     for (size_t i = 0; i < values.size(); i++) {
         tuple = this->builder->CreateInsertValue(tuple, values[i], i);
@@ -44,54 +21,62 @@ llvm::Value* Visitor::make_tuple(std::vector<llvm::Value*> values, llvm::StructT
 }
 
 Value Visitor::visit(ast::TupleExpr* expr) {
-    std::vector<llvm::Type*> types;
-    std::vector<llvm::Value*> elements;
+    std::vector<quart::Type*> types;
+    std::vector<llvm::Value*> values;
 
-    bool is_const = true;
-    for (auto& elem : expr->elements) {
-        Value val = elem->accept(*this);
-        is_const &= val.is_constant;
-
-        llvm::Value* value = val.unwrap(elem->span);
-
-        elements.push_back(value);
-        types.push_back(value->getType());
+    for (auto& element : expr->elements) {
+        Value value = element->accept(*this);
+        if (value.is_empty_value()) {
+            ERROR(element->span, "Expected an expression");
+        }
+        values.push_back(value.inner);
+        types.push_back(value.type);
     }
 
-    llvm::StructType* type = this->create_tuple_type(types);
-    if (is_const) {
+    bool all_constant = llvm::all_of(values, [](llvm::Value* value) {
+        return llvm::isa<llvm::Constant>(value);
+    });
+
+    quart::TupleType* type = this->registry->create_tuple_type(types);
+    llvm::StructType* structure = llvm::cast<llvm::StructType>(type->to_llvm_type());
+
+    if (all_constant) {
         std::vector<llvm::Constant*> constants;
-        for (auto& element : elements) {
-            constants.push_back(llvm::cast<llvm::Constant>(element));
+        for (auto& value : values) {
+            constants.push_back(llvm::cast<llvm::Constant>(value));
         }
 
-        return Value(llvm::ConstantStruct::get(type, constants), true);
+        return Value(llvm::ConstantStruct::get(structure, constants), type, Value::Constant);
     }
 
     if (!this->current_function) {
         ERROR(expr->span, "Tuple literals cannot contain non-constant elements");
     }
 
-    return this->make_tuple(elements, type);
+    return Value(this->make_tuple(values, structure), type);
 }  
 
 void Visitor::store_tuple(
-    Span span, 
-    utils::Ref<Function> func, 
-    llvm::Value* value, 
+    const Span& span, 
+    std::shared_ptr<Function> func, 
+    const Value& value, 
     const std::vector<ast::Ident>& names,
     std::string consume_rest
 ) {
-    std::vector<llvm::Value*> values;
+    std::vector<Value> values;
     if (consume_rest.empty()) {
         values = this->unpack(value, names.size(), span);
-        for (auto& entry : utils::zip(names, values)) {
-            llvm::AllocaInst* alloca = this->alloca(entry.second->getType());
-            this->builder->CreateStore(entry.second, alloca);
 
-            ast::Ident& ident = entry.first;
+        for (auto entry : llvm::zip(names, values)) {
+            const ast::Ident& ident = std::get<0>(entry);
+            const Value& value = std::get<1>(entry);
+
+            llvm::AllocaInst* alloca = this->alloca(value->getType());
+            this->builder->CreateStore(value, alloca);
+
+            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             func->scope->variables[ident.value] = Variable::from_alloca(
-                ident.value, alloca, ident.is_immutable, ident.span
+                ident.value, alloca, value.type, flags, ident.span
             );
         }
 
@@ -102,7 +87,10 @@ void Visitor::store_tuple(
         llvm::AllocaInst* alloca = this->alloca(value->getType());
         this->builder->CreateStore(value, alloca);
 
-        func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
+        func->scope->variables[consume_rest] = Variable::from_alloca(
+            consume_rest, alloca, value.type, Variable::Mutable, span
+        );
+
         return;
     }
 
@@ -110,14 +98,22 @@ void Visitor::store_tuple(
     // here, foo takes the value of 1, baz 5 and bar is a tuple containing the rest of the elements.
 
     uint32_t n = 0;
-    llvm::Type* vtype = value->getType();
+    quart::Type* vtype = value.type;
 
     // TODO: Array support(?)
-    if (vtype->isPointerTy()) {
-        llvm::Type* type = vtype->getPointerElementType();
-        n = type->getStructNumElements();
+    if (vtype->is_pointer()) {
+        quart::Type* type = vtype->get_pointee_type();
+        if (!type->is_tuple()) {
+            ERROR(span, "Expected a tuple type but got '{0}' instead", type->get_as_string());
+        }
+
+        n = type->get_tuple_size();
     } else {
-        n = vtype->getStructNumElements();
+        if (!vtype->is_tuple()) {
+            ERROR(span, "Expected a tuple type but got '{0}' instead", vtype->get_as_string());
+        }
+
+        n = vtype->get_tuple_size();
     }
 
     values = this->unpack(value, n, span);
@@ -125,16 +121,16 @@ void Visitor::store_tuple(
     // We need to know how many variables are before and after the consume rest and it's position, from there
     // we can chop off the values and store them in their respective variables and the values left will be
     // stored in the consume rest variable as a tuple.
-    auto iter = std::find_if(names.begin(), names.end(), [consume_rest](const ast::Ident& ident) {
+    auto iterator = llvm::find_if(names, [consume_rest](const ast::Ident& ident) {
         return ident.value == consume_rest;
     });
 
-    size_t index = iter - names.begin();
+    size_t index = iterator - names.begin();
     size_t rest = names.size() - index - 1;
 
     // We are forced to take elements from the back because we don't know how many elements would be in the rest tuple
-    // We take as much values from the back as we have variables after the consume rest (in the case above it's 1)
-    std::vector<llvm::Value*> last;
+    // We take as many values from the back as we have variables after the consume rest (in the case above it's 1)
+    std::vector<quart::Value> last;
     for (size_t i = 0; i < rest; i++) {
         last.push_back(values.back());
         values.pop_back();
@@ -144,40 +140,43 @@ void Visitor::store_tuple(
     for (size_t i = 0; i < index; i++) {
         const ast::Ident& ident = names[i];
 
-        finals.push_back({ident.value, values[i], ident.is_immutable, ident.span});
+        finals.push_back({ident.value, values[i], ident.is_mutable, ident.span});
         values.erase(values.begin());
     }
 
     for (size_t i = index + 1; i < names.size(); i++) {
         const ast::Ident& ident = names[i];
 
-        finals.push_back({ident.value, last.back(), ident.is_immutable, ident.span});
+        finals.push_back({ident.value, last.back(), ident.is_mutable, ident.span});
         last.pop_back();
     }
 
     // The rest of the elements remaining in `values` are the values needed in order to create the tuple for
     // `bar` in the example above
-
-    std::vector<llvm::Type*> types;
+    std::vector<quart::Type*> types;
     for (auto& value : values) {
-        types.push_back(value->getType());
+        types.push_back(value.type);
     }
 
-    llvm::StructType* type = this->create_tuple_type(types);
-    llvm::AllocaInst* alloca = this->alloca(type);
+    quart::TupleType* tuple = this->registry->create_tuple_type(types);
+    llvm::StructType* type = llvm::cast<llvm::StructType>(tuple->to_llvm_type());
 
+    llvm::AllocaInst* alloca = this->alloca(type);
     for (size_t i = 0; i < values.size(); i++) {
         llvm::Value* ptr = this->builder->CreateStructGEP(type, alloca, i);
         this->builder->CreateStore(values[i], ptr);
     }
 
-    func->scope->variables[consume_rest] = Variable::from_alloca(consume_rest, alloca);
+    func->scope->variables[consume_rest] = Variable::from_alloca(
+        consume_rest, alloca, tuple, Variable::Mutable, span
+    );
+
     for (auto& entry : finals) {
         alloca = this->alloca(entry.value->getType());
         this->builder->CreateStore(entry.value, alloca);
 
         func->scope->variables[entry.name] = Variable::from_alloca(
-            entry.name, alloca, entry.is_immutable, entry.span
+            entry.name, alloca, entry.value.type, entry.is_mutable, entry.span
         );
     }
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <quart/lexer/tokens.h>
-#include <quart/utils/filesystem.h>
+#include <quart/filesystem.h>
 
 #include <cstdint>
 #include <iostream>
@@ -11,22 +11,27 @@
 #include <algorithm>
 #include <functional>
 
-class Lexer {
+namespace quart {
+
+class MemoryLexer {
 public:
     typedef bool (*Predicate)(char);
 
-    Lexer(const std::string& source, const std::string& filename);
-    Lexer(utils::fs::Path path);
+    MemoryLexer() = default;
+    MemoryLexer(const std::string& source, const std::string& filename);
+    MemoryLexer(fs::Path path);
 
     static bool is_keyword(const std::string& word);
     static TokenKind get_keyword_kind(const std::string& word);
 
-    char next();
-    char peek(uint32_t offset = 0);
-    char prev();
-    char rewind(uint32_t offset = 1);
+    virtual char next();
+    virtual char peek(uint32_t offset = 0);
+    virtual char prev();
+    virtual char rewind(uint32_t offset = 1);
 
-    void reset();
+    virtual void reset();
+
+    virtual std::string& get_line_for(const Location& location);
 
     Token create_token(TokenKind type, const std::string& value);
     Token create_token(TokenKind type, Location start, const std::string& value);
@@ -64,5 +69,27 @@ public:
     char current;
 
     std::string filename;
+
+    std::map<uint32_t, std::string> lines;
+private: 
     std::string source;
 };
+
+class StreamLexer : public MemoryLexer {
+public:
+    StreamLexer(std::ifstream& stream, const std::string& filename);
+    StreamLexer(fs::Path path);
+
+    char next() override;
+    char peek(uint32_t offset = 0) override;
+    char prev() override;
+    char rewind(uint32_t offset = 1) override;
+
+    void reset() override;
+
+    std::string& get_line_for(const Location& location) override;
+
+    std::ifstream& stream;
+};
+
+}

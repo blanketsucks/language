@@ -1,25 +1,19 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 Value Visitor::visit(ast::ImplExpr* expr) {
-    Type type = expr->type->accept(*this);
-    auto structure = this->get_struct(type);
+    quart::Type* type = expr->type->accept(*this);
+    auto structure = this->get_struct_from_type(type);
+
     if (!structure) {
-        if (type.is_reference) {
+        if (type->is_reference()) {
             ERROR(expr->type->span, "Cannot implement a reference type");
         }
 
-        std::string name = this->get_type_name(type);
-        if (!this->is_valid_sized_type(type) || type->isArrayTy() || this->is_tuple(type)) {
+        std::string name = type->get_as_string();
+        if (!type->is_sized_type()) {
             ERROR(expr->type->span, "Cannot implement type '{0}'", name);
-        }
-
-        if (type->isPointerTy()) {
-            llvm::Type* elem = type->getPointerElementType();
-            if (!elem->isIntegerTy(8)) {
-                ERROR(expr->type->span, "Cannot implement type '{0}'", name);
-            }
-
-            name = "str";
         }
 
         Scope* scope = this->create_scope(name, ScopeType::Impl);

@@ -8,6 +8,8 @@
 #include <map>
 #include <algorithm>
 
+namespace quart {
+
 enum class TokenKind {
     Identifier,
     Integer,
@@ -210,3 +212,5 @@ static std::map<TokenKind, TokenKind> INPLACE_OPERATORS {
     {TokenKind::IDiv, TokenKind::Div},
     // TODO: add more
 };  
+
+}

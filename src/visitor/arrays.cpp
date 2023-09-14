@@ -1,7 +1,9 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 Value Visitor::visit(ast::ArrayExpr* expr) {
-    std::vector<llvm::Value*> elements;
+    std::vector<Value> elements;
     bool is_const = true;
 
     for (auto& element : expr->elements) {
@@ -10,142 +12,165 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         }
 
         Value value = element->accept(*this);
-        is_const &= value.is_constant;
+        if (value.is_empty_value()) ERROR(element->span, "Expected a value");
 
-        elements.push_back(value.unwrap(element->span));
+        elements.push_back(value);
     }
 
     if (elements.empty()) {
-        if (!this->ctx) {
-            utils::note(expr->span, "The type of empty arrays defaults to [int; 0]");
+        if (!this->inferred) {
+            logging::note(expr->span, "The type of empty arrays defaults to [int; 0]");
              return llvm::ConstantAggregateZero::get(
                 llvm::ArrayType::get(llvm::Type::getInt32Ty(*this->context), 0)
             );
         }
 
-        if (!this->ctx->isArrayTy()) {
+        if (!this->inferred->is_array()) {
             ERROR(expr->span, "Expected an array type");
         }
 
-        return llvm::ConstantAggregateZero::get(this->ctx);
+        return {
+            llvm::ConstantAggregateZero::get(this->inferred->to_llvm_type()),
+            this->inferred
+        };
     }
 
-    llvm::Type* etype = elements[0]->getType();
+    quart::Type* etype = elements[0].type;
     for (size_t i = 1; i < elements.size(); i++) {
         auto& element = elements[i];
-        if (!this->is_compatible(etype, element->getType())) {
-            ERROR(expr->span, "All elements of an array must be of the same type");
+        if (!Type::can_safely_cast_to(element.type, etype)) {
+            ERROR(
+                expr->span, 
+                "All elements of an array must be of the same type (element {0} is of type '{1}' but the first element is of type '{2}')", 
+                i, element.type->get_as_string(), etype->get_as_string()
+            );
         } else {
             element = this->cast(element, etype);
         }
     }
 
-    llvm::ArrayType* type = llvm::ArrayType::get(etype, elements.size());
+    quart::ArrayType* type = this->registry->create_array_type(etype, elements.size());
+    llvm::Type* atype = type->to_llvm_type();
+
     if (is_const) {
         std::vector<llvm::Constant*> constants;
         for (auto element : elements) {
-            constants.push_back(llvm::cast<llvm::Constant>(element));
+            constants.push_back(llvm::cast<llvm::Constant>(element.inner));
         }
         
-        return Value(llvm::ConstantArray::get(type, constants), true);
+        llvm::Constant* array = llvm::ConstantArray::get(
+            llvm::cast<llvm::ArrayType>(atype), constants
+        );
+
+        return Value(array, type, Value::Constant);
     }
 
-    llvm::Value* array = llvm::ConstantAggregateZero::get(type);
+    llvm::Value* array = llvm::ConstantAggregateZero::get(atype);
     for (uint32_t i = 0; i < elements.size(); i++) {
         array = this->builder->CreateInsertValue(array, elements[i], {0, i});
     }
 
-    return array;
+    return {array, type};
 }
 
 Value Visitor::visit(ast::ArrayFillExpr* expr) {
-    llvm::Value* element = expr->element->accept(*this).unwrap(expr->element->span);
-    llvm::Value* count = expr->count->accept(*this).unwrap(expr->count->span);
+    Value element = expr->element->accept(*this);
+    if (element.is_empty_value()) ERROR(expr->element->span, "Expected a value");
 
-    if (!llvm::isa<llvm::ConstantInt>(count)) {
-        ERROR(expr->count->span, "Expected a constant integer");
+    Value count = expr->count->accept(*this);
+    if (count.is_empty_value()) ERROR(expr->count->span, "Expected a value");
+
+
+    llvm::ConstantInt* size = llvm::dyn_cast<llvm::ConstantInt>(count.inner);
+    if (!size) ERROR(expr->count->span, "Expected a constant integer");
+
+    quart::ArrayType* type = this->registry->create_array_type(element.type, size->getSExtValue());
+    llvm::ArrayType* atype = llvm::cast<llvm::ArrayType>(type->to_llvm_type());
+
+    if (llvm::isa<llvm::Constant>(element.inner)) {
+        return {llvm::ConstantArray::get(
+            atype,
+            std::vector<llvm::Constant*>(size->getSExtValue(), llvm::cast<llvm::Constant>(element.inner))
+        ), type, Value::Constant};
     }
 
-    uint32_t size = llvm::cast<llvm::ConstantInt>(count)->getZExtValue();
-    llvm::ArrayType* type = llvm::ArrayType::get(element->getType(), size);
-
-    if (llvm::isa<llvm::Constant>(element)) {
-        return llvm::ConstantArray::get(type, std::vector<llvm::Constant*>(size, llvm::cast<llvm::Constant>(element)));
-    }
-
-    llvm::Value* alloca = this->alloca(type);
-    for (uint32_t i = 0; i < size; i++) {
+    llvm::Value* alloca = this->alloca(atype);
+    for (uint32_t i = 0; i < size->getZExtValue(); i++) {
         llvm::Value* ptr = this->builder->CreateGEP(
-            type, alloca, {this->builder->getInt32(0), this->builder->getInt32(i)}
+            atype, alloca, {this->builder->getInt32(0), this->builder->getInt32(i)}
         );
         
         this->builder->CreateStore(element, ptr);
     }
 
-    return Value::as_aggregate(alloca);
+    return Value(alloca, type, Value::Aggregate);
 }
 
-Value Visitor::visit(ast::ElementExpr* expr) {
+Value Visitor::visit(ast::IndexExpr* expr) {
     auto ref = this->as_reference(expr->value);
 
-    llvm::Type* type = ref.type;
+    quart::Type* type = ref.type;
     llvm::Value* value = ref.value;
-    bool is_const = ref.is_constant;
+    bool is_constant = ref.is_constant();
 
-    llvm::Type* elem = type;
+    quart::Type* element_type = type;
     if (ref.is_null()) {
-        value = expr->value->accept(*this).unwrap(expr->value->span);
-        if (!value->getType()->isPointerTy()) {
-            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", this->get_type_name(value->getType()));
+        Value array = expr->value->accept(*this);
+        if (array.is_empty_value()) ERROR(expr->value->span, "Expected a value");
+
+        if (!array.type->is_pointer()) {
+            ERROR(expr->value->span, "Value of type '{0}' does not support indexing", array.type->get_as_string());
         }
 
-        type = value->getType();
-        elem = type->getPointerElementType();
+        type = array.type;
+        value = array.inner;
+
+        element_type = type->get_pointee_type();
     } else {
-        if (this->get_pointer_depth(type) > 1) {
+        if (type->get_pointer_depth() > 1) {
             value = this->load(value);
-            type = type->getPointerElementType();
+            type = type->get_pointee_type();
         }
 
-        elem = type;
+        element_type = type;
     }
 
-    if (type->isStructTy()) {
-        llvm::StringRef name = type->getStructName();
-        if (!name.startswith("__tuple")) {
-            ERROR(expr->value->span, "Expected a pointer, array or tuple");
+    if (type->is_tuple()) {
+        Value index = expr->index->accept(*this);
+        if (index.is_empty_value()) ERROR(expr->index->span, "Expected a value");
+
+        llvm::ConstantInt* idx = llvm::dyn_cast<llvm::ConstantInt>(index.inner);
+        if (!idx) ERROR(expr->index->span, "Tuple indices must be integer constants");
+
+        size_t n = type->get_tuple_size();
+        if (idx->getZExtValue() > n - 1) {
+            ERROR(expr->index->span, "Tuple index out of bounds. Index is {0} but the tuple has {1} elements", idx->getSExtValue(), n);
         }
 
-        llvm::Value* val = expr->index->accept(*this).unwrap(expr->index->span);
-        if (!llvm::isa<llvm::ConstantInt>(val)) {
-            ERROR(expr->index->span, "Tuple indices must be integer constants");
-        }
-
-        int64_t index = llvm::cast<llvm::ConstantInt>(val)->getSExtValue();
-        if (index < 0) {
-            ERROR(expr->index->span, "Tuple indices must be a positive integer");
-        }
-
-        uint32_t elements = type->getStructNumElements();
-        if (index > elements) {
-            ERROR(expr->index->span, "Element index out of bounds");
-        }
-
-        if (is_const) {
+        if (is_constant) {
             llvm::ConstantStruct* tuple = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
-            return Value(tuple->getAggregateElement(index), true);
+            return Value(
+                tuple->getAggregateElement(idx->getSExtValue()),
+                Value::Constant,
+                type->get_tuple_element(idx->getSExtValue())
+            );
         }
 
-        return this->load(this->builder->CreateStructGEP(type, value, index));
+        return {
+            this->load(this->builder->CreateStructGEP(
+                type->to_llvm_type(), value, idx->getSExtValue()
+            )),
+            type->get_tuple_element(idx->getSExtValue())
+        };
     }
 
-    llvm::Value* index = expr->index->accept(*this).unwrap(expr->index->span);
-    if (!index->getType()->isIntegerTy()) {
-        ERROR(expr->index->span, "Indicies must be integers");
-    }
+    Value index = expr->index->accept(*this);
 
-    if (is_const && llvm::isa<llvm::ConstantInt>(index)) {
-        int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
+    if (index.is_empty_value()) ERROR(expr->index->span, "Expected a value");
+    if (!index.type->is_int()) ERROR(expr->index->span, "Indicies must be integers");
+
+    if (is_constant && llvm::isa<llvm::ConstantInt>(index.inner)) {
+        int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
         llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(ref.get_constant_value());
 
         int64_t size = array->getType()->getArrayNumElements();
@@ -153,35 +178,41 @@ Value Visitor::visit(ast::ElementExpr* expr) {
             ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
         }
 
-        return Value(array->getAggregateElement(idx), true);
+        return Value(
+            array->getAggregateElement(idx), 
+            type->get_array_element_type(), 
+            Value::Constant
+        );
     }
 
     llvm::Value* ptr = nullptr;
-    if (!type->isArrayTy()) {
-        ptr = this->builder->CreateGEP(elem, value, index);
+    quart::Type* result = element_type;
+
+    if (!type->is_array()) {
+        ptr = this->builder->CreateGEP(element_type->to_llvm_type(), value, index);
     } else {
-        if (llvm::isa<llvm::ConstantInt>(index)) {
-            int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
-            int64_t size = type->getArrayNumElements();
+        if (llvm::isa<llvm::ConstantInt>(index.inner)) {
+            int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
+            int64_t size = type->get_array_size();
 
             if (idx == size) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
             } else if (idx > size - 1) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
-        } else {
-            this->create_bounds_check(index, type->getArrayNumElements(), expr->index->span);
         }
 
         ptr = this->builder->CreateGEP(
-            type, value, {this->builder->getInt32(0), index}
+            type->to_llvm_type(), value, {this->builder->getInt32(0), index}
         );
+
+        result = type->get_array_element_type();
     }
     
-    return this->load(ptr);
+    return {this->load(ptr), result};
 }
 
-void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, Span span) {
+void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, const Span& span) {
     if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
         return;
     }
@@ -194,80 +225,74 @@ void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, Span span)
     this->set_insert_point(merge);
 }
 
-void Visitor::store_array_element(ast::ElementExpr* expr, utils::Scope<ast::Expr> value) {
+Value Visitor::store_array_element(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value) {
     auto ref = this->as_reference(expr->value);
+    quart::Type* type = ref.type;
 
-    llvm::Value* parent = ref.value;
-    llvm::Type* type = ref.type;
-
-    if (!type->isPointerTy() && !type->isArrayTy()) {
-        ERROR(expr->value->span, "Value of type '{0}' does not support item assignment", this->get_type_name(type));
+    if (!type->is_pointer() && !type->is_array()) {
+        ERROR(expr->value->span, "Value of type '{0}' does not support item assignment", type->get_as_string());
     }
 
-    if (ref.is_immutable) {
+    if (!ref.is_mutable()) {
         ERROR(expr->value->span, "Cannot mutate immutable value '{0}'", ref.name);
     }
 
-    if (this->get_pointer_depth(type) >= 1) {
-        parent = this->load(parent);
-        type = type->getPointerElementType();
+    if (type->get_pointer_depth() >= 1) {
+        ref.value = this->load(ref.value);
+        type = type->get_pointee_type();
     }
 
-    llvm::Value* index = expr->index->accept(*this).unwrap(expr->span);
-    if (!index->getType()->isIntegerTy()) {
-        ERROR(expr->index->span, "Indices must be integers");
+    Value index = expr->index->accept(*this);
+
+    if (index.is_empty_value()) ERROR(expr->index->span, "Expected a value");
+    if (!index.type->is_int()) ERROR(expr->index->span, "Indicies must be integers");
+
+    quart::Type* expected = type->is_array() ? type->get_array_element_type() : type;
+    this->inferred = expected;
+
+    Value element = value->accept(*this);
+    if (element.is_empty_value()) ERROR(value->span, "Expected a value");
+
+    this->inferred = nullptr;
+    if (element.flags & Value::Aggregate) {
+        element = {this->load(element), element.type};
     }
 
-    llvm::Type* ty = type->isArrayTy() ? type->getArrayElementType() : type;
-    this->ctx = ty;
-
-    Value val = value->accept(*this);
-    llvm::Value* element = val.unwrap(value->span);
-
-    if (val.is_aggregate) {
-        element = this->load(element);
-    }
-
-    // llvm::Value* element = value->accept(*this).unwrap(value->span);
-    if (!this->is_compatible(ty, element->getType())) {
+    if (!Type::can_safely_cast_to(element.type, expected)) {
         ERROR(
             value->span, 
             "Cannot assign value of type '{0}' to {1} of type '{2}'", 
-            this->get_type_name(element->getType()),
-            type->isArrayTy() ? "an array" : "a pointer",
-            this->get_type_name(type)
+            element.type->get_as_string(),
+            type->is_array() ? "an array" : "a pointer",
+            expected->get_as_string()
         );
     } else {
-        element = this->cast(element, ty);
+        element = this->cast(element, expected);
     }
 
-    this->ctx = nullptr;
     llvm::Value* ptr = nullptr;
-    
-    if (ref.type->isArrayTy()) {
-        if (llvm::isa<llvm::ConstantInt>(index)) {
-            int64_t idx = llvm::cast<llvm::ConstantInt>(index)->getSExtValue();
-            int64_t size = type->getArrayNumElements();
+    llvm::Type* ltype = type->to_llvm_type();
+
+    if (ref.type->is_array()) {
+        if (llvm::isa<llvm::ConstantInt>(index.inner)) {
+            int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
+            int64_t size = type->get_array_size();
 
             if (idx == size) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
             } else if (idx > size - 1) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
-        } else {
-            this->create_bounds_check(index, type->getArrayNumElements(), expr->index->span);
         }
 
         std::vector<llvm::Value*> indicies = {this->builder->getInt32(0), index};
-        ptr = this->builder->CreateGEP(type, parent, indicies);
+        ptr = this->builder->CreateGEP(ltype, ref.value, indicies);
     } else {
-        // if (this->get_pointer_depth(type) <= 1) {
-        //     type = type->getPointerElementType();
-        // }
-
-        ptr = this->builder->CreateGEP(type, parent, index);
+        ptr = this->builder->CreateGEP(ltype, ref.value, index);
     }
 
     this->mark_as_mutated(ref);
     this->builder->CreateStore(element, ptr);
+
+    return element;
 }

@@ -1,24 +1,28 @@
 #include <quart/parser/attrs.h>
 #include <quart/parser/parser.h>
 #include <quart/utils/utils.h>
-#include <quart/utils/log.h>
+#include <quart/logging.h>
 
 #define ENTRY(n) { #n, handle_##n##_attribute }
+
+using namespace quart;
 
 SIMPLE_ATTR(noreturn, Attribute::Noreturn)
 SIMPLE_ATTR(packed, Attribute::Packed)
 
 ATTR(llvm_intrinsic) {
     parser.expect(TokenKind::LParen, "(");
-    std::string name = parser.expect(TokenKind::Identifier, "identifier").value;
+    std::string name = parser.expect(TokenKind::String, "string").value;
     parser.expect(TokenKind::RParen, ")");
 
     return Attribute(Attribute::LLVMIntrinsic, name);
 }
 
 ATTR(link) {
-    static std::vector<std::string> VALID_LINK_KEYS = {"name", "export", "arch", "section"};
-
+    static std::vector<std::string> VALID_LINK_KEYS = {
+        "name", "export", "arch", "section", "platform"
+    };
+    
     parser.expect(TokenKind::LParen, "(");
     std::map<std::string, std::string> args;
 

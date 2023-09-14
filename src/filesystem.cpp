@@ -1,8 +1,8 @@
-#include <quart/utils/filesystem.h>
+#include <quart/filesystem.h>
 
+#include <iostream>
 #include <cerrno>
-
-using namespace utils;
+#include <glob.h>
 
 fs::Path::Path(const std::string& name) {
     this->name = name;
@@ -14,10 +14,6 @@ fs::Path::Path() {
 
 fs::Path fs::Path::empty() {
     return Path("");
-}
-
-std::string fs::Path::str() {
-    return this->name;
 }
 
 fs::Path fs::Path::cwd() {
@@ -48,6 +44,18 @@ fs::Path fs::Path::home() {
 #endif
 }
 
+fs::Path fs::Path::resolve() {
+    char* result = realpath(this->name.c_str(), nullptr);
+    if (!result) {
+        return Path::empty();
+    }
+    
+    fs::Path path(result);
+
+    free(result);
+    return path;
+}
+
 bool fs::Path::operator==(const Path& other) const {
     return this->name == other.name;
 }
@@ -68,6 +76,10 @@ fs::Path::operator std::string() const {
     return this->name;
 }
 
+fs::Path::operator llvm::StringRef() const {
+    return llvm::StringRef(this->name);
+}
+
 fs::Path fs::Path::from_parts(const std::vector<std::string>& parts) {
     std::string name;
     for (size_t i = 0; i < parts.size(); i++) {
@@ -82,7 +94,9 @@ fs::Path fs::Path::from_parts(const std::vector<std::string>& parts) {
 
 fs::Path fs::Path::from_env(const std::string& env) {
     char* buffer = getenv(env.c_str());
-    assert(buffer && "getenv() error");
+    if (!buffer) {
+        return Path::empty();
+    }
 
     return Path(buffer);
 }
@@ -102,8 +116,7 @@ struct stat fs::Path::stat(int& err) {
 }
 
 bool fs::Path::exists() const {
-    struct stat buffer;
-    return ::stat(this->name.c_str(), &buffer) == 0;
+    return fs::exists(this->name);
 }
 
 bool fs::Path::isfile() const {
@@ -114,14 +127,23 @@ bool fs::Path::isfile() const {
 }
 
 bool fs::Path::isdir() const {
-    struct stat buffer;
-    ::stat(this->name.c_str(), &buffer);
-
-    return S_ISDIR(buffer.st_mode);
+    return fs::isdir(this->name);
 }
 
 bool fs::Path::isempty() const {
     return this->name.empty();
+}
+
+bool fs::Path::is_part_of(const fs::Path& other) const {
+    return this->name.find(other.name) == 0;
+}
+
+fs::Path fs::Path::remove_prefix(const fs::Path& prefix) {
+    if (!this->is_part_of(prefix)) {
+        return this->name;
+    }
+
+    return fs::Path(this->name.substr(prefix.name.size()));
 }
 
 std::string fs::Path::filename() {
@@ -227,6 +249,36 @@ std::vector<fs::Path> fs::Path::listdir(bool recursive) {
     return paths;
 }
 
+std::vector<fs::Path> fs::Path::glob(const std::string& pattern, int flags) {
+    std::vector<fs::Path> paths;
+
+#if _WIN32 || _WIN64
+    WIN32_FIND_DATA fd;
+
+    std::wstring wpattern = std::wstring(pattern.begin(), pattern.end());
+    HANDLE handle = FindFirstFile(wpattern.c_str(), &fd);
+
+    if (handle != INVALID_HANDLE_VALUE) {
+        do {
+            paths.push_back(fs::Path(fd.cFileName));
+        } while (FindNextFile(handle, &fd));
+
+        FindClose(handle);
+    }
+#else
+    glob_t result;
+    ::glob(pattern.c_str(), flags, nullptr, &result);
+
+    for (size_t i = 0; i < result.gl_pathc; i++) {
+        paths.push_back(fs::Path(result.gl_pathv[i]));
+    }
+
+    globfree(&result);
+#endif
+
+    return paths;
+}
+
 std::fstream fs::Path::open(fs::OpenMode mode) {
     assert(this->isfile() && "Path is not a file");
 
@@ -279,11 +331,27 @@ std::string fs::Path::extension() {
 }
 
 fs::Path fs::Path::with_extension(const std::string& extension) {
+    if (extension.empty()) {
+        return fs::Path(fs::remove_extension(this->name));
+    }
+
     return fs::Path(fs::replace_extension(this->name, extension));
 }
 
 fs::Path fs::Path::with_extension() {
     return fs::Path(fs::remove_extension(this->name));
+}
+
+bool fs::exists(const std::string& path) {
+    struct stat buffer;
+    return ::stat(path.c_str(), &buffer) == 0;
+}
+
+bool fs::isdir(const std::string& path) {
+    struct stat buffer;
+    ::stat(path.c_str(), &buffer);
+
+    return S_ISDIR(buffer.st_mode);
 }
 
 bool fs::has_extension(const std::string& filename) {

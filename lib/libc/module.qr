@@ -1,3 +1,12 @@
+const O_APPEND = 1024;
+const O_ASYNC = 8192;
+const O_CLOEXEC = 524288;
+const O_CREAT = 64;
+const O_TRUNC = 512;
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+
 const SEEK_END = 2;
 const SEEK_SET = 0;
 
@@ -60,6 +69,7 @@ struct addrinfo {
 }
 
 extern "C" {
+    func open(path: *i8, flags: i32, mode: i32) -> i32;
     func read(fd: i32, buf: *void, n: i32) -> i32;
     func write(fd: i32, buf: *void, n: i32) -> i32;
     func close(fd: i32) -> i32;
@@ -192,7 +202,7 @@ extern "C" {
 
     func shutdown(sockfd: i32, how: i32) -> i32;
 
-    [[noreturn]] func exit(code: i32);
+    ![noreturn] func exit(code: i32);
 
     func atexit(f: func() -> void);
 }

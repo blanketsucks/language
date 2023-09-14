@@ -2,9 +2,9 @@ import libc;
 import libc::errno;
 
 enum SeekMode {
-    SET,
-    CUR,
-    END
+    Set,
+    Cur,
+    End
 }
 
 struct IOBase {
@@ -14,7 +14,7 @@ struct IOBase {
         return libc::fileno(self.handle);
     }
 
-    func seek(self, offset: i32, whence: SeekMode = SeekMode::SET) -> i32 {
+    func seek(self, offset: i32, whence: SeekMode = SeekMode::Set) -> i32 {
         return libc::fseek(self.handle, offset, whence);
     }
 

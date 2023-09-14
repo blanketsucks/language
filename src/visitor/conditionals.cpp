@@ -1,5 +1,7 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 llvm::BasicBlock* Visitor::create_if_statement(llvm::Value* condition) {
     llvm::BasicBlock* block = this->builder->GetInsertBlock();
     llvm::Function* function = block->getParent();
@@ -14,23 +16,20 @@ llvm::BasicBlock* Visitor::create_if_statement(llvm::Value* condition) {
 }
 
 Value Visitor::visit(ast::IfExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->span);
+    Value condition = expr->condition->accept(*this);
+    if (condition.is_empty_value()) ERROR(expr->condition->span, "Expected a value");
 
-    auto func = this->current_function;
-    llvm::Function* function = this->builder->GetInsertBlock()->getParent();
+    FunctionRef function = this->current_function;
 
-    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function);
+    llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function->value);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
 
     if (!condition->getType()->isIntegerTy(1)) {
-        condition = this->builder->CreateIsNotNull(condition);
+        condition = {this->builder->CreateIsNotNull(condition), this->registry->create_int_type(1, true)};
     }
 
     this->builder->CreateCondBr(condition, then, else_);
     this->set_insert_point(then, false);
-
-    Branch* branch = func->current_branch;
-    func->current_branch = func->create_branch(branch->loop, branch->end);
 
     expr->body->accept(*this);
 
@@ -57,25 +56,21 @@ Value Visitor::visit(ast::IfExpr* expr) {
     
     */
     if (!expr->ebody) {
-        if (!func->current_branch->has_jump()) {
+        if (!function->current_block->getTerminator()) {
             this->builder->CreateBr(else_);
             this->set_insert_point(else_);
 
-            func->current_branch = branch;
             return nullptr; 
-        } else {
-            this->set_insert_point(else_);
-            func->current_branch = branch;
-
-            return nullptr;
         }
+
+        this->set_insert_point(else_);
+        return nullptr;
     }
 
-    if (func->current_branch->has_jump()) {
+    if (function->current_block->getTerminator()) {
         this->set_insert_point(else_);
         expr->ebody->accept(*this);
 
-        func->current_branch = branch;
         return nullptr;
     }
 
@@ -83,29 +78,29 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateBr(merge);
 
     this->set_insert_point(else_);
-    
-    func->current_branch = func->create_branch(branch->loop, branch->end);
     expr->ebody->accept(*this);
 
-    if (func->current_branch->has_jump()) {
+    if (function->current_block->getTerminator()) {
         this->set_insert_point(merge);
-        func->current_branch = branch;
-
         return nullptr;
     }
 
     this->builder->CreateBr(merge);
     this->set_insert_point(merge);
 
-    func->current_branch = branch;
     return nullptr;
 }
 
 Value Visitor::visit(ast::TernaryExpr* expr) {
-    llvm::Value* condition = expr->condition->accept(*this).unwrap(expr->condition->span);
-    if (!this->is_compatible(this->builder->getInt1Ty(), condition->getType())) {
+    Value condition = expr->condition->accept(*this);
+    if (condition.is_empty_value()) ERROR(expr->condition->span, "Expected a value");
+
+    quart::Type* boolean = this->registry->create_int_type(1, true);
+    if (!Type::can_safely_cast_to(condition.type, boolean)) {
         ERROR(expr->condition->span, "Expected a boolean expression in the condition of a ternary expression");
     }
+
+    condition = this->cast(condition, boolean);
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
@@ -114,17 +109,19 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
     this->builder->CreateCondBr(condition, then, else_);
     this->set_insert_point(then);
 
-    llvm::Value* true_value = expr->true_expr->accept(*this).unwrap(expr->true_expr->span);
+    Value true_value = expr->true_expr->accept(*this);
+    if (true_value.is_empty_value()) ERROR(expr->true_expr->span, "Expected a value");
 
     this->builder->CreateBr(merge);
     this->set_insert_point(else_);
 
-    llvm::Value* false_value = expr->false_expr->accept(*this).unwrap(expr->false_expr->span);
+    Value false_value = expr->false_expr->accept(*this);
+    if (false_value.is_empty_value()) ERROR(expr->false_expr->span, "Expected a value");
 
     this->builder->CreateBr(merge);
     this->set_insert_point(merge);
 
-    if (!this->is_compatible(true_value->getType(), false_value->getType())) {
+    if (!Type::can_safely_cast_to(true_value.type, false_value.type)) {
         ERROR(expr->false_expr->span, "The true and false expressions of a ternary expression must have the same type");
     }
 
@@ -133,5 +130,5 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
     phi->addIncoming(true_value, then);
     phi->addIncoming(false_value, else_);
 
-    return phi;
+    return {phi, true_value.type};
 }

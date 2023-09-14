@@ -5,6 +5,8 @@
 #include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/IRBuilder.h>
 
+namespace quart {
+
 struct DebugInfo {
     llvm::IRBuilder<>* builder;
     llvm::DIBuilder* dbuilder;
@@ -12,7 +14,14 @@ struct DebugInfo {
     llvm::DICompileUnit* unit;
     llvm::DIFile* file;
 
-    llvm::DIType* wrap(llvm::Type* type);
+    std::vector<llvm::DIScope*> scopes;
+
+    DebugInfo() = default;
+    DebugInfo(
+        llvm::IRBuilder<>* builder, llvm::DIBuilder* dbuilder, llvm::DICompileUnit* unit, llvm::DIFile* file
+    ) : builder(builder), dbuilder(dbuilder), unit(unit), file(file) {}
+
+    llvm::DIType* wrap(quart::Type* type);
     llvm::DISubprogram* create_function(
         llvm::DIScope* scope, 
         llvm::Function* function, 
@@ -25,3 +34,5 @@ struct DebugInfo {
 private:
     std::map<llvm::Type*, llvm::DIType*> types;
 };
+
+}

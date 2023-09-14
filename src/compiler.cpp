@@ -13,6 +13,8 @@
 #include <fstream>
 #include <iomanip>
 
+using namespace quart;
+
 CompilerError::CompilerError(uint32_t code, const std::string& message) : code(code), message(message) {}
 
 CompilerError CompilerError::success() {
@@ -36,7 +38,12 @@ double Compiler::duration(Compiler::TimePoint start, Compiler::TimePoint end) {
 }
 
 void Compiler::log_duration(const char* message, Compiler::TimePoint start) {
-    std::cout << message << " took " << Compiler::duration(start, Compiler::now()) << " milliseconds.\n";
+    double duration = Compiler::duration(start, Compiler::now());
+    if (duration < 1000) {
+        std::cout << message << " took " << duration << " milliseconds.\n";
+    } else {
+        std::cout << message << " took " << duration / 1000 << " seconds.\n";
+    }
 }
 
 void Compiler::init() {
@@ -55,12 +62,12 @@ void Compiler::add_library(const std::string& name) { this->options.libs.names.i
 void Compiler::add_library_path(const std::string& path) { this->options.libs.paths.insert(path); }
 void Compiler::set_libraries(std::set<std::string> names) { this->options.libs.names = names; }
 void Compiler::set_library_paths(std::set<std::string> paths) { this->options.libs.paths = paths; }
-void Compiler::add_include_path(const std::string& path) { this->options.includes.push_back(path); }
+void Compiler::add_import_path(const std::string& path) { this->options.imports.push_back(path); }
 void Compiler::set_output_format(OutputFormat format) { this->options.format = format; }
 void Compiler::set_output_file(const std::string& output) { this->options.output = output; }
 void Compiler::set_optimization_level(OptimizationLevel level) { this->options.optimization = level; }
 void Compiler::set_optimization_options(OptimizationOptions options) { this->options.opts = options; }
-void Compiler::set_input_file(const utils::fs::Path& input) { this->options.input = input; }
+void Compiler::set_input_file(const fs::Path& input) { this->options.input = input; }
 void Compiler::set_entry_point(const std::string& entry) { this->options.entry = entry; }
 void Compiler::set_target(const std::string& target) { this->options.target = target; }
 void Compiler::set_verbose(bool verbose) { this->options.verbose = verbose; }
@@ -86,9 +93,9 @@ void Compiler::dump() {
         stream << FORMAT("Target: '{0}'", this->options.target) << '\n';
     }
 
-    if (!this->options.includes.empty()) {
+    if (!this->options.imports.empty()) {
         stream << FORMAT(
-            "Include paths: {0}", llvm::make_range(this->options.includes.begin(), this->options.includes.end())
+            "Import paths: {0}", llvm::make_range(this->options.imports.begin(), this->options.imports.end())
         ) << '\n';
     }
 
@@ -120,7 +127,7 @@ void Compiler::dump() {
 }
 
 std::vector<std::string> Compiler::get_linker_arguments() {
-    std::string object = this->options.input.with_extension("o").str();
+    std::string object = this->options.input.with_extension("o");
     std::vector<std::string> args = {
         this->options.linker,
         "-o", this->options.output,
@@ -163,7 +170,7 @@ CompilerError Compiler::compile() {
         std::cout << '\n';
     }
 
-    Lexer lexer(this->options.input);
+    MemoryLexer lexer(this->options.input);
     TimePoint start = Compiler::now();
 
     std::vector<Token> tokens = lexer.lex();
@@ -171,7 +178,7 @@ CompilerError Compiler::compile() {
         Compiler::log_duration("Lexing", start);
     }
 
-    Parser parser(tokens);
+    Parser parser(std::move(tokens));
     if (this->options.verbose) {
         start = Compiler::now();
     }
@@ -181,7 +188,7 @@ CompilerError Compiler::compile() {
         Compiler::log_duration("Parsing", start);
     }
 
-    Visitor visitor(this->options.input.str(), this->options);
+    Visitor visitor(this->options.input, this->options);
     if (this->options.verbose) {
         start = Compiler::now();
     }
@@ -223,7 +230,7 @@ CompilerError Compiler::compile() {
     llvm::TargetOptions options;
     auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
-    utils::Scope<llvm::TargetMachine> machine(
+    std::unique_ptr<llvm::TargetMachine> machine(
         target->createTargetMachine(triple, "generic", "", options, reloc)
     );
 
@@ -237,7 +244,7 @@ CompilerError Compiler::compile() {
 
     std::string object;
     if (this->options.format == OutputFormat::Executable || this->options.format == OutputFormat::SharedLibrary) {
-        object = this->options.input.with_extension("o").str();
+        object = this->options.input.with_extension("o");
     } else {
         object = this->options.output;
     }
@@ -309,7 +316,7 @@ CompilerError Compiler::compile() {
 }
 
 int Compiler::jit(int argc, char** argv) {
-    Lexer lexer(this->options.input);
+    MemoryLexer lexer(this->options.input);
     auto tokens = lexer.lex();
 
     Parser parser(tokens);
@@ -323,7 +330,7 @@ int Compiler::jit(int argc, char** argv) {
         Compiler::error("Missing main entry point function"); exit(1);
     }
 
-    if (entry->args.size() > 2) {
+    if (entry->params.size() > 2) {
         Compiler::error("Main entry point function takes no more than 2 arguments"); exit(1);
     }
 

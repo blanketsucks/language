@@ -2,6 +2,8 @@
 
 #include <llvm/Support/CommandLine.h>
 
+using namespace quart;
+
 llvm::cl::OptionCategory category("Compiler options");
 
 llvm::cl::opt<bool> verbose(
@@ -46,10 +48,10 @@ llvm::cl::opt<MangleStyle> mangle_style(
 llvm::cl::opt<std::string> entry("entry", llvm::cl::desc("Set an entry point for the program"), llvm::cl::init("main"), llvm::cl::cat(category));
 llvm::cl::opt<std::string> output("output", llvm::cl::desc("Set an output file"), llvm::cl::Optional, llvm::cl::cat(category));
 llvm::cl::opt<std::string> target("target", llvm::cl::desc("Set the target triple for which the code is compiled"), llvm::cl::Optional, llvm::cl::cat(category));
-llvm::cl::list<std::string> includes(
+llvm::cl::list<std::string> imports(
     "I", 
     llvm::cl::Prefix,
-    llvm::cl::desc("Add an include path"), 
+    llvm::cl::desc("Add an import path"), 
     llvm::cl::value_desc("path"), 
     llvm::cl::cat(category)
 );
@@ -80,14 +82,14 @@ cl::Arguments cl::parse_arguments(int argc, char** argv) {
 
     args.file = files.front(); 
     if (!args.file.exists()) {
-        Compiler::error("File not found '{0}'", args.file.str()); exit(1);
+        Compiler::error("File not found '{0}'", args.file.name); exit(1);
     }
 
     args.entry = entry;   
     args.format = format;
     args.optimize = optimize;
     args.verbose = verbose;
-    args.includes = includes;
+    args.imports = imports;
     args.standalone = standalone;
     args.target = target;
     args.mangle_style = mangle_style;
@@ -96,29 +98,8 @@ cl::Arguments cl::parse_arguments(int argc, char** argv) {
     args.libraries.names = std::set<std::string>(libraries.begin(), libraries.end());
 
     if (output.empty()) {
-        args.output = args.file.with_extension("o").str();
-        switch (args.format) {
-            case OutputFormat::LLVM:
-                args.output = utils::fs::replace_extension(args.output, "ll"); break;
-            case OutputFormat::Bitcode:
-                args.output = utils::fs::replace_extension(args.output, "bc"); break;
-            case OutputFormat::Assembly:
-                args.output = utils::fs::replace_extension(args.output, "s"); break;
-            case OutputFormat::SharedLibrary:
-            #if _WIN32 || _WIN64
-                args.output = utils::fs::replace_extension(args.output, "lib"); break;
-            #else
-                args.output = utils::fs::replace_extension(args.output, "so"); break;
-            #endif
-            case OutputFormat::Executable:
-            #if _WIN32 || _WIN64
-                args.output = utils::fs::replace_extension(args.output, "exe"); break;
-            #else
-                args.output = utils::fs::remove_extension(args.output); break;
-            #endif
-            default:
-                args.output = utils::fs::replace_extension(args.output, "o"); break;
-        }
+        std::string& extension = OUTPUT_FORMATS_TO_EXT[args.format];
+        args.output = args.file.with_extension(extension);
     } else {
         args.output = output;
     }

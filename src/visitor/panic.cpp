@@ -1,6 +1,8 @@
 #include <quart/visitor.h>
 
-void Visitor::panic(const std::string& message, Span span) {
+using namespace quart;
+
+void Visitor::panic(const std::string& message, const Span& span) {
     if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
         this->builder->CreateUnreachable(); return;
     }

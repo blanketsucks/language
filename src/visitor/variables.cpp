@@ -1,126 +1,124 @@
 #include <quart/visitor.h>
 
+using namespace quart;
+
 Value Visitor::visit(ast::VariableExpr* expr) {
     if (expr->name == "null") {
-        llvm::Type* type = this->ctx != nullptr ? this->ctx : this->builder->getInt1Ty();
-        return Value(llvm::Constant::getNullValue(type), true);
+        quart::Type* type = this->registry->create_int_type(1, true);
+        if (this->inferred) type = this->inferred;
+
+        return Value(
+            llvm::Constant::getNullValue(type->to_llvm_type()),
+            type, 
+            Value::Constant
+        );
     }
 
     Scope* scope = this->scope;
     auto local = scope->get_local(expr->name, bool(this->current_function));
     if (local.value) {
         if (!this->current_function) {
-            return Value(local.value, local.is_constant);
+            uint16_t flags = local.flags & ScopeLocal::Constant ? Value::Constant : Value::None;
+            return Value(local.value, local.type, flags);
         }
-        return this->builder->CreateLoad(local.type, local.value);
+
+        return Value(this->load(local.value), local.type);
     }
 
     if (scope->has_struct(expr->name)) {
-        return Value::from_struct(scope->get_struct(expr->name));
-    } else if (scope->has_namespace(expr->name)) {
-        auto ns = scope->get_namespace(expr->name);
-        return Value::from_scope(ns->scope);
+        auto structure = scope->get_struct(expr->name);
+        return Value(nullptr, Value::Struct, structure.get());
     } else if (scope->has_enum(expr->name)) {
         auto enumeration = scope->get_enum(expr->name);
-        return Value::from_scope(enumeration->scope);
+        return Value(nullptr, Value::Scope, enumeration->scope);
     } else if (scope->has_function(expr->name)) {
-        return Value::from_function(scope->get_function(expr->name));
+        auto function = scope->get_function(expr->name);
+        return Value(function->value, function->type, Value::Function | Value::Constant, function.get());
     } else if (scope->has_module(expr->name)) {
         auto module = scope->get_module(expr->name);
-        return Value::from_scope(module->scope);
+        return Value(nullptr, Value::Scope, module->scope);
     }
 
     if (this->builtins.count(expr->name)) {
-        return Value::from_builtin(this->builtins[expr->name]);
+        return Value(nullptr, Value::Builtin, this->builtins[expr->name]);
     }
 
     ERROR(expr->span, "Undefined variable '{0}'", expr->name);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
-    llvm::Type* type = nullptr;
+    quart::Type* type = nullptr;
     if (expr->external) {
         std::string name = expr->names[0].value;
 
-        type = expr->type->accept(*this).value;
-        this->module->getOrInsertGlobal(name, type);
+        type = expr->type->accept(*this);
+        this->module->getOrInsertGlobal(name, type->to_llvm_type());
 
         llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
         global->setLinkage(llvm::GlobalValue::ExternalLinkage);
 
-        return global;
+        return EMPTY_VALUE;
     }
 
-    llvm::Value* value = nullptr;
+    Value value = EMPTY_VALUE;
 
-    bool is_early_function_call = false;
-    bool is_constant = false;
-    bool is_reference = false;
-    bool is_immutable = false;
-    bool is_stack_allocated = false;
-    bool is_aggregate = false;
+    bool is_constant_value = false;
     bool has_initializer = !!expr->value;
 
     if (!expr->value) {
-        type = expr->type->accept(*this).value;
-        if (type->isAggregateType()) {
-            value = llvm::ConstantAggregateZero::get(type);
-        } else if (type->isPointerTy()) {
-            value = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
+        type = expr->type->accept(*this);
+        llvm::Type* ltype = type->to_llvm_type();
+
+        if (type->is_aggregate()) {
+            value = llvm::ConstantAggregateZero::get(ltype);
+        } else if (type->is_pointer()) {
+            value = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ltype));
         } else {
-            value = llvm::Constant::getNullValue(type);
+            value = llvm::Constant::getNullValue(ltype);
         }
 
-        is_constant = true;
+        is_constant_value = true;
     } else {
         if (expr->type) {
-            type = expr->type->accept(*this).value;
-            this->ctx = type;
+            type = expr->type->accept(*this);
+            this->inferred = type;
         }
 
-        Value val = expr->value->accept(*this); 
+        value = expr->value->accept(*this); 
+        quart::Type* vtype = nullptr;
 
-        is_constant = val.is_constant;
-        is_early_function_call = val.is_early_function_call;
-        is_reference = val.is_reference;
-        is_immutable = val.is_immutable;
-        is_stack_allocated = val.is_stack_allocated;
-        is_aggregate = val.is_aggregate;
-
-        llvm::Type* vtype = nullptr;
-        if (!is_early_function_call) {
-            value = val.unwrap(expr->value->span);
-            vtype = value->getType();
-
-            if (!type) {
-                type = vtype;
+        if (!(value.flags & Value::EarlyFunctionCall)) {
+            if (value.is_empty_value()) {
+                ERROR(expr->value->span, "Expected an expression");
             }
+
+            vtype = value.type;
+            if (!type) type = vtype;
         } else {
-            vtype = this->constructors.back().function->getReturnType();
-            if (!type) {
-                type = vtype;
-            }
+            llvm::Type* return_type = this->early_function_calls.back().function->getReturnType();
+            vtype = this->registry->wrap(return_type);
 
-            value = llvm::Constant::getNullValue(type);
+            if (!type) type = vtype;
+            value = llvm::Constant::getNullValue(return_type);
         }
 
-        if (type->isVoidTy()) {
+        if (type->is_void()) {
             ERROR(expr->value->span, "Cannot store value of type 'void'");
         }
 
-        if (!this->is_compatible(type, vtype)) {
+        if (!Type::can_safely_cast_to(vtype, type)) {
             ERROR(
                 expr->value->span, 
                 "Expected expression of type '{0}' but got '{1}' instead", 
-                this->get_type_name(type), this->get_type_name(vtype)
+                type->get_as_string(), vtype->get_as_string()
             );
         } else {
             // TODO: Somehow be able to cast in this case
-            if (is_early_function_call && (type != vtype)) {
+            if ((value.flags & Value::EarlyFunctionCall) && (type != vtype)) {
                 ERROR(
                     expr->value->span, 
                     "Expected expression of type '{0}' but got '{1}' instead", 
-                    this->get_type_name(type), this->get_type_name(vtype)
+                    type->get_as_string(), vtype->get_as_string()
                 );
             } else {
                 value = this->cast(value, type);
@@ -131,34 +129,31 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     if (!expr->is_multiple_variables) {
         ast::Ident& ident = expr->names[0];
         if (!this->current_function) {
-            if (!llvm::isa<llvm::Constant>(value)) {
+            if (!llvm::isa<llvm::Constant>(value.inner)) {
                 ERROR(expr->value->span, "Cannot store non-constant value in a global variable");
             }
 
             std::string name = FORMAT("__global.{0}", ident.value);
-            this->module->getOrInsertGlobal(name, type);
+            this->module->getOrInsertGlobal(name, type->to_llvm_type());
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
-            llvm::Constant* constant = llvm::cast<llvm::Constant>(value);
+            llvm::Constant* constant = llvm::cast<llvm::Constant>(value.inner);
 
             global->setInitializer(constant);
-            if (!is_early_function_call) {
+            if (!(value.flags & Value::EarlyFunctionCall)) {
                 global->setLinkage(llvm::GlobalValue::PrivateLinkage);
             } else {
-                auto& call = this->constructors.back();
+                auto& call = this->early_function_calls.back();
                 call.store = global;
             }
 
+            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             this->scope->variables[ident.value] = Variable { 
                 ident.value, 
                 type, 
                 global, 
                 constant, 
-                false,
-                ident.is_immutable,
-                false,
-                false,
-                false,
+                flags,
                 expr->span
             };
 
@@ -166,113 +161,110 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         // We only want to check for immutability if the type is a reference/pointer while ignoring aggregates
-        if ((!ident.is_immutable && is_immutable) && (is_reference || type->isPointerTy()) && !is_aggregate) {
+        if ((ident.is_mutable && value.is_mutable()) && (value.is_reference() || type->is_pointer()) && !(value.flags & Value::Aggregate)) {
             ERROR(expr->value->span, "Cannot assign immutable value to mutable variable '{0}'", ident.value);
         }
 
-        if (is_reference) {
+        if (value.is_reference()) {
+            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             this->scope->variables[ident.value] = Variable::from_value(
-                ident.value, 
-                value, 
-                ident.is_immutable, 
-                true, 
-                is_stack_allocated, 
-                ident.span
+                ident.value, value, type, flags, ident.span
             );
 
             return nullptr;
         }
 
-        llvm::Value* alloca = this->alloca(type);
-        if (is_constant && type->isAggregateType() && has_initializer) {
+        llvm::Type* ltype = type->to_llvm_type();
+        llvm::Value* alloca = this->alloca(ltype);
+
+        if (is_constant_value && type->is_aggregate() && has_initializer) {
             std::string name = FORMAT("__const.{0}.{1}", this->current_function->name, ident.value);
-            this->module->getOrInsertGlobal(name, type);
+            this->module->getOrInsertGlobal(name, ltype);
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
             
             global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
-            global->setInitializer(llvm::cast<llvm::Constant>(value));
+            global->setInitializer(llvm::cast<llvm::Constant>(value.inner));
 
             this->builder->CreateMemCpy(
                 alloca, llvm::MaybeAlign(0),
                 global, llvm::MaybeAlign(0),
-                this->getsizeof(type)
+                this->getsizeof(ltype)
             );
         } else {
             if (!has_initializer) {
                 this->builder->CreateMemSet(
                     alloca, this->builder->getInt8(0), 
-                    this->getsizeof(type), llvm::MaybeAlign(0)
+                    this->getsizeof(ltype), llvm::MaybeAlign(0)
                 );
-            } else if (is_aggregate) {
+            } else if (value.flags & Value::Aggregate) {
                 alloca = value;
-                type = type->getPointerElementType();
+                type = type->get_pointee_type();
             } else {
                 this->builder->CreateStore(value, alloca);
             }
 
-            if (is_early_function_call) {
-                auto& call = this->constructors.back();
+            if (value.flags & Value::EarlyFunctionCall) {
+                auto& call = this->early_function_calls.back();
                 call.store = alloca;
             }
         }
+
+        uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
+        flags |= Variable::StackAllocated;
 
         this->scope->variables[ident.value] = Variable {
             .name = ident.value,
             .type = type,
             .value = alloca,
-            .constant = is_constant ? llvm::cast<llvm::Constant>(value) : nullptr,
-            .is_reference = false,
-            .is_immutable = ident.is_immutable,
-            .is_stack_allocated = true,
-            .is_used = false,
-            .is_mutated = false,
+            .constant = is_constant_value ? llvm::cast<llvm::Constant>(value.inner) : nullptr,
+            .flags = flags,
             .span = ident.span
         };
     } else {
-        this->store_tuple(expr->span, this->current_function, value, expr->names, expr->consume_rest);
+        this->store_tuple(expr->value->span, this->current_function, value, expr->names, expr->consume_rest);
     }
     
     return value;
 }
 
 Value Visitor::visit(ast::ConstExpr* expr) {
-    Value val = expr->value->accept(*this);
-    bool is_early_function_call = val.is_early_function_call;
+    Value value = expr->value->accept(*this);
 
-    llvm::Type* type = nullptr;
-    llvm::Value* value = nullptr;
+    quart::Type* type = value.type;
+    llvm::Type* ltype = nullptr;
 
-    if (!is_early_function_call) {
-        value = val.unwrap(expr->value->span);
-        if (!expr->type) {
-            type = value->getType();
-        } else {
-            type = expr->type->accept(*this).value;
+    if (!(value.flags & Value::EarlyFunctionCall)) {
+        if (value.is_empty_value()) {
+            ERROR(expr->value->span, "Expected an expression");
         }
+
+        if (expr->type) type = expr->type->accept(*this);
+        ltype = type->to_llvm_type();
     } else {
-        type = this->constructors.back().function->getReturnType();
+        llvm::Type* return_type = this->early_function_calls.back().function->getReturnType();
+        type = this->registry->wrap(return_type);
+
+        ltype = return_type;
     }
 
     std::string name = FORMAT("__const.{0}", this->format_symbol(expr->name));
 
-    this->module->getOrInsertGlobal(name, type);
+    this->module->getOrInsertGlobal(name, ltype);
     llvm::GlobalVariable* global = this->module->getNamedGlobal(name);
 
     llvm::Constant* constant = nullptr;
-    if (!is_early_function_call) {
-        constant = llvm::cast<llvm::Constant>(value);
+    if (!(value.flags & Value::EarlyFunctionCall)) {
+        constant = llvm::cast<llvm::Constant>(value.inner);
     } else {
-        constant = llvm::Constant::getNullValue(type);
+        constant = llvm::Constant::getNullValue(ltype);
     }
 
     global->setInitializer(constant);
-    if (!is_early_function_call) {
-        global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
-    } else {
-        global->setDSOLocal(true);
+    global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
 
-        auto& call = this->constructors.back();
+    if (value.flags & Value::EarlyFunctionCall) {
+        auto& call = this->early_function_calls.back();
         call.store = global;
     }
 
@@ -280,5 +272,5 @@ Value Visitor::visit(ast::ConstExpr* expr) {
         name, type, global, constant, expr->span
     };
     
-    return nullptr;
+    return EMPTY_VALUE;
 }

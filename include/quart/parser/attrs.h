@@ -12,6 +12,8 @@
 #include <string>
 #include <map>
 
+namespace quart {
+
 class Parser;
 namespace ast {
     class Expr;
@@ -29,12 +31,12 @@ struct Attribute {
     Type type;
 
     llvm::Any value;
-    utils::Ref<ast::Expr> expr;
+    std::shared_ptr<ast::Expr> expr;
 
     Attribute() = default;
     Attribute(Type type) : type(type) {}
     Attribute(Type type, llvm::Any value) : type(type), value(value) {}
-    Attribute(Type type, utils::Ref<ast::Expr> expr) : type(type), expr(expr) {}
+    Attribute(Type type, std::shared_ptr<ast::Expr> expr) : type(type), expr(expr) {}
 
     template<typename T> T as() { return llvm::any_cast<T>(value); }
 };
@@ -43,3 +45,5 @@ class Attributes {
 public:
     static void init(Parser& parser);
 };
+
+}

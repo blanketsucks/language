@@ -5,6 +5,8 @@
 
 #define BUILTIN(n) llvm::Value* builtin_##n(Visitor& visitor, ast::CallExpr* call)
 
+namespace quart {
+
 class Visitor;
 
 typedef llvm::Value* (*BuiltinFunction)(Visitor&, ast::CallExpr*);
@@ -13,3 +15,5 @@ class Builtins {
 public:
     static void init(Visitor& visitor);
 };
+
+}

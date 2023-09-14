@@ -1,9 +1,11 @@
 #include <quart/builtins.h>
 #include <quart/visitor.h>
-#include <quart/utils/filesystem.h>
-#include <quart/utils/log.h>
+#include <quart/filesystem.h>
+#include <quart/logging.h>
 
 #define ENTRY(n) { "__builtin_"#n, builtin_##n }
+
+using namespace quart;
 
 BUILTIN(include_str) {
     auto& expr = call->get(0);
@@ -12,10 +14,12 @@ BUILTIN(include_str) {
     }
 
     auto str = expr->as<ast::StringExpr>();
-    utils::fs::Path path(str->value);
+    fs::Path path(str->value);
     
     if (!path.exists()) {
         ERROR(expr->span, "File '{0}' does not exist", str->value);
+    } else if (path.isdir()) {
+        ERROR(expr->span, "'{0}' is a directory", str->value);
     }
 
     auto stream = path.read();

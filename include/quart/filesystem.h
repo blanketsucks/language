@@ -8,6 +8,8 @@
 #include <fstream>
 #include <sstream>
 
+#include <llvm/ADT/StringRef.h>
+
 #if _WIN32 || _WIN64
     #include <io.h>
     #include <Windows.h>
@@ -29,7 +31,7 @@
     #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
-namespace utils { namespace fs {
+namespace fs {
 
 enum class OpenMode {
     Read,
@@ -49,6 +51,7 @@ struct Path {
     Path operator/(const Path& other);
 
     operator std::string() const;
+    operator llvm::StringRef() const;
 
     static Path empty();
     static Path cwd();
@@ -65,14 +68,21 @@ struct Path {
     bool isdir() const;
     bool isempty() const;
 
-    std::string str();
+    bool is_part_of(const Path& other) const;
+
+    fs::Path remove_prefix(const fs::Path& prefix);
+
     std::string filename();
     fs::Path parent();
+
+    fs::Path resolve();
 
     std::vector<std::string> parts();
 
     std::vector<Path> listdir();
     std::vector<Path> listdir(bool recursive);
+
+    static std::vector<Path> glob(const std::string& pattern, int flags = 0);
 
     std::fstream open(OpenMode mode = OpenMode::Read);
     std::stringstream read(bool binary = false);
@@ -85,10 +95,11 @@ struct Path {
     Path with_extension();
 };
 
+bool exists(const std::string& path);
+bool isdir(const std::string& path);
+
 bool has_extension(const std::string& filename);
 std::string remove_extension(const std::string& filename);
 std::string replace_extension(const std::string& filename, std::string extension);
 
 } 
-
-}

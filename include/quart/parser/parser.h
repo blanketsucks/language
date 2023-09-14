@@ -9,6 +9,8 @@
 
 #include <map>
 
+namespace quart {
+
 struct Path {
     std::string name;
     std::deque<std::string> segments;
@@ -35,51 +37,51 @@ public:
 
     int get_token_precendence();
     
-    utils::Scope<ast::TypeExpr> parse_type();
+    std::unique_ptr<ast::TypeExpr> parse_type();
 
-    utils::Scope<ast::BlockExpr> parse_block();
+    std::unique_ptr<ast::BlockExpr> parse_block();
     std::pair<std::vector<ast::Argument>, bool> parse_arguments(); // Returns a pair of arguments and whether or not the arguments are variadic
-    utils::Scope<ast::PrototypeExpr> parse_prototype(
+    std::unique_ptr<ast::PrototypeExpr> parse_prototype(
         ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
     );
-    utils::Scope<ast::Expr> parse_function_definition(
+    std::unique_ptr<ast::Expr> parse_function_definition(
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None, 
         bool is_operator = false
     );
 
     // The difference between this and parse_function_definition is that this one can never return a prototype forcing an 
     // implementation to be provided
-    utils::Scope<ast::FunctionExpr> parse_function();
+    std::unique_ptr<ast::FunctionExpr> parse_function();
 
-    utils::Scope<ast::IfExpr> parse_if_statement();
-    utils::Scope<ast::StructExpr> parse_struct();
-    utils::Scope<ast::Expr> parse_variable_definition(bool is_const = false);
-    utils::Scope<ast::NamespaceExpr> parse_namespace();
-    utils::Scope<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
-    utils::Scope<ast::Expr> parse_extern_block();
-    utils::Scope<ast::EnumExpr> parse_enum();
-    utils::Scope<ast::TypeAliasExpr> parse_type_alias();
-    utils::Scope<ast::Expr> parse_anonymous_function();
-    utils::Scope<ast::MatchExpr> parse_match_expr();
+    std::unique_ptr<ast::IfExpr> parse_if_statement();
+    std::unique_ptr<ast::StructExpr> parse_struct();
+    std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);
+    // std::unique_ptr<ast::NamespaceExpr> parse_namespace();
+    std::unique_ptr<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
+    std::unique_ptr<ast::Expr> parse_extern_block();
+    std::unique_ptr<ast::EnumExpr> parse_enum();
+    std::unique_ptr<ast::TypeAliasExpr> parse_type_alias();
+    std::unique_ptr<ast::Expr> parse_anonymous_function();
+    std::unique_ptr<ast::MatchExpr> parse_match_expr();
 
     // Parses `foo::bar::baz` into a deque of strings
     Path parse_path(llvm::Optional<std::string> name = llvm::None);
 
-    utils::Scope<ast::Expr> parse_immediate_binary_op(utils::Scope<ast::Expr> right, utils::Scope<ast::Expr> left, TokenKind op);
-    utils::Scope<ast::Expr> parse_immediate_unary_op(utils::Scope<ast::Expr> expr, TokenKind op);
+    std::unique_ptr<ast::Expr> parse_immediate_binary_op(std::unique_ptr<ast::Expr> right, std::unique_ptr<ast::Expr> left, TokenKind op);
+    std::unique_ptr<ast::Expr> parse_immediate_unary_op(std::unique_ptr<ast::Expr> expr, TokenKind op);
 
     ast::Attributes parse_attributes();
 
-    std::vector<utils::Scope<ast::Expr>> parse();
-    std::vector<utils::Scope<ast::Expr>> statements();
-    utils::Scope<ast::Expr> statement();
-    utils::Scope<ast::Expr> expr(bool semicolon = true);
-    utils::Scope<ast::Expr> binary(int prec, utils::Scope<ast::Expr> left);
-    utils::Scope<ast::Expr> unary();
-    utils::Scope<ast::Expr> call();
-    utils::Scope<ast::Expr> attr(Span start, utils::Scope<ast::Expr> expr);
-    utils::Scope<ast::Expr> element(Span start, utils::Scope<ast::Expr> expr);
-    utils::Scope<ast::Expr> factor();
+    std::vector<std::unique_ptr<ast::Expr>> parse();
+    std::vector<std::unique_ptr<ast::Expr>> statements();
+    std::unique_ptr<ast::Expr> statement();
+    std::unique_ptr<ast::Expr> expr(bool semicolon = true);
+    std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
+    std::unique_ptr<ast::Expr> unary();
+    std::unique_ptr<ast::Expr> call();
+    std::unique_ptr<ast::Expr> attr(Span start, std::unique_ptr<ast::Expr> expr);
+    std::unique_ptr<ast::Expr> element(Span start, std::unique_ptr<ast::Expr> expr);
+    std::unique_ptr<ast::Expr> factor();
 
     size_t index;
     Token current;
@@ -94,3 +96,4 @@ public:
     std::map<std::string, AttributeHandler> attributes;
 };
 
+}

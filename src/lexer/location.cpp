@@ -1,5 +1,7 @@
 #include <quart/lexer/location.h>
 
+using namespace quart;
+
 Span::Span(Location start, Location end, const std::string& filename, const std::string& line) {
     this->start = start;
     this->end = end;

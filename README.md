@@ -2,36 +2,22 @@
 
 Small language made for fun.
 
-```
-import libc;
-
-func main() {
-    libc::printf("Hello, world!\n");
-}
-```
-
-And then:
-
-```console
-$ ./bin/quart hello.qr
-$ ./hello
-Hello, world!
-```
-
 ## Building
 
-Make sure to have a C++ compiler (such as `g++`) and LLVM installed. LLVM 14 (Other versions of LLVM are currently not supported) is required.
+Make sure to have Python installed, a C++ compiler (such as `g++`) and LLVM installed. LLVM 14 (Other versions of LLVM are currently not supported) is required.
+
+The build system uses a Python file rather than make or CMake because I don't really like either.
 
 ```console
 $ git clone https://github.com/blanketsucks/language.git
 $ cd language
-$ make 
+$ python3 build.py
 ```
 
-By the end of the build process, a `quart` executable will be created in a `bin` directory.
+By the end of the build process, a `quart` executable will be created in a `build` directory.
 
 ```console
-$ ./bin/quart --help
+$ ./build/quart --help
 USAGE: quart [options] <files>
 
 OPTIONS:
@@ -61,21 +47,4 @@ Generic Options:
   --help                 - Display available options (--help-hidden for more)
   --help-list            - Display list of available options (--help-list-hidden for more)
   --version              - Display the version of this program
-```
-
-## Building/Running the JIT
-
-Quart has a built-in Just In Time Compiler, you can build this compiler using the following commands.
-
-```console
-$ git clone https://github.com/blanketsucks/language.git
-$ cd language
-$ make jit # or `make all` which will build both the JIT and the compiler
-```
-
-After the build, you'll have a `quart-jit` executable in the `bin` directory.
-
-```console
-$ ./bin/quart-jit hello.qr
-Hello, World!
 ```

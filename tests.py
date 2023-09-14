@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Any, Tuple, Union, TypedDict
+from typing import Iterable, List, Any, Tuple, Union, TypedDict, Dict
 
 import os
 import pathlib
