@@ -13,9 +13,9 @@ Module::Module(
 }
 
 std::string Module::to_string(char sep) {
-    std::string str = this->path;
+    std::string str = this->path.with_extension();
     if (this->is_standard_library) {
-        str = this->path.remove_prefix(FS_QUART_PATH);
+        str = this->path.remove_prefix(FS_QUART_PATH).with_extension();
     }
 
     if (sep != '/') std::replace(str.begin(), str.end(), '/', sep);

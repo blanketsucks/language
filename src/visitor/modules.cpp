@@ -103,7 +103,7 @@ std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relativ
     }
 
     fs::Path path = fs::Path(current_path + module_name + FILE_EXTENSION);
-    std::string path_name = path.name;
+    std::string path_name = path;
 
     if (!path.exists()) {
         fs::Path dir = path.with_extension();
@@ -152,6 +152,8 @@ std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relativ
     auto module = std::make_shared<Module>(module_name, path);
     
     this->scope->modules[module_name] = module;
+    scope->modules[module_name] = module;
+
     this->modules[name] = module;
 
     module->scope = new Scope(module_name, ScopeType::Module);

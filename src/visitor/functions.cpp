@@ -532,42 +532,6 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->flags |= Function::HasReturn;
-        if (func->ret->is_reference()) {
-            auto ref = this->as_reference(expr->value, true);
-            if (ref.is_null()) {
-                ERROR(expr->value->span, "Expected a variable, array or struct member");
-            }
-
-            bool is_stack_allocated = ref.flags & ScopeLocal::StackAllocated;
-            bool is_scope_local = ref.flags & ScopeLocal::LocalToScope;
-
-            if (is_stack_allocated && is_scope_local) {
-                ERROR(expr->value->span, "Cannot return a reference associated with local stack variable '{0}'", ref.name);
-            }
-
-            if (!ref.is_mutable() && func->ret->is_mutable()) {
-                ERROR(
-                    expr->value->span, 
-                    "Cannot return immutable reference '{0}' from function expecting mutable reference",
-                    ref.name
-                );
-            }
-
-            quart::Type* ret = func->ret->get_reference_type();
-            if (!Type::can_safely_cast_to(ref.type, ret)) {
-                ERROR(
-                    expr->value->span,
-                    "Cannot return reference value of type '{0}' from function expecting '{1}'",
-                    ref.type->get_as_string(), ret->get_as_string()
-                );
-            }
-
-            this->builder->CreateStore(ref.value, func->ret.value);
-            this->builder->CreateBr(func->ret.block);
-
-            return nullptr;
-        }
-
         this->inferred = func->ret.type;
 
         Value value = expr->value->accept(*this);
