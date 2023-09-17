@@ -70,11 +70,11 @@ Value Visitor::evaluate_tuple_assignment(ast::BinaryOpExpr* expr) {
 Value Visitor::evaluate_assignment(ast::BinaryOpExpr* expr) {
     switch (expr->left->kind()) {
         case ast::ExprKind::Attribute:
-            return this->store_struct_field(
+            return this->evaluate_attribute_assignment(
                 expr->left->as<ast::AttributeExpr>(), std::move(expr->right)
             );
         case ast::ExprKind::Index:
-            return this->store_array_element(
+            return this->evaluate_subscript_assignment(
                 expr->left->as<ast::IndexExpr>(), std::move(expr->right)
             );
         case ast::ExprKind::Tuple:

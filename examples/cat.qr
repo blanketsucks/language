@@ -6,8 +6,8 @@ const stderr = libc::fdopen(2, "w");
 func read_from_filename(filename: *i8) -> *i8 {
     let file = libc::fopen(filename, "r");
     if !file {
-        let errno = *libc::errno::__errno_location();
-        libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, libc::errno::strerror(errno));
+        let err = *errno::__errno_location();
+        libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, errno::strerror(err));
 
         return null;
     }
@@ -19,20 +19,21 @@ func read_from_filename(filename: *i8) -> *i8 {
         libc::fclose(file); return null;
     }
 
+    let size = size as u64;
     libc::fseek(file, 0, libc::SEEK_SET);
-    let buffer = libc::malloc(size) as *i8;
 
+    let buffer = libc::malloc(size) as *i8;
     let n = libc::fread(buffer, 1, size, file);
     if n != size {
         if libc::ferror(file) {
-            let errno = *libc::errno::__errno_location();
-            libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, libc::errno::strerror(errno));
+            let err = *errno::__errno_location();
+            libc::fprintf(stderr, "Could not read file '%s': %s\n", filename, errno::strerror(err));
         } else {
             libc::fprintf(stderr, "Could not read file '%s': Unknown error.\n", filename);
         }
 
         libc::fclose(file);
-        libc::free(buffer);
+        libc::free(buffer as *void);
 
         return null;
     }
@@ -53,7 +54,7 @@ func main(argc: i32, argv: **i8) -> i32 {
 
         if (buffer) {
             libc::printf("%s\n", buffer);
-            libc::free(buffer);
+            libc::free(buffer as *void);
         }
     }
     

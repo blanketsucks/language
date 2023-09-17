@@ -26,10 +26,10 @@ enum class TypeKind {
 
 class Type {
 public:
-    virtual TypeKind kind() const;
+    TypeKind kind() const;
 
     template<typename T> const T* as() const {
-        static_assert(std::is_base_of<Type, T>::value, "T must be a subclass of Type");
+        assert(T::classof(this) && "Cannot cast to type");
         return static_cast<const T*>(this);
     }
 
@@ -40,7 +40,7 @@ public:
     bool is_struct() const { return this->kind() == TypeKind::Struct; }
     bool is_array() const { return this->kind() == TypeKind::Array; }
     bool is_tuple() const { return this->kind() == TypeKind::Tuple; }
-    virtual bool is_enum() const { return this->kind() == TypeKind::Enum; }
+    bool is_enum() const { return this->kind() == TypeKind::Enum; }
     bool is_pointer() const { return this->kind() == TypeKind::Pointer; }
     bool is_reference() const { return this->kind() == TypeKind::Reference; }
     bool is_function() const { return this->kind() == TypeKind::Function; }
@@ -89,6 +89,8 @@ public:
 
     std::string get_as_string() const;
 
+    void print() const;
+
     llvm::Type* to_llvm_type() const;
 
     friend TypeRegistry;
@@ -102,6 +104,8 @@ private:
 
 class IntType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Int; }
+
     enum {
         MIN_BITS = llvm::IntegerType::MIN_INT_BITS,
         MAX_BITS = llvm::IntegerType::MAX_INT_BITS
@@ -124,6 +128,8 @@ private:
 
 class StructType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Struct; }
+
     std::vector<Type*> get_fields() const;
     std::string get_name() const;
 
@@ -149,6 +155,8 @@ private:
 
 class ArrayType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Array; }
+
     size_t get_size() const;
     Type* get_element_type() const;
 
@@ -164,6 +172,8 @@ private:
 
 class TupleType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Tuple; }
+
     std::vector<Type*> get_types() const;
     size_t get_size() const;
     Type* get_type_at(size_t index) const;
@@ -179,6 +189,8 @@ private:
 
 class PointerType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Pointer; }
+
     Type* get_pointee_type() const;
     bool is_mutable() const;
 
@@ -197,6 +209,8 @@ private:
 
 class ReferenceType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Reference; }
+
     Type* get_reference_type() const;
     bool is_mutable() const;
 
@@ -215,8 +229,7 @@ private:
 
 class EnumType : public Type {
 public:
-    TypeKind kind() const override { return this->inner->kind(); }
-    bool is_enum() const override { return true; }
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Enum; }
 
     Type* get_inner_type() const;
     std::string get_name() const;
@@ -233,6 +246,8 @@ private:
 
 class FunctionType : public Type {
 public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Function; }
+
     Type* get_return_type() const;
     std::vector<Type*> get_parameter_types() const;
     Type* get_parameter_at(size_t index) const;
@@ -246,5 +261,11 @@ private:
     Type* return_type;
     std::vector<Type*> params;
 };
+
+// Returns true if `type` is a struct or a pointer to a struct
+inline bool is_structure_type(Type* type) {
+    if (type->is_pointer()) type = type->get_pointee_type();
+    return type->is_struct();
+}
 
 }

@@ -21,16 +21,6 @@ static std::map<std::string, uint32_t> TYPE_SIZES = {
     {"void", 0}
 };
 
-uint32_t Visitor::get_pointer_depth(llvm::Type* type) {
-    uint32_t depth = 0;
-    while (type->isPointerTy()) {
-        type = type->getPointerElementType();
-        depth++;
-    }
-
-    return depth;
-} 
-
 uint32_t Visitor::getsizeof(llvm::Value* value) {
     return this->getsizeof(value->getType());
 }
@@ -70,11 +60,6 @@ Value Visitor::cast(const Value& value, quart::Type* to) {
     }
 
     return Value(result, to);
-}
-
-bool Visitor::is_valid_sized_type(llvm::Type* type) {
-    // There is no way to get a non-pointer function type currently but it's good to check for it regardless.
-    return !type->isVoidTy() && !type->isFunctionTy();
 }
 
 quart::Type* Visitor::get_builtin_type(ast::BuiltinType value) {
@@ -165,7 +150,16 @@ Value Visitor::visit(ast::CastExpr* expr) {
         ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
     }
 
-    return EMPTY_VALUE;
+    if (from->is_enum()) {
+        quart::Type* inner = from->get_inner_enum_type();
+        if (inner == to) {
+            return {value, to};
+        }
+
+        return this->cast(value, inner);
+    }
+
+    ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
 }
 
 Value Visitor::visit(ast::SizeofExpr* expr) {

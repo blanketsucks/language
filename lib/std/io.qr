@@ -7,82 +7,19 @@ enum SeekMode {
     End
 }
 
-struct IOBase {
-    readonly handle: *libc::FILE;
+struct Reader {
+    private handle: *libc::FILE;
 
-    func fileno(self) -> i32 { 
-        return libc::fileno(self.handle);
-    }
-
-    func seek(self, offset: i32, whence: SeekMode = SeekMode::Set) -> i32 {
-        return libc::fseek(self.handle, offset, whence);
-    }
-
-    func tell(self) -> i32 { 
-        return libc::ftell(self.handle);
-    }
-
-    func close(self) -> i32 {
-        return libc::fclose(self.handle);
-    }
-
-    func is_open(self) -> bool {
-        if (!self.handle) {
-            return false;
-        }
-
-        return self.fileno() >= 0;
-    }
-
-    func error(self) -> *i8 {
-        let mut errno: i32;
-        if (!self.is_open()) {
-            errno = *libc::errno::__errno_location();
-        } else {
-            errno = libc::ferror(self.handle);
-        }
-
-        return libc::errno::strerror(errno);     
-    }
-}
-
-struct Writer(IOBase) {
-    func from_handle(handle: *libc::FILE) -> Writer {
-        return Writer { handle: handle };
-    }
-
-    func flush(self) -> i32 {
-        return libc::fflush(self.handle);
-    }
-
-    func write(self, buffer: *i8, *, mut size: i32 = -1) -> i32 {
-        if (size < 0) {
-            size = libc::strlen(buffer);
-        }
-
-        return libc::fwrite(buffer, 1, size, self.handle);
-    }
-}
-
-struct Reader(IOBase) {
     func from_handle(handle: *libc::FILE) -> Reader {
         return Reader { handle: handle };
     }
+}
 
-    func read(self, buffer: *i8, *, mut size: i32 = -1) -> i32 {
-        if (size < 0) {
-            size = libc::strlen(buffer);
-        }
+struct Writer {
+    private handle: *libc::FILE;
 
-        return libc::fread(buffer, 1, size, self.handle);
-    }
-
-    func readline(self, buffer: *i8, *, mut size: i32 = -1) -> *i8 {
-        if (size < 0) {
-            size = libc::strlen(buffer);
-        }
-
-        return libc::fgets(buffer, size, self.handle);
+    func from_handle(handle: *libc::FILE) -> Writer {
+        return Writer { handle: handle };
     }
 }
 

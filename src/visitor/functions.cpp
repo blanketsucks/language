@@ -490,7 +490,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             }
         }
     }
-
+    
     bool error = llvm::verifyFunction(*function, &llvm::errs());
     assert((!error) && "Error while verifying function IR. Most likely a compiler bug.");
 

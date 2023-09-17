@@ -62,7 +62,6 @@ public:
     quart::Scope* create_scope(const std::string& name, quart::ScopeType type);
 
     std::string format_symbol(const std::string& name);
-    std::pair<std::string, bool> format_intrinsic_function(std::string name);
 
     llvm::Constant* to_str(const char* str);
     llvm::Constant* to_str(const std::string& str);
@@ -85,7 +84,6 @@ public:
 
     quart::Type* get_builtin_type(ast::BuiltinType type);
 
-    llvm::StructType* create_tuple_type(std::vector<llvm::Type*> types);
     void store_tuple(
         const Span& span, 
         FunctionRef func, 
@@ -99,14 +97,8 @@ public:
 
     StructRef make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
 
-    llvm::StructType* create_variadic_struct(llvm::Type* type);
-
-    Value store_struct_field(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> value);
-
-    Value store_array_element(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value);
     void create_bounds_check(llvm::Value* index, uint32_t count, const Span& span);
 
-    bool is_struct_type(quart::Type* type);
     bool is_tuple(llvm::Type* type);
 
     StructRef get_struct_from_type(quart::Type* type);
@@ -149,22 +141,10 @@ public:
     void create_global_constructors(
         llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::InternalLinkage
     );
-    
-    static std::string get_type_name(Type type);
-    static std::string get_type_name(llvm::Type* type);
 
-    bool is_compatible(Type t1, llvm::Type* t2);
-    bool is_compatible(llvm::Type* t1, llvm::Type* t2);
-
-    bool is_reference_expr(std::unique_ptr<ast::Expr>& expr); // if it's a &expr or not
     llvm::Value* as_reference(llvm::Value* value);
-
     ScopeLocal as_reference(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
     Value get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
-    
-    uint32_t get_pointer_depth(llvm::Type* type);
-
-    bool is_valid_sized_type(llvm::Type* type);
 
     void panic(const std::string& message, const Span& span);
 
@@ -176,7 +156,10 @@ public:
     void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
 
     Value evaluate_tuple_assignment(ast::BinaryOpExpr* expr);
+    Value evaluate_attribute_assignment(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> value);
+    Value evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value);
     Value evaluate_assignment(ast::BinaryOpExpr* expr);
+
     Value evaluate_float_operation(const Value& lhs, TokenKind op, const Value& rhs);
     Value evaluate_binary_operation(const Value& lhs, TokenKind op, const Value& rhs);
 
@@ -268,7 +251,6 @@ public:
     std::map<std::string, ModuleRef> modules;
     std::map<std::string, FunctionRef> functions;
 
-    std::map<TupleKey, llvm::StructType*> tuples;
     std::map<llvm::Type*, llvm::StructType*> variadics;
     std::map<quart::Type*, Impl> impls;
 
@@ -284,7 +266,7 @@ public:
 
     std::map<std::string, BuiltinFunction> builtins;
 
-    quart::Type* inferred;
+    quart::Type* inferred = nullptr;
     quart::Type* self = nullptr;
 
     std::vector<Finalizer> finalizers;

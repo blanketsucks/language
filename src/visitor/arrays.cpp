@@ -127,7 +127,7 @@ Value Visitor::visit(ast::IndexExpr* expr) {
 
         element_type = type->get_pointee_type();
     } else {
-        if (type->get_pointer_depth() > 1) {
+        if (type->get_pointer_depth() >= 1) {
             value = this->load(value);
             type = type->get_pointee_type();
         }
@@ -225,7 +225,7 @@ void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, const Span
     this->set_insert_point(merge);
 }
 
-Value Visitor::store_array_element(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value) {
+Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value) {
     auto ref = this->as_reference(expr->value);
     quart::Type* type = ref.type;
 

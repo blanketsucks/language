@@ -218,21 +218,21 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         type = type->get_pointee_type();
     }
 
-    bool has_impl = false;
-    if (ref.is_null()) {
-        has_impl = this->impls.find(type) != this->impls.end();
-    } else {
-        has_impl = this->impls.find(type->get_pointee_type()) != this->impls.end();
+    bool is_struct_type = type->is_struct();
+    if (!is_struct_type && type->is_pointer()) {
+        quart::Type* ty = type->get_pointee_type();
+        is_struct_type = ty->is_struct();
     }
 
-    if (!type->is_struct() && !has_impl) {
+    bool has_impl = this->impls.find(type) != this->impls.end();
+    if (!is_struct_type && !has_impl) {
         ERROR(expr->parent->span, "Cannot access attribute of type '{0}'", type->get_as_string());
     }
 
     Scope* scope = nullptr;
     Struct* structure = nullptr;
     
-    if (type->is_struct()) {
+    if (is_struct_type) {
         structure = this->get_struct_from_type(type).get();
         scope = structure->scope;
     } else {
@@ -286,10 +286,14 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     }
 
     if (type->is_pointer()) {
-        llvm::Type* llvm_type = type->get_pointee_type()->to_llvm_type();
-
         return {
-            this->load(this->builder->CreateStructGEP(llvm_type, self, index)), 
+            this->load(
+                this->builder->CreateStructGEP(
+                    type->to_llvm_type()->getPointerElementType(), 
+                    self, 
+                    index
+                )
+            ), 
             field.type
         };
     }
@@ -431,7 +435,7 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
     return Value(alloca, structure->type, Value::Aggregate);
 }
 
-Value Visitor::store_struct_field(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> v) {
+Value Visitor::evaluate_attribute_assignment(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> v) {
     auto ref = this->as_reference(expr->parent);
     if (!ref.is_mutable()) {
         ERROR(expr->parent->span, "Cannot mutate immutable variable '{0}'", ref.name);
@@ -460,7 +464,7 @@ Value Visitor::store_struct_field(ast::AttributeExpr* expr, std::unique_ptr<ast:
         }
     }
 
-    if (ref.type->get_pointer_depth() > 1) {
+    if (type->get_pointer_depth() >= 1) {
         parent = this->load(parent);
         type = type->get_pointee_type();
     }
@@ -494,13 +498,16 @@ Value Visitor::store_struct_field(ast::AttributeExpr* expr, std::unique_ptr<ast:
         ERROR(expr->span, "Cannot mutate immutable field '{0}'", expr->attribute);
     }
 
+    this->inferred = field.type;
+
     Value value = v->accept(*this);
     if (value.is_empty_value()) ERROR(v->span, "Expected a value");
 
+    this->inferred = nullptr;
     if (!Type::can_safely_cast_to(value.type, field.type)) {
         ERROR(
             v->span, 
-            "Cannot assign value of type '{0}' to type '{1}' for struct field '{2}'", 
+            "Cannot assign value of type '{0}' to type '{1}' for field '{2}'", 
             value.type->get_as_string(), field.type->get_as_string(), field.name
         );
     }

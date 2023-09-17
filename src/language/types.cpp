@@ -2,6 +2,8 @@
 #include <quart/language/registry.h>
 #include <quart/logging.h>
 
+#include <iostream>
+
 using namespace quart;
 
 TypeKind Type::kind() const { return this->_kind; }
@@ -171,8 +173,6 @@ Type* Type::get_function_param(size_t index) const {
 }
 
 std::string Type::get_as_string() const {
-    if (this->is_enum()) return this->get_enum_name();
-
     switch (this->kind()) {
         case TypeKind::Void: return "void";
         case TypeKind::Float: return "f32";
@@ -185,9 +185,8 @@ std::string Type::get_as_string() const {
 
             return FORMAT("{0}{1}", is_unsigned ? "u" : "i", bits);
         }
-        case TypeKind::Struct: {
-            return this->get_struct_name();
-        }
+        case TypeKind::Enum: return this->get_enum_name();
+        case TypeKind::Struct: return this->get_struct_name();
         case TypeKind::Array: {
             std::string element = this->get_array_element_type()->get_as_string();
             size_t size = this->get_array_size();
@@ -229,10 +228,10 @@ std::string Type::get_as_string() const {
     return "";
 }
 
+void Type::print() const { std::cout << this->get_as_string() << std::endl; }
+
 llvm::Type* Type::to_llvm_type() const {
     llvm::LLVMContext& context = this->registry->get_context();
-    if (this->is_enum()) return this->get_inner_enum_type()->to_llvm_type();
-
     switch (this->kind()) {
         case TypeKind::Void: return llvm::Type::getVoidTy(context);
         case TypeKind::Float: return llvm::Type::getFloatTy(context);
@@ -240,6 +239,9 @@ llvm::Type* Type::to_llvm_type() const {
         case TypeKind::Int: {
             uint32_t bits = this->get_int_bit_width();
             return llvm::Type::getIntNTy(context, bits);
+        }
+        case TypeKind::Enum: {
+            return this->get_inner_enum_type()->to_llvm_type();
         }
         case TypeKind::Struct: {
             const StructType* type = this->as<StructType>();

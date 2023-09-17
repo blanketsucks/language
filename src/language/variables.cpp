@@ -26,9 +26,15 @@ Variable Variable::from_value(
     uint8_t flags,
     const Span& span
 ) {
+    if (type->is_pointer()) {
+        type = type->get_pointee_type();
+    } else if (type->is_reference()) {
+        type = type->get_reference_type();
+    }
+
     return Variable {
         name,
-        type->get_pointee_type(),
+        type,
         value,
         nullptr,
         flags,

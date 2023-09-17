@@ -161,11 +161,11 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         // We only want to check for immutability if the type is a reference/pointer while ignoring aggregates
-        if ((ident.is_mutable && value.is_mutable()) && (value.is_reference() || type->is_pointer()) && !(value.flags & Value::Aggregate)) {
+        if ((ident.is_mutable && type->is_mutable()) && (type->is_reference() || type->is_pointer()) && !(value.flags & Value::Aggregate)) {
             ERROR(expr->value->span, "Cannot assign immutable value to mutable variable '{0}'", ident.value);
         }
 
-        if (value.is_reference()) {
+        if (type->is_reference()) {
             uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             this->scope->variables[ident.value] = Variable::from_value(
                 ident.value, value, type, flags, ident.span
@@ -199,7 +199,6 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 );
             } else if (value.flags & Value::Aggregate) {
                 alloca = value;
-                type = type->get_pointee_type();
             } else {
                 this->builder->CreateStore(value, alloca);
             }

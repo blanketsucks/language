@@ -309,24 +309,28 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
             if (parent.is_null()) {
                 return parent;
             }
+
+            llvm::Value* value = parent.value;
+            quart::Type* type = parent.type;
+
+            if (type->get_pointer_depth() >= 1) {
+                value = this->load(value);
+                type = type->get_pointee_type();
+            }
             
-            if (!parent.type->is_struct()) {
+            bool is_struct = quart::is_structure_type(type);
+            if (!is_struct) {
                 return ScopeLocal::null();
             }
 
-            auto structure = this->get_struct_from_type(parent.type);
+            auto structure = this->get_struct_from_type(type);
             if (!structure) {
-                ERROR(attribute->parent->span, "Cannot access attribute of type '{0}'", parent.type->get_as_string());
+                ERROR(attribute->parent->span, "Cannot access attribute of type '{0}'", type->get_as_string());
             }
 
             int index = structure->get_field_index(attribute->attribute);
             if (index < 0) {
                 ERROR(expr->span, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
-            }
-
-            llvm::Value* value = parent.value;
-            if (parent.type->get_pointer_depth() > 1) {
-                value = this->load(parent.value);
             }
 
             StructField& field = structure->fields[attribute->attribute];
@@ -450,7 +454,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
     llvm::Constant* constant = nullptr;
     llvm::StringRef str(expr->value);
 
-    int radix = 10;
+    uint8_t radix = 10;
     if (str.startswith("0x")) {
         str = str.drop_front(2); radix = 16;
     } else if (str.startswith("0b")) {
@@ -462,7 +466,11 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
         type = expr->bits == 32 ? this->registry->get_f32_type() : this->registry->get_f64_type();
         constant = llvm::ConstantFP::get(type->to_llvm_type(), expr->value);
     } else {
-        type = this->registry->create_int_type(expr->bits, true);
+        if (this->inferred && this->inferred->is_int()) {
+            type = this->inferred;
+        } else {
+            type = this->registry->create_int_type(expr->bits, true);
+        }
 
         llvm::APInt value(expr->bits, str, radix);
         constant = this->builder->getInt(value);

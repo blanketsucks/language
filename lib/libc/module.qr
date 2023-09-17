@@ -1,3 +1,5 @@
+type size_t = u64;
+
 const O_APPEND = 1024;
 const O_ASYNC = 8192;
 const O_CLOEXEC = 524288;
@@ -92,11 +94,11 @@ extern "C" {
     func putchar(c: i32) -> i32;
     func puts(s: *i8) -> i32;
 
-    func fread(buf: *i8, size: i32, n: i32, stream: *FILE) -> i32;
-    func fwrite(buf: *i8, size: i32, n: i32, stream: *FILE) -> i32;
+    func fread(buf: *i8, size: i32, n: size_t, stream: *FILE) -> size_t;
+    func fwrite(buf: *i8, size: i32, n: size_t, stream: *FILE) -> size_t;
 
     func fseek(stream: *FILE, offset: i32, whence: i32) -> i32;
-    func ftell(stream: *FILE) -> i32;
+    func ftell(stream: *FILE) -> i64;
     func rewind(stream: *FILE);
     func fgetpos(stream: *FILE, pos: *i32) -> i32;
     func fsetpos(stream: *FILE, pos: *i32) -> i32;
@@ -112,21 +114,21 @@ extern "C" {
     func sprintf(buf: *i8, fmt: *i8, ...) -> i32;
     func snprintf(buf: *i8, n: i32, fmt: *i8, ...) -> i32;
 
-    func malloc(size: i32) -> *void;
+    func malloc(size: size_t) -> *void;
     func calloc(nmemb: i32, size: i32) -> *void;
-    func realloc(ptr: *void, size: i32) -> *void;
+    func realloc(ptr: *void, size: size_t) -> *void;
     func reallocarray(ptr: *void, nmemb: i32, size: i32) -> *void;
     func free(ptr: *void);
 
-    func memcpy(dest: *void, src: *void, size: i32) -> *void;
-    func memset(dest: *void, c: i32, size: i32) -> *void;
-    func memmove(dest: *void, src: *void, size: i32) -> *void;
-    func memcmp(s1: *void, s2: *void, size: i32) -> i32;
-    func memchr(s: *void, c: i32, size: i32) -> *void;
-    func memrchr(s: *void, c: i32, size: i32) -> *void;
+    func memcpy(dest: *void, src: *void, size: size_t) -> *void;
+    func memset(dest: *void, c: i32, size: size_t) -> *void;
+    func memmove(dest: *void, src: *void, size: size_t) -> *void;
+    func memcmp(s1: *void, s2: *void, size: size_t) -> i32;
+    func memchr(s: *void, c: i32, size: size_t) -> *void;
+    func memrchr(s: *void, c: i32, size: size_t) -> *void;
     func memmem(s: *void, n: i32, needle: *void, m: i32) -> *void;
 
-    func strlen(s: *i8) -> i32;
+    func strlen(s: *i8) -> size_t;
     func strcmp(s1: *i8, s2: *i8) -> i32;
     func strncmp(s1: *i8, s2: *i8, n: i32) -> i32;
     func strcasecmp(s1: *i8, s2: *i8) -> i32;
