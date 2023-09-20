@@ -122,7 +122,7 @@ public:
     template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
         std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
         std::string message = FORMAT(
-            "{0} {1} {2}", logging::color(WHITE, "quart:"), logging::color(RED, "error:"), fmt
+            "{0} {1} {2}", logging::color(COLOR_WHITE, "quart:"), logging::color(COLOR_RED, "error:"), fmt
         );
 
         std::cout << message << std::endl;

@@ -28,39 +28,38 @@ std::string logging::color(Color color, const std::string& str) {
 void logging::error(const Span& span, const std::string& message, bool fatal) {
     std::stringstream stream;
 
-    stream << logging::color(WHITE, format_location_span(span)) << ' ';
-    stream << logging::color(RED, "error:") << ' ';
+    stream << logging::color(COLOR_WHITE, format_location_span(span)) << ' ';
+    stream << logging::color(COLOR_RED, "error:") << ' ';
 
     stream << message << '\n';
 
     std::string fmt = FORMAT("{0} | ", span.start.line);
-    stream << logging::color(WHITE, fmt) << span.line << '\n';
+    stream << logging::color(COLOR_WHITE, fmt) << span.line << '\n';
 
     size_t len = span.line.length();
     size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
 
     uint32_t padding = span.length() <= 0 ? 1 : span.length();
+
     for (size_t i = 0; i < offset; i++) stream << ' ';
     for (size_t i = 0; i < padding; i++) stream << '^';
 
     stream << '\n';
 
     std::cout << stream.str() << std::endl;
-    if (fatal) {
-        exit(1);
-    }
+    if (fatal) exit(1);
 }
 
 void logging::note(const Span& span, const std::string& message) {
     std::stringstream stream;
 
-    stream << logging::color(WHITE, format_location_span(span)) << ' ';
-    stream << logging::color(MAGENTA, "note:") << ' ';
+    stream << logging::color(COLOR_WHITE, format_location_span(span)) << ' ';
+    stream << logging::color(COLOR_MAGENTA, "note:") << ' ';
 
     stream << message << '\n';
 
     std::string fmt = FORMAT("{0} | ", span.start.line);
-    stream << logging::color(WHITE, fmt) << span.line << '\n';
+    stream << logging::color(COLOR_WHITE, fmt) << span.line << '\n';
 
     size_t len = span.line.length();
     size_t offset = std::min(span.start.column - 1 + fmt.length(), len);

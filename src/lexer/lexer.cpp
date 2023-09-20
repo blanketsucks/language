@@ -22,84 +22,15 @@ static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
     {'%', TokenKind::Mod}
 };
 
-bool isxdigit(char c) { return std::isxdigit(c); }
-
-MemoryLexer::MemoryLexer(const std::string& source, const std::string& filename) : source(source) {
-    this->filename = filename;
-
-    this->reset();
-    this->next();
-}
-
-MemoryLexer::MemoryLexer(fs::Path path) {
-    this->filename = path;
-    this->source = path.read().str();
-    
-    this->reset();
-    this->next();
-}
-
-char MemoryLexer::next() {
-    if (this->index == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer index overflow.");
-    }
-
-    this->current = this->source[this->index];
-    this->index++;
-
-    if (this->current == 0) {
-        this->eof = true;
-        return this->current;
-    }
-
-    this->column++;
-    if (this->column == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer column overflow.");
-    }
-
-    return this->current;
-}
-
-char MemoryLexer::peek(uint32_t offset) { 
-    return this->source[this->index + offset]; 
-}
-
-char MemoryLexer::prev() { 
-    return this->source[this->index - 1]; 
-}
-
-char MemoryLexer::rewind(uint32_t offset) {
-    this->index -= offset - 1;
-    this->column -= offset;
-
-    this->current = this->source[this->index - 1];
-    return this->current;
-}
-
-void MemoryLexer::reset() {
-    this->index = 0;
-    this->line = 1;
-    this->column = 0;
-    this->eof = false;
-}
-
-bool MemoryLexer::is_keyword(const std::string& word) {
-    return KEYWORDS.find(word) != KEYWORDS.end();
-}
-
-TokenKind MemoryLexer::get_keyword_kind(const std::string& word) {
-    return KEYWORDS.at(word);
-}
-
-Token MemoryLexer::create_token(TokenKind type, const std::string& value) {
+Token Lexer::create_token(TokenKind type, const std::string& value) {
     return {type, value, this->make_span()};
 }
 
-Token MemoryLexer::create_token(TokenKind type, Location start, const std::string& value) {
-    return {type, value, this->make_span(start, this->loc())};
+Token Lexer::create_token(TokenKind type, const Location& start, const std::string& value) {
+    return {type, value, this->make_span(start, this->current_location())};
 }
 
-Location MemoryLexer::loc() {
+Location Lexer::current_location() {
     return Location {
         this->line,
         this->column,
@@ -107,27 +38,11 @@ Location MemoryLexer::loc() {
     };
 }
 
-Span MemoryLexer::make_span() {
-    return this->make_span(this->loc(), this->loc());
+Span Lexer::make_span() {
+    return this->make_span(this->current_location(), this->current_location());
 }
 
-std::string& MemoryLexer::get_line_for(const Location& location) {
-    if (this->lines.find(location.line) == this->lines.end()) {
-        size_t offset = location.index - location.column;
-        std::string line;
-
-        if (offset < this->source.size()) {
-            line = this->source.substr(offset);
-            line = line.substr(0, line.find('\n'));
-        }
-
-        this->lines[location.line] = line;
-    }
-
-    return this->lines[location.line];
-}
-
-Span MemoryLexer::make_span(const Location& start, const Location& end) {
+Span Lexer::make_span(const Location& start, const Location& end) {
     std::string& line = this->get_line_for(start);
     return Span {
         start,
@@ -137,32 +52,7 @@ Span MemoryLexer::make_span(const Location& start, const Location& end) {
     };
 }
 
-char MemoryLexer::validate_hex_escape() {
-    char hex[3] = {
-        this->next(),
-        this->next(),
-        0
-    };
-
-    int i = 0;
-    while (hex[i]) {
-        if (hex[i] >= '0' && hex[i] <= '9') {
-            hex[i] -= '0';
-        } else if (hex[i] >= 'a' && hex[i] <= 'f') {
-            hex[i] -= 'a' - 10;
-        } else if (hex[i] >= 'A' && hex[i] <= 'F') {
-            hex[i] -= 'A' - 10;
-        } else {
-            ERROR(this->make_span(), "Invalid hex escape sequence");
-        }
-
-        i++;
-    }
-
-    return (char)(hex[0] * 16 + hex[1]);
-}
-
-char MemoryLexer::escape(char current) {
+char Lexer::escape(char current) {
     if (current != '\\') {
         return current;
     }
@@ -182,40 +72,12 @@ char MemoryLexer::escape(char current) {
             return '\0';
         case '"':
             return '"';
-        case 'x':
-            return this->validate_hex_escape();
-        case 'u': case 'U': {
-            uint32_t expected = current == 'u' ? 4 : 8;
-            uint32_t codepoint = 0;
-
-            for (uint32_t i = 0; i < expected; i++) {
-                char c = this->next();
-                if (!std::isxdigit(c)) {
-                    ERROR(this->make_span(), "Invalid unicode escape sequence");
-                }
-
-                codepoint *= 16;
-                if (c >= '0' && c <= '9') {
-                    codepoint += c - '0';
-                } else if (c >= 'a' && c <= 'f') {
-                    codepoint += c - 'a' + 10;
-                } else if (c >= 'A' && c <= 'F') {
-                    codepoint += c - 'A' + 10;
-                }
-            }
-
-            if (codepoint > 0x10FFFF) {
-                ERROR(this->make_span(), "Invalid unicode escape sequence");
-            }
-
-            return (uint8_t)codepoint;
-        }
         default:
             ERROR(this->make_span(), "Invalid escape sequence");
     }
 }
 
-bool MemoryLexer::is_valid_identifier(uint8_t c) {
+bool Lexer::is_valid_identifier(uint8_t c) {
     if (std::isalnum(c) || c == '_') {
         return true;
     } else if (c < 128) {
@@ -245,7 +107,7 @@ bool MemoryLexer::is_valid_identifier(uint8_t c) {
     return true;
 }
 
-uint8_t MemoryLexer::parse_unicode(std::string& buffer, uint8_t current) {  
+uint8_t Lexer::parse_unicode_identifier(std::string& buffer, uint8_t current) {  
     uint8_t expected = 0;
     buffer.push_back(current);
 
@@ -266,33 +128,36 @@ uint8_t MemoryLexer::parse_unicode(std::string& buffer, uint8_t current) {
     return expected;
 }
 
-std::string MemoryLexer::parse_while(
+size_t Lexer::lex_while(
     std::string& buffer,
-    const Predicate predicate
+    const std::function<bool(char)>& predicate
 ) {
+    size_t n = 0;
     while (predicate(this->current)) {
         buffer.push_back(this->current);
         this->next();
+
+        n++;
     }
 
-    return buffer;
+    return n;
 }
 
-void MemoryLexer::skip_comment() {
-    while (this->current != '\n' && this->current != 0) {
-        this->next();
-    }
-}
+// void Lexer::skip_comment() {
+//     while (this->current != '\n' && this->current != 0) {
+//         this->next();
+//     }
+// }
 
-Token MemoryLexer::parse_identifier(bool accept_keywords) {
+Token Lexer::lex_identifier(bool accept_keywords) {
     std::string value;
-    Location start = this->loc();
+    Location start = this->current_location();
 
-    this->parse_unicode(value, this->current);
+    this->parse_unicode_identifier(value, this->current);
     char next = this->next();
 
     while (this->is_valid_identifier(next)) {
-        this->parse_unicode(value, next);
+        this->parse_unicode_identifier(value, next);
         next = this->next();
     }
 
@@ -303,9 +168,9 @@ Token MemoryLexer::parse_identifier(bool accept_keywords) {
     }
 }
 
-Token MemoryLexer::parse_string() {
+Token Lexer::lex_string() {
     std::string value;
-    Location start = this->loc();
+    Location start = this->current_location();
 
     if (this->current == '\'') {
         char character = this->escape(this->next());
@@ -325,16 +190,16 @@ Token MemoryLexer::parse_string() {
 
     if (this->current != '"') {
         NOTE(this->make_span(start, start), "Unterminated string literal.");
-        ERROR(this->make_span(this->loc(), this->loc()), "Expected end of string.");
+        ERROR(this->make_span(), "Expected end of string.");
     }
     
     Token token = this->create_token(TokenKind::String, start, value); this->next();
     return token;
 }
 
-Token MemoryLexer::parse_number() {
+Token Lexer::lex_number() {
     std::string value;
-    Location start = this->loc();
+    Location start = this->current_location();
 
     value.push_back(this->current);
 
@@ -347,9 +212,9 @@ Token MemoryLexer::parse_number() {
             this->next();
 
             if (next == 'x') {
-                this->parse_while(value, isxdigit);
+                this->lex_while(value, isxdigit);
             } else {
-                this->parse_while(value, [](char c) { return c == '0' || c == '1'; });
+                this->lex_while(value, [](char c) { return c == '0' || c == '1'; });
             }
 
             return this->create_token(TokenKind::Integer, start, value);
@@ -357,7 +222,7 @@ Token MemoryLexer::parse_number() {
     
         if (this->current != '.') {
             if (std::isdigit(this->peek()) ) {
-                ERROR(this->make_span(start, this->loc()), "Leading zeros on integer constants are not allowed");
+                ERROR(this->make_span(start, this->current_location()), "Leading zeros on integer constants are not allowed");
             }
 
             return this->create_token(TokenKind::Integer, start, "0");
@@ -381,7 +246,7 @@ Token MemoryLexer::parse_number() {
             dot = true;
         } else if (next == '_') {
             if (this->peek() == '_') {
-                ERROR(this->make_span(start, this->loc()), "Invalid number literal");
+                ERROR(this->make_span(start, this->current_location()), "Invalid number literal");
             }
 
             next = this->next();
@@ -406,14 +271,14 @@ Token MemoryLexer::parse_number() {
     }
 }
 
-Token MemoryLexer::once() {
+Token Lexer::once() {
     char current = this->current;
-    Location start = this->loc();
+    Location start = this->current_location();
 
     if (std::isdigit(current)) {
-        return this->parse_number();
+        return this->lex_number();
     } else if (this->is_valid_identifier(current)) {
-        return this->parse_identifier();
+        return this->lex_identifier();
     } else if (CHAR_TO_TOKENKIND.find(current) != CHAR_TO_TOKENKIND.end()) {
         TokenKind kind = CHAR_TO_TOKENKIND.at(current);
         this->next();
@@ -424,10 +289,10 @@ Token MemoryLexer::once() {
     switch (current) {
         case '`': {
             this->next();
-            Token token = this->parse_identifier(false);
+            Token token = this->lex_identifier(false);
 
             if (this->current != '`') {
-                ERROR(this->make_span(start, this->loc()), "Expected end of identifier.");
+                ERROR(this->make_span(start, this->current_location()), "Expected end of identifier.");
             }
 
             this->next();
@@ -551,15 +416,13 @@ Token MemoryLexer::once() {
             
             return this->create_token(TokenKind::Colon, ":");
         } 
-        case '"':
-        case '\'':
-            return this->parse_string();
+        case '"': case '\'': return this->lex_string();
         default:
             ERROR(this->make_span(), "Unexpected character '{0}'", this->current);
     }
 }
 
-std::vector<Token> MemoryLexer::lex() {
+std::vector<Token> Lexer::lex() {
     std::vector<Token> tokens;
 
     while (!this->eof) {
@@ -581,7 +444,10 @@ std::vector<Token> MemoryLexer::lex() {
 
             continue;
         } else if (this->current == '#') {
-            this->skip_comment();
+            while (this->current != '\n' && this->current != 0) {
+                this->next();
+            }
+
             continue;
         }
 
@@ -592,6 +458,82 @@ std::vector<Token> MemoryLexer::lex() {
     tokens.push_back(eof);
 
     return tokens;
+}
+
+
+MemoryLexer::MemoryLexer(std::string source, const std::string& filename) : source(std::move(source)) {
+    this->filename = filename;
+
+    this->reset();
+    this->next();
+}
+
+MemoryLexer::MemoryLexer(fs::Path path) {
+    this->filename = path;
+    this->source = path.read().str();
+    
+    this->reset();
+    this->next();
+}
+
+char MemoryLexer::next() {
+    if (this->index == UINT32_MAX) {
+        ERROR(this->make_span(), "Lexer index overflow.");
+    }
+
+    this->current = this->source[this->index];
+    this->index++;
+
+    if (this->current == 0) {
+        this->eof = true;
+        return this->current;
+    }
+
+    this->column++;
+    if (this->column == UINT32_MAX) {
+        ERROR(this->make_span(), "Lexer column overflow.");
+    }
+
+    return this->current;
+}
+
+char MemoryLexer::peek(uint32_t offset) { 
+    return this->source[this->index + offset]; 
+}
+
+char MemoryLexer::prev() { 
+    return this->source[this->index - 1]; 
+}
+
+char MemoryLexer::rewind(uint32_t offset) {
+    this->index -= offset - 1;
+    this->column -= offset;
+
+    this->current = this->source[this->index - 1];
+    return this->current;
+}
+
+void MemoryLexer::reset() {
+    this->index = 0;
+    this->line = 1;
+    this->column = 0;
+    this->eof = false;
+}
+
+std::string& MemoryLexer::get_line_for(const Location& location) {
+    if (this->lines.find(location.line) == this->lines.end()) {
+        size_t offset = location.index - location.column;
+        std::string line;
+
+        if (offset < this->source.size()) {
+            line = this->source.substr(offset);
+            line = line.substr(0, line.find('\n'));
+        }
+
+        this->lines[location.line] = line;
+    }
+
+    return this->lines[location.line];
 }
 
 StreamLexer::StreamLexer(std::ifstream& stream, const std::string& filename) : stream(stream) {

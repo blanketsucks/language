@@ -6,10 +6,10 @@
 
 #define FORMAT(fmt, ...) llvm::formatv(fmt, __VA_ARGS__).str()
 
-#define RED     logging::Color::Red
-#define WHITE   logging::Color::White
-#define MAGENTA logging::Color::Magenta
-#define RESET   logging::Color::Reset
+#define COLOR_RED     logging::Color::Red
+#define COLOR_WHITE   logging::Color::White
+#define COLOR_MAGENTA logging::Color::Magenta
+#define COLOR_RESET   logging::Color::Reset
 
 #define COLOR(color, s) logging::color(color, s)
 

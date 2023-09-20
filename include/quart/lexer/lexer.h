@@ -13,54 +13,42 @@
 
 namespace quart {
 
-class MemoryLexer {
+class Lexer {
 public:
-    typedef bool (*Predicate)(char);
+    virtual void reset() = 0;
 
-    MemoryLexer() = default;
-    MemoryLexer(const std::string& source, const std::string& filename);
-    MemoryLexer(fs::Path path);
+    virtual char next() = 0;
+    virtual char peek(uint32_t offset = 0) = 0;
+    virtual char prev() = 0;
+    virtual char rewind(uint32_t offset = 1) = 0;
 
-    static bool is_keyword(const std::string& word);
-    static TokenKind get_keyword_kind(const std::string& word);
-
-    virtual char next();
-    virtual char peek(uint32_t offset = 0);
-    virtual char prev();
-    virtual char rewind(uint32_t offset = 1);
-
-    virtual void reset();
-
-    virtual std::string& get_line_for(const Location& location);
+    virtual std::string& get_line_for(const Location& location) = 0;
 
     Token create_token(TokenKind type, const std::string& value);
-    Token create_token(TokenKind type, Location start, const std::string& value);
+    Token create_token(TokenKind type, const Location& loc, const std::string& value);
 
-    Location loc();
-
+    Location current_location();
     Span make_span();
     Span make_span(const Location& start, const Location& end);
 
-    char validate_hex_escape();
-    char escape(char current);
-
-    std::string parse_while(
+    size_t lex_while(
         std::string& buffer,
-        const Predicate predicate
+        const std::function<bool(char)>& predicate
     );
 
+    char escape(char current);
+
     bool is_valid_identifier(uint8_t current);
+    uint8_t parse_unicode_identifier(std::string& buffer, uint8_t current);
 
-    uint8_t parse_unicode(std::string& buffer, uint8_t current);
-
-    void skip_comment();
-    Token parse_identifier(bool accept_keywords = true);
-    Token parse_string();
-    Token parse_number();
+    Token lex_identifier(bool accept_keywords = true);
+    Token lex_string();
+    Token lex_number();
 
     Token once();
     std::vector<Token> lex();
 
+protected:
     uint32_t line;
     uint32_t column;
     size_t index;
@@ -71,24 +59,41 @@ public:
     std::string filename;
 
     std::map<uint32_t, std::string> lines;
-private: 
-    std::string source;
 };
 
-class StreamLexer : public MemoryLexer {
+class MemoryLexer : public Lexer {
 public:
-    StreamLexer(std::ifstream& stream, const std::string& filename);
-    StreamLexer(fs::Path path);
+    MemoryLexer(std::string source, const std::string& filename);
+    MemoryLexer(fs::Path path);
+
+    void reset() override;
 
     char next() override;
     char peek(uint32_t offset = 0) override;
     char prev() override;
     char rewind(uint32_t offset = 1) override;
 
+    std::string& get_line_for(const Location& location) override;
+
+private:
+    std::string source;
+};
+
+class StreamLexer : public Lexer {
+public:
+    StreamLexer(std::ifstream& stream, const std::string& filename);
+    StreamLexer(const fs::Path& path);
+
     void reset() override;
+
+    char next() override;
+    char peek(uint32_t offset = 0) override;
+    char prev() override;
+    char rewind(uint32_t offset = 1) override;
 
     std::string& get_line_for(const Location& location) override;
 
+private:
     std::ifstream& stream;
 };
 
