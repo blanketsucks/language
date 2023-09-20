@@ -3,7 +3,9 @@
 #include <quart/utils/utils.h>
 #include <quart/logging.h>
 
-#define ENTRY(n) { #n, handle_##n##_attribute }
+#include <quart/macros.h>
+
+#define ENTRY(n) { #n, parse_##n##_attribute }
 
 using namespace quart;
 
@@ -62,4 +64,22 @@ void Attributes::init(Parser& parser) {
         ENTRY(llvm_intrinsic),
         ENTRY(link)
     };
+}
+
+ATTR_HANDLER(link) {
+    auto args = attr.as<std::map<std::string, std::string>>();
+    if (args.find("platform") != args.end()) {
+        if (args["platform"] != PLATFORM_NAME) {
+            return AttributeHandler::Skip;
+        }
+    }
+
+    return AttributeHandler::Ok;
+}
+
+AttributeHandler::Result AttributeHandler::handle(Parser& parser, const Attribute& attr) {
+    switch (attr.type) {
+        case Attribute::Link: return handle_link_attribute(parser, attr);
+        default: return AttributeHandler::Ok;
+    }
 }

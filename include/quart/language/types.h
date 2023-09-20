@@ -26,6 +26,11 @@ enum class TypeKind {
 
 class Type {
 public:
+    virtual ~Type() = default;
+    
+    Type& operator=(const Type&) = delete;
+    Type(const Type&) = delete;
+
     TypeKind kind() const;
 
     template<typename T> const T* as() const {

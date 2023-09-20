@@ -10,6 +10,11 @@
 
 namespace quart {
 
+enum class TokenKind;
+
+bool is_keyword(const std::string& word);
+TokenKind get_keyword_kind(const std::string& word);
+
 enum class TokenKind {
     Identifier,
     Integer,
@@ -107,13 +112,50 @@ enum class TokenKind {
     EOS
 };
 
+enum class UnaryOp {
+    Not,
+    Add,
+    Sub,
+    BinaryNot,
+    BinaryAnd,
+    Mul,
+    Inc,
+    Dec
+};
+
+enum class BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Or,
+    And,
+    BinaryOr,
+    BinaryAnd,
+    Xor,
+    Rsh,
+    Lsh,
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    Assign
+};
+
+// TODO: Create a StringView class to replace with `const char*` for a friendlier interface
+const char* get_binary_op_value(BinaryOp op);
+const char* get_unary_op_value(UnaryOp op);
+
 struct Token {
     TokenKind type;
     std::string value;
 
     Span span;
 
-    static std::string get_type_value(TokenKind type);
+    static const char* get_type_value(TokenKind type);
 
     bool match(TokenKind type, const std::string& value);
     bool match(TokenKind type, std::vector<std::string> values);
@@ -194,22 +236,44 @@ static std::map<TokenKind, int> PRECEDENCES = {
     {TokenKind::Mul, 40}
 };
 
-static std::vector<TokenKind> UNARY_OPERATORS = {
-    TokenKind::Not,
-    TokenKind::Add,
-    TokenKind::Minus,
-    TokenKind::BinaryNot,
-    TokenKind::BinaryAnd,
-    TokenKind::Mul,
-    TokenKind::Inc,
-    TokenKind::Dec,
+static std::map<TokenKind, UnaryOp> UNARY_OPS = {
+    {TokenKind::Not, UnaryOp::Not},
+    {TokenKind::Add, UnaryOp::Add},
+    {TokenKind::Minus, UnaryOp::Sub},
+    {TokenKind::BinaryNot, UnaryOp::BinaryNot},
+    {TokenKind::BinaryAnd, UnaryOp::BinaryAnd},
+    {TokenKind::Mul, UnaryOp::Mul},
+    {TokenKind::Inc, UnaryOp::Inc},
+    {TokenKind::Dec, UnaryOp::Dec}
 };
 
-static std::map<TokenKind, TokenKind> INPLACE_OPERATORS {
-    {TokenKind::IAdd, TokenKind::Add},
-    {TokenKind::IMinus, TokenKind::Minus},
-    {TokenKind::IMul, TokenKind::Mul},
-    {TokenKind::IDiv, TokenKind::Div},
+static std::map<TokenKind, BinaryOp> BINARY_OPS = {
+    {TokenKind::Add, BinaryOp::Add},
+    {TokenKind::Minus, BinaryOp::Sub},
+    {TokenKind::Mul, BinaryOp::Mul},
+    {TokenKind::Div, BinaryOp::Div},
+    {TokenKind::Mod, BinaryOp::Mod},
+    {TokenKind::Or, BinaryOp::Or},
+    {TokenKind::And, BinaryOp::And},
+    {TokenKind::BinaryOr, BinaryOp::BinaryOr},
+    {TokenKind::BinaryAnd, BinaryOp::BinaryAnd},
+    {TokenKind::Xor, BinaryOp::Xor},
+    {TokenKind::Rsh, BinaryOp::Rsh},
+    {TokenKind::Lsh, BinaryOp::Lsh},
+    {TokenKind::Eq, BinaryOp::Eq},
+    {TokenKind::Neq, BinaryOp::Neq},
+    {TokenKind::Gt, BinaryOp::Gt},
+    {TokenKind::Lt, BinaryOp::Lt},
+    {TokenKind::Gte, BinaryOp::Gte},
+    {TokenKind::Lte, BinaryOp::Lte},
+    {TokenKind::Assign, BinaryOp::Assign}
+};
+
+static std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
+    {TokenKind::IAdd, BinaryOp::Add},
+    {TokenKind::IMinus, BinaryOp::Sub},
+    {TokenKind::IMul, BinaryOp::Mul},
+    {TokenKind::IDiv, BinaryOp::Div},
     // TODO: add more
 };  
 

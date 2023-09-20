@@ -247,7 +247,7 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
         }
 
         ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
-        if (unary->op != TokenKind::BinaryAnd) {
+        if (unary->op != UnaryOp::BinaryAnd) {
             ERROR(expr->span, "Expected a reference '&' before expression");
         }
 
@@ -350,7 +350,7 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
         }
         case ast::ExprKind::UnaryOp: {
             ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
-            if (unary->op != TokenKind::BinaryAnd) {
+            if (unary->op != UnaryOp::BinaryAnd) {
                 return ScopeLocal::null();
             }
 

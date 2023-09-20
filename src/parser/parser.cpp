@@ -124,6 +124,17 @@ int Parser::get_token_precendence() {
     return it->second;
 }
 
+AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attrs) {
+    for (auto& entry : attrs.values) {
+        auto result = AttributeHandler::handle(*this, entry.second);
+        if (result != AttributeHandler::Ok) {
+            return result;
+        }
+    }
+
+    return AttributeHandler::Ok;
+}
+
 std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
     Span start = this->current.span;
 
@@ -250,6 +261,10 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
         auto expr = this->statement();
 
         if (expr) {
+            if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
+                continue;
+            }
+
             expr->attributes.update(attrs);
             body.push_back(std::move(expr));
         }
@@ -391,7 +406,7 @@ std::pair<std::vector<ast::Argument>, bool> Parser::parse_arguments() {
 std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(
     ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
 ) {
-    Span start = this->current.span;
+    Span span = this->current.span;
     std::string name;
 
     if (with_name) {
@@ -408,7 +423,6 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(
         end = this->next().span; ret = this->parse_type();
     }
 
-    Span span = with_name ? Span::merge(start, end) : start;
     return utils::make_scope<ast::PrototypeExpr>(
         span, name, std::move(pair.first), std::move(ret), pair.second, is_operator, linkage
     );
@@ -434,6 +448,10 @@ std::unique_ptr<ast::Expr> Parser::parse_function_definition(
         auto expr = this->statement();
 
         if (expr) {
+            if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
+                continue;
+            }
+
             expr->attributes.update(attrs);
             body.push_back(std::move(expr));
         }
@@ -715,44 +733,6 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
     }
 }
 
-// std::unique_ptr<ast::NamespaceExpr> Parser::parse_namespace() {
-//     Span start = this->current.span;
-//     Path p = this->parse_path();
-
-//     this->expect(TokenKind::LBrace, "{");
-//     std::vector<std::unique_ptr<ast::Expr>> members;
-
-//     while (this->current != TokenKind::RBrace) {
-//         ast::Attributes attrs = this->parse_attributes();
-//         if (!this->current.match(NAMESPACE_ALLOWED_KEYWORDS)) {
-//             ERROR(this->current.span, "Expected function, extern, struct, const, type, or namespace definition");
-//         }
-
-//         std::unique_ptr<ast::Expr> member;
-//         TokenKind kind = this->current.type;
-
-//         this->next();
-//         switch (kind) {
-//             case TokenKind::Func: member = this->parse_function_definition(); break;
-//             case TokenKind::Extern: member = this->parse_extern_block(); break;
-//             case TokenKind::Struct: member = this->parse_struct(); break;
-//             case TokenKind::Namespace: member = this->parse_namespace(); break;
-//             case TokenKind::Type: member = this->parse_type_alias(); break;
-//             case TokenKind::Const: member = this->parse_variable_definition(true); break;
-//             case TokenKind::Enum: member = this->parse_enum(); break;
-//             default: __UNREACHABLE
-//         }
-
-//         member->attributes.update(attrs);
-//         members.push_back(std::move(member));
-//     }
-
-//     Span end = this->expect(TokenKind::RBrace, "}").span;
-//     return utils::make_scope<ast::NamespaceExpr>(
-//         Span::merge(start, end), p.name, p.segments, std::move(members)
-//     );
-// }
-
 std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
     std::unique_ptr<ast::Expr> definition;
     Span start = this->current.span;
@@ -812,8 +792,12 @@ std::unique_ptr<ast::Expr> Parser::parse_extern_block() {
         this->next();
 
         while (this->current != TokenKind::RBrace) {
-            auto definition = this->parse_extern(linkage);
-            definitions.push_back(std::move(definition));
+            auto def = this->parse_extern(linkage);
+            if (this->handle_expr_attributes(def->attributes) != AttributeHandler::Ok) {
+                continue;
+            }
+
+            definitions.push_back(std::move(def));
         }
 
         Span end = this->expect(TokenKind::RBrace, "}").span;
@@ -989,6 +973,10 @@ std::vector<std::unique_ptr<ast::Expr>> Parser::statements() {
         auto expr = this->statement();
 
         if (expr) {
+            if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
+                continue;
+            }
+
             expr->attributes.update(attrs);
             statements.push_back(std::move(expr));
         }
@@ -1315,9 +1303,10 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
             return left;
         }
 
-        TokenKind op = this->current.type;
-        this->next();
+        TokenKind kind = this->current.type;
+        BinaryOp op = BINARY_OPS[kind];
 
+        this->next();
         auto right = this->unary();
 
         int next = this->get_token_precendence();
@@ -1325,9 +1314,9 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
             right = this->binary(precedence + 1, std::move(right));
         }
        
-        if (INPLACE_OPERATORS.find(op) != INPLACE_OPERATORS.end()) {
+        if (INPLACE_OPERATORS.find(kind) != INPLACE_OPERATORS.end()) {
             left = utils::make_scope<ast::InplaceBinaryOpExpr>(
-                Span::merge(left->span, right->span), INPLACE_OPERATORS[op], std::move(left), std::move(right)
+                Span::merge(left->span, right->span), op, std::move(left), std::move(right)
             );
         } else {
             left = utils::make_scope<ast::BinaryOpExpr>(
@@ -1338,13 +1327,14 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
 }
 
 std::unique_ptr<ast::Expr> Parser::unary() {
-    if (std::find(UNARY_OPERATORS.begin(), UNARY_OPERATORS.end(), this->current.type) == UNARY_OPERATORS.end()) {
+    auto iterator = UNARY_OPS.find(this->current.type);
+    if (iterator == UNARY_OPS.end()) {
         return this->call();
     }
 
     Span start = this->current.span;
 
-    TokenKind op = this->current.type;
+    UnaryOp op = iterator->second;
     this->next();
 
     auto value = this->call();
@@ -1394,7 +1384,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
     }
 
     if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
-        TokenKind op = this->current.type;
+        UnaryOp op = this->current.type == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
         expr = utils::make_scope<ast::UnaryOpExpr>(Span::merge(start, this->current.span), op, std::move(expr));
 
         this->next();

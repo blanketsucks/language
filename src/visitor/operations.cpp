@@ -81,7 +81,7 @@ Value Visitor::evaluate_assignment(ast::BinaryOpExpr* expr) {
             return this->evaluate_tuple_assignment(expr);
         case ast::ExprKind::UnaryOp: {
             auto* unary = expr->left->as<ast::UnaryOpExpr>();
-            if (unary->op != TokenKind::Mul) {
+            if (unary->op != UnaryOp::Mul) {
                 ERROR(unary->value->span, "Expected a variable, struct field or array element");
             }
 
@@ -145,32 +145,44 @@ Value Visitor::evaluate_assignment(ast::BinaryOpExpr* expr) {
     return rhs;
 }
 
-Value Visitor::evaluate_float_operation(const Value& lhs, TokenKind op, const Value& rhs) {
+Value Visitor::evaluate_float_operation(const Value& lhs, BinaryOp op, const Value& rhs) {
     switch (op) {
-        case TokenKind::Add:
+        case BinaryOp::Add:
             return {this->builder->CreateFAdd(lhs, rhs), lhs.type};
-        case TokenKind::Minus:
+        case BinaryOp::Sub:
             return {this->builder->CreateFSub(lhs, rhs), lhs.type};
-        case TokenKind::Mul:
+        case BinaryOp::Mul:
             return {this->builder->CreateFMul(lhs, rhs), lhs.type};
-        case TokenKind::Div:
+        case BinaryOp::Div:
             return {this->builder->CreateFDiv(lhs, rhs), lhs.type};
-        case TokenKind::Mod:
+        case BinaryOp::Mod:
             return {this->builder->CreateFRem(lhs, rhs), lhs.type};
-        case TokenKind::Eq:
+        case BinaryOp::Eq:
             return {this->builder->CreateFCmpOEQ(lhs, rhs), lhs.type};
-        case TokenKind::Neq:
+        case BinaryOp::Neq:
             return {this->builder->CreateFCmpONE(lhs, rhs), lhs.type};
-        case TokenKind::Gt:
+        case BinaryOp::Gt:
             return {this->builder->CreateFCmpOGT(lhs, rhs), lhs.type};
-        case TokenKind::Lt:
+        case BinaryOp::Lt:
             return {this->builder->CreateFCmpOLT(lhs, rhs), lhs.type};
-        case TokenKind::Gte:
+        case BinaryOp::Gte:
             return {this->builder->CreateFCmpOGE(lhs, rhs), lhs.type};
-        case TokenKind::Lte:
+        case BinaryOp::Lte:
             return {this->builder->CreateFCmpOLE(lhs, rhs), lhs.type};
-        default: __builtin_unreachable();
-    }
+        // Handled in `evaluate_binary_operation`
+        case BinaryOp::Or:
+        case BinaryOp::And:
+        case BinaryOp::BinaryOr:
+        case BinaryOp::BinaryAnd:
+        case BinaryOp::Xor:
+        case BinaryOp::Rsh:
+        case BinaryOp::Lsh:
+        case BinaryOp::Assign:
+            break;
+        }
+
+    UNREACHABLE();
+    return nullptr;
 }
 
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
@@ -183,13 +195,13 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
     bool is_numeric = type->is_int() || is_floating_point;
 
     switch (expr->op) {
-        case TokenKind::Add:
+        case UnaryOp::Add:
             if (!is_numeric) {
                 ERROR(expr->value->span, "Unsupported unary operator '+' for type '{0}'", type->get_as_string());
             }
 
             return value;
-        case TokenKind::Minus:
+        case UnaryOp::Sub:
             if (!is_numeric) {
                 ERROR(expr->value->span, "Unsupported unary operator '-' for type '{0}'", type->get_as_string());
             }
@@ -205,11 +217,11 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             } else {
                 return Value(this->builder->CreateNeg(value), type);
             }
-        case TokenKind::Not:
+        case UnaryOp::Not:
             return {this->builder->CreateIsNull(value), type};
-        case TokenKind::BinaryNot:
+        case UnaryOp::BinaryNot:
             return {this->builder->CreateNot(value), type};
-        case TokenKind::Mul: {
+        case UnaryOp::Mul: {
             if (!type->is_pointer()) {
                 ERROR(expr->span, "Unsupported unary operator '*' for type '{0}'", type->get_as_string());
             }
@@ -221,7 +233,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
 
             return Value(this->load(value), type);
         }
-        case TokenKind::BinaryAnd: {
+        case UnaryOp::BinaryAnd: {
             auto ref = this->as_reference(expr->value);
             if (!ref.value) {
                 llvm::AllocaInst* alloca = this->alloca(value->getType());
@@ -231,7 +243,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             uint16_t flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
             return Value(ref.value, type->get_reference_to(ref.is_mutable()), flags);
         }
-        case TokenKind::Inc: {
+        case UnaryOp::Inc: {
             if (!is_numeric) {
                 ERROR(expr->span, "Unsupported unary operator '++' for type '{0}'", type->get_as_string());
             }
@@ -251,7 +263,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             this->builder->CreateStore(result, ref.value);
             return {result, type};
         }
-        case TokenKind::Dec: {
+        case UnaryOp::Dec: {
             if (!is_numeric) {
                 ERROR(expr->span, "Unsupported unary operator '--' for type '{0}'", type->get_as_string());
             }
@@ -271,16 +283,16 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             this->builder->CreateStore(result, ref.value);
             return {result, type};
         }
-        default: __builtin_unreachable();
     }
 
+    UNREACHABLE();
     return nullptr;
 }
 
-Value Visitor::evaluate_binary_operation(const Value& lhs, TokenKind op, const Value& rhs) {
+Value Visitor::evaluate_binary_operation(const Value& lhs, BinaryOp op, const Value& rhs) {
     quart::Type* boolean = this->registry->create_int_type(1, true);
     switch (op) {
-        case TokenKind::And:
+        case BinaryOp::And:
             return {
                 this->builder->CreateAnd(
                     this->cast(lhs, boolean), 
@@ -288,7 +300,7 @@ Value Visitor::evaluate_binary_operation(const Value& lhs, TokenKind op, const V
                 ), 
                 boolean
             };
-        case TokenKind::Or: 
+        case BinaryOp::Or: 
             return {
                 this->builder->CreateOr(
                     this->cast(lhs, boolean), 
@@ -296,15 +308,15 @@ Value Visitor::evaluate_binary_operation(const Value& lhs, TokenKind op, const V
                 ), 
                 boolean
             };
-        case TokenKind::BinaryAnd:
+        case BinaryOp::BinaryAnd:
             return {this->builder->CreateAnd(lhs, rhs), lhs.type};
-        case TokenKind::BinaryOr:
+        case BinaryOp::BinaryOr:
             return {this->builder->CreateOr(lhs, rhs), lhs.type};
-        case TokenKind::Xor:
+        case BinaryOp::Xor:
             return {this->builder->CreateXor(lhs, rhs), lhs.type};
-        case TokenKind::Lsh:
+        case BinaryOp::Lsh:
             return {this->builder->CreateShl(lhs, rhs), lhs.type};
-        case TokenKind::Rsh:
+        case BinaryOp::Rsh:
             return {this->builder->CreateLShr(lhs, rhs), lhs.type};
         default: break;
     }
@@ -315,58 +327,70 @@ Value Visitor::evaluate_binary_operation(const Value& lhs, TokenKind op, const V
 
     bool is_unsigned = lhs.type->is_int_unsigned();
     switch (op) {
-        case TokenKind::Add:
+        case BinaryOp::Add:
             return {this->builder->CreateAdd(lhs, rhs), lhs.type};
-        case TokenKind::Minus:
+        case BinaryOp::Sub:
             return {this->builder->CreateSub(lhs, rhs), lhs.type};
-        case TokenKind::Mul:
+        case BinaryOp::Mul:
             return {this->builder->CreateMul(lhs, rhs), lhs.type};
-        case TokenKind::Div:
+        case BinaryOp::Div:
             if (is_unsigned) {
                 return {this->builder->CreateUDiv(lhs, rhs), lhs.type};
             }
             
             return {this->builder->CreateSDiv(lhs, rhs), lhs.type};
-        case TokenKind::Mod:
+        case BinaryOp::Mod:
             if (is_unsigned) {
                 return {this->builder->CreateURem(lhs, rhs), lhs.type};
             }
 
             return {this->builder->CreateSRem(lhs, rhs), lhs.type};
-        case TokenKind::Eq:
+        case BinaryOp::Eq:
             return {this->builder->CreateICmpEQ(lhs, rhs), boolean};
-        case TokenKind::Neq:
+        case BinaryOp::Neq:
             return {this->builder->CreateICmpNE(lhs, rhs), boolean};
-        case TokenKind::Gt:
+        case BinaryOp::Gt:
             if (is_unsigned) {
                 return {this->builder->CreateICmpUGT(lhs, rhs), boolean};
             }
 
             return {this->builder->CreateICmpSGT(lhs, rhs), boolean};
-        case TokenKind::Lt:
+        case BinaryOp::Lt:
             if (is_unsigned) {
                 return {this->builder->CreateICmpULT(lhs, rhs), boolean};
             }
 
             return {this->builder->CreateICmpSLT(lhs, rhs), boolean};
-        case TokenKind::Gte:
+        case BinaryOp::Gte:
             if (is_unsigned) {
                 return {this->builder->CreateICmpUGE(lhs, rhs), boolean};
             }
 
             return {this->builder->CreateICmpSGE(lhs, rhs), boolean};
-        case TokenKind::Lte:
+        case BinaryOp::Lte:
             if (is_unsigned) {
                 return {this->builder->CreateICmpULE(lhs, rhs), boolean};
             }
 
             return {this->builder->CreateICmpSLE(lhs, rhs), boolean};
-        default: __builtin_unreachable();
-    }
+        // These are handled above and are just here just to make the compiler shut up
+        case BinaryOp::Or:
+        case BinaryOp::And:
+        case BinaryOp::BinaryOr:
+        case BinaryOp::BinaryAnd:
+        case BinaryOp::Xor:
+        case BinaryOp::Rsh:
+        case BinaryOp::Lsh:
+        case BinaryOp::Assign:
+            break;
+        }
+
+    UNREACHABLE();
+    return nullptr;
 }
 
 Value Visitor::visit(ast::BinaryOpExpr* expr) {
-    if (expr->op == TokenKind::Assign) return this->evaluate_assignment(expr);
+    if (expr->op == BinaryOp::Assign) return this->evaluate_assignment(expr);
 
     Value lhs = expr->left->accept(*this);
     if (lhs.is_empty_value()) ERROR(expr->left->span, "Expected a value");
@@ -378,7 +402,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         ERROR(
             expr->span, 
             "Unsupported binary operation '{0}' between types '{1}' and '{2}'", 
-            Token::get_type_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
+            quart::get_binary_op_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
         );
     } else {
         rhs = this->cast(rhs, lhs.type);
@@ -399,7 +423,7 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
         ERROR(
             expr->span, 
             "Unsupported binary operation '{0}' between types '{1}' and '{2}'", 
-            Token::get_type_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
+            quart::get_binary_op_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
         );
     } else {
         rhs = this->cast(rhs, lhs.type);

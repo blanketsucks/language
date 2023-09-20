@@ -296,8 +296,8 @@ Token MemoryLexer::parse_identifier(bool accept_keywords) {
         next = this->next();
     }
 
-    if (MemoryLexer::is_keyword(value) && accept_keywords) {
-        return this->create_token(MemoryLexer::get_keyword_kind(value), start, value);
+    if (quart::is_keyword(value) && accept_keywords) {
+        return this->create_token(quart::get_keyword_kind(value), start, value);
     } else {
         return this->create_token(TokenKind::Identifier, start, value);
     }

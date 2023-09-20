@@ -160,8 +160,8 @@ public:
     Value evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value);
     Value evaluate_assignment(ast::BinaryOpExpr* expr);
 
-    Value evaluate_float_operation(const Value& lhs, TokenKind op, const Value& rhs);
-    Value evaluate_binary_operation(const Value& lhs, TokenKind op, const Value& rhs);
+    Value evaluate_float_operation(const Value& lhs, BinaryOp op, const Value& rhs);
+    Value evaluate_binary_operation(const Value& lhs, BinaryOp op, const Value& rhs);
 
     Value visit(ast::BlockExpr* expr);
 

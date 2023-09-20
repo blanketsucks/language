@@ -275,27 +275,27 @@ public:
 class UnaryOpExpr : public ExprMixin<ExprKind::UnaryOp> {
 public:
     std::unique_ptr<Expr> value;
-    TokenKind op;
+    UnaryOp op;
 
-    UnaryOpExpr(Span span, TokenKind op, std::unique_ptr<Expr> value);
+    UnaryOpExpr(Span span, UnaryOp op, std::unique_ptr<Expr> value);
     Value accept(Visitor& visitor) override;
 };
 
 class BinaryOpExpr : public ExprMixin<ExprKind::BinaryOp> {
 public:
     std::unique_ptr<Expr> left, right;
-    TokenKind op;
+    BinaryOp op;
 
-    BinaryOpExpr(Span span, TokenKind op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right);
+    BinaryOpExpr(Span span, BinaryOp op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right);
     Value accept(Visitor& visitor) override;
 };
 
 class InplaceBinaryOpExpr : public ExprMixin<ExprKind::InplaceBinaryOp> {
 public:
     std::unique_ptr<Expr> left, right;
-    TokenKind op;
+    BinaryOp op;
 
-    InplaceBinaryOpExpr(Span span, TokenKind op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right);
+    InplaceBinaryOpExpr(Span span, BinaryOp op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right);
     Value accept(Visitor& visitor) override;
 };
 

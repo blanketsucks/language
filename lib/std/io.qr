@@ -1,5 +1,4 @@
 import libc;
-import libc::errno;
 
 enum SeekMode {
     Set,

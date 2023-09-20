@@ -93,7 +93,7 @@ quart::Value ArrayExpr::accept(Visitor& visitor) {
 }
 
 UnaryOpExpr::UnaryOpExpr(
-    Span span, TokenKind op, std::unique_ptr<Expr> value
+    Span span, UnaryOp op, std::unique_ptr<Expr> value
 ) : ExprMixin(span), op(op) {
     this->value = std::move(value);
 }
@@ -103,7 +103,7 @@ quart::Value UnaryOpExpr::accept(Visitor& visitor) {
 }
 
 BinaryOpExpr::BinaryOpExpr(
-    Span span, TokenKind op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right
+    Span span, BinaryOp op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right
 ) : ExprMixin(span), op(op) {
     this->left = std::move(left);
     this->right = std::move(right);
@@ -114,7 +114,7 @@ quart::Value BinaryOpExpr::accept(Visitor& visitor) {
 }
 
 InplaceBinaryOpExpr::InplaceBinaryOpExpr(
-    Span span, TokenKind op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right
+    Span span, BinaryOp op, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right
 ) : ExprMixin(span), op(op) {
     this->left = std::move(left);
     this->right = std::move(right);

@@ -7,14 +7,6 @@
 
 #undef alloca
 
-#ifdef __GNUC__
-    #define __UNREACHABLE __builtin_unreachable();
-#elif _MSC_VER
-    #define __UNREACHABLE __assume(false);
-#else
-    #define __UNREACHABLE
-#endif
-
 namespace utils {
 
 template<typename F, typename S> 

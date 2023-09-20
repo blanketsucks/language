@@ -332,11 +332,6 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         index++;
     }
 
-    if (link.find("platform") != link.end()) {
-        std::string platform = link["platform"];
-        if (platform != PLATFORM_NAME) return nullptr;
-    }
-
     if (link.find("name") != link.end()) {
         this->options.add_library(link["name"]);
     }
@@ -348,7 +343,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         auto function = this->functions[fn];
 
         logging::error(expr->span, FORMAT("Function with the name '{0}' already defined", fn), false);
-        logging::note(function->span, FORMAT("Function '{0}' was previously defined here", fn));
+        logging::note(function->span, FORMAT("'{0}' was previously defined here", fn));
 
         exit(1);
     }
@@ -396,20 +391,13 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
     if (iterator == this->scope->functions.end()) {
         expr->prototype->attributes.update(expr->attributes);
+
         expr->prototype->accept(*this);
-
         iterator = this->scope->functions.find(expr->prototype->name);
-        if (iterator == this->scope->functions.end()) return nullptr;
-
     }
 
     func = iterator->second;
     llvm::Function* function = func->value;
-    // TODO: Is this even necessary?
-    if (!function->empty()) {
-        NOTE(func->span, "Function '{0}' was previously defined here", func->name);
-        ERROR(expr->span, "Function '{0}' is already defined", func->name);
-    }
 
     if (func->flags & Function::LLVMIntrinsic) {
         ERROR(expr->span, "Cannot define intrinsic function '{0}'", func->name);

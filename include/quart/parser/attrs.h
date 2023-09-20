@@ -1,6 +1,7 @@
 #pragma once
 
-#define ATTR(n) Attribute handle_##n##_attribute(Parser& parser)
+#define ATTR(n) Attribute parse_##n##_attribute(Parser& parser)
+#define ATTR_HANDLER(n) AttributeHandler::Result handle_##n##_attribute(Parser& parser, const Attribute& attr)
 
 #define SIMPLE_ATTR(n, t) ATTR(n) { (void)parser; return t; }
 
@@ -15,6 +16,7 @@
 namespace quart {
 
 class Parser;
+
 namespace ast {
     class Expr;
 }
@@ -38,12 +40,22 @@ struct Attribute {
     Attribute(Type type, llvm::Any value) : type(type), value(value) {}
     Attribute(Type type, std::shared_ptr<ast::Expr> expr) : type(type), expr(expr) {}
 
-    template<typename T> T as() { return llvm::any_cast<T>(value); }
+    template<typename T> T as() const { return llvm::any_cast<T>(value); }
 };
 
 class Attributes {
 public:
     static void init(Parser& parser);
+};
+
+class AttributeHandler {
+public:
+    enum Result {
+        Ok,
+        Skip
+    };
+
+    static Result handle(Parser& parser, const Attribute& attr);
 };
 
 }

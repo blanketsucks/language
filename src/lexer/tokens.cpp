@@ -2,7 +2,57 @@
 
 using namespace quart;
 
-std::string Token::get_type_value(TokenKind type) {
+bool quart::is_keyword(const std::string& word) {
+    return KEYWORDS.find(word) != KEYWORDS.end();
+}
+
+TokenKind quart::get_keyword_kind(const std::string& word) {
+    auto it = KEYWORDS.find(word);
+    if (it == KEYWORDS.end()) return TokenKind::EOS;
+
+    return it->second;
+}
+
+const char* quart::get_unary_op_value(UnaryOp type) {
+    switch (type) {
+        case UnaryOp::Inc: return "++";
+        case UnaryOp::Dec: return "--";
+        case UnaryOp::Add: return "+";
+        case UnaryOp::Sub: return "-";
+        case UnaryOp::Not: return "!";
+        case UnaryOp::BinaryNot: return "~";
+        case UnaryOp::BinaryAnd: return "&";
+        case UnaryOp::Mul: return "*";
+    }
+}
+
+const char* quart::get_binary_op_value(BinaryOp type) {
+    switch (type) {
+        case BinaryOp::Add: return "+";
+        case BinaryOp::Sub: return "-";
+        case BinaryOp::Mul: return "*";
+        case BinaryOp::Div: return "/";
+        case BinaryOp::Mod: return "%";
+        case BinaryOp::Or: return "|";
+        case BinaryOp::And: return "&";
+        case BinaryOp::BinaryOr: return "||";
+        case BinaryOp::BinaryAnd: return "&&";
+        case BinaryOp::Xor: return "^";
+        case BinaryOp::Rsh: return ">>";
+        case BinaryOp::Lsh: return "<<";
+        case BinaryOp::Eq: return "==";
+        case BinaryOp::Neq: return "!=";
+        case BinaryOp::Gt: return ">";
+        case BinaryOp::Lt: return "<";
+        case BinaryOp::Gte: return ">=";
+        case BinaryOp::Lte: return "<=";
+        case BinaryOp::Assign: return "=";
+    }
+}
+
+
+
+const char* Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";
         case TokenKind::Dec: return "--";

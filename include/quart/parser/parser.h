@@ -18,7 +18,7 @@ struct Path {
 
 class Parser {
 public:
-    typedef Attribute (*AttributeHandler)(Parser&);
+    typedef Attribute (*AttributeFunc)(Parser&);
 
     static std::map<std::string, ast::BuiltinType> TYPES;
     
@@ -36,6 +36,8 @@ public:
     bool is_valid_attribute(const std::string& name);
 
     int get_token_precendence();
+
+    AttributeHandler::Result handle_expr_attributes(const ast::Attributes& attrs);
     
     std::unique_ptr<ast::TypeExpr> parse_type();
 
@@ -93,7 +95,7 @@ public:
 
     std::vector<Token> tokens;
 
-    std::map<std::string, AttributeHandler> attributes;
+    std::map<std::string, AttributeFunc> attributes;
 };
 
 }
