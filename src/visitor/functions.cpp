@@ -24,6 +24,31 @@ llvm::Function* Visitor::create_function(
     return llvm::Function::Create(type, linkage, name, this->module.get());
 }
 
+static Value evaluate_function_argument(
+    Visitor& visitor,
+    std::unique_ptr<ast::Expr>& expr,
+    Parameter& param
+) {
+    visitor.inferred = param.type;
+    if (param.is_reference()) {
+        visitor.inferred = param.type->get_reference_type();
+    }
+
+    Value value = expr->accept(visitor);
+    if (!Type::can_safely_cast_to(value.type, param.type)) {
+        ERROR(
+            expr->span, 
+            "Cannot pass value of type '{0}' to parameter of type '{1}'", 
+            value.type->get_as_string(), param.type->get_as_string()
+        );
+    } else {
+        value = visitor.cast(value, param.type);
+    }
+
+    visitor.inferred = nullptr;
+    return value;
+}
+
 std::vector<llvm::Value*> Visitor::handle_function_arguments(
     const Span& span,
     Function* function,
@@ -60,58 +85,24 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     std::vector<Parameter> params = function->params;
     for (auto& entry : function->kwargs) params.push_back(entry.second);
 
-    // Name is only used for kwargs when they are not in order
-    const auto& visit = [&](
-        std::unique_ptr<ast::Expr>& expr, const std::string& name = ""
-    ) {
-        Value value = nullptr;
+    for (auto& arg : args) {
         if (i >= params.size()) {
             if (!is_variadic) {
-                ERROR(
-                    expr->span, 
-                    "Function expects {0} arguments but got {1}", 
-                    function->value->size(), i
-                );
+                ERROR(arg->span,  "Function expects {0} arguments but got {1}", function->value->size(), i);
             }
 
-            value = expr->accept(*this);
-            if (value.is_empty_value()) ERROR(expr->span, "Expected a value");
+            Value value = arg->accept(*this);
+            if (value.is_empty_value()) ERROR(arg->span, "Expected a value");
 
             c_variadic_values.push_back(value);
-            return;
+            continue;
         }
 
-        quart::Parameter param;
-        if (!name.empty()) {
-            param = function->kwargs[name]; i = param.index;
-        } else {
-            param = params[i];
-        }
+        Parameter& param = params[i];
+        Value value = evaluate_function_argument(*this, arg, param);
 
-        this->inferred = param.type;
-        if (param.is_reference()) {
-            this->inferred = param.type->get_reference_type();
-        }
-
-        value = expr->accept(*this);
-        if (!Type::can_safely_cast_to(value.type, param.type)) {
-            ERROR(
-                expr->span, 
-                "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                value.type->get_as_string(), param.type->get_as_string()
-            );
-        } else {
-            value = this->cast(value, param.type);
-        }
-
-        this->inferred = nullptr;
         values[i] = value;
-
         i++;
-    };
-
-    for (auto& arg : args) {
-        visit(arg);
     }
 
     for (auto& entry : kwargs) {
@@ -119,7 +110,10 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
             ERROR(entry.second->span, "Function does not have a keyword parameter named '{0}'", entry.first);
         }
 
-        visit(entry.second, entry.first);
+        Parameter& param = function->kwargs[entry.first];
+        Value value = evaluate_function_argument(*this, entry.second, param);
+
+        values[param.index] = value;
     }
 
     std::vector<llvm::Value*> ret;
@@ -281,24 +275,24 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         if (arg.default_value) {
             this->inferred = type;
 
-            Value default_value = arg.default_value->accept(*this);
-            if (default_value.is_empty_value()) {
+            Value val = arg.default_value->accept(*this);
+            if (val.is_empty_value()) {
                 ERROR(arg.default_value->span, "Expected a constant value");
             }
 
-            if (!llvm::isa<llvm::Constant>(default_value.inner)) {
+            if (!llvm::isa<llvm::Constant>(val.inner)) {
                 ERROR(arg.default_value->span, "Default values must be constants");
             }
 
-            if (!Type::can_safely_cast_to(default_value.type, type)) {
+            if (!Type::can_safely_cast_to(val.type, type)) {
                 ERROR(
                     arg.default_value->span, 
                     "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                    default_value.type->get_as_string(), type->get_as_string()
+                    val.type->get_as_string(), type->get_as_string()
                 );
             }
 
-            default_value = this->cast(default_value, type);
+            default_value = this->cast(val, type);
             this->inferred = nullptr;
         }
 
@@ -411,10 +405,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
     if (!func->ret.type->is_void()) {
         llvm::Type* type = func->ret.type->to_llvm_type();
+
         func->ret.value = this->builder->CreateAlloca(type);
+        func->ret.block = llvm::BasicBlock::Create(*this->context, "ret");
     }
 
-    func->ret.block = llvm::BasicBlock::Create(*this->context);
     func->scope = this->create_scope(func->name, ScopeType::Function);
 
     std::vector<Parameter> params = func->params;
@@ -458,24 +453,26 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             stmt->accept(*this);
         }
 
-        if (!func->has_return()) {
-            if (func->ret.type->is_void() || func->flags & Function::Entry) {
-                if (func->flags & Function::Entry) {
-                    this->builder->CreateRet(this->builder->getInt32(0));
-                } else {
-                    this->builder->CreateRetVoid();
-                }
-            } else {
-                ERROR(expr->span, "Function '{0}' expects a return value", func->name);
+        for (auto& block : func->value->getBasicBlockList()) {
+            if (block.getTerminator()) continue;
+
+            if (!(func->ret.type->is_void() || func->flags & Function::Entry)) {
+                ERROR(func->span, "Function '{0}' expects a return value from all branches", func->name);
             }
-        } else {
-            this->set_insert_point(func->ret.block);
-            if (func->ret.type->is_void()) {
+
+            this->builder->SetInsertPoint(&block);
+            if (func->flags & Function::Entry) {
+                this->builder->CreateRet(this->builder->getInt32(0));
+            } else {
                 this->builder->CreateRetVoid();
-            } else {
-                llvm::Value* value = this->builder->CreateLoad(function->getReturnType(), func->ret.value);
-                this->builder->CreateRet(value);
             }
+        }
+
+        if (!func->ret.type->is_void()) {
+            this->set_insert_point(func->ret.block);
+
+            llvm::Value* value = this->builder->CreateLoad(function->getReturnType(), func->ret.value);
+            this->builder->CreateRet(value);
         }
     }
     
@@ -553,7 +550,7 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         }
 
         func->flags |= Function::HasReturn;
-        this->builder->CreateBr(func->ret.block);
+        this->builder->CreateRetVoid();
         
         return nullptr;
     }

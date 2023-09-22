@@ -153,10 +153,6 @@ void finalize(std::shared_ptr<Function>& func) {
     if (!func) return;
     if (func->flags & Function::Finalized) return;
 
-    if (!func->has_return()) {
-        delete func->ret.block;
-    }
-
     llvm::Function* function = func->value;
     if (function->use_empty() && !func->is_entry()) {
         if (function->getParent()) {

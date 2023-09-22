@@ -4,8 +4,8 @@ using namespace quart;
 
 void jit::checkError(llvm::Error error) {
     if (error) {
-        llvm::outs() << logging::color(WHITE, "quart: ");
-        llvm::outs() << logging::color(RED, "error: ") << error << '\n';
+        llvm::outs() << logging::color(COLOR_WHITE, "quart: ");
+        llvm::outs() << logging::color(COLOR_RED, "error: ") << error << '\n';
 
         exit(1);
     }
