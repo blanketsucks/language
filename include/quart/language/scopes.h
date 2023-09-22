@@ -7,9 +7,9 @@
 #include <quart/language/enums.h>
 #include <quart/language/typealias.h>
 #include <quart/language/modules.h>
-
 #include <quart/language/types.h>
 #include <quart/language/variables.h>
+#include <quart/parser/ast.h>
 
 #include <string>
 #include <vector>
@@ -73,6 +73,8 @@ struct Scope {
     ValueMap<EnumRef> enums;
     ValueMap<ModuleRef> modules;
     ValueMap<TypeAlias> type_aliases;
+
+    std::vector<ast::Expr*> defers;
 
     Scope(const std::string& name, ScopeType type, Scope* parent = nullptr);
 

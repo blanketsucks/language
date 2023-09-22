@@ -15,6 +15,16 @@ quart::Value BlockExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+ExternBlockExpr::ExternBlockExpr(
+    Span span, std::vector<std::unique_ptr<Expr>> block
+) : ExprMixin(span) {
+    this->block = std::move(block);
+}
+
+quart::Value ExternBlockExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 IntegerExpr::IntegerExpr(
     Span span, std::string value, int bits, bool is_float
 ) : ExprMixin(span), value(value), bits(bits), is_float(is_float) {}

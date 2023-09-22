@@ -801,7 +801,7 @@ std::unique_ptr<ast::Expr> Parser::parse_extern_block() {
         }
 
         Span end = this->expect(TokenKind::RBrace, "}").span;
-        return utils::make_scope<ast::BlockExpr>(Span::merge(start, end), std::move(definitions));
+        return utils::make_scope<ast::ExternBlockExpr>(Span::merge(start, end), std::move(definitions));
     }
 
     return this->parse_extern(linkage);

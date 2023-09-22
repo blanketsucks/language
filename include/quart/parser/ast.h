@@ -28,6 +28,7 @@ enum class ExternLinkageSpecifier {
 
 enum class ExprKind {
     Block,
+    ExternBlock,
     Integer,
     Char,
     Float,
@@ -184,6 +185,14 @@ public:
     std::vector<std::unique_ptr<Expr>> block;
 
     BlockExpr(Span span, std::vector<std::unique_ptr<Expr>> block);
+    Value accept(Visitor& visitor) override;
+};
+
+class ExternBlockExpr : public ExprMixin<ExprKind::ExternBlock> {
+public:
+    std::vector<std::unique_ptr<Expr>> block;
+
+    ExternBlockExpr(Span span, std::vector<std::unique_ptr<Expr>> block);
     Value accept(Visitor& visitor) override;
 };
 

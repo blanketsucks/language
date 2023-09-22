@@ -163,7 +163,10 @@ public:
     Value evaluate_float_operation(const Value& lhs, BinaryOp op, const Value& rhs);
     Value evaluate_binary_operation(const Value& lhs, BinaryOp op, const Value& rhs);
 
+    void evaluate_current_scope_defers();
+
     Value visit(ast::BlockExpr* expr);
+    Value visit(ast::ExternBlockExpr* expr);
 
     Value visit(ast::IntegerExpr* expr);
     Value visit(ast::CharExpr* expr);

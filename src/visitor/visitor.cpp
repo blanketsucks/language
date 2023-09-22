@@ -509,6 +509,9 @@ Value Visitor::visit(ast::StringExpr* expr) {
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
+    Scope* prev = this->scope;
+    Scope* scope = this->create_scope("block", ScopeType::Anonymous);
+
     Value last = nullptr;
     for (auto& stmt : expr->block) {
         if (!stmt) {
@@ -518,7 +521,17 @@ Value Visitor::visit(ast::BlockExpr* expr) {
         last = stmt->accept(*this);
     }
 
+    this->scope = prev;
     return last;
+}
+
+Value Visitor::visit(ast::ExternBlockExpr* expr) {
+    for (auto& stmt : expr->block) {
+        if (!stmt) continue;
+        stmt->accept(*this);
+    }
+    
+    return EMPTY_VALUE;
 }
 
 Value Visitor::visit(ast::OffsetofExpr* expr) {

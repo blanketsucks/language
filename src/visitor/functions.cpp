@@ -7,6 +7,18 @@ static std::vector<std::string> RESERVED_FUNCTION_NAMES = {
     "__global_constructors_init"
 };
 
+void Visitor::evaluate_current_scope_defers() {
+    for (Scope* parent = this->scope->parent; parent; parent = parent->parent) {
+        for (auto& defer : parent->defers) {
+            defer->accept(*this);
+        }
+    }
+
+    for (auto& defer : this->scope->defers) {
+        defer->accept(*this);
+    }
+}
+
 bool Visitor::is_reserved_function(const std::string& name) {
     return std::find(
         RESERVED_FUNCTION_NAMES.begin(), RESERVED_FUNCTION_NAMES.end(), name
@@ -461,6 +473,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
             }
 
             this->builder->SetInsertPoint(&block);
+            this->evaluate_current_scope_defers();
+
             if (func->flags & Function::Entry) {
                 this->builder->CreateRet(this->builder->getInt32(0));
             } else {
@@ -540,6 +554,8 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
             value = this->cast(value, func->ret.type);
         }
 
+        this->evaluate_current_scope_defers();
+
         this->builder->CreateStore(value, func->ret.value);
         this->builder->CreateBr(func->ret.block);
 
@@ -548,6 +564,8 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
         if (!func->ret->is_void()) {
             ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
+
+        this->evaluate_current_scope_defers();
 
         func->flags |= Function::HasReturn;
         this->builder->CreateRetVoid();
@@ -562,11 +580,7 @@ Value Visitor::visit(ast::DeferExpr* expr) {
         ERROR(expr->span, "Defer statement outside of function");
     }
 
-    // TODO: Fix bug where defer gets executed if a return is before it
-    // TODO: Fix defers inside if statements and such
-    // The more i think about this, the more i regret ever adding this
-
-    TODO("Defer statements are not implemented");
+    this->scope->defers.push_back(expr->expr.get());
     return nullptr;
 }
 
