@@ -74,27 +74,36 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
 }
 
 Value Visitor::visit(ast::ArrayFillExpr* expr) {
+    quart::Type* inferred = this->inferred;
+    if (inferred && inferred->is_array()) {
+        this->inferred = inferred->get_array_element_type();
+    }
+
     Value element = expr->element->accept(*this);
     if (element.is_empty_value()) ERROR(expr->element->span, "Expected a value");
+
+    this->inferred = inferred;
 
     Value count = expr->count->accept(*this);
     if (count.is_empty_value()) ERROR(expr->count->span, "Expected a value");
 
-
     llvm::ConstantInt* size = llvm::dyn_cast<llvm::ConstantInt>(count.inner);
     if (!size) ERROR(expr->count->span, "Expected a constant integer");
 
-    quart::ArrayType* type = this->registry->create_array_type(element.type, size->getSExtValue());
+    quart::ArrayType* type = this->registry->create_array_type(element.type, size->getZExtValue());
     llvm::ArrayType* atype = llvm::cast<llvm::ArrayType>(type->to_llvm_type());
 
     if (llvm::isa<llvm::Constant>(element.inner)) {
-        return {llvm::ConstantArray::get(
+        llvm::Constant* constant = llvm::ConstantArray::get(
             atype,
             std::vector<llvm::Constant*>(size->getSExtValue(), llvm::cast<llvm::Constant>(element.inner))
-        ), type, Value::Constant};
+        );
+    
+        return {constant, type, Value::Constant};
     }
 
     llvm::Value* alloca = this->alloca(atype);
+    
     for (uint32_t i = 0; i < size->getZExtValue(); i++) {
         llvm::Value* ptr = this->builder->CreateGEP(
             atype, alloca, {this->builder->getInt32(0), this->builder->getInt32(i)}

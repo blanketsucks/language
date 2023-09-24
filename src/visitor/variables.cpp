@@ -124,6 +124,8 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 value = this->cast(value, type);
             }
         }
+
+        this->inferred = nullptr;
     }
 
     if (!expr->is_multiple_variables) {
@@ -228,17 +230,22 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
 }
 
 Value Visitor::visit(ast::ConstExpr* expr) {
+    quart::Type* type = nullptr;
+    if (expr->type) {
+        type = expr->type->accept(*this);
+        this->inferred = type;
+    }
+
     Value value = expr->value->accept(*this);
+    if (!type && value.type) type = value.type;
 
-    quart::Type* type = value.type;
     llvm::Type* ltype = nullptr;
-
+    this->inferred = nullptr;
     if (!(value.flags & Value::EarlyFunctionCall)) {
         if (value.is_empty_value()) {
             ERROR(expr->value->span, "Expected an expression");
         }
 
-        if (expr->type) type = expr->type->accept(*this);
         ltype = type->to_llvm_type();
     } else {
         llvm::Type* return_type = this->early_function_calls.back().function->getReturnType();

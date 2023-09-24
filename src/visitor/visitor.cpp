@@ -466,13 +466,20 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
         type = expr->bits == 32 ? this->registry->get_f32_type() : this->registry->get_f64_type();
         constant = llvm::ConstantFP::get(type->to_llvm_type(), expr->value);
     } else {
+        uint32_t bits = expr->bits;
         if (this->inferred && this->inferred->is_int()) {
             type = this->inferred;
+            bits = type->get_int_bit_width();
         } else {
             type = this->registry->create_int_type(expr->bits, true);
         }
 
-        llvm::APInt value(expr->bits, str, radix);
+        uint32_t needed = llvm::APInt::getBitsNeeded(str, radix);
+        if (needed > bits) {
+            ERROR(expr->span, "Integer literal '{0}' requires {1} bits but only {2} are available", expr->value, needed, bits);
+        }
+
+        llvm::APInt value(bits, str, radix);
         constant = this->builder->getInt(value);
     }
 

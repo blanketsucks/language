@@ -395,9 +395,12 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
     Value lhs = expr->left->accept(*this);
     if (lhs.is_empty_value()) ERROR(expr->left->span, "Expected a value");
 
+    this->inferred = lhs.type;
+
     Value rhs = expr->right->accept(*this);
     if (rhs.is_empty_value()) ERROR(expr->right->span, "Expected a value");
 
+    this->inferred = nullptr;
     if (!Type::can_safely_cast_to(rhs.type, lhs.type)) {
         ERROR(
             expr->span, 
@@ -416,9 +419,12 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
     Value lhs = expr->left->accept(*this);
     if (lhs.is_empty_value()) ERROR(expr->left->span, "Expected a value");
 
+    this->inferred = lhs.type;
+
     Value rhs = expr->right->accept(*this);
     if (rhs.is_empty_value()) ERROR(expr->right->span, "Expected a value");
 
+    this->inferred = nullptr;
     if (!Type::can_safely_cast_to(rhs.type, lhs.type)) {
         ERROR(
             expr->span, 

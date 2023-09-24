@@ -10,31 +10,11 @@
 
 namespace quart {
 
-struct ArrayTypeStorageKey {
-    Type* element;
-    size_t size;
-
-    ArrayTypeStorageKey(Type* element, size_t size) : element(element), size(size) {}
-
-    bool operator<(const ArrayTypeStorageKey& other) const {
-        return this->element < other.element && this->size < other.size;
-    }
-};
-
-struct FunctionTypeStorageKey {
-    Type* return_type;
-    std::vector<Type*> parameters;
-
-    FunctionTypeStorageKey(Type* return_type, const std::vector<Type*>& parameters) : return_type(return_type), parameters(parameters) {}
-
-    bool operator<(const FunctionTypeStorageKey& other) const {
-        return this->return_type < other.return_type && this->parameters < other.parameters;
-    }
-};
-
 using IntTypeStorageKey = std::pair<uint32_t, bool>;
 using TupleTypeStorageKey = std::vector<Type*>;
 using PointerTypeStorageKey = std::pair<Type*, bool>;
+using ArrayTypeStorageKey = std::pair<Type*, size_t>;
+using FunctionTypeStorageKey = std::pair<Type*, std::vector<Type*>>;
 
 class TypeRegistry {
 public:

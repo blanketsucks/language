@@ -1621,6 +1621,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                 }
 
                 elements.push_back(std::move(element));
+                this->expect(TokenKind::Comma, ",");
             }
 
             while (this->current != TokenKind::RBracket) {

@@ -209,5 +209,9 @@ Value Visitor::visit(ast::MatchExpr* expr) {
     }
 
     this->set_insert_point(merge);
-    return {this->load(alloca), rtype};
+    if (alloca) {
+        return {this->load(alloca), rtype};
+    }
+
+    return EMPTY_VALUE;
 }
