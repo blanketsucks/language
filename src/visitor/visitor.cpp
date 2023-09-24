@@ -476,7 +476,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
 
         uint32_t needed = llvm::APInt::getBitsNeeded(str, radix);
         if (needed > bits) {
-            ERROR(expr->span, "Integer literal '{0}' requires {1} bits but only {2} are available", expr->value, needed, bits);
+            ERROR(expr->span, "Integer literal requires {0} bits but only {1} are available", needed, bits);
         }
 
         llvm::APInt value(bits, str, radix);

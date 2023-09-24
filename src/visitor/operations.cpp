@@ -405,7 +405,7 @@ Value Visitor::visit(ast::BinaryOpExpr* expr) {
         ERROR(
             expr->span, 
             "Unsupported binary operation '{0}' between types '{1}' and '{2}'", 
-            quart::get_binary_op_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
+            quart::get_binary_op_value(expr->op), lhs.type->get_as_string(), rhs.type->get_as_string()
         );
     } else {
         rhs = this->cast(rhs, lhs.type);
@@ -429,7 +429,7 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
         ERROR(
             expr->span, 
             "Unsupported binary operation '{0}' between types '{1}' and '{2}'", 
-            quart::get_binary_op_value(expr->op), rhs.type->get_as_string(), lhs.type->get_as_string()
+            quart::get_binary_op_value(expr->op), lhs.type->get_as_string(), rhs.type->get_as_string()
         );
     } else {
         rhs = this->cast(rhs, lhs.type);

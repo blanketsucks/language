@@ -268,14 +268,7 @@ quart::Type* Visitor::visit(ast::ArrayTypeExpr* expr) {
         ERROR(expr->size->span, "Array size must be a constant integer");
     }
 
-
-    type->print();
-    std::cout << "size: " << constant->getSExtValue() << "\n";
-
-    auto ty =  this->registry->create_array_type(type, constant->getSExtValue());
-    ty->print();
-
-    return ty;
+    return this->registry->create_array_type(type, constant->getSExtValue());
 }
 
 quart::Type* Visitor::visit(ast::TupleTypeExpr* expr) {
