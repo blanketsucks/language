@@ -622,8 +622,17 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (callable.self) argc++;
 
-    llvm::Function* function = (llvm::Function*)callable.inner;
+    llvm::Function* function = static_cast<llvm::Function*>(callable.inner);
     std::string name = function->getName().str();
+
+    llvm::FunctionType* ftype = nullptr;
+    llvm::Type* ty = function->getType();
+
+    if (ty->isPointerTy()) {
+        ftype = llvm::cast<llvm::FunctionType>(ty->getPointerElementType());
+    } else {
+        ftype = llvm::cast<llvm::FunctionType>(ty);
+    }
 
     if (func) {
         name = func->name;
@@ -631,8 +640,6 @@ Value Visitor::visit(ast::CallExpr* expr) {
             this->current_function->calls.push_back(function);
         }
     }
-
-    llvm::FunctionType* ftype = function->getFunctionType();
 
     std::vector<llvm::Value*> args;
     uint32_t i = callable.self ? 1 : 0;

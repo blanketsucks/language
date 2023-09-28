@@ -148,6 +148,12 @@ Value Visitor::visit(ast::CastExpr* expr) {
         }
         
         ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
+    } else if (from->is_reference()) {
+        if (!to->is_pointer()) {
+            ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
+        }
+
+        return {this->builder->CreateBitCast(value, type), to};
     }
 
     if (from->is_enum()) {
