@@ -6,10 +6,10 @@ using namespace quart;
 Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(options) {
     this->name = name;
 
-    this->context = utils::make_scope<llvm::LLVMContext>();
-    this->module = utils::make_scope<llvm::Module>(name, *this->context);
-    this->builder = utils::make_scope<llvm::IRBuilder<>>(*this->context);
-    this->fpm = utils::make_scope<llvm::legacy::FunctionPassManager>(this->module.get());
+    this->context = std::make_unique<llvm::LLVMContext>();
+    this->module = std::make_unique<llvm::Module>(name, *this->context);
+    this->builder = std::make_unique<llvm::IRBuilder<>>(*this->context);
+    this->fpm = std::make_unique<llvm::legacy::FunctionPassManager>(this->module.get());
 
     this->registry = TypeRegistry::create(*this->context);
 

@@ -148,7 +148,7 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
                 this->next();
             }
 
-            return utils::make_scope<ast::ReferenceTypeExpr>(
+            return std::make_unique<ast::ReferenceTypeExpr>(
                 this->current.span, this->parse_type(), is_mutable
             );
         }
@@ -166,7 +166,7 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
                 ERROR(type->span, "Cannot have a pointer to a reference");
             }
 
-            return utils::make_scope<ast::PointerTypeExpr>(
+            return std::make_unique<ast::PointerTypeExpr>(
                 this->current.span, std::move(type), is_mutable
             );
         }
@@ -187,7 +187,7 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
             }
 
             Span end = this->expect(TokenKind::RParen, ")").span;
-            return utils::make_scope<ast::TupleTypeExpr>(Span::merge(start, end), std::move(types));
+            return std::make_unique<ast::TupleTypeExpr>(Span::merge(start, end), std::move(types));
         }
         case TokenKind::LBracket: {
             this->next();
@@ -197,7 +197,7 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
             auto size = this->expr(false);
 
             Span end = this->expect(TokenKind::RBracket, "]").span;
-            return utils::make_scope<ast::ArrayTypeExpr>(Span::merge(start, end), std::move(type), std::move(size));
+            return std::make_unique<ast::ArrayTypeExpr>(Span::merge(start, end), std::move(type), std::move(size));
         }
         case TokenKind::Identifier: {
             std::string name = this->current.value;
@@ -208,19 +208,19 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
                 auto size = this->expr(false);
 
                 Span end = this->expect(TokenKind::RParen, ")").span;
-                return utils::make_scope<ast::IntegerTypeExpr>(
+                return std::make_unique<ast::IntegerTypeExpr>(
                     Span::merge(start, end), std::move(size)
                 );
             }
 
             if (Parser::TYPES.find(name) != Parser::TYPES.end()) {
-                return utils::make_scope<ast::BuiltinTypeExpr>(
+                return std::make_unique<ast::BuiltinTypeExpr>(
                     Span::merge(start, this->current.span), Parser::TYPES.at(name)
                 );
             }
 
             Path p = this->parse_path(name);
-            return utils::make_scope<ast::NamedTypeExpr>(
+            return std::make_unique<ast::NamedTypeExpr>(
                 Span::merge(start, this->current.span), p.name, p.segments
             );
         }
@@ -244,7 +244,7 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
                 end = this->next().span; ret = this->parse_type();
             }
 
-            return utils::make_scope<ast::FunctionTypeExpr>(
+            return std::make_unique<ast::FunctionTypeExpr>(
                 Span::merge(start, end), std::move(args), std::move(ret)
             );
         }
@@ -271,7 +271,7 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
     }
 
     Span end = this->expect(TokenKind::RBrace, "}").span;
-    return utils::make_scope<ast::BlockExpr>(Span::merge(start, end), std::move(body));
+    return std::make_unique<ast::BlockExpr>(Span::merge(start, end), std::move(body));
 }
 
 std::unique_ptr<ast::TypeAliasExpr> Parser::parse_type_alias() {
@@ -283,7 +283,7 @@ std::unique_ptr<ast::TypeAliasExpr> Parser::parse_type_alias() {
     auto type = this->parse_type();
     Span end = this->expect(TokenKind::SemiColon, ";").span;
 
-    return utils::make_scope<ast::TypeAliasExpr>(
+    return std::make_unique<ast::TypeAliasExpr>(
         Span::merge(start, end), name, std::move(type)
     );
 }
@@ -423,7 +423,7 @@ std::unique_ptr<ast::PrototypeExpr> Parser::parse_prototype(
         end = this->next().span; ret = this->parse_type();
     }
 
-    return utils::make_scope<ast::PrototypeExpr>(
+    return std::make_unique<ast::PrototypeExpr>(
         span, name, std::move(pair.first), std::move(ret), pair.second, is_operator, linkage
     );
 }
@@ -460,7 +460,7 @@ std::unique_ptr<ast::Expr> Parser::parse_function_definition(
     auto end = this->expect(TokenKind::RBrace, "}").span;
     this->is_inside_function = false;
 
-    return utils::make_scope<ast::FunctionExpr>(
+    return std::make_unique<ast::FunctionExpr>(
         Span::merge(start, end), std::move(prototype), std::move(body)
     );
 }
@@ -486,7 +486,7 @@ std::unique_ptr<ast::FunctionExpr> Parser::parse_function() {
     auto end = this->expect(TokenKind::RBrace, "}").span;
     this->is_inside_function = false;
 
-    return utils::make_scope<ast::FunctionExpr>(
+    return std::make_unique<ast::FunctionExpr>(
         Span::merge(start, end), std::move(prototype), std::move(body)
     );
 }
@@ -517,7 +517,7 @@ std::unique_ptr<ast::IfExpr> Parser::parse_if_statement() {
         end = else_body->span;
     }
 
-    return utils::make_scope<ast::IfExpr>(
+    return std::make_unique<ast::IfExpr>(
         Span::merge(start, end), std::move(condition), std::move(body), std::move(else_body)
     );
 }
@@ -535,7 +535,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 
     if (this->current == TokenKind::SemiColon) {
         this->next();
-        return utils::make_scope<ast::StructExpr>(
+        return std::make_unique<ast::StructExpr>(
             Span::merge(start, this->current.span), name, true, std::move(parents), std::move(fields), std::move(methods)
         );
     }
@@ -623,7 +623,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     this->expect(TokenKind::RBrace, "}");
     this->is_inside_struct = false;
 
-    return utils::make_scope<ast::StructExpr>(
+    return std::make_unique<ast::StructExpr>(
         Span::merge(start, end), name, false, std::move(parents), std::move(fields), std::move(methods)
     );    
 }
@@ -725,9 +725,9 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
             ERROR(this->current.span, "Constants must have an initializer");
         }
 
-        return utils::make_scope<ast::ConstExpr>(span, names[0].value, std::move(type), std::move(expr));
+        return std::make_unique<ast::ConstExpr>(span, names[0].value, std::move(type), std::move(expr));
     } else {
-        return utils::make_scope<ast::VariableAssignmentExpr>(
+        return std::make_unique<ast::VariableAssignmentExpr>(
             span, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables
         );
     }
@@ -757,7 +757,7 @@ std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier link
         Span end = this->expect(TokenKind::SemiColon, ";").span;
 
         std::vector<ast::Ident> names = {{name, true, span},};
-        definition = utils::make_scope<ast::VariableAssignmentExpr>(
+        definition = std::make_unique<ast::VariableAssignmentExpr>(
             Span::merge(start, end), names, std::move(type), std::move(expr), consume_rest, true, false
         );
     } else {
@@ -801,7 +801,7 @@ std::unique_ptr<ast::Expr> Parser::parse_extern_block() {
         }
 
         Span end = this->expect(TokenKind::RBrace, "}").span;
-        return utils::make_scope<ast::ExternBlockExpr>(Span::merge(start, end), std::move(definitions));
+        return std::make_unique<ast::ExternBlockExpr>(Span::merge(start, end), std::move(definitions));
     }
 
     return this->parse_extern(linkage);
@@ -837,7 +837,7 @@ std::unique_ptr<ast::EnumExpr> Parser::parse_enum() {
     }
 
     Span end = this->expect(TokenKind::RBrace, "}").span;
-    return utils::make_scope<ast::EnumExpr>(Span::merge(start, end), name, std::move(type), std::move(fields));
+    return std::make_unique<ast::EnumExpr>(Span::merge(start, end), name, std::move(type), std::move(fields));
 
 }
 
@@ -855,7 +855,7 @@ std::unique_ptr<ast::Expr> Parser::parse_anonymous_function() {
     std::vector<std::unique_ptr<ast::Expr>> body;
     body.push_back(this->expr(false));
     
-    auto prototype = utils::make_scope<ast::PrototypeExpr>(
+    auto prototype = std::make_unique<ast::PrototypeExpr>(
         this->current.span,
         "",
         std::move(pair.first), 
@@ -865,7 +865,7 @@ std::unique_ptr<ast::Expr> Parser::parse_anonymous_function() {
         ast::ExternLinkageSpecifier::None
     );
     
-    return utils::make_scope<ast::FunctionExpr>(
+    return std::make_unique<ast::FunctionExpr>(
         Span::merge(prototype->span, this->current.span), std::move(prototype), std::move(body)
     );
 }
@@ -936,7 +936,7 @@ std::unique_ptr<ast::MatchExpr> Parser::parse_match_expr() {
     }
 
     this->expect(TokenKind::RBrace, "}");
-    return utils::make_scope<ast::MatchExpr>(value->span, std::move(value), std::move(arms));
+    return std::make_unique<ast::MatchExpr>(value->span, std::move(value), std::move(arms));
 }
 
 Path Parser::parse_path(llvm::Optional<std::string> name) {
@@ -1007,13 +1007,13 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 Span end = this->current.span;
 
                 this->next();
-                return utils::make_scope<ast::ReturnExpr>(Span::merge(start, end), nullptr);
+                return std::make_unique<ast::ReturnExpr>(Span::merge(start, end), nullptr);
             }
 
             auto expr = this->expr(false);
 
             Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return utils::make_scope<ast::ReturnExpr>(Span::merge(start, end), std::move(expr));
+            return std::make_unique<ast::ReturnExpr>(Span::merge(start, end), std::move(expr));
         } 
         case TokenKind::If: {
             if (!this->is_inside_function) {
@@ -1052,7 +1052,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             auto body = this->parse_block();
 
             this->is_inside_loop = has_outer_loop;
-            return utils::make_scope<ast::WhileExpr>(Span::merge(start, body->span), std::move(condition), std::move(body));
+            return std::make_unique<ast::WhileExpr>(Span::merge(start, body->span), std::move(condition), std::move(body));
         }
         case TokenKind::Break: {
             if (!this->is_inside_loop) {
@@ -1063,7 +1063,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             this->next();
 
             Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return utils::make_scope<ast::BreakExpr>(Span::merge(start, end));
+            return std::make_unique<ast::BreakExpr>(Span::merge(start, end));
         } 
         case TokenKind::Continue: {
             if (!this->is_inside_loop) {
@@ -1074,7 +1074,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             this->next();
 
             Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return utils::make_scope<ast::ContinueExpr>(Span::merge(start, end));
+            return std::make_unique<ast::ContinueExpr>(Span::merge(start, end));
         } 
         case TokenKind::Using: {
             Span start = this->current.span;
@@ -1103,7 +1103,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             this->next();
             auto parent = this->expr();
 
-            return utils::make_scope<ast::UsingExpr>(Span::merge(start, this->current.span), members, std::move(parent));
+            return std::make_unique<ast::UsingExpr>(Span::merge(start, this->current.span), members, std::move(parent));
         } 
         case TokenKind::Defer: {
             if (!this->is_inside_function) {
@@ -1114,7 +1114,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             this->next();
 
             auto expr = this->expr();
-            return utils::make_scope<ast::DeferExpr>(Span::merge(start, this->current.span), std::move(expr));
+            return std::make_unique<ast::DeferExpr>(Span::merge(start, this->current.span), std::move(expr));
         } 
         case TokenKind::Enum: {
             this->next();
@@ -1147,7 +1147,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             }
 
             Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return utils::make_scope<ast::ImportExpr>(Span::merge(start, end), name, is_wildcard, is_relative);
+            return std::make_unique<ast::ImportExpr>(Span::merge(start, end), name, is_wildcard, is_relative);
         }
         case TokenKind::Module: {
             this->next();
@@ -1161,7 +1161,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             }
 
             Span end = this->expect(TokenKind::RBrace, "}").span;
-            return utils::make_scope<ast::ModuleExpr>(
+            return std::make_unique<ast::ModuleExpr>(
                 Span::merge(start, end), name, std::move(body)
             );
         }
@@ -1198,7 +1198,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
                 auto body = this->parse_block();
                 this->is_inside_loop = outer;
 
-                return utils::make_scope<ast::RangeForExpr>(
+                return std::make_unique<ast::RangeForExpr>(
                     Span::merge(start, body->span), ident, std::move(expr), std::move(end), std::move(body)
                 );
             }
@@ -1208,7 +1208,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             auto body = this->parse_block();
             this->is_inside_loop = outer;
 
-            return utils::make_scope<ast::ForExpr>(
+            return std::make_unique<ast::ForExpr>(
                 Span::merge(start, body->span), ident, std::move(expr), std::move(body)
             );
         } 
@@ -1225,7 +1225,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             this->expect(TokenKind::RParen, ")"); 
             Span end = this->expect(TokenKind::SemiColon, ";").span;
                 
-            return utils::make_scope<ast::StaticAssertExpr>(Span::merge(start, end), std::move(expr), message);
+            return std::make_unique<ast::StaticAssertExpr>(Span::merge(start, end), std::move(expr), message);
         }
         case TokenKind::Impl: {
             Span start = this->current.span;
@@ -1243,7 +1243,7 @@ std::unique_ptr<ast::Expr> Parser::statement() {
             }
 
             Span end = this->expect(TokenKind::RBrace, "}").span;
-            return utils::make_scope<ast::ImplExpr>(
+            return std::make_unique<ast::ImplExpr>(
                 Span::merge(start, end), std::move(type), std::move(body)
             );
         }
@@ -1315,11 +1315,11 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
         }
        
         if (INPLACE_OPERATORS.find(kind) != INPLACE_OPERATORS.end()) {
-            left = utils::make_scope<ast::InplaceBinaryOpExpr>(
+            left = std::make_unique<ast::InplaceBinaryOpExpr>(
                 Span::merge(left->span, right->span), op, std::move(left), std::move(right)
             );
         } else {
-            left = utils::make_scope<ast::BinaryOpExpr>(
+            left = std::make_unique<ast::BinaryOpExpr>(
                 Span::merge(left->span, right->span), op, std::move(left), std::move(right)
             );
         }
@@ -1338,7 +1338,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
     this->next();
 
     auto value = this->call();
-    return utils::make_scope<ast::UnaryOpExpr>(Span::merge(start, value->span), op, std::move(value));
+    return std::make_unique<ast::UnaryOpExpr>(Span::merge(start, value->span), op, std::move(value));
 }
 
 std::unique_ptr<ast::Expr> Parser::call() {
@@ -1378,14 +1378,14 @@ std::unique_ptr<ast::Expr> Parser::call() {
         }
 
         this->expect(TokenKind::RParen, ")");
-        expr = utils::make_scope<ast::CallExpr>(
+        expr = std::make_unique<ast::CallExpr>(
             Span::merge(start, this->current.span), std::move(expr), std::move(args), std::move(kwargs)
         );
     }
 
     if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
         UnaryOp op = this->current.type == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
-        expr = utils::make_scope<ast::UnaryOpExpr>(Span::merge(start, this->current.span), op, std::move(expr));
+        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, this->current.span), op, std::move(expr));
 
         this->next();
     } else if ( // Basically this condition checks for Foo{bar: ...} or Foo{}
@@ -1398,7 +1398,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
 
         if (this->current == TokenKind::RBrace) {
             this->next();
-            return utils::make_scope<ast::EmptyConstructorExpr>(
+            return std::make_unique<ast::EmptyConstructorExpr>(
                 Span::merge(start, this->current.span), std::move(expr)
             );
         }
@@ -1418,7 +1418,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
         }
 
         this->expect(TokenKind::RBrace, "}");
-        expr = utils::make_scope<ast::ConstructorExpr>(Span::merge(start, this->current.span), std::move(expr), std::move(fields));
+        expr = std::make_unique<ast::ConstructorExpr>(Span::merge(start, this->current.span), std::move(expr), std::move(fields));
     }
 
     if (this->current == TokenKind::Dot) {
@@ -1430,7 +1430,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
     switch (this->current.type) {
         case TokenKind::As: {
             this->next();
-            return utils::make_scope<ast::CastExpr>(Span::merge(start, this->current.span), std::move(expr), this->parse_type());
+            return std::make_unique<ast::CastExpr>(Span::merge(start, this->current.span), std::move(expr), this->parse_type());
         }
         case TokenKind::If: {
             this->next();
@@ -1443,7 +1443,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
             this->next();
             auto else_expr = this->expr(false);
 
-            return utils::make_scope<ast::TernaryExpr>(
+            return std::make_unique<ast::TernaryExpr>(
                 Span::merge(start, this->current.span), std::move(condition), std::move(expr), std::move(else_expr)
             );
         }
@@ -1458,7 +1458,7 @@ std::unique_ptr<ast::Expr> Parser::attr(Span start, std::unique_ptr<ast::Expr> e
         this->next();
         
         std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
-        expr = utils::make_scope<ast::AttributeExpr>(
+        expr = std::make_unique<ast::AttributeExpr>(
             Span::merge(start, this->current.span), value, std::move(expr)
         );
     }
@@ -1476,7 +1476,7 @@ std::unique_ptr<ast::Expr> Parser::element(Span start, std::unique_ptr<ast::Expr
         auto index = this->expr(false);
 
         this->expect(TokenKind::RBracket, "]");
-        expr = utils::make_scope<ast::IndexExpr>(
+        expr = std::make_unique<ast::IndexExpr>(
             Span::merge(start, this->current.span), std::move(expr), std::move(index)
         );
     }
@@ -1508,11 +1508,11 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             }
 
             // Integers are not callable nor indexable so we can safely return from this function.
-            return utils::make_scope<ast::IntegerExpr>(Span::merge(start, this->current.span), value, bits, is_float);
+            return std::make_unique<ast::IntegerExpr>(Span::merge(start, this->current.span), value, bits, is_float);
         }
         case TokenKind::Char: {
             std::string value = this->current.value; this->next();
-            return utils::make_scope<ast::CharExpr>(Span::merge(start, this->current.span), value[0]);
+            return std::make_unique<ast::CharExpr>(Span::merge(start, this->current.span), value[0]);
         }
         case TokenKind::Float: {
             double result = 0.0;
@@ -1526,25 +1526,25 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                 is_double = true;
             }
 
-            return utils::make_scope<ast::FloatExpr>(Span::merge(start, this->current.span), result, is_double);
+            return std::make_unique<ast::FloatExpr>(Span::merge(start, this->current.span), result, is_double);
         }
         case TokenKind::String: {
             std::string value = this->current.value;
             this->next();
 
-            expr = utils::make_scope<ast::StringExpr>(Span::merge(start, this->current.span), value);
+            expr = std::make_unique<ast::StringExpr>(Span::merge(start, this->current.span), value);
             break;
         }
         case TokenKind::Identifier: {
             std::string name = this->current.value;
             this->next();
             if (name == "true") {
-                return utils::make_scope<ast::IntegerExpr>(Span::merge(start, this->current.span), "1", 1);
+                return std::make_unique<ast::IntegerExpr>(Span::merge(start, this->current.span), "1", 1);
             } else if (name == "false") {
-                return utils::make_scope<ast::IntegerExpr>(Span::merge(start, this->current.span), "0", 1);
+                return std::make_unique<ast::IntegerExpr>(Span::merge(start, this->current.span), "0", 1);
             }
 
-            expr = utils::make_scope<ast::VariableExpr>(Span::merge(start, this->current.span), name);
+            expr = std::make_unique<ast::VariableExpr>(Span::merge(start, this->current.span), name);
             break;
         }
         case TokenKind::Sizeof: {
@@ -1556,7 +1556,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             Span end = this->expect(TokenKind::RParen, ")").span;
 
             // TODO: sizeof for types
-            return utils::make_scope<ast::SizeofExpr>(Span::merge(start, end), std::move(expr));
+            return std::make_unique<ast::SizeofExpr>(Span::merge(start, end), std::move(expr));
         }
         case TokenKind::Offsetof: {
             Span start = this->current.span;
@@ -1569,7 +1569,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             std::string field = this->expect(TokenKind::Identifier, "identifier").value;
 
             Span end = this->expect(TokenKind::RParen, ")").span;
-            return utils::make_scope<ast::OffsetofExpr>(Span::merge(start, end), std::move(value), field);
+            return std::make_unique<ast::OffsetofExpr>(Span::merge(start, end), std::move(value), field);
         }
         case TokenKind::Match: {
             this->next();
@@ -1600,7 +1600,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                 }
 
                 Span end = this->expect(TokenKind::RParen, ")").span;
-                expr = utils::make_scope<ast::TupleExpr>(Span::merge(start, end), std::move(elements));
+                expr = std::make_unique<ast::TupleExpr>(Span::merge(start, end), std::move(elements));
             } else {
                 this->expect(TokenKind::RParen, ")");
             }
@@ -1617,7 +1617,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
                     auto size = this->expr(false);
 
                     this->expect(TokenKind::RBracket, "]");
-                    return utils::make_scope<ast::ArrayFillExpr>(Span::merge(start, this->current.span), std::move(element), std::move(size));
+                    return std::make_unique<ast::ArrayFillExpr>(Span::merge(start, this->current.span), std::move(element), std::move(size));
                 }
 
                 elements.push_back(std::move(element));
@@ -1636,7 +1636,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
             }
 
             Span end = this->expect(TokenKind::RBracket, "]").span;
-            expr = utils::make_scope<ast::ArrayExpr>(Span::merge(start, end), std::move(elements));
+            expr = std::make_unique<ast::ArrayExpr>(Span::merge(start, end), std::move(elements));
             break;
         }
         case TokenKind::LBrace: {
@@ -1654,7 +1654,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
         this->next();
 
         std::string value = this->expect(TokenKind::Identifier, "identifier").value;
-        expr = utils::make_scope<ast::PathExpr>(Span::merge(start, this->current.span), value, std::move(expr));
+        expr = std::make_unique<ast::PathExpr>(Span::merge(start, this->current.span), value, std::move(expr));
     }
 
     if (this->current == TokenKind::Dot) {
