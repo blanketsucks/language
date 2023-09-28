@@ -1328,17 +1328,45 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
 
 std::unique_ptr<ast::Expr> Parser::unary() {
     auto iterator = UNARY_OPS.find(this->current.type);
+    std::unique_ptr<ast::Expr> expr;
+
     if (iterator == UNARY_OPS.end()) {
-        return this->call();
+        expr = this->call();
+    } else {
+        Span start = this->current.span;
+
+        UnaryOp op = iterator->second;
+        this->next();
+
+        auto value = this->call();
+        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, value->span), op, std::move(value));
     }
 
-    Span start = this->current.span;
+    switch (this->current.type) {
+        case TokenKind::As: {
+            this->next();
+            auto type = this->parse_type();
 
-    UnaryOp op = iterator->second;
-    this->next();
+            Span span = Span::merge(expr->span, type->span);
+            return std::make_unique<ast::CastExpr>(span, std::move(expr), std::move(type));
+        }
+        case TokenKind::If: {
+            this->next();
+            auto condition = this->expr(false);
 
-    auto value = this->call();
-    return std::make_unique<ast::UnaryOpExpr>(Span::merge(start, value->span), op, std::move(value));
+            if (this->current != TokenKind::Else) {
+                ERROR(this->current.span, "Expected 'else' after 'if' in ternary expression");
+            }
+
+            this->next();
+            auto else_expr = this->expr(false);
+
+            return std::make_unique<ast::TernaryExpr>(
+                Span::merge(expr->span, else_expr->span), std::move(condition), std::move(expr), std::move(else_expr)
+            );
+        }
+        default: return expr;
+    }
 }
 
 std::unique_ptr<ast::Expr> Parser::call() {
@@ -1427,30 +1455,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
         expr = this->element(start, std::move(expr));
     }
 
-    switch (this->current.type) {
-        case TokenKind::As: {
-            this->next();
-            return std::make_unique<ast::CastExpr>(Span::merge(start, this->current.span), std::move(expr), this->parse_type());
-        }
-        case TokenKind::If: {
-            this->next();
-            auto condition = this->expr(false);
-
-            if (this->current != TokenKind::Else) {
-                ERROR(this->current.span, "Expected 'else' after 'if' in ternary expression");
-            }
-
-            this->next();
-            auto else_expr = this->expr(false);
-
-            return std::make_unique<ast::TernaryExpr>(
-                Span::merge(start, this->current.span), std::move(condition), std::move(expr), std::move(else_expr)
-            );
-        }
-        default: {
-            return expr;
-        }
-    }
+    return expr;
 }
 
 std::unique_ptr<ast::Expr> Parser::attr(Span start, std::unique_ptr<ast::Expr> expr) {
