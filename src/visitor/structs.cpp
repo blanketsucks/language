@@ -285,6 +285,17 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         ERROR(expr->span, "Cannot access private field '{0}'", expr->attribute);
     }
 
+    quart::Type* result = field.type;
+    if (field.is_mutable() && !is_mutable) {
+        if (result->is_reference()) {
+            // &mut i32 -> &i32
+            result = result->get_reference_type()->get_reference_to(false);
+        } else if (result->is_pointer()) {
+            // *mut i32 -> *i32
+            result = result->get_pointee_type()->get_pointer_to(false);
+        }
+    }
+
     if (type->is_pointer()) {
         return {
             this->load(
@@ -294,7 +305,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
                     index
                 )
             ), 
-            field.type
+            result
         };
     }
 
