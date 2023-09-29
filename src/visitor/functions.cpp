@@ -154,7 +154,7 @@ Value Visitor::call(
     llvm::FunctionType* type
 ) {
     llvm::Value* result = this->call(function->value, args, self, is_constructor, type);
-    if (function->ret.type->is_reference()) {
+    if (function->ret->is_reference()) {
         return Value(result, function->ret.type);
     }
 
@@ -230,16 +230,6 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         ret = expr->return_type->accept(*this);
         if (ret->is_void()) {
             NOTE(expr->return_type->span, "Redundant return type. Function return types default to 'void'");
-        }
-    }
-
-    if (name == this->options.entry && !this->options.standalone) {
-        if (!ret->is_void() && !ret->is_int()) {
-            ERROR(expr->span, "Entry point function must either return void or an integer");
-        }
-
-        if (ret->is_void()) {
-            ret = this->registry->create_int_type(32, true);
         }
     }
 
@@ -369,6 +359,12 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (is_llvm_intrinsic) flags |= Function::LLVMIntrinsic;
     if (is_anonymous) flags |= Function::Anonymous;
 
+    if (flags & Function::Entry) {
+        if (!ret->is_void() && !ret->is_int()) {
+            ERROR(expr->span, "Entry function must return an integer value");
+        }
+    }
+
     quart::Type* type = this->registry->create_function_type(ret, types)->get_pointer_to(false);
     std::shared_ptr<Function> func = Function::create(
         function, type, expr->name, params, kwargs,
@@ -415,8 +411,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     llvm::BasicBlock* block = llvm::BasicBlock::Create(*this->context, "", function);
     this->set_insert_point(block, false);
 
-    if (!func->ret.type->is_void()) {
-        llvm::Type* type = func->ret.type->to_llvm_type();
+    if (!func->ret->is_void()) {
+        llvm::Type* type = func->ret->to_llvm_type();
 
         func->ret.value = this->builder->CreateAlloca(type);
         func->ret.block = llvm::BasicBlock::Create(*this->context, "ret");
@@ -455,7 +451,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     }
 
     if (expr->body.empty()) {
-        if (!func->ret.type->is_void()) {
+        if (!func->ret->is_void()) {
             ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
 
@@ -468,21 +464,31 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         for (auto& block : func->value->getBasicBlockList()) {
             if (block.getTerminator()) continue;
 
-            if (!(func->ret.type->is_void() || func->flags & Function::Entry)) {
+            if (func->flags & Function::Entry) {
+                this->builder->SetInsertPoint(&block);
+                this->evaluate_current_scope_defers();
+
+                if (func->ret->is_void()) {
+                    this->builder->CreateRetVoid();
+                } else {
+                    llvm::Type* result = function->getReturnType();
+                    this->builder->CreateRet(this->builder->getIntN(result->getIntegerBitWidth(), 0));
+                }
+
+                continue;
+            }
+
+            if (!func->ret->is_void()) {
                 ERROR(func->span, "Function '{0}' expects a return value from all branches", func->name);
             }
 
             this->builder->SetInsertPoint(&block);
             this->evaluate_current_scope_defers();
 
-            if (func->flags & Function::Entry) {
-                this->builder->CreateRet(this->builder->getInt32(0));
-            } else {
-                this->builder->CreateRetVoid();
-            }
+            this->builder->CreateRetVoid();
         }
 
-        if (!func->ret.type->is_void()) {
+        if (!func->ret->is_void()) {
             this->set_insert_point(func->ret.block);
 
             llvm::Value* value = this->builder->CreateLoad(function->getReturnType(), func->ret.value);
