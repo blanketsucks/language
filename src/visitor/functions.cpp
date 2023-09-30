@@ -332,6 +332,14 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         this->options.add_library(link["name"]);
     }
 
+    if (name == this->options.entry) {
+        if (!ret->is_void() && !ret->is_int()) {
+            ERROR(expr->span, "Entry function must return an integer value");
+        }
+
+        if (ret->is_void()) ret = this->registry->create_int_type(32, true);
+    }
+
     llvm::Function::LinkageTypes linkage = llvm::Function::LinkageTypes::ExternalLinkage;
     std::string fn = export_s.empty() ? name : export_s;
 
@@ -358,12 +366,6 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (expr->is_operator) flags |= Function::Operator;
     if (is_llvm_intrinsic) flags |= Function::LLVMIntrinsic;
     if (is_anonymous) flags |= Function::Anonymous;
-
-    if (flags & Function::Entry) {
-        if (!ret->is_void() && !ret->is_int()) {
-            ERROR(expr->span, "Entry function must return an integer value");
-        }
-    }
 
     quart::Type* type = this->registry->create_function_type(ret, types)->get_pointer_to(false);
     std::shared_ptr<Function> func = Function::create(
@@ -468,12 +470,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
                 this->builder->SetInsertPoint(&block);
                 this->evaluate_current_scope_defers();
 
-                if (func->ret->is_void()) {
-                    this->builder->CreateRetVoid();
-                } else {
-                    llvm::Type* result = function->getReturnType();
-                    this->builder->CreateRet(this->builder->getIntN(result->getIntegerBitWidth(), 0));
-                }
+                llvm::Type* result = function->getReturnType();
+                this->builder->CreateRet(this->builder->getIntN(result->getIntegerBitWidth(), 0));
 
                 continue;
             }
@@ -567,6 +565,15 @@ Value Visitor::visit(ast::ReturnExpr* expr) {
 
         return nullptr;
     } else {
+        if (func->flags & Function::Entry) {
+            this->evaluate_current_scope_defers();
+
+            llvm::Type* result = func->value->getReturnType();
+            this->builder->CreateRet(this->builder->getIntN(result->getIntegerBitWidth(), 0));
+
+            return nullptr;
+        }
+
         if (!func->ret->is_void()) {
             ERROR(expr->span, "Function '{0}' expects a return value", func->name);
         }
