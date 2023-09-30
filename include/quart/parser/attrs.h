@@ -5,8 +5,6 @@
 
 #define SIMPLE_ATTR(n, t) ATTR(n) { (void)parser; return t; }
 
-#include <quart/utils/pointer.h>
-
 #include <llvm/ADT/Any.h>
 
 #include <vector>

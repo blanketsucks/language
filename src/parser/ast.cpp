@@ -242,13 +242,11 @@ StructExpr::StructExpr(
     Span span,
     std::string name,
     bool opaque, 
-    std::vector<std::unique_ptr<Expr>> parents,
     std::vector<StructField> fields, 
     std::vector<std::unique_ptr<Expr>> methods
 ) : ExprMixin(span), name(name), opaque(opaque) {
     this->fields = std::move(fields);
     this->methods = std::move(methods);
-    this->parents = std::move(parents);
 }
 
 quart::Value StructExpr::accept(Visitor& visitor) {

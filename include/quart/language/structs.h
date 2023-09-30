@@ -1,8 +1,6 @@
 #pragma once
 
-#include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
-
 #include <quart/language/types.h>
 
 #include <llvm/IR/Type.h>

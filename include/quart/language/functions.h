@@ -1,6 +1,5 @@
 #pragma once
 
-#include <quart/utils/pointer.h>
 #include <quart/lexer/location.h>
 #include <quart/parser/ast.h>
 #include <quart/language/types.h>

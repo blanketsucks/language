@@ -4,17 +4,14 @@
 
 using namespace quart;
 
-std::shared_ptr<Struct> Visitor::get_struct_from_type(quart::Type* type) {
+StructRef Visitor::get_struct_from_type(quart::Type* type) {
     if (type->is_pointer()) type = type->get_pointee_type();
-
-    if (!type->is_struct()) {
-        return nullptr;
-    }
+    if (!type->is_struct()) return nullptr;
 
     return this->structs[type->get_struct_name()];
 }
 
-std::shared_ptr<Struct> Visitor::make_struct(
+StructRef Visitor::make_struct(
     const std::string& name, const std::map<std::string, quart::Type*>& fields
 ) {
     std::map<std::string, StructField> sfields;
@@ -67,9 +64,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
         return EMPTY_VALUE;
     }
 
-    std::vector<Struct*> parents;
     std::vector<quart::Type*> types;
-    std::shared_ptr<Struct> structure = nullptr;
+    StructRef structure = nullptr;
 
     if (this->scope->structs.find(expr->name) == this->scope->structs.end()) {
         std::string name = this->format_symbol(expr->name);
@@ -88,39 +84,6 @@ Value Visitor::visit(ast::StructExpr* expr) {
         this->structs[name] = structure;
 
         structure->scope = this->create_scope(name, ScopeType::Struct);
-        for (auto& parent : expr->parents) {
-            Value value = parent->accept(*this);
-            if (!(value.flags & Value::Struct)) {
-                ERROR(parent->span, "Expected a structure");
-            }
-
-            auto p = value.as<Struct*>();
-            auto expanded = p->expand();
-
-            expanded.insert(expanded.begin(), p);
-            parents.insert(parents.end(), expanded.begin(), expanded.end());
-
-            structure->parents.push_back(p);
-        }
-
-        for (auto& parent : parents) {
-            for (auto& pair : parent->fields) {
-                if (fields.find(pair.first) != fields.end()) {
-                    StructField& field = fields[pair.first];
-
-                    if (field.type != pair.second.type) {
-                        ERROR(expr->span, "Field '{0}' has a different type than the same field in the parent structure", pair.first);
-                    }
-                }
-
-                types.push_back(pair.second.type);
-                fields[pair.first] = pair.second;
-            }
-
-            for (auto& pair : parent->scope->functions) {
-                structure->scope->functions[pair.first] = pair.second;
-            }
-        }
         
         uint32_t index = fields.empty() ? 0 : fields.rbegin()->second.index + 1;
         uint32_t offset = 0;

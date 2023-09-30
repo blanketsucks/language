@@ -1,6 +1,5 @@
 #pragma once
 
-#include <quart/utils/pointer.h>
 #include <quart/language/variables.h>
 #include <quart/language/functions.h>
 #include <quart/language/structs.h>

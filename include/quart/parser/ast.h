@@ -1,7 +1,6 @@
 #pragma once
 
 #include <quart/lexer/tokens.h>
-#include <quart/utils/pointer.h>
 #include <quart/parser/attrs.h>
 
 #include <iostream>
@@ -422,15 +421,13 @@ class StructExpr : public ExprMixin<ExprKind::Struct> {
 public:
     std::string name;
     bool opaque;
-    std::vector<std::unique_ptr<Expr>> parents;
     std::vector<StructField> fields;
     std::vector<std::unique_ptr<Expr>> methods;
 
     StructExpr(
         Span span, 
-        std::string name, 
-        bool opaque, 
-        std::vector<std::unique_ptr<Expr>> parents = {}, 
+        std::string name,
+        bool opaque,
         std::vector<StructField> fields = {}, 
         std::vector<std::unique_ptr<Expr>> methods = {}
     );

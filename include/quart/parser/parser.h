@@ -3,7 +3,6 @@
 #include <quart/lexer/location.h>
 #include <quart/lexer/tokens.h>
 #include <quart/parser/ast.h>
-#include <quart/utils/pointer.h>
 
 #include <llvm/ADT/Optional.h>
 
@@ -58,7 +57,6 @@ public:
     std::unique_ptr<ast::IfExpr> parse_if_statement();
     std::unique_ptr<ast::StructExpr> parse_struct();
     std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);
-    // std::unique_ptr<ast::NamespaceExpr> parse_namespace();
     std::unique_ptr<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
     std::unique_ptr<ast::Expr> parse_extern_block();
     std::unique_ptr<ast::EnumExpr> parse_enum();

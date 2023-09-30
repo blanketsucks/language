@@ -355,7 +355,8 @@ std::pair<std::vector<ast::Argument>, bool> Parser::parse_arguments() {
         std::unique_ptr<ast::TypeExpr> type = nullptr;
         bool is_self = false;
 
-        if (argument == "self" && (this->is_inside_struct || this->self_usage_allowed) && !has_kwargs) {
+        bool allow_self = this->is_inside_struct || this->self_usage_allowed;
+        if (argument == "self" && allow_self && !has_kwargs) {
             is_self = true; this->next();
         } else {
             this->next(); this->expect(TokenKind::Colon, ":");
@@ -531,29 +532,15 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
 
     std::vector<ast::StructField> fields;
     std::vector<std::unique_ptr<ast::Expr>> methods;
-    std::vector<std::unique_ptr<ast::Expr>> parents;
 
     if (this->current == TokenKind::SemiColon) {
         this->next();
         return std::make_unique<ast::StructExpr>(
-            Span::merge(start, this->current.span), name, true, std::move(parents), std::move(fields), std::move(methods)
+            Span::merge(start, this->current.span), name, true, std::move(fields), std::move(methods)
         );
     }
 
     this->is_inside_struct = true;
-    if (this->current == TokenKind::LParen) {
-        this->next();
-        while (this->current != TokenKind::RParen) {
-            parents.push_back(this->expr(false));
-            if (this->current != TokenKind::Comma) {
-                break;
-            }
-
-            this->next();
-        }
-
-        this->expect(TokenKind::RParen, ")");
-    }
 
     this->expect(TokenKind::LBrace, "{");
     uint32_t index = 0;
@@ -624,7 +611,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     this->is_inside_struct = false;
 
     return std::make_unique<ast::StructExpr>(
-        Span::merge(start, end), name, false, std::move(parents), std::move(fields), std::move(methods)
+        Span::merge(start, end), name, false, std::move(fields), std::move(methods)
     );    
 }
 
