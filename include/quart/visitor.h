@@ -250,7 +250,7 @@ public:
 
     DebugInfo debug;
 
-    std::map<std::string, StructRef> structs;
+    std::map<quart::Type*, StructRef> structs;
     std::map<std::string, ModuleRef> modules;
     std::map<std::string, FunctionRef> functions;
 

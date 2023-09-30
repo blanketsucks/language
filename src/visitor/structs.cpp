@@ -8,7 +8,7 @@ StructRef Visitor::get_struct_from_type(quart::Type* type) {
     if (type->is_pointer()) type = type->get_pointee_type();
     if (!type->is_struct()) return nullptr;
 
-    return this->structs[type->get_struct_name()];
+    return this->structs[type];
 }
 
 StructRef Visitor::make_struct(
@@ -47,7 +47,7 @@ StructRef Visitor::make_struct(
     );
 
     auto structure = Struct::create(name, type, sfields, false);
-    this->structs[name] = structure;
+    this->structs[type] = structure;
     
     return structure;
 }
@@ -81,7 +81,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
         structure->span = expr->span;
 
         this->scope->structs[expr->name] = structure;
-        this->structs[name] = structure;
+        this->structs[type] = structure;
 
         structure->scope = this->create_scope(name, ScopeType::Struct);
         
@@ -133,10 +133,6 @@ Value Visitor::visit(ast::StructExpr* expr) {
     } else {
         if (expr->fields.size()) {
             ERROR(expr->span, "Re-definitions of structures must not define extra fields");
-        }
-
-        if (expr->parents.size()) {
-            ERROR(expr->span, "Re-defintions of structures must not add new inheritance");
         }
 
         structure = this->scope->structs[expr->name];
