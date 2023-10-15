@@ -43,7 +43,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         return Value(nullptr, Value::Builtin, this->builtins[expr->name]);
     }
 
-    ERROR(expr->span, "Undefined variable '{0}'", expr->name);
+    ERROR(expr->span, "Name '{0}' does not exist in this scope", expr->name);
 }
 
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {

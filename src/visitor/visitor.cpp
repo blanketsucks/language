@@ -259,7 +259,7 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
             ScopeLocal local = this->scope->get_local(variable->name);
 
             if (local.is_null()) {
-                ERROR(variable->span, "Variable '{0}' does not exist in this scope", variable->name);
+                ERROR(variable->span, "Name '{0}' does not exist in this scope", variable->name);
             }
 
             return local;
@@ -525,6 +525,10 @@ Value Visitor::visit(ast::BlockExpr* expr) {
         }
 
         last = stmt->accept(*this);
+    }
+
+    for (auto& defer : scope->defers) {
+        defer->accept(*this);
     }
 
     this->scope = prev;
