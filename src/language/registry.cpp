@@ -72,7 +72,7 @@ quart::StructType* TypeRegistry::wrap(llvm::StructType* type) {
     return ty;
 }
 
-IntType* TypeRegistry::create_int_type(uint32_t bits, bool is_signed) {
+IntType* TypeRegistry::create_int_type(::u32 bits, bool is_signed) {
     if (bits == 1) {
         return &this->i1;
     } else if (bits == 8) {

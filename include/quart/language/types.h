@@ -3,6 +3,8 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 
+#include <quart/common.h>
+
 namespace quart {
 
 class TypeRegistry;
@@ -66,7 +68,7 @@ public:
     PointerType* get_pointer_to(bool is_mutable);
     ReferenceType* get_reference_to(bool is_mutable);
 
-    uint32_t get_int_bit_width() const;
+    u32 get_int_bit_width() const;
     bool is_int_unsigned() const;
 
     Type* get_pointee_type() const;
@@ -118,16 +120,16 @@ public:
 
     bool is_boolean_type() const;
 
-    uint32_t get_bit_width() const;
+    u32 get_bit_width() const;
     bool is_unsigned() const;
 
     friend TypeRegistry;
 private:
     IntType(
-        TypeRegistry* registry, uint32_t bits, bool is_signed
+        TypeRegistry* registry, u32 bits, bool is_signed
     ) : Type(registry, TypeKind::Int), bits(bits), is_signed(is_signed) {}
 
-    uint32_t bits;
+    u32 bits;
     bool is_signed;
 }; 
 

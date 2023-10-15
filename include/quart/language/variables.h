@@ -2,6 +2,7 @@
 
 #include <quart/lexer/location.h>
 #include <quart/language/types.h>
+#include <quart/common.h>
 
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Type.h>
@@ -10,7 +11,7 @@
 namespace quart {
 
 struct Variable {
-    enum Flags : uint8_t {
+    enum Flags : u8 {
         None,
         StackAllocated = 1 << 0,
         Reference      = 1 << 1,
@@ -25,7 +26,7 @@ struct Variable {
     llvm::Value* value;
     llvm::Constant* constant;
 
-    uint8_t flags;
+    u8 flags;
 
     Span span;
 
@@ -33,7 +34,7 @@ struct Variable {
         const std::string& name,
         llvm::AllocaInst* alloca,
         quart::Type* type,
-        uint8_t flags,
+        u8 flags,
         const Span& span
     );
 
@@ -41,7 +42,7 @@ struct Variable {
         const std::string& name,
         llvm::Value* value,
         quart::Type* type,
-        uint8_t flags,
+        u8 flags,
         const Span& span
     );
 };

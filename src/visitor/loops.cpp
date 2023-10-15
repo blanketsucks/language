@@ -58,7 +58,7 @@ Value Visitor::visit(ast::RangeForExpr* expr) {
     llvm::AllocaInst* alloca = this->alloca(start->getType());
     this->builder->CreateStore(start, alloca);
 
-    uint8_t flags = expr->name.is_mutable ? Variable::Mutable : Variable::None;
+    u8 flags = expr->name.is_mutable ? Variable::Mutable : Variable::None;
     this->scope->variables[expr->name.value] = Variable::from_alloca(
         expr->name.value, alloca, start.type, flags, expr->name.span
     );

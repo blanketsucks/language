@@ -3,6 +3,7 @@
 #include <quart/language/types.h>
 #include <quart/parser/ast.h>
 #include <quart/llvm.h>
+#include <quart/common.h>
 
 #include <llvm/ADT/DenseMap.h>
 #include <memory>
@@ -10,7 +11,7 @@
 
 namespace quart {
 
-using IntTypeStorageKey = std::pair<uint32_t, bool>;
+using IntTypeStorageKey = std::pair<u32, bool>;
 using TupleTypeStorageKey = std::vector<Type*>;
 using PointerTypeStorageKey = std::pair<Type*, bool>;
 using ArrayTypeStorageKey = std::pair<Type*, size_t>;
@@ -27,7 +28,7 @@ public:
     Type* wrap(llvm::Type* type);
     StructType* wrap(llvm::StructType* type);
 
-    IntType* create_int_type(uint32_t bits, bool is_signed);
+    IntType* create_int_type(u32 bits, bool is_signed);
     StructType* create_struct_type(const std::string& name, const std::vector<Type*>& fields, llvm::StructType* type = nullptr);
     EnumType* create_enum_type(const std::string& name, Type* type);
     ArrayType* create_array_type(Type* element, size_t size);

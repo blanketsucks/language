@@ -13,8 +13,10 @@ struct Arguments {
     std::string entry;
     std::string target;
 
-    std::vector<std::string> imports; // vector of import paths
-    Libraries libraries;
+    std::vector<std::string> imports;
+    
+    std::set<std::string> library_names;
+    std::set<std::string> library_paths;
 
     OutputFormat format;
     MangleStyle mangle_style;

@@ -20,11 +20,12 @@ int main(int argc, char** argv) {
         .output = args.output,
         .entry = args.entry,
         .target = args.target,
-        .libs = args.libraries,
+        .library_names = args.library_names,
+        .library_paths = args.library_paths,
         .imports = {},
         .format = args.format,
-        .optimization = args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug,
         .opts = OptimizationOptions {
+            .level = args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug,
             .enable = args.optimize,
             .mangle_style = args.mangle_style
         },

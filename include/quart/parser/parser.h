@@ -26,9 +26,9 @@ public:
     void end();
 
     Token next();
-    Token rewind(uint32_t n = 1);
+    Token rewind(u32 n = 1);
 
-    Token peek(uint32_t offset = 1);
+    Token peek(u32 offset = 1);
 
     Token expect(TokenKind type, const std::string& value);
 

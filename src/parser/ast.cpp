@@ -149,7 +149,7 @@ quart::Value CallExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
-std::unique_ptr<Expr>& CallExpr::get(uint32_t index) {
+std::unique_ptr<Expr>& CallExpr::get(u32 index) {
     return args[index];
 }
 

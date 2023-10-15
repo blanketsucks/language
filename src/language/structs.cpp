@@ -38,7 +38,7 @@ int Struct::get_field_index(const std::string& name) {
     return this->fields[name].index;
 }
 
-StructField Struct::get_field_at(uint32_t index) {
+StructField Struct::get_field_at(u32 index) {
     for (auto& entry : this->fields) {
         if (entry.second.index == index) {
             return entry.second;

@@ -2,9 +2,12 @@
 
 #include <quart/logging.h>
 #include <quart/filesystem.h>
+#include <quart/common.h>
 
 #include <set>
 #include <chrono>
+
+#include <llvm/Target/TargetMachine.h>
 
 namespace quart {
 
@@ -17,7 +20,7 @@ enum class OutputFormat {
     SharedLibrary
 };
 
-static std::map<OutputFormat, const char*> OUTPUT_FORMATS_TO_STR = {
+static std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Object, "Object"},
     {OutputFormat::LLVM, "LLVM IR"},
     {OutputFormat::Bitcode, "LLVM Bitcode"},
@@ -26,7 +29,7 @@ static std::map<OutputFormat, const char*> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::SharedLibrary, "Shared Library"}
 };
 
-static std::map<OutputFormat, std::string> OUTPUT_FORMATS_TO_EXT = {
+static std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_EXT = {
     {OutputFormat::Object, "o"},
     {OutputFormat::LLVM, "ll"},
     {OutputFormat::Bitcode, "bc"},
@@ -52,25 +55,20 @@ enum class MangleStyle {
 };
 
 struct OptimizationOptions {
+    OptimizationLevel level = OptimizationLevel::Debug;
+
     bool enable = true;
     bool dead_code_elimination = true;
 
     MangleStyle mangle_style = MangleStyle::Full; // Not really an optimization, but it's here for now
 };
 
-struct Libraries {
-    std::set<std::string> names;
-    std::set<std::string> paths;
-
-    bool empty() const { return this->names.empty() || this->paths.empty(); }
-};
-
 struct CompilerError {
-    uint32_t code;
+    u32 code;
     std::string message;
 
-    CompilerError(uint32_t code, const std::string& message);
-    static CompilerError success();
+    CompilerError(u32 code, const std::string& message);
+    static CompilerError ok();
 
     void unwrap();
 };
@@ -83,13 +81,14 @@ struct CompilerOptions {
     std::string entry;
     std::string target;
 
-    Libraries libs;
+    std::set<std::string> library_names;
+    std::set<std::string> library_paths;
+
     std::vector<std::string> imports;
 
     std::string linker = "cc";
 
     OutputFormat format = OutputFormat::Executable;
-    OptimizationLevel optimization = OptimizationLevel::Debug;
     OptimizationOptions opts;
 
     bool verbose = false;
@@ -99,13 +98,8 @@ struct CompilerOptions {
     std::vector<Extra> extras;
 
     bool has_target() const { return !this->target.empty(); }
-    void add_library(const std::string& name, bool is_path = false) {
-        if (is_path) {
-            this->libs.paths.insert(name);
-        } else {
-            this->libs.names.insert(name);
-        }
-    }
+    
+    void add_library_name(const std::string& name) { this->library_names.insert(name); }
 };
 
 class Compiler {
@@ -114,7 +108,7 @@ public:
 
     static TimePoint now();
     static double duration(TimePoint start, TimePoint end);
-    static void log_duration(const char* message, TimePoint start);
+    static void debug(const char* message, TimePoint start);
 
     static void init();
     static void shutdown();
@@ -144,7 +138,7 @@ public:
     void set_output_file(const std::string& output);
 
     void set_optimization_level(OptimizationLevel level);
-    void set_optimization_options(OptimizationOptions opts);
+    void set_optimization_options(const OptimizationOptions& optimization);
 
     void set_input_file(const fs::Path& input);
     void set_entry_point(const std::string& entry);
@@ -163,6 +157,11 @@ public:
     std::vector<std::string> get_linker_arguments();
 
     void dump();
+
+    const llvm::Target* create_target(std::string& error, std::string& triple);
+    std::unique_ptr<llvm::TargetMachine> create_target_machine(
+        llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
+    );
 
     CompilerError compile();
     int jit(int argc, char** argv);

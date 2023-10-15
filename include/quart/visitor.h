@@ -11,7 +11,7 @@
 #include <quart/builtins.h>
 #include <quart/compiler.h>
 #include <quart/debug.h>
-#include <quart/macros.h>
+#include <quart/common.h>
 
 #include <functional>
 #include <map>
@@ -64,9 +64,10 @@ public:
     std::string format_symbol(const std::string& name);
 
     llvm::Constant* to_str(const char* str);
+    llvm::Constant* to_str(llvm::StringRef str);
     llvm::Constant* to_str(const std::string& str);
 
-    llvm::Constant* to_int(uint64_t value, uint32_t bits = 32);
+    llvm::Constant* to_int(u64 value, u32 bits = 32);
 
     llvm::Constant* to_float(double value);
 
@@ -77,10 +78,10 @@ public:
 
     llvm::Value* load(llvm::Value* value, llvm::Type* type = nullptr);
 
-    uint32_t getallocsize(llvm::Type* type);
-    uint32_t getsizeof(quart::Type* type);
-    uint32_t getsizeof(llvm::Value* value);
-    uint32_t getsizeof(llvm::Type* type);
+    u32 getallocsize(llvm::Type* type);
+    u32 getsizeof(quart::Type* type);
+    u32 getsizeof(llvm::Value* value);
+    u32 getsizeof(llvm::Type* type);
 
     quart::Type* get_builtin_type(ast::BuiltinType type);
 
@@ -93,11 +94,11 @@ public:
     );
 
     llvm::Value* make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type);
-    std::vector<Value> unpack(const Value& value, uint32_t n, const Span& span);
+    std::vector<Value> unpack(const Value& value, u32 n, const Span& span);
 
     StructRef make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
 
-    void create_bounds_check(llvm::Value* index, uint32_t count, const Span& span);
+    void create_bounds_check(llvm::Value* index, u32 count, const Span& span);
 
     bool is_tuple(llvm::Type* type);
 
@@ -238,7 +239,7 @@ public:
     std::string name;
     CompilerOptions& options;
 
-    uint64_t id = 0;
+    u64 id = 0;
     
     std::unique_ptr<llvm::LLVMContext> context;
     std::unique_ptr<llvm::Module> module;

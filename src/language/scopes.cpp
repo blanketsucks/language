@@ -44,7 +44,7 @@ using namespace quart;
 
 ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_value) {
     llvm::Value* value = use_store_value ? variable.value : variable.constant;
-    uint8_t flags = ScopeLocal::LocalToScope;
+    u8 flags = ScopeLocal::LocalToScope;
 
     if (variable.flags & Variable::StackAllocated) flags |= ScopeLocal::StackAllocated;
     if (variable.flags & Variable::Mutable) flags |= ScopeLocal::Mutable;
@@ -54,7 +54,7 @@ ScopeLocal ScopeLocal::from_variable(const Variable& variable, bool use_store_va
         value,
         variable.type,
         flags
-    };    
+    };
 }
 
 ScopeLocal ScopeLocal::from_constant(const struct Constant& constant, bool use_store_value) {

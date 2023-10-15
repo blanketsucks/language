@@ -68,7 +68,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     std::vector<std::unique_ptr<ast::Expr>>& args,
     std::map<std::string, std::unique_ptr<ast::Expr>>& kwargs
 ) {
-    uint32_t argc = args.size() + kwargs.size() + (self ? 1 : 0);
+    u32 argc = args.size() + kwargs.size() + (self ? 1 : 0);
     bool is_variadic = function->is_variadic() || function->is_c_variadic();
 
     if (function->has_any_default_value()) {
@@ -92,7 +92,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     std::map<int64_t, llvm::Value*> values;
     std::vector<llvm::Value*> c_variadic_values;
 
-    uint32_t i = self ? 1 : 0;
+    u32 i = self ? 1 : 0;
 
     std::vector<Parameter> params = function->params;
     for (auto& entry : function->kwargs) params.push_back(entry.second);
@@ -239,7 +239,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::vector<llvm::Type*> llvm_params;
     std::vector<quart::Type*> types;
 
-    uint32_t index = 0;
+    u32 index = 0;
     for (auto& arg : expr->args) {
         quart::Type* type = nullptr;
         bool is_mutable = arg.is_mutable;
@@ -298,7 +298,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
             this->inferred = nullptr;
         }
 
-        uint8_t flags = Parameter::None;
+        u8 flags = Parameter::None;
 
         if (is_mutable) flags |= Parameter::Mutable;
         if (arg.is_self) flags |= Parameter::Self;
@@ -329,7 +329,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     }
 
     if (link.find("name") != link.end()) {
-        this->options.add_library(link["name"]);
+        this->options.add_library_name(link["name"]);
     }
 
     if (name == this->options.entry) {
@@ -360,7 +360,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         fn, ret->to_llvm_type(), llvm_params, expr->is_c_variadic, linkage
     );
 
-    uint16_t flags = Function::None;
+    u16 flags = Function::None;
 
     if (name == this->options.entry) flags |= Function::Entry;
     if (expr->is_operator) flags |= Function::Operator;
@@ -425,12 +425,12 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
     std::vector<Parameter> params = func->params;
     for (auto& entry : func->kwargs) params.push_back(entry.second);
 
-    uint32_t i = 0;
+    u32 i = 0;
     for (auto& param : params) {
         llvm::Argument* argument = function->getArg(i);
         argument->setName(param.name);
 
-        uint8_t flags = param.flags & Parameter::Mutable ? Variable::Mutable : Variable::None;
+        u8 flags = param.flags & Parameter::Mutable ? Variable::Mutable : Variable::None;
         if (!param.is_reference()) {
             llvm::Type* type = param.type->to_llvm_type();
             llvm::AllocaInst* alloca = this->alloca(type);
@@ -508,7 +508,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         bool is_mutated = variable.flags & Variable::Mutated;
         bool is_mutable = variable.flags & Variable::Mutable;
 
-        if (!is_used && !utils::startswith(variable.name, "_")) {
+        bool has_underscore = variable.name[0] == '_';
+        if (!is_used && !has_underscore) {
             NOTE(variable.span, "'{0}' is defined but never used", variable.name);
         }
 
@@ -655,7 +656,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
     }
 
     std::vector<llvm::Value*> args;
-    uint32_t i = callable.self ? 1 : 0;
+    u32 i = callable.self ? 1 : 0;
 
     if (func) {
         args = this->handle_function_arguments(

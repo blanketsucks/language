@@ -4,6 +4,7 @@
 #include <quart/parser/ast.h>
 #include <quart/language/types.h>
 #include <quart/llvm.h>
+#include <quart/common.h>
 
 namespace quart {
 
@@ -33,7 +34,7 @@ struct FunctionReturn {
 };
 
 struct Parameter {
-    enum Flags : uint8_t {
+    enum Flags : u8 {
         None,
         Keyword  = 1 << 0,
         Mutable  = 1 << 1,
@@ -45,9 +46,9 @@ struct Parameter {
     quart::Type* type;
 
     llvm::Value* default_value;
-    uint8_t flags;
+    u8 flags;
 
-    uint32_t index;
+    u32 index;
     Span span;
 
     bool is_reference() const { return this->type->is_reference(); }
@@ -61,7 +62,7 @@ struct Loop {
 };
 
 struct Function {
-    enum Flags : uint16_t {
+    enum Flags : u16 {
         None,
         Private       = 1 << 0,
         Entry         = 1 << 1,
@@ -83,7 +84,7 @@ struct Function {
     std::vector<Parameter> params;
     std::map<std::string, Parameter> kwargs;
 
-    uint16_t flags;
+    u16 flags;
 
     Struct* parent;
 
@@ -106,7 +107,7 @@ struct Function {
         std::vector<Parameter> params,
         std::map<std::string, Parameter> kwargs,
         quart::Type* return_type,
-        uint16_t flags,
+        u16 flags,
         const Span& span,
         const ast::Attributes& attrs
     );
@@ -116,12 +117,12 @@ struct Function {
     inline bool is_entry() const { return this->flags & Flags::Entry; }
     inline bool has_return() const { return this->flags & Flags::HasReturn; }
 
-    uint32_t argc();
+    u32 argc();
     bool is_c_variadic(); // (arg1, arg2, ...)
     bool is_variadic();   // (arg1, arg2, *args)
 
     bool has_any_default_value();
-    uint32_t get_default_arguments_count();
+    u32 get_default_arguments_count();
     
     bool has_keyword_parameter(const std::string& name);
 
@@ -133,7 +134,7 @@ private:
         std::vector<Parameter> params,
         std::map<std::string, Parameter> kwargs,
         quart::Type* return_type,
-        uint16_t flags,
+        u16 flags,
         const Span& span,
         const ast::Attributes& attrs
     );

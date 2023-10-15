@@ -13,11 +13,15 @@
 #include <fstream>
 #include <iomanip>
 
+#define PANIC_OBJ_FILE QUART_PATH "/panic.o"
+
+#define VERBOSE(msg) if (this->options.verbose) Compiler::debug(msg, start)
+
 using namespace quart;
 
-CompilerError::CompilerError(uint32_t code, const std::string& message) : code(code), message(message) {}
+CompilerError::CompilerError(u32 code, const std::string& message) : code(code), message(message) {}
 
-CompilerError CompilerError::success() {
+CompilerError CompilerError::ok() {
     return CompilerError(0, "Success");
 }
 
@@ -37,7 +41,7 @@ double Compiler::duration(Compiler::TimePoint start, Compiler::TimePoint end) {
     return duration.count();
 }
 
-void Compiler::log_duration(const char* message, Compiler::TimePoint start) {
+void Compiler::debug(const char* message, Compiler::TimePoint start) {
     double duration = Compiler::duration(start, Compiler::now());
     if (duration < 1000) {
         std::cout << message << " took " << duration << " milliseconds.\n";
@@ -58,22 +62,29 @@ void Compiler::shutdown() {
     llvm::llvm_shutdown();
 }
 
-void Compiler::add_library(const std::string& name) { this->options.libs.names.insert(name); }
-void Compiler::add_library_path(const std::string& path) { this->options.libs.paths.insert(path); }
-void Compiler::set_libraries(std::set<std::string> names) { this->options.libs.names = names; }
-void Compiler::set_library_paths(std::set<std::string> paths) { this->options.libs.paths = paths; }
+void Compiler::add_library(const std::string& name) { this->options.library_names.insert(name); }
+void Compiler::add_library_path(const std::string& path) { this->options.library_paths.insert(path); }
+
+void Compiler::set_libraries(std::set<std::string> names) { this->options.library_names = names; }
+void Compiler::set_library_paths(std::set<std::string> paths) { this->options.library_paths = paths; }
+
 void Compiler::add_import_path(const std::string& path) { this->options.imports.push_back(path); }
+
 void Compiler::set_output_format(OutputFormat format) { this->options.format = format; }
 void Compiler::set_output_file(const std::string& output) { this->options.output = output; }
-void Compiler::set_optimization_level(OptimizationLevel level) { this->options.optimization = level; }
-void Compiler::set_optimization_options(OptimizationOptions options) { this->options.opts = options; }
+
+void Compiler::set_optimization_level(OptimizationLevel level) { this->options.opts.level = level; }
+void Compiler::set_optimization_options(const OptimizationOptions& opts) { this->options.opts = opts; }
+
 void Compiler::set_input_file(const fs::Path& input) { this->options.input = input; }
 void Compiler::set_entry_point(const std::string& entry) { this->options.entry = entry; }
 void Compiler::set_target(const std::string& target) { this->options.target = target; }
 void Compiler::set_verbose(bool verbose) { this->options.verbose = verbose; }
 void Compiler::set_linker(const std::string& linker) { this->options.linker = linker; }
+
 void Compiler::add_extra_linker_option(const std::string& name, const std::string& value) { this->options.extras.push_back({name, value}); }
 void Compiler::add_extra_linker_option(const std::string& name) { this->options.extras.push_back({name, ""}); }
+
 void Compiler::add_object_file(const std::string& file) { this->options.object_files.push_back(file); }
 
 void Compiler::dump() {
@@ -83,10 +94,10 @@ void Compiler::dump() {
     stream << FORMAT("Output file: '{0}'", this->options.output) << '\n';
     stream << FORMAT("Program entry point: '{0}'", this->options.entry) << '\n';
 
-    const char* opt = this->options.optimization == OptimizationLevel::Debug ? "Debug" : "Release";
+    const char* opt = this->options.opts.level == OptimizationLevel::Debug ? "Debug" : "Release";
     stream << FORMAT("Optimization level: '{0}'", opt) << '\n';
 
-    const char* format = OUTPUT_FORMATS_TO_STR[this->options.format];
+    llvm::StringRef format = OUTPUT_FORMATS_TO_STR[this->options.format];
     stream << FORMAT("Output format: '{0}'", format) << '\n';
 
     if (!this->options.target.empty()) {
@@ -94,23 +105,25 @@ void Compiler::dump() {
     }
 
     if (!this->options.imports.empty()) {
-        stream << FORMAT(
-            "Import paths: {0}", llvm::make_range(this->options.imports.begin(), this->options.imports.end())
-        ) << '\n';
+        stream << "Import paths:" << '\n';
+
+        for (auto& path : this->options.imports) {
+            stream << "    - " << path << '\n';
+        }
     }
 
-    if (!this->options.libs.empty()) {
+    if (!this->options.library_names.empty() || !this->options.library_paths.empty()) {
         stream << "Libraries:" << '\n';
     }
 
-    if (!this->options.libs.names.empty()) {
-        auto libnames = llvm::make_range(this->options.libs.names.begin(), this->options.libs.names.end());
-        stream << "    " << FORMAT("Library names: {0}", libnames) << '\n';
+    if (!this->options.library_names.empty()) {
+        auto libnames = llvm::make_range(this->options.library_names.begin(), this->options.library_names.end());
+        stream << "    - " << FORMAT("Library names: {0}", libnames) << '\n';
     }
         
-    if (!this->options.libs.paths.empty()) {
-        auto libpaths = llvm::make_range(this->options.libs.paths.begin(), this->options.libs.paths.end());
-        stream << "    " << FORMAT("Library paths: {0}", libpaths) << '\n';
+    if (!this->options.library_paths.empty()) {
+        auto libpaths = llvm::make_range(this->options.library_paths.begin(), this->options.library_paths.end());
+        stream << "    - " << FORMAT("Library paths: {0}", libpaths) << '\n';
     }
 
     stream << FORMAT("Linker: '{0}'", this->options.linker) << '\n';
@@ -149,11 +162,11 @@ std::vector<std::string> Compiler::get_linker_arguments() {
         args.push_back(file);
     }
 
-    for (auto& name : this->options.libs.names) {
+    for (auto& name : this->options.library_names) {
         args.push_back(FORMAT("-l{0}", name));
     }
 
-    for (auto& path : this->options.libs.paths) {
+    for (auto& path : this->options.library_paths) {
         args.push_back(FORMAT("-L{0}", path));
     }
 
@@ -162,6 +175,32 @@ std::vector<std::string> Compiler::get_linker_arguments() {
     }
 
     return args;
+}
+
+const llvm::Target* Compiler::create_target(
+    std::string& error, std::string& triple
+) {
+    triple = this->options.has_target() ? this->options.target : llvm::sys::getDefaultTargetTriple();
+    return llvm::TargetRegistry::lookupTarget(triple, error);
+}
+
+std::unique_ptr<llvm::TargetMachine> Compiler::create_target_machine(
+    llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
+) {
+    llvm::TargetOptions options;
+    auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
+
+    std::unique_ptr<llvm::TargetMachine> machine(
+        target->createTargetMachine(triple, "generic", "", options, reloc)
+    );
+
+    module.setDataLayout(machine->createDataLayout());
+    module.setTargetTriple(triple);
+
+    module.setPICLevel(llvm::PICLevel::BigPIC);
+    module.setPIELevel(llvm::PIELevel::Large);
+
+    return machine;
 }
 
 CompilerError Compiler::compile() {
@@ -174,71 +213,39 @@ CompilerError Compiler::compile() {
     TimePoint start = Compiler::now();
 
     std::vector<Token> tokens = lexer.lex();
-    if (this->options.verbose) {
-        Compiler::log_duration("Lexing", start);
-    }
+    VERBOSE("Lexing");
 
     Parser parser(std::move(tokens));
-    if (this->options.verbose) {
-        start = Compiler::now();
-    }
+    start = Compiler::now();
 
     auto ast = parser.parse();
-    if (this->options.verbose) {
-        Compiler::log_duration("Parsing", start);
-    }
+    VERBOSE("Parsing");
 
     Visitor visitor(this->options.input, this->options);
-    if (this->options.verbose) {
-        start = Compiler::now();
-    }
+    start = Compiler::now();
 
     visitor.visit(std::move(ast));
-    if (this->options.verbose) {
-        Compiler::log_duration("Visiting the AST and generating LLVM IR", start);
-        std::cout << '\n';
-    }
+    VERBOSE("Visiting the AST");
 
     visitor.create_global_constructors();
     visitor.finalize();
 
     if (visitor.link_panic) {
         this->add_library("pthread");
-        this->add_object_file("lib/panic.o");
+        this->add_object_file(PANIC_OBJ_FILE);
     }
 
-    if (this->options.verbose) {
-        start = Compiler::now();
-    } 
+    start = Compiler::now();
 
-    std::string triple = this->options.has_target() ? this->options.target : llvm::sys::getDefaultTargetTriple();
-    std::string err;
+    std::string err, triple;
+    const llvm::Target* target = this->create_target(err, triple);
 
-    if (this->options.verbose) {
-        std::cout << "LLVM Tagret Triple: " << std::quoted(triple) << '\n';
-    }
+    if (!target) return CompilerError(1, FORMAT("Could not create target: '{0}'", err));
 
-    const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, err);
-    if (!target) {
-        return CompilerError(1, FORMAT("Could not create target: '{0}'", err));
-    }
-
-    if (this->options.verbose) {
-        std::cout << "LLVM Target: " << std::quoted(target->getName()) << '\n';
-    }
-
-    llvm::TargetOptions options;
-    auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
-
-    std::unique_ptr<llvm::TargetMachine> machine(
-        target->createTargetMachine(triple, "generic", "", options, reloc)
+    if (this->options.verbose) { std::cout << "\nLLVM Target Triple: " << std::quoted(triple) << '\n'; }
+    std::unique_ptr<llvm::TargetMachine> machine = this->create_target_machine(
+        *visitor.module, target, triple
     );
-
-    visitor.module->setDataLayout(machine->createDataLayout());
-    visitor.module->setTargetTriple(triple);
-
-    visitor.module->setPICLevel(llvm::PICLevel::BigPIC);
-    visitor.module->setPIELevel(llvm::PIELevel::Large);
 
     std::error_code error;
 
@@ -254,31 +261,29 @@ CompilerError Compiler::compile() {
         return CompilerError(1, FORMAT("Could not open file '{0}': {1}", object, error.message()));
     }
 
-    if (this->options.format == OutputFormat::LLVM) {
-        visitor.module->print(dest, nullptr);
-        if (this->options.verbose) {
-            Compiler::log_duration("LLVM", start);
-        }
+    llvm::CodeGenFileType type = llvm::CodeGenFileType::CGFT_ObjectFile;
+    switch (this->options.format) {
+        case OutputFormat::LLVM:
+            visitor.module->print(dest, nullptr);
+            VERBOSE("Emitting LLVM IR");
 
-        return CompilerError::success();
-    } else if (this->options.format == OutputFormat::Bitcode) {
-        llvm::BitcodeWriterPass pass(dest);
-        llvm::ModuleAnalysisManager manager;
+            return CompilerError::ok();
+        case OutputFormat::Bitcode: {
+            llvm::BitcodeWriterPass pass(dest);
+            llvm::ModuleAnalysisManager manager;
 
-        pass.run(*visitor.module, manager);
-        if (this->options.verbose) {
-            Compiler::log_duration("LLVM", start);
+            pass.run(*visitor.module, manager);
+            dest.flush();
+
+            VERBOSE("Emitting LLVM Bitcode");
+            return CompilerError::ok();
         }
-        
-        return CompilerError::success();
+        case OutputFormat::Assembly:
+            type = llvm::CodeGenFileType::CGFT_AssemblyFile;
+        default: break;
     }
 
     llvm::legacy::PassManager pass;
-
-    llvm::CodeGenFileType type = (
-        this->options.format == OutputFormat::Assembly ? llvm::CodeGenFileType::CGFT_AssemblyFile : llvm::CodeGenFileType::CGFT_ObjectFile
-    );
-
     if (machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
         return CompilerError(1, "Target machine can't emit a file of this type");
     }
@@ -286,33 +291,27 @@ CompilerError Compiler::compile() {
     pass.run(*visitor.module);
     dest.flush();
 
-    if (this->options.verbose) {
-        Compiler::log_duration("LLVM", start);
-        std::cout << '\n';
-    }
-
+    VERBOSE("Compilation");
     if (this->options.format != OutputFormat::Executable && this->options.format != OutputFormat::SharedLibrary) {
-        return CompilerError::success();
+        return CompilerError::ok();
     }
 
     std::vector<std::string> args = this->get_linker_arguments();
-    std::string command = utils::join(" ", args);
+    std::string command = llvm::join(args, " ");
 
     if (this->options.verbose) {
-        std::cout << "Linker command: " << std::quoted(command) << '\n';
+        std::cout << "\nLinker command: " << std::quoted(command) << '\n';
         start = Compiler::now();
     }
     
     int code = std::system(command.c_str());
-    if (this->options.verbose) {
-        Compiler::log_duration("Linking", start);
-    }
+    VERBOSE("Linking");
     
     if (code != 0) {
         return CompilerError(code, FORMAT("Linker exited with code {0}", code));
     }
 
-    return CompilerError::success();
+    return CompilerError::ok();
 }
 
 int Compiler::jit(int argc, char** argv) {

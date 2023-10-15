@@ -25,7 +25,7 @@ using namespace quart;
 //             return ty;
 //         } case llvm::Type::ArrayTyID: {
 //             quart::Type* inner = type->get_array_element_type();
-//             uint64_t size = type->get_array_size();
+//             u64 size = type->get_array_size();
 
 //             llvm::DIType* ty = this->dbuilder->createArrayType(
 //                 size, type->getPrimitiveSizeInBits(), this->wrap(inner), {}
@@ -115,7 +115,7 @@ using namespace quart;
 //     llvm::DIScope* scope, 
 //     llvm::Function* function, 
 //     const std::string& name,
-//     uint32_t line
+//     u32 line
 // ) {
 //     auto type = llvm::cast<llvm::DISubroutineType>(this->wrap(function->getFunctionType()));
 //     llvm::DISubprogram* subprogram = this->dbuilder->createFunction(

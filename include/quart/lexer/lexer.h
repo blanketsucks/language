@@ -2,6 +2,7 @@
 
 #include <quart/lexer/tokens.h>
 #include <quart/filesystem.h>
+#include <quart/common.h>
 
 #include <cstdint>
 #include <iostream>
@@ -11,6 +12,8 @@
 #include <algorithm>
 #include <functional>
 
+#include <llvm/ADT/StringRef.h>
+
 namespace quart {
 
 class Lexer {
@@ -18,11 +21,11 @@ public:
     virtual void reset() = 0;
 
     virtual char next() = 0;
-    virtual char peek(uint32_t offset = 0) = 0;
+    virtual char peek(u32 offset = 0) = 0;
     virtual char prev() = 0;
-    virtual char rewind(uint32_t offset = 1) = 0;
+    virtual char rewind(u32 offset = 1) = 0;
 
-    virtual std::string& get_line_for(const Location& location) = 0;
+    virtual llvm::StringRef get_line_for(const Location& location) = 0;
 
     Token create_token(TokenKind type, const std::string& value);
     Token create_token(TokenKind type, const Location& loc, const std::string& value);
@@ -38,8 +41,8 @@ public:
 
     char escape(char current);
 
-    bool is_valid_identifier(uint8_t current);
-    uint8_t parse_unicode_identifier(std::string& buffer, uint8_t current);
+    bool is_valid_identifier(u8 current);
+    u8 parse_unicode_identifier(std::string& buffer, u8 current);
 
     Token lex_identifier(bool accept_keywords = true);
     Token lex_string();
@@ -49,16 +52,15 @@ public:
     std::vector<Token> lex();
 
 protected:
-    uint32_t line;
-    uint32_t column;
+    u32 line;
+    u32 column;
     size_t index;
     
     bool eof;
     char current;
 
     std::string filename;
-
-    std::map<uint32_t, std::string> lines;
+    std::map<u32, std::string> lines;
 };
 
 class MemoryLexer : public Lexer {
@@ -69,11 +71,11 @@ public:
     void reset() override;
 
     char next() override;
-    char peek(uint32_t offset = 0) override;
+    char peek(u32 offset = 0) override;
     char prev() override;
-    char rewind(uint32_t offset = 1) override;
+    char rewind(u32 offset = 1) override;
 
-    std::string& get_line_for(const Location& location) override;
+    llvm::StringRef get_line_for(const Location& location) override;
 
 private:
     std::string source;
@@ -87,11 +89,11 @@ public:
     void reset() override;
 
     char next() override;
-    char peek(uint32_t offset = 0) override;
+    char peek(u32 offset = 0) override;
     char prev() override;
-    char rewind(uint32_t offset = 1) override;
+    char rewind(u32 offset = 1) override;
 
-    std::string& get_line_for(const Location& location) override;
+    llvm::StringRef get_line_for(const Location& location) override;
 
 private:
     std::ifstream& stream;

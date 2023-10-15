@@ -323,7 +323,7 @@ public:
 
     Value accept(Visitor& visitor) override;
 
-    std::unique_ptr<Expr>& get(uint32_t index);
+    std::unique_ptr<Expr>& get(u32 index);
     std::unique_ptr<Expr>& get(const std::string& name);
 };
 
@@ -411,7 +411,7 @@ struct StructField {
     std::string name;
     std::unique_ptr<TypeExpr> type;
 
-    uint32_t index;
+    u32 index;
 
     bool is_private;
     bool is_readonly;

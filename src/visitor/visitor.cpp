@@ -31,7 +31,7 @@ Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(op
 void Visitor::finalize() {
     this->fpm->doFinalization();
 
-    this->global_scope->finalize(this->options.opts.dead_code_elimination);
+    this->global_scope->finalize(true);
     delete this->global_scope;
 
     auto& globals = this->module->getGlobalList();
@@ -104,15 +104,14 @@ std::string Visitor::format_symbol(const std::string& name) {
     return symbol.empty() ? name : FORMAT("{0}.{1}", symbol, name);
 }
 
-llvm::Constant* Visitor::to_str(const char* str) {
+llvm::Constant* Visitor::to_str(llvm::StringRef str) {
     return this->builder->CreateGlobalStringPtr(str, ".str", 0, this->module.get());
 }
 
-llvm::Constant* Visitor::to_str(const std::string& str) {
-    return this->builder->CreateGlobalStringPtr(str, ".str", 0, this->module.get());
-}
+llvm::Constant* Visitor::to_str(const char* str) { return this->to_str(llvm::StringRef(str)); }
+llvm::Constant* Visitor::to_str(const std::string& str) { return this->to_str(llvm::StringRef(str)); }
 
-llvm::Constant* Visitor::to_int(uint64_t value, uint32_t bits) {
+llvm::Constant* Visitor::to_int(u64 value, u32 bits) {
     return this->builder->getIntN(bits, value);
 }
 
@@ -144,7 +143,7 @@ llvm::Value* Visitor::load(llvm::Value* value, llvm::Type* type) {
     return value;
 }
 
-std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& span) {
+std::vector<Value> Visitor::unpack(const Value& value, u32 n, const Span& span) {
     quart::Type* type = value.type;
     if (!type->is_pointer()) {
         if (!type->is_tuple()) {
@@ -160,7 +159,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
 
         if (llvm::isa<llvm::ConstantStruct>(value.inner)) {
             llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(value.inner);
-            for (uint32_t i = 0; i < n; i++) {
+            for (u32 i = 0; i < n; i++) {
                 Value element = Value(
                     constant->getAggregateElement(i), 
                     type->get_tuple_element(i), 
@@ -170,7 +169,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
                 values.push_back(element);
             }
         } else {
-            for (uint32_t i = 0; i < n; i++) {
+            for (u32 i = 0; i < n; i++) {
                 llvm::Value* val = this->builder->CreateExtractValue(value, i);
                 Value element = Value(val, type->get_tuple_element(i));
 
@@ -188,7 +187,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
 
     llvm::Type* ltype = type->to_llvm_type();
     if (type->is_array()) {
-        uint32_t elements = type->get_array_size();
+        u32 elements = type->get_array_size();
         if (n > elements) {
             ERROR(span, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
         }
@@ -197,7 +196,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
 
         std::vector<Value> values;
         values.reserve(n);
-        for (uint32_t i = 0; i < n; i++) {
+        for (u32 i = 0; i < n; i++) {
             std::vector<llvm::Value*> idx = {this->builder->getInt32(0), this->builder->getInt32(i)};
 
             llvm::Value* ptr = this->builder->CreateGEP(ltype, value, idx);
@@ -209,7 +208,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
         return values;
     }
 
-    uint32_t elements = type->get_tuple_size();
+    u32 elements = type->get_tuple_size();
     if (n > elements) {
         ERROR(span, "Not enough elements to unpack. Expected {0} but got {1}", n, elements);
     }
@@ -217,7 +216,7 @@ std::vector<Value> Visitor::unpack(const Value& value, uint32_t n, const Span& s
     std::vector<Value> values;
     values.reserve(n);
 
-    for (uint32_t i = 0; i < n; i++) {
+    for (u32 i = 0; i < n; i++) {
         llvm::Value* ptr = this->builder->CreateStructGEP(ltype, value, i);
         Value element = Value(this->load(ptr), type->get_tuple_element(i));
 
@@ -372,7 +371,7 @@ Value Visitor::get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool req
     }
 
     quart::Type* type = local.type->get_reference_to(local.flags & ScopeLocal::Mutable);
-    uint16_t flags = Value::None;
+    u16 flags = Value::None;
 
     if (local.flags & ScopeLocal::StackAllocated) flags |= Value::StackAllocated;
 
@@ -454,7 +453,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
     llvm::Constant* constant = nullptr;
     llvm::StringRef str(expr->value);
 
-    uint8_t radix = 10;
+    u8 radix = 10;
     if (str.startswith("0x")) {
         str = str.drop_front(2); radix = 16;
     } else if (str.startswith("0b")) {
@@ -466,7 +465,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
         type = expr->bits == 32 ? this->registry->get_f32_type() : this->registry->get_f64_type();
         constant = llvm::ConstantFP::get(type->to_llvm_type(), expr->value);
     } else {
-        uint32_t bits = expr->bits;
+        u32 bits = expr->bits;
         if (this->inferred && this->inferred->is_int()) {
             type = this->inferred;
             bits = type->get_int_bit_width();
@@ -474,7 +473,7 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
             type = this->registry->create_int_type(expr->bits, true);
         }
 
-        uint32_t needed = llvm::APInt::getBitsNeeded(str, radix);
+        u32 needed = llvm::APInt::getBitsNeeded(str, radix);
         if (needed > bits) {
             ERROR(expr->span, "Integer literal requires {0} bits but only {1} are available", needed, bits);
         }
@@ -570,7 +569,11 @@ Value Visitor::visit(ast::StaticAssertExpr* expr) {
 
     llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
     if (!constant) {
-        ERROR(expr->condition->span, "Expected a constant integer expression");
+        ERROR(
+            expr->condition->span, 
+            "Expected a constant integer expression but got an expression of type '{0}'",
+            value.type->get_as_string()
+        );
     }
 
     if (constant->isZero()) {

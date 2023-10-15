@@ -66,7 +66,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     }
 
     llvm::Value* array = llvm::ConstantAggregateZero::get(atype);
-    for (uint32_t i = 0; i < elements.size(); i++) {
+    for (u32 i = 0; i < elements.size(); i++) {
         array = this->builder->CreateInsertValue(array, elements[i], {0, i});
     }
 
@@ -104,7 +104,7 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
 
     llvm::Value* alloca = this->alloca(atype);
     
-    for (uint32_t i = 0; i < size->getZExtValue(); i++) {
+    for (u32 i = 0; i < size->getZExtValue(); i++) {
         llvm::Value* ptr = this->builder->CreateGEP(
             atype, alloca, {this->builder->getInt32(0), this->builder->getInt32(i)}
         );
@@ -221,7 +221,7 @@ Value Visitor::visit(ast::IndexExpr* expr) {
     return {this->load(ptr), result};
 }
 
-void Visitor::create_bounds_check(llvm::Value* index, uint32_t count, const Span& span) {
+void Visitor::create_bounds_check(llvm::Value* index, u32 count, const Span& span) {
     if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
         return;
     }

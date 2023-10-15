@@ -36,7 +36,7 @@ static std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
 };
 
 // {name: (bits, is_float)}
-static std::map<std::string, std::pair<uint32_t, bool>> NUM_TYPES_BIT_MAPPING = {
+static std::map<std::string, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
     {"i8", {8, false}},
     {"i16", {16, false}},
     {"i32", {32, false}},
@@ -92,7 +92,7 @@ Token Parser::next() {
     return this->current;
 }
 
-Token Parser::peek(uint32_t offset) {
+Token Parser::peek(u32 offset) {
     if (this->index >= this->tokens.size()) {
         return this->tokens.back(); // EOF
     }
@@ -543,7 +543,7 @@ std::unique_ptr<ast::StructExpr> Parser::parse_struct() {
     this->is_inside_struct = true;
 
     this->expect(TokenKind::LBrace, "{");
-    uint32_t index = 0;
+    u32 index = 0;
 
     while (this->current != TokenKind::RBrace) {
         ast::Attributes attributes = this->parse_attributes();

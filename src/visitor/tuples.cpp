@@ -74,7 +74,7 @@ void Visitor::store_tuple(
             llvm::AllocaInst* alloca = this->alloca(value->getType());
             this->builder->CreateStore(value, alloca);
 
-            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
+            u8 flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             func->scope->variables[ident.value] = Variable::from_alloca(
                 ident.value, alloca, value.type, flags, ident.span
             );
@@ -97,7 +97,7 @@ void Visitor::store_tuple(
     // `let (foo, *bar, baz) = (1, 2, 3, 4, 5);`
     // here, foo takes the value of 1, baz 5 and bar is a tuple containing the rest of the elements.
 
-    uint32_t n = 0;
+    u32 n = 0;
     quart::Type* vtype = value.type;
 
     // TODO: Array support(?)

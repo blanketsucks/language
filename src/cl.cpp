@@ -95,11 +95,11 @@ cl::Arguments cl::parse_arguments(int argc, char** argv) {
     args.mangle_style = mangle_style;
     args.jit = jit;
 
-    args.libraries.names = std::set<std::string>(libraries.begin(), libraries.end());
+    args.library_names = std::set<std::string>(libraries.begin(), libraries.end());
 
     if (output.empty()) {
-        std::string& extension = OUTPUT_FORMATS_TO_EXT[args.format];
-        args.output = args.file.with_extension(extension);
+        llvm::StringRef extension = OUTPUT_FORMATS_TO_EXT[args.format];
+        args.output = args.file.with_extension(extension.str());
     } else {
         args.output = output;
     }

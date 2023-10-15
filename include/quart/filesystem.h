@@ -91,6 +91,7 @@ struct Path {
     Path join(const Path& path);
 
     std::string extension();
+
     Path with_extension(const std::string& extension);
     Path with_extension();
 };

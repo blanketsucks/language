@@ -18,7 +18,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
     auto local = scope->get_local(expr->name, bool(this->current_function));
     if (local.value) {
         if (!this->current_function) {
-            uint16_t flags = local.flags & ScopeLocal::Constant ? Value::Constant : Value::None;
+            u16 flags = local.flags & ScopeLocal::Constant ? Value::Constant : Value::None;
             return Value(local.value, local.type, flags);
         }
 
@@ -149,7 +149,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
                 call.store = global;
             }
 
-            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
+            u8 flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             this->scope->variables[ident.value] = Variable { 
                 ident.value, 
                 type, 
@@ -163,12 +163,14 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         }
 
         // We only want to check for immutability if the type is a reference/pointer while ignoring aggregates
-        if ((ident.is_mutable && type->is_mutable()) && (type->is_reference() || type->is_pointer()) && !(value.flags & Value::Aggregate)) {
-            ERROR(expr->value->span, "Cannot assign immutable value to mutable variable '{0}'", ident.value);
+        if (type->is_reference() || type->is_pointer()) {
+            if (!type->is_mutable() && ident.is_mutable && !value.is_aggregate()) {
+                ERROR(expr->value->span, "Cannot assign immutable value to mutable variable '{0}'", ident.value);
+            }
         }
 
         if (type->is_reference()) {
-            uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
+            u8 flags = ident.is_mutable ? Variable::Mutable : Variable::None;
             this->scope->variables[ident.value] = Variable::from_value(
                 ident.value, value, type, flags, ident.span
             );
@@ -211,7 +213,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             }
         }
 
-        uint8_t flags = ident.is_mutable ? Variable::Mutable : Variable::None;
+        u8 flags = ident.is_mutable ? Variable::Mutable : Variable::None;
         flags |= Variable::StackAllocated;
 
         this->scope->variables[ident.value] = Variable {

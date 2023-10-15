@@ -28,7 +28,7 @@ enum class ScopeType {
 };
 
 struct ScopeLocal {
-    enum Flags {
+    enum Flags : u8 {
         None,
         Constant       = 1 << 0,
         Mutable        = 1 << 1,
@@ -41,7 +41,7 @@ struct ScopeLocal {
     llvm::Value* value;
     quart::Type* type;
 
-    uint8_t flags;
+    u8 flags;
 
     bool is_null();
     static ScopeLocal null();

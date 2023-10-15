@@ -19,8 +19,8 @@ StructRef Visitor::make_struct(
     std::vector<Type*> types;
     std::vector<llvm::Type*> llvm_types;
 
-    uint32_t index = 0;
-    uint32_t offset = 0;
+    u32 index = 0;
+    u32 offset = 0;
 
     for (auto& entry : fields) {
         sfields[entry.first] = StructField {
@@ -85,8 +85,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
 
         structure->scope = this->create_scope(name, ScopeType::Struct);
         
-        uint32_t index = fields.empty() ? 0 : fields.rbegin()->second.index + 1;
-        uint32_t offset = 0;
+        u32 index = fields.empty() ? 0 : fields.rbegin()->second.index + 1;
+        u32 offset = 0;
 
         if (!fields.empty()) {
             StructField last = fields.rbegin()->second;
@@ -106,7 +106,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
                 ERROR(expr->span, "Duplicate field '{0}'", field.name);
             }
 
-            uint8_t flags = StructField::None;
+            u8 flags = StructField::None;
             if (field.is_private) flags |= StructField::Private;
             if (field.is_readonly) flags |= StructField::Readonly;
             if (ty->is_mutable()) flags |= StructField::Mutable;

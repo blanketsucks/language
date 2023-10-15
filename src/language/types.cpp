@@ -94,7 +94,7 @@ ReferenceType* Type::get_reference_to(bool is_mutable) {
     return this->registry->create_reference_type(this, is_mutable);
 }
 
-uint32_t Type::get_int_bit_width() const {
+u32 Type::get_int_bit_width() const {
     return this->as<IntType>()->get_bit_width();
 }
 
@@ -179,7 +179,7 @@ std::string Type::get_as_string() const {
         case TypeKind::Double: return "f64";
         case TypeKind::Int: {
             bool is_unsigned = this->is_int_unsigned();
-            uint32_t bits = this->get_int_bit_width();
+            u32 bits = this->get_int_bit_width();
 
             if (bits == 1) return "bool";
 
@@ -237,7 +237,7 @@ llvm::Type* Type::to_llvm_type() const {
         case TypeKind::Float: return llvm::Type::getFloatTy(context);
         case TypeKind::Double: return llvm::Type::getDoubleTy(context);
         case TypeKind::Int: {
-            uint32_t bits = this->get_int_bit_width();
+            u32 bits = this->get_int_bit_width();
             return llvm::Type::getIntNTy(context, bits);
         }
         case TypeKind::Enum: {
@@ -304,7 +304,7 @@ llvm::Type* Type::to_llvm_type() const {
 }
 
 bool IntType::is_boolean_type() const { return this->bits == 1; }
-uint32_t IntType::get_bit_width() const { return this->bits; }
+u32 IntType::get_bit_width() const { return this->bits; }
 bool IntType::is_unsigned() const { return !this->is_signed; }
 
 std::vector<Type*> StructType::get_fields() const { return this->fields; }

@@ -8,7 +8,7 @@
 
 using namespace quart;
 
-static std::map<std::string, uint32_t> TYPE_SIZES = {
+static std::map<std::string, u32> TYPE_SIZES = {
     {"i8", 1},
     {"i16", 2},
     {"i32", 4},
@@ -21,20 +21,20 @@ static std::map<std::string, uint32_t> TYPE_SIZES = {
     {"void", 0}
 };
 
-uint32_t Visitor::getsizeof(llvm::Value* value) {
+u32 Visitor::getsizeof(llvm::Value* value) {
     return this->getsizeof(value->getType());
 }
 
-uint32_t Visitor::getsizeof(quart::Type* type) {
+u32 Visitor::getsizeof(quart::Type* type) {
     return this->getsizeof(type->to_llvm_type());
 }
 
-uint32_t Visitor::getallocsize(llvm::Type* type) {
+u32 Visitor::getallocsize(llvm::Type* type) {
     llvm::TypeSize tsize = this->module->getDataLayout().getTypeAllocSize(type);
     return tsize.getFixedSize();
 }
 
-uint32_t Visitor::getsizeof(llvm::Type* type) {
+u32 Visitor::getsizeof(llvm::Type* type) {
     if (type->isPointerTy() || type->isStructTy()) {
         return this->getallocsize(type);
     } else if (type->isArrayTy()) {
@@ -112,7 +112,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
 
             return {result, to};
         } else if (to->is_int()) {
-            uint32_t bits = from->get_int_bit_width();
+            u32 bits = from->get_int_bit_width();
             if (bits < to->get_int_bit_width()) {
                 return {this->builder->CreateZExt(value, type), to};
             } else if (bits > to->get_int_bit_width()) {
@@ -169,7 +169,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
 }
 
 Value Visitor::visit(ast::SizeofExpr* expr) {
-    uint32_t size = 0;
+    u32 size = 0;
 
     if (expr->value->kind() == ast::ExprKind::Variable) {
         ast::VariableExpr* id = expr->value->as<ast::VariableExpr>();

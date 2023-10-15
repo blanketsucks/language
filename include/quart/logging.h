@@ -39,10 +39,8 @@ std::string color(Color color, const std::string& str);
 void underline_error(
     std::stringstream& stream,
     const std::string& line,
-    uint32_t line_number,
-    uint32_t start_index,
-    uint32_t end_index,
-    uint32_t start_column
+    u32 line_number, u32 start_index,
+    u32 end_index, u32 start_column
 );
 
 void error(const Span& span, const std::string& message, bool fatal = true);

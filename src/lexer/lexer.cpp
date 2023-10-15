@@ -43,12 +43,11 @@ Span Lexer::make_span() {
 }
 
 Span Lexer::make_span(const Location& start, const Location& end) {
-    std::string& line = this->get_line_for(start);
     return Span {
         start,
         end,
         this->filename,
-        line
+        this->get_line_for(start)
     };
 }
 
@@ -77,14 +76,14 @@ char Lexer::escape(char current) {
     }
 }
 
-bool Lexer::is_valid_identifier(uint8_t c) {
+bool Lexer::is_valid_identifier(u8 c) {
     if (std::isalnum(c) || c == '_') {
         return true;
     } else if (c < 128) {
         return false;
     }
 
-    uint32_t expected = 0;
+    u32 expected = 0;
     if (c < 0x80) {
         return true;
     } else if (c < 0xE0) {
@@ -97,8 +96,8 @@ bool Lexer::is_valid_identifier(uint8_t c) {
         return false;
     }
 
-    for (uint32_t i = 0; i < expected; i++) {
-        uint8_t next = this->peek(i);
+    for (u32 i = 0; i < expected; i++) {
+        u8 next = this->peek(i);
         if ((next & 0xC0) != 0x80) {
             return false;
         }
@@ -107,8 +106,8 @@ bool Lexer::is_valid_identifier(uint8_t c) {
     return true;
 }
 
-uint8_t Lexer::parse_unicode_identifier(std::string& buffer, uint8_t current) {  
-    uint8_t expected = 0;
+u8 Lexer::parse_unicode_identifier(std::string& buffer, u8 current) {  
+    u8 expected = 0;
     buffer.push_back(current);
 
     if (current < 0x80) {
@@ -121,7 +120,7 @@ uint8_t Lexer::parse_unicode_identifier(std::string& buffer, uint8_t current) {
         expected = 3;
     }
 
-    for (uint8_t i = 0; i < expected; i++) {
+    for (u8 i = 0; i < expected; i++) {
         buffer.push_back(this->next());
     }
 
@@ -497,7 +496,7 @@ char MemoryLexer::next() {
     return this->current;
 }
 
-char MemoryLexer::peek(uint32_t offset) { 
+char MemoryLexer::peek(u32 offset) { 
     return this->source[this->index + offset]; 
 }
 
@@ -505,7 +504,7 @@ char MemoryLexer::prev() {
     return this->source[this->index - 1]; 
 }
 
-char MemoryLexer::rewind(uint32_t offset) {
+char MemoryLexer::rewind(u32 offset) {
     this->index -= offset - 1;
     this->column -= offset;
 
@@ -520,7 +519,7 @@ void MemoryLexer::reset() {
     this->eof = false;
 }
 
-std::string& MemoryLexer::get_line_for(const Location& location) {
+llvm::StringRef MemoryLexer::get_line_for(const Location& location) {
     if (this->lines.find(location.line) == this->lines.end()) {
         size_t offset = location.index - location.column;
         std::string line;
@@ -564,7 +563,7 @@ char StreamLexer::next() {
     return this->current;
 }
 
-char StreamLexer::peek(uint32_t offset) { 
+char StreamLexer::peek(u32 offset) { 
     return this->stream.peek(); 
 }
 
@@ -576,7 +575,7 @@ char StreamLexer::prev() {
     return c;
 }
 
-char StreamLexer::rewind(uint32_t offset) {
+char StreamLexer::rewind(u32 offset) {
     this->index -= offset - 1;
     this->column -= offset;
 
@@ -594,7 +593,7 @@ void StreamLexer::reset() {
     this->eof = false;
 }
 
-std::string& StreamLexer::get_line_for(const Location& location) {
+llvm::StringRef StreamLexer::get_line_for(const Location& location) {
     if (this->lines.find(location.line) == this->lines.end()) {
         size_t offset = location.index - location.column;
         this->stream.seekg(offset, std::ifstream::beg);

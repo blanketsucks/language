@@ -3,7 +3,7 @@
 #include <quart/utils/utils.h>
 #include <quart/logging.h>
 
-#include <quart/macros.h>
+#include <quart/common.h>
 
 #define ENTRY(n) { #n, parse_##n##_attribute }
 

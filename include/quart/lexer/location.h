@@ -1,14 +1,18 @@
 #pragma once
 
+#include <quart/common.h>
+
 #include <stdint.h>
 #include <string>
 #include <sstream>
 
+#include <llvm/ADT/StringRef.h>
+
 namespace quart {
 
 struct Location {
-    uint32_t line;
-    uint32_t column;
+    u32 line;
+    u32 column;
     size_t index;
 };
 
@@ -16,11 +20,11 @@ struct Span {
     Location start;
     Location end;
 
-    std::string filename;
-    std::string line;
+    llvm::StringRef filename;
+    llvm::StringRef line;
 
     Span() = default;
-    Span(Location start, Location end, const std::string& filename, const std::string& line);
+    Span(Location start, Location end, llvm::StringRef filename, llvm::StringRef line);
 
     static Span merge(const Span& start, const Span& end);
 

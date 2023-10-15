@@ -1,6 +1,7 @@
 #pragma once
 
 #include <quart/language/types.h>
+#include <quart/common.h>
 
 #include <llvm/IR/Value.h>
 #include <llvm/ADT/Any.h>
@@ -10,7 +11,7 @@
 namespace quart {
 
 struct Value {
-    enum Flags {
+    enum Flags : u16 {
         None,
         Empty             = 1 << 0,
         Constant          = 1 << 1,
@@ -29,13 +30,13 @@ struct Value {
 
     llvm::Value* self;
 
-    uint16_t flags;
+    u16 flags;
 
     llvm::Any extra;
 
     Value(
         llvm::Value* value, 
-        uint16_t flags = None,
+        u16 flags = None,
         llvm::Any extra = llvm::Any(),
         llvm::Value* self = nullptr
     );
@@ -43,7 +44,7 @@ struct Value {
     Value(
         llvm::Value* value, 
         quart::Type* type, 
-        uint16_t flags = None, 
+        u16 flags = None, 
         llvm::Any extra = llvm::Any(),
         llvm::Value* self = nullptr
     );
@@ -53,6 +54,7 @@ struct Value {
 
     bool is_reference() const;
     bool is_mutable() const;
+    bool is_aggregate() const;
     bool is_empty_value() const;
 
     // Helper function to cast the `extra` field to a specific type

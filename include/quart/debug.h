@@ -26,7 +26,7 @@ struct DebugInfo {
         llvm::DIScope* scope, 
         llvm::Function* function, 
         const std::string& name,
-        uint32_t line
+        u32 line
     );
 
     void emit(ast::Expr* expr);

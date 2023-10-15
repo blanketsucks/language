@@ -240,7 +240,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 return Value(alloca, type->get_reference_to(true));
             }
 
-            uint16_t flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
+            u16 flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
             return Value(ref.value, type->get_reference_to(ref.is_mutable()), flags);
         }
         case UnaryOp::Inc: {

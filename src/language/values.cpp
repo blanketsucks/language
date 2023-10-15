@@ -3,13 +3,13 @@
 using namespace quart;
 
 Value::Value(
-    llvm::Value* value, uint16_t flags, llvm::Any extra, llvm::Value* self
+    llvm::Value* value, u16 flags, llvm::Any extra, llvm::Value* self
 ) : inner(value), type(nullptr), flags(flags), self(self), extra(extra) {
     if (!value) this->flags |= Value::Empty;
 }
 
 Value::Value(
-    llvm::Value* value, quart::Type* type, uint16_t flags, llvm::Any extra, llvm::Value* self
+    llvm::Value* value, quart::Type* type, u16 flags, llvm::Any extra, llvm::Value* self
 ) : inner(value), type(type), flags(flags), self(self), extra(extra) {
     if (!value) this->flags |= Value::Empty;
     assert(value && type && "When value is not null, type must not be null");
@@ -21,6 +21,10 @@ bool Value::is_reference() const {
 
 bool Value::is_mutable() const {
     return this->type->is_mutable();
+}
+
+bool Value::is_aggregate() const {
+    return this->flags & Value::Aggregate;
 }
 
 bool Value::is_empty_value() const {

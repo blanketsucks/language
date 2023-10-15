@@ -6,7 +6,7 @@ Variable Variable::from_alloca(
     const std::string& name,
     llvm::AllocaInst* alloca,
     quart::Type* type,
-    uint8_t flags,
+    u8 flags,
     const Span& span
 ) {
     return Variable {
@@ -23,7 +23,7 @@ Variable Variable::from_value(
     const std::string& name,
     llvm::Value* value,
     quart::Type* type,
-    uint8_t flags,
+    u8 flags,
     const Span& span
 ) {
     if (type->is_pointer()) {

@@ -2,6 +2,7 @@
 
 #include <quart/lexer/location.h>
 #include <quart/language/types.h>
+#include <quart/common.h>
 
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -14,7 +15,7 @@ struct Function;
 struct Scope;
 
 struct StructField {
-    enum Flags : uint8_t {
+    enum Flags : u8 {
         None,
         Private  = 1 << 0,
         Readonly = 1 << 1,
@@ -24,10 +25,10 @@ struct StructField {
     std::string name;
     quart::Type* type;
     
-    uint8_t flags;
+    u8 flags;
 
-    uint32_t index;
-    uint32_t offset;
+    u32 index;
+    u32 offset;
 
     inline bool is_private() const { return this->flags & Flags::Private; }
     inline bool is_readonly() const { return this->flags & Flags::Readonly; }
@@ -54,7 +55,7 @@ struct Struct {
     );
 
     int get_field_index(const std::string& name);
-    StructField get_field_at(uint32_t index);
+    StructField get_field_at(u32 index);
     std::vector<StructField> get_fields(bool with_private = false);
 
     bool has_method(const std::string& name);

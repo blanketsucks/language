@@ -9,7 +9,7 @@ Function::Function(
     std::vector<Parameter> params,
     std::map<std::string, Parameter> kwargs,
     quart::Type* return_type,
-    uint16_t flags,
+    u16 flags,
     const Span& span,
     const ast::Attributes& attrs
 ) : value(value), type(type), name(name), params(std::move(params)), kwargs(std::move(kwargs)), flags(flags), span(span), attrs(attrs) {
@@ -28,14 +28,14 @@ FunctionRef Function::create(
     std::vector<Parameter> params,
     std::map<std::string, Parameter> kwargs,
     quart::Type* return_type,
-    uint16_t flags,
+    u16 flags,
     const Span& span,
     const ast::Attributes& attrs
 ) {
     return std::shared_ptr<Function>(new Function(value, type, name, params, kwargs, return_type, flags, span, attrs));
 }
 
-uint32_t Function::argc() {
+u32 Function::argc() {
     return this->params.size() + this->kwargs.size();
 }
 
@@ -51,7 +51,7 @@ bool Function::has_any_default_value() {
     return llvm::any_of(this->params, [](Parameter& param) { return param.has_default_value(); });
 }
 
-uint32_t Function::get_default_arguments_count() {
+u32 Function::get_default_arguments_count() {
     return llvm::count_if(this->params, [](Parameter& param) { return param.has_default_value(); });
 }
 
