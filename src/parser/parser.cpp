@@ -1,7 +1,6 @@
 #include <quart/parser/parser.h>
 #include <quart/parser/attrs.h>
 #include <quart/parser/ast.h>
-#include <quart/utils/utils.h>
 #include <quart/logging.h>
 
 #include <llvm/ADT/StringRef.h>

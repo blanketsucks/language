@@ -2,7 +2,6 @@
 #include <quart/visitor.h>
 #include <quart/lexer.h>
 #include <quart/parser.h>
-#include <quart/utils/string.h>
 #include <quart/jit.h>
 
 #include <llvm/Passes/PassBuilder.h>

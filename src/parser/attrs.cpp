@@ -1,9 +1,9 @@
 #include <quart/parser/attrs.h>
 #include <quart/parser/parser.h>
-#include <quart/utils/utils.h>
 #include <quart/logging.h>
-
 #include <quart/common.h>
+
+#include <llvm/ADT/STLExtras.h>
 
 #define ENTRY(n) { #n, parse_##n##_attribute }
 
@@ -32,7 +32,8 @@ ATTR(link) {
     std::string key = token.value;
 
     Span span = token.span;
-    while (utils::contains(VALID_LINK_KEYS, key)) {
+
+    while (llvm::is_contained(VALID_LINK_KEYS, key)) {
         parser.expect(TokenKind::Assign, "=");
 
         auto value = parser.expect(TokenKind::String, "string").value;
@@ -49,7 +50,7 @@ ATTR(link) {
         }
     }
 
-    if (!utils::contains(VALID_LINK_KEYS, key)) {
+    if (!llvm::is_contained(VALID_LINK_KEYS, key)) {
         ERROR(span, "Invalid 'link' attribute key '{0}'", key);
     }
 
