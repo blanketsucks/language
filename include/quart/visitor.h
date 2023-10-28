@@ -217,6 +217,7 @@ public:
     quart::Type* visit(ast::PointerTypeExpr* expr);
     quart::Type* visit(ast::FunctionTypeExpr* expr);
     quart::Type* visit(ast::ReferenceTypeExpr* expr);
+    quart::Type* visit(ast::GenericTypeExpr* expr);
     Value visit(ast::TypeAliasExpr* expr);
 
     Value visit(ast::CastExpr* expr);

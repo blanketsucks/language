@@ -2,18 +2,18 @@
 
 using namespace quart;
 
-bool quart::is_keyword(const std::string& word) {
+bool quart::is_keyword(llvm::StringRef word) {
     return KEYWORDS.find(word) != KEYWORDS.end();
 }
 
-TokenKind quart::get_keyword_kind(const std::string& word) {
+TokenKind quart::get_keyword_kind(llvm::StringRef word) {
     auto it = KEYWORDS.find(word);
     if (it == KEYWORDS.end()) return TokenKind::EOS;
 
     return it->second;
 }
 
-const char* quart::get_unary_op_value(UnaryOp type) {
+llvm::StringRef quart::get_unary_op_value(UnaryOp type) {
     switch (type) {
         case UnaryOp::Inc: return "++";
         case UnaryOp::Dec: return "--";
@@ -26,7 +26,7 @@ const char* quart::get_unary_op_value(UnaryOp type) {
     }
 }
 
-const char* quart::get_binary_op_value(BinaryOp type) {
+llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
     switch (type) {
         case BinaryOp::Add: return "+";
         case BinaryOp::Sub: return "-";
@@ -52,7 +52,7 @@ const char* quart::get_binary_op_value(BinaryOp type) {
 
 
 
-const char* Token::get_type_value(TokenKind type) {
+llvm::StringRef Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";
         case TokenKind::Dec: return "--";
@@ -97,7 +97,7 @@ bool Token::operator==(TokenKind type) {
     return this->type == type;
 }
 
-bool Token::operator==(Token token) {
+bool Token::operator==(const Token& token) {
     return this->type == token.type && this->value == token.value;
 }
 

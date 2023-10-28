@@ -222,7 +222,7 @@ Value Visitor::visit(ast::IndexExpr* expr) {
 }
 
 void Visitor::create_bounds_check(llvm::Value* index, u32 count, const Span& span) {
-    if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
+    if (this->options.standalone || this->options.opts.level == OptimizationLevel::Release) {
         return;
     }
 

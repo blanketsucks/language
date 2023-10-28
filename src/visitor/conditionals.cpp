@@ -91,6 +91,29 @@ Value Visitor::visit(ast::IfExpr* expr) {
     return nullptr;
 }
 
+static Value parse_branchless_ternary(
+    const Value& condition,
+    std::unique_ptr<ast::Expr>& true_expr,
+    std::unique_ptr<ast::Expr>& false_expr,
+    Visitor& visitor
+) {
+    Value true_value = true_expr->accept(visitor);
+    if (true_value.is_empty_value()) ERROR(true_expr->span, "Expected a value");
+
+    Value false_value = false_expr->accept(visitor);
+    if (false_value.is_empty_value()) ERROR(false_expr->span, "Expected a value");
+
+    if (!Type::can_safely_cast_to(false_value.type, true_value.type)) {
+        ERROR(false_expr->span, "The true and false expressions of a ternary expression must have the same type");
+    }
+
+    false_value = visitor.cast(false_value, true_value.type);
+    return {
+        visitor.builder->CreateSelect(condition, true_value, false_value),
+        true_value.type
+    };
+}
+
 Value Visitor::visit(ast::TernaryExpr* expr) {
     Value condition = expr->condition->accept(*this);
     if (condition.is_empty_value()) ERROR(expr->condition->span, "Expected a value");
@@ -101,6 +124,14 @@ Value Visitor::visit(ast::TernaryExpr* expr) {
     }
 
     condition = this->cast(condition, boolean);
+
+    // If either the true or false expression is a function call, we can't use a select since it will execute the function call
+    // before giving the result.
+
+    bool can_use_select = expr->true_expr->kind() != ast::ExprKind::Call && expr->false_expr->kind() != ast::ExprKind::Call;
+    if (can_use_select) {
+        return parse_branchless_ternary(condition, expr->true_expr, expr->false_expr, *this);
+    }
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);

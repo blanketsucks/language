@@ -3,7 +3,7 @@
 using namespace quart;
 
 void Visitor::panic(const std::string& message, const Span& span) {
-    if (this->options.standalone || this->options.optimization == OptimizationLevel::Release) {
+    if (this->options.standalone || this->options.opts.level == OptimizationLevel::Release) {
         this->builder->CreateUnreachable(); return;
     }
 

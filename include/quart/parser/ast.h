@@ -3,10 +3,8 @@
 #include <quart/lexer/tokens.h>
 #include <quart/parser/attrs.h>
 
-#include <iostream>
 #include <memory>
 #include <vector>
-#include <cstdarg>
 #include <deque>
 
 namespace quart {
@@ -83,7 +81,8 @@ enum class TypeKind {
     Array,
     Pointer,
     Function,
-    Reference
+    Reference,
+    Generic
 };
 
 enum class BuiltinType {
@@ -675,6 +674,15 @@ public:
     Type* accept(Visitor& visitor) override;
 };
 
+class GenericTypeExpr : public TypeExpr {
+public:
+    std::unique_ptr<TypeExpr> parent;
+    std::vector<std::unique_ptr<TypeExpr>> args;
+
+    GenericTypeExpr(Span span, std::unique_ptr<TypeExpr> parent, std::vector<std::unique_ptr<TypeExpr>> args);
+    Type* accept(Visitor& visitor) override;
+};
+
 class ArrayFillExpr : public ExprMixin<ExprKind::ArrayFill> {
 public:
     std::unique_ptr<Expr> element;
@@ -684,13 +692,24 @@ public:
     Value accept(Visitor& visitor) override;
 };
 
+struct GenericParameter {
+    std::string name;
+
+    std::vector<std::unique_ptr<TypeExpr>> bounds;
+    std::unique_ptr<TypeExpr> default_type;
+};
+
 class TypeAliasExpr : public ExprMixin<ExprKind::TypeAlias> {
 public:
     std::string name;
     std::unique_ptr<TypeExpr> type;
 
-    TypeAliasExpr(Span span, std::string name, std::unique_ptr<TypeExpr> type);
+    std::vector<GenericParameter> parameters;
+
+    TypeAliasExpr(Span span, std::string name, std::unique_ptr<TypeExpr> type, std::vector<GenericParameter> parameters);
     Value accept(Visitor& visitor) override;
+
+    bool is_generic_alias() const { return !this->parameters.empty(); }
 };
 
 class StaticAssertExpr : public ExprMixin<ExprKind::StaticAssert> {
@@ -745,6 +764,8 @@ public:
     MatchExpr(Span span, std::unique_ptr<Expr> value, std::vector<MatchArm> arms);
     Value accept(Visitor& visitor) override;
 };
+
+using TypeExprList = std::vector<std::unique_ptr<TypeExpr>>;
 
 };
 

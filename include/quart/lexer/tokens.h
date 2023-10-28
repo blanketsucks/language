@@ -2,6 +2,8 @@
 
 #include <quart/lexer/location.h>
 
+#include <llvm/ADT/StringRef.h>
+
 #include <vector>
 #include <iostream>
 #include <string>
@@ -12,8 +14,8 @@ namespace quart {
 
 enum class TokenKind;
 
-bool is_keyword(const std::string& word);
-TokenKind get_keyword_kind(const std::string& word);
+bool is_keyword(llvm::StringRef word);
+TokenKind get_keyword_kind(llvm::StringRef word);
 
 enum class TokenKind {
     Identifier,
@@ -145,9 +147,8 @@ enum class BinaryOp {
     Assign
 };
 
-// TODO: Create a StringView class to replace with `const char*` for a friendlier interface
-const char* get_binary_op_value(BinaryOp op);
-const char* get_unary_op_value(UnaryOp op);
+llvm::StringRef get_binary_op_value(BinaryOp op);
+llvm::StringRef get_unary_op_value(UnaryOp op);
 
 struct Token {
     TokenKind type;
@@ -155,18 +156,18 @@ struct Token {
 
     Span span;
 
-    static const char* get_type_value(TokenKind type);
+    static llvm::StringRef get_type_value(TokenKind type);
 
     bool match(TokenKind type, const std::string& value);
     bool match(TokenKind type, std::vector<std::string> values);
     bool match(std::vector<TokenKind> types);
 
     bool operator==(TokenKind type);
-    bool operator==(Token token);
+    bool operator==(const Token& token);
     bool operator!=(TokenKind type);
 };
 
-static std::map<std::string, TokenKind> KEYWORDS = {
+static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     // Keywords
     {"extern", TokenKind::Extern},
     {"func", TokenKind::Func},

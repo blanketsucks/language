@@ -35,14 +35,16 @@ int main(int argc, char** argv) {
         .extras = {}
     };
 
-    Compiler compiler(options);    
+    Compiler compiler(options);
+    compiler.add_import_path(QUART_PATH);
+
     for (auto& import : args.imports) {
         if (!fs::exists(import)) {
             Compiler::error("Could not find import path '{0}'", import); exit(1);
         }
         
         if (!fs::isdir(import)) {
-            Compiler::error("Include path must be a directory"); exit(1);
+            Compiler::error("Import path '{0}' must be a directory", import); exit(1);
         }
 
         compiler.add_import_path(import);
@@ -54,10 +56,8 @@ int main(int argc, char** argv) {
         compiler.set_linker("ld");
     }
 
-    compiler.add_import_path(QUART_PATH);
-
-    compiler.compile().unwrap();
-    
+    compiler.compile().unwrap();    
     Compiler::shutdown();
+
     return 0;
 }

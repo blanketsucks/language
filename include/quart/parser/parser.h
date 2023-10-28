@@ -18,8 +18,6 @@ struct Path {
 class Parser {
 public:
     typedef Attribute (*AttributeFunc)(Parser&);
-
-    static std::map<std::string, ast::BuiltinType> TYPES;
     
     Parser(std::vector<Token> tokens);
 
@@ -30,9 +28,9 @@ public:
 
     Token peek(u32 offset = 1);
 
-    Token expect(TokenKind type, const std::string& value);
+    Token expect(TokenKind type, llvm::StringRef value);
 
-    bool is_valid_attribute(const std::string& name);
+    bool is_valid_attribute(llvm::StringRef name);
 
     int get_token_precendence();
 
@@ -49,6 +47,9 @@ public:
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None, 
         bool is_operator = false
     );
+
+    std::vector<ast::GenericParameter> parse_generic_parameters();
+    ast::TypeExprList parse_generic_arguments();
 
     // The difference between this and parse_function_definition is that this one can never return a prototype forcing an 
     // implementation to be provided
@@ -93,7 +94,7 @@ public:
 
     std::vector<Token> tokens;
 
-    std::map<std::string, AttributeFunc> attributes;
+    std::map<llvm::StringRef, AttributeFunc> attributes;
 };
 
 }

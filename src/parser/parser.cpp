@@ -35,7 +35,7 @@ static std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
 };
 
 // {name: (bits, is_float)}
-static std::map<std::string, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
+static std::map<llvm::StringRef, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
     {"i8", {8, false}},
     {"i16", {16, false}},
     {"i32", {32, false}},
@@ -45,7 +45,7 @@ static std::map<std::string, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
     {"f64", {64, true}}
 };
 
-std::map<std::string, ast::BuiltinType> Parser::TYPES = {
+static std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
     {"void", ast::BuiltinType::Void},
     {"bool", ast::BuiltinType::Bool},
     {"i8", ast::BuiltinType::i8},
@@ -99,7 +99,7 @@ Token Parser::peek(u32 offset) {
     return this->tokens[this->index + offset];
 }
 
-Token Parser::expect(TokenKind type, const std::string& value) {
+Token Parser::expect(TokenKind type, llvm::StringRef value) {
     if (this->current.type != type) {
         ERROR(this->current.span, "Expected {0}", value);
     }
@@ -110,7 +110,7 @@ Token Parser::expect(TokenKind type, const std::string& value) {
     return token;
 }
 
-bool Parser::is_valid_attribute(const std::string& name) {
+bool Parser::is_valid_attribute(llvm::StringRef name) {
     return this->attributes.find(name) != this->attributes.end();
 }
 
@@ -212,16 +212,24 @@ std::unique_ptr<ast::TypeExpr> Parser::parse_type() {
                 );
             }
 
-            if (Parser::TYPES.find(name) != Parser::TYPES.end()) {
+            if (STR_TO_TYPE.find(name) != STR_TO_TYPE.end()) {
                 return std::make_unique<ast::BuiltinTypeExpr>(
-                    Span::merge(start, this->current.span), Parser::TYPES.at(name)
+                    Span::merge(start, this->current.span), STR_TO_TYPE[name]
                 );
             }
 
             Path p = this->parse_path(name);
-            return std::make_unique<ast::NamedTypeExpr>(
+            auto type = std::make_unique<ast::NamedTypeExpr>(
                 Span::merge(start, this->current.span), p.name, p.segments
             );
+
+            if (this->current == TokenKind::Lt) {
+                return std::make_unique<ast::GenericTypeExpr>(
+                    Span::merge(start, this->current.span), std::move(type), this->parse_generic_arguments()
+                );
+            }
+
+            return type;
         }
         case TokenKind::Func: {
             this->next(); this->expect(TokenKind::LParen, "(");
@@ -273,17 +281,81 @@ std::unique_ptr<ast::BlockExpr> Parser::parse_block() {
     return std::make_unique<ast::BlockExpr>(Span::merge(start, end), std::move(body));
 }
 
+std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
+    std::vector<ast::GenericParameter> parameters;
+
+    this->expect(TokenKind::Lt, "<");
+    while (this->current != TokenKind::Gt) {
+        // T(: TypeExpr)?(= DefaultType)?
+
+        std::string name = this->expect(TokenKind::Identifier, "identifier").value;
+
+        std::vector<std::unique_ptr<ast::TypeExpr>> bounds;
+        std::unique_ptr<ast::TypeExpr> default_type = nullptr;
+
+        if (this->current == TokenKind::Colon) {
+            this->next();
+
+            while (this->current != TokenKind::Comma && this->current != TokenKind::Gt) {
+                bounds.push_back(this->parse_type());
+                if (this->current != TokenKind::Add) {
+                    break;
+                }
+
+                this->next();
+            }
+        }
+
+        if (this->current == TokenKind::Assign) {
+            this->next();
+            default_type = this->parse_type();
+        }
+
+        parameters.push_back({name, std::move(bounds), std::move(default_type)});
+        if (this->current != TokenKind::Comma) {
+            break;
+        }
+
+        this->next();
+    }
+
+    this->expect(TokenKind::Gt, ">");
+    return parameters;
+}
+
+ast::TypeExprList Parser::parse_generic_arguments() {
+    ast::TypeExprList arguments;
+
+    this->expect(TokenKind::Lt, "<");
+    while (this->current != TokenKind::Gt) {
+        arguments.push_back(this->parse_type());
+        if (this->current != TokenKind::Comma) {
+            break;
+        }
+
+        this->next();
+    }
+
+    this->expect(TokenKind::Gt, ">");
+    return arguments;
+}
+
 std::unique_ptr<ast::TypeAliasExpr> Parser::parse_type_alias() {
     Span start = this->current.span;
+    std::vector<ast::GenericParameter> parameters;
 
     std::string name = this->expect(TokenKind::Identifier, "identifier").value;
+    if (this->current == TokenKind::Lt) {
+        parameters = this->parse_generic_parameters();
+    }
+
     this->expect(TokenKind::Assign, "=");
 
     auto type = this->parse_type();
     Span end = this->expect(TokenKind::SemiColon, ";").span;
 
     return std::make_unique<ast::TypeAliasExpr>(
-        Span::merge(start, end), name, std::move(type)
+        Span::merge(start, end), name, std::move(type), std::move(parameters)
     );
 }
 

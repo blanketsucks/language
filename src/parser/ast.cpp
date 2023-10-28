@@ -475,10 +475,22 @@ quart::Type* ReferenceTypeExpr::accept(Visitor& visitor) {
     return visitor.visit(this);
 }
 
+GenericTypeExpr::GenericTypeExpr(
+    Span span, std::unique_ptr<TypeExpr> type, std::vector<std::unique_ptr<TypeExpr>> args
+) : TypeExpr(span, TypeKind::Generic) {
+    this->parent = std::move(type);
+    this->args = std::move(args);
+}
+
+quart::Type* GenericTypeExpr::accept(Visitor& visitor) {
+    return visitor.visit(this);
+}
+
 TypeAliasExpr::TypeAliasExpr(
-    Span span, std::string name, std::unique_ptr<TypeExpr> type
+    Span span, std::string name, std::unique_ptr<TypeExpr> type, std::vector<GenericParameter> params
 ) : ExprMixin(span), name(name) {
     this->type = std::move(type);
+    this->parameters = std::move(params);
 }
 
 quart::Value TypeAliasExpr::accept(Visitor &visitor) {

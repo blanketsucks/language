@@ -320,9 +320,18 @@ quart::Type* Visitor::visit(ast::ReferenceTypeExpr* expr) {
     return type->get_reference_to(expr->is_mutable);
 }
 
+quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
+    return nullptr;
+}
+
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
-    quart::Type* type = expr->type->accept(*this);
-    this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, type, expr->span);
+    if (expr->is_generic_alias()) {
+        this->scope->type_aliases[expr->name] = quart::TypeAlias(
+            expr->name, expr->parameters, std::move(expr->type), expr->span
+        );
+    } else {
+        this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, expr->type->accept(*this), expr->span);
+    }
 
     return EMPTY_VALUE;
 }
