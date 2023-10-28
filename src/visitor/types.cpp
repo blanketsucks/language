@@ -321,13 +321,43 @@ quart::Type* Visitor::visit(ast::ReferenceTypeExpr* expr) {
 }
 
 quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
-    return nullptr;
+    // TODO: Parse parents
+    quart::TypeAlias* alias = this->scope->get_type_alias(expr->parent->name);
+
+    std::vector<quart::Type*> args;
+    for (auto& arg : expr->args) {
+        args.push_back(arg->accept(*this));
+    }
+
+    if (args.size() != alias->parameters.size()) {
+        ERROR(expr->span, "Expected {0} type parameters, got {1}", alias->parameters.size(), args.size());
+    }
+
+    Scope* scope = new Scope("generic", ScopeType::Anonymous);
+    scope->parent = this->scope;
+
+    for (auto entry : llvm::zip(alias->parameters, args)) {
+        const ast::GenericParameter& paremeter = std::get<0>(entry);
+        quart::Type* type = std::get<1>(entry);
+
+        // TODO: Apply constraints
+
+        scope->type_aliases[paremeter.name] = quart::TypeAlias(paremeter.name, type, paremeter.span);
+    }
+
+    this->scope = scope;
+    quart::Type* ty = alias->expr->accept(*this);
+
+    this->scope = scope->parent;
+    delete scope;
+
+    return ty;
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
     if (expr->is_generic_alias()) {
         this->scope->type_aliases[expr->name] = quart::TypeAlias(
-            expr->name, expr->parameters, std::move(expr->type), expr->span
+            expr->name, std::move(expr->parameters), std::move(expr->type), expr->span
         );
     } else {
         this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, expr->type->accept(*this), expr->span);

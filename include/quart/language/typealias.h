@@ -26,7 +26,7 @@ struct TypeAlias {
         std::vector<ast::GenericParameter> parameters,
         std::unique_ptr<ast::TypeExpr> expr,
         const Span& span
-    ) : name(name), type(nullptr), parameters(parameters), expr(std::move(expr)), span(span) {}
+    ) : name(name), type(nullptr), parameters(std::move(parameters)), expr(std::move(expr)), span(span) {}
 
     bool is_generic() const { return this->type == nullptr; }
 

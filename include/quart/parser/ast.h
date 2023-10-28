@@ -676,10 +676,10 @@ public:
 
 class GenericTypeExpr : public TypeExpr {
 public:
-    std::unique_ptr<TypeExpr> parent;
+    std::unique_ptr<NamedTypeExpr> parent;
     std::vector<std::unique_ptr<TypeExpr>> args;
 
-    GenericTypeExpr(Span span, std::unique_ptr<TypeExpr> parent, std::vector<std::unique_ptr<TypeExpr>> args);
+    GenericTypeExpr(Span span, std::unique_ptr<NamedTypeExpr> parent, std::vector<std::unique_ptr<TypeExpr>> args);
     Type* accept(Visitor& visitor) override;
 };
 
@@ -697,6 +697,8 @@ struct GenericParameter {
 
     std::vector<std::unique_ptr<TypeExpr>> bounds;
     std::unique_ptr<TypeExpr> default_type;
+
+    Span span;
 };
 
 class TypeAliasExpr : public ExprMixin<ExprKind::TypeAlias> {

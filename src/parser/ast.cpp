@@ -476,9 +476,9 @@ quart::Type* ReferenceTypeExpr::accept(Visitor& visitor) {
 }
 
 GenericTypeExpr::GenericTypeExpr(
-    Span span, std::unique_ptr<TypeExpr> type, std::vector<std::unique_ptr<TypeExpr>> args
+    Span span, std::unique_ptr<NamedTypeExpr> parent, std::vector<std::unique_ptr<TypeExpr>> args
 ) : TypeExpr(span, TypeKind::Generic) {
-    this->parent = std::move(type);
+    this->parent = std::move(parent);
     this->args = std::move(args);
 }
 
