@@ -291,14 +291,14 @@ std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
         std::string name = token.value;
         Span span = token.span;
 
-        std::vector<std::unique_ptr<ast::TypeExpr>> bounds;
+        ast::TypeExprList constraints;
         std::unique_ptr<ast::TypeExpr> default_type = nullptr;
 
         if (this->current == TokenKind::Colon) {
             this->next();
 
             while (this->current != TokenKind::Comma && this->current != TokenKind::Gt) {
-                bounds.push_back(this->parse_type());
+                constraints.push_back(this->parse_type());
                 if (this->current != TokenKind::Add) {
                     break;
                 }
@@ -312,7 +312,7 @@ std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
             default_type = this->parse_type();
         }
 
-        parameters.push_back({name, std::move(bounds), std::move(default_type), span});
+        parameters.push_back({name, std::move(constraints), std::move(default_type), span});
         if (this->current != TokenKind::Comma) {
             break;
         }

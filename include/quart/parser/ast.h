@@ -695,7 +695,7 @@ public:
 struct GenericParameter {
     std::string name;
 
-    std::vector<std::unique_ptr<TypeExpr>> bounds;
+    std::vector<std::unique_ptr<TypeExpr>> constraints;
     std::unique_ptr<TypeExpr> default_type;
 
     Span span;

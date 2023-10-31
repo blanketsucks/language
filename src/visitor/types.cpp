@@ -329,6 +329,23 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
         args.push_back(arg->accept(*this));
     }
 
+    u32 i = 0;
+    for (auto& param : alias->parameters) {
+        quart::Type* arg = args[i];
+        if (!arg && !param.is_optional()) {
+            ERROR(expr->span, "Expected a type argument for parameter '{0}'", param.name);
+        } else if (!arg && param.is_optional()) {
+            args.push_back(param.default_type);
+        }
+
+        i++;
+    }
+
+    auto iterator = alias->cache.find(args);
+    if (iterator != alias->cache.end()) {
+        return iterator->second;
+    }
+
     if (args.size() != alias->parameters.size()) {
         ERROR(expr->span, "Expected {0} type parameters, got {1}", alias->parameters.size(), args.size());
     }
@@ -337,7 +354,7 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
     scope->parent = this->scope;
 
     for (auto entry : llvm::zip(alias->parameters, args)) {
-        const ast::GenericParameter& paremeter = std::get<0>(entry);
+        const GenericTypeParameter& paremeter = std::get<0>(entry);
         quart::Type* type = std::get<1>(entry);
 
         // TODO: Apply constraints
@@ -351,13 +368,30 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
     this->scope = scope->parent;
     delete scope;
 
+    alias->cache[args] = ty;
     return ty;
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
     if (expr->is_generic_alias()) {
+        std::vector<GenericTypeParameter> parameters;
+        for (auto& param : expr->parameters) {
+            std::vector<quart::Type*> constraints;
+            for (auto& constraint : param.constraints) {
+                constraints.push_back(constraint->accept(*this));
+            }
+
+            quart::Type* default_type = nullptr;
+            if (param.default_type) {
+                default_type = param.default_type->accept(*this);
+            }
+
+            parameters.push_back({param.name, constraints, default_type, param.span});
+        }
+
+
         this->scope->type_aliases[expr->name] = quart::TypeAlias(
-            expr->name, std::move(expr->parameters), std::move(expr->type), expr->span
+            expr->name, parameters, std::move(expr->type), expr->span
         );
     } else {
         this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, expr->type->accept(*this), expr->span);
