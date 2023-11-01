@@ -49,7 +49,7 @@ Value Visitor::visit(ast::VariableExpr* expr) {
 Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     quart::Type* type = nullptr;
     if (expr->external) {
-        std::string name = expr->names[0].value;
+        std::string name = expr->identifiers[0].value;
 
         type = expr->type->accept(*this);
         this->module->getOrInsertGlobal(name, type->to_llvm_type());
@@ -128,8 +128,8 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
         this->inferred = nullptr;
     }
 
-    if (!expr->is_multiple_variables) {
-        ast::Ident& ident = expr->names[0];
+    if (!expr->has_multiple_variables()) {
+        ast::Ident& ident = expr->identifiers[0];
         if (!this->current_function) {
             if (!llvm::isa<llvm::Constant>(value.inner)) {
                 ERROR(expr->value->span, "Cannot store non-constant value in a global variable");
@@ -225,7 +225,10 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             .span = ident.span
         };
     } else {
-        this->store_tuple(expr->value->span, this->current_function, value, expr->names, expr->consume_rest);
+        // TODO: Actually implement the consume rest
+        this->store_tuple(
+            expr->value->span, this->current_function, value, expr->identifiers, ""
+        );
     }
     
     return value;

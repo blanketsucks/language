@@ -330,11 +330,14 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
     }
 
     u32 i = 0;
+    size_t size = args.size();
+
     for (auto& param : alias->parameters) {
-        quart::Type* arg = args[i];
-        if (!arg && !param.is_optional()) {
+        bool has_argument = i < size;
+
+        if (!has_argument && !param.is_optional()) {
             ERROR(expr->span, "Expected a type argument for parameter '{0}'", param.name);
-        } else if (!arg && param.is_optional()) {
+        } else if (!has_argument && param.is_optional()) {
             args.push_back(param.default_type);
         }
 

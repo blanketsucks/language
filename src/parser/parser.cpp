@@ -291,7 +291,7 @@ std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
         std::string name = token.value;
         Span span = token.span;
 
-        ast::TypeExprList constraints;
+        ast::ExprList<ast::TypeExpr> constraints;
         std::unique_ptr<ast::TypeExpr> default_type = nullptr;
 
         if (this->current == TokenKind::Colon) {
@@ -324,8 +324,8 @@ std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
     return parameters;
 }
 
-ast::TypeExprList Parser::parse_generic_arguments() {
-    ast::TypeExprList arguments;
+ast::ExprList<ast::TypeExpr> Parser::parse_generic_arguments() {
+    ast::ExprList<ast::TypeExpr> arguments;
 
     this->expect(TokenKind::Lt, "<");
     while (this->current != TokenKind::Gt) {
@@ -704,7 +704,6 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         this->next();
     }
 
-    std::string consume_rest;
     if (this->current == TokenKind::LParen) {
         this->next();
 
@@ -747,8 +746,6 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         if (names.empty()) {
             ERROR(span, "Expected atleast a single variable name");
         }
-
-        is_multiple_variables = true;
     } else {
         Token token = this->expect(TokenKind::Identifier, "variable name");
         names.push_back({token.value, is_mutable, Span::merge(span, token.span)});
@@ -787,7 +784,7 @@ std::unique_ptr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
         return std::make_unique<ast::ConstExpr>(span, names[0].value, std::move(type), std::move(expr));
     } else {
         return std::make_unique<ast::VariableAssignmentExpr>(
-            span, names, std::move(type), std::move(expr), consume_rest, false, is_multiple_variables
+            span, names, std::move(type), std::move(expr), false
         );
     }
 }
@@ -800,8 +797,6 @@ std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier link
     if (this->current == TokenKind::Identifier) {
         std::string name = this->current.value;
         Span span = this->current.span;
-
-        std::string consume_rest;
 
         this->next();
 
@@ -817,7 +812,7 @@ std::unique_ptr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier link
 
         std::vector<ast::Ident> names = {{name, true, span},};
         definition = std::make_unique<ast::VariableAssignmentExpr>(
-            Span::merge(start, end), names, std::move(type), std::move(expr), consume_rest, true, false
+            Span::merge(start, end), names, std::move(type), std::move(expr), true
         );
     } else {
         if (this->current != TokenKind::Func) {
@@ -1398,7 +1393,7 @@ std::unique_ptr<ast::Expr> Parser::unary() {
         this->next();
 
         auto value = this->call();
-        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, value->span), op, std::move(value));
+        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, value->span), std::move(value), op);
     }
 
     switch (this->current.type) {
@@ -1472,7 +1467,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
 
     if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
         UnaryOp op = this->current.type == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
-        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, this->current.span), op, std::move(expr));
+        expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, this->current.span), std::move(expr), op);
 
         this->next();
     } else if ( // Basically this condition checks for Foo{bar: ...} or Foo{}
@@ -1523,7 +1518,7 @@ std::unique_ptr<ast::Expr> Parser::attr(Span start, std::unique_ptr<ast::Expr> e
         
         std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
         expr = std::make_unique<ast::AttributeExpr>(
-            Span::merge(start, this->current.span), value, std::move(expr)
+            Span::merge(start, this->current.span), std::move(expr), value
         );
     }
 
@@ -1718,7 +1713,7 @@ std::unique_ptr<ast::Expr> Parser::factor() {
         this->next();
 
         std::string value = this->expect(TokenKind::Identifier, "identifier").value;
-        expr = std::make_unique<ast::PathExpr>(Span::merge(start, this->current.span), value, std::move(expr));
+        expr = std::make_unique<ast::PathExpr>(Span::merge(start, this->current.span), std::move(expr), value);
     }
 
     if (this->current == TokenKind::Dot) {

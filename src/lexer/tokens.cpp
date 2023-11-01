@@ -50,8 +50,6 @@ llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
     }
 }
 
-
-
 llvm::StringRef Token::get_type_value(TokenKind type) {
     switch (type) {
         case TokenKind::Inc: return "++";

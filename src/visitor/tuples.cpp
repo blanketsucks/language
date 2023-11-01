@@ -60,14 +60,14 @@ void Visitor::store_tuple(
     const Span& span, 
     std::shared_ptr<Function> func, 
     const Value& value, 
-    const std::vector<ast::Ident>& names,
+    const std::vector<ast::Ident>& identifiers,
     std::string consume_rest
 ) {
     std::vector<Value> values;
     if (consume_rest.empty()) {
-        values = this->unpack(value, names.size(), span);
+        values = this->unpack(value, identifiers.size(), span);
 
-        for (auto entry : llvm::zip(names, values)) {
+        for (auto entry : llvm::zip(identifiers, values)) {
             const ast::Ident& ident = std::get<0>(entry);
             const Value& value = std::get<1>(entry);
 
@@ -83,7 +83,7 @@ void Visitor::store_tuple(
         return;
     }
 
-    if (!consume_rest.empty() && names.size() == 1) {
+    if (!consume_rest.empty() && identifiers.size() == 1) {
         llvm::AllocaInst* alloca = this->alloca(value->getType());
         this->builder->CreateStore(value, alloca);
 
@@ -121,12 +121,12 @@ void Visitor::store_tuple(
     // We need to know how many variables are before and after the consume rest and it's position, from there
     // we can chop off the values and store them in their respective variables and the values left will be
     // stored in the consume rest variable as a tuple.
-    auto iterator = llvm::find_if(names, [consume_rest](const ast::Ident& ident) {
+    auto iterator = llvm::find_if(identifiers, [consume_rest](const ast::Ident& ident) {
         return ident.value == consume_rest;
     });
 
-    size_t index = iterator - names.begin();
-    size_t rest = names.size() - index - 1;
+    size_t index = iterator - identifiers.begin();
+    size_t rest = identifiers.size() - index - 1;
 
     // We are forced to take elements from the back because we don't know how many elements would be in the rest tuple
     // We take as many values from the back as we have variables after the consume rest (in the case above it's 1)
@@ -138,14 +138,14 @@ void Visitor::store_tuple(
 
     std::vector<TupleElement> finals;
     for (size_t i = 0; i < index; i++) {
-        const ast::Ident& ident = names[i];
+        const ast::Ident& ident = identifiers[i];
 
         finals.push_back({ident.value, values[i], ident.is_mutable, ident.span});
         values.erase(values.begin());
     }
 
-    for (size_t i = index + 1; i < names.size(); i++) {
-        const ast::Ident& ident = names[i];
+    for (size_t i = index + 1; i < identifiers.size(); i++) {
+        const ast::Ident& ident = identifiers[i];
 
         finals.push_back({ident.value, last.back(), ident.is_mutable, ident.span});
         last.pop_back();

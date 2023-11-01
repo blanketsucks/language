@@ -49,7 +49,7 @@ public:
     );
 
     std::vector<ast::GenericParameter> parse_generic_parameters();
-    ast::TypeExprList parse_generic_arguments();
+    ast::ExprList<ast::TypeExpr> parse_generic_arguments();
 
     // The difference between this and parse_function_definition is that this one can never return a prototype forcing an 
     // implementation to be provided

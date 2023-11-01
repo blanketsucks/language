@@ -89,7 +89,7 @@ public:
         const Span& span, 
         FunctionRef func, 
         const Value& value, 
-        const std::vector<ast::Ident>& names, 
+        const std::vector<ast::Ident>& identifiers, 
         std::string consume_rest
     );
 
@@ -99,8 +99,6 @@ public:
     StructRef make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
 
     void create_bounds_check(llvm::Value* index, u32 count, const Span& span);
-
-    bool is_tuple(llvm::Type* type);
 
     StructRef get_struct_from_type(quart::Type* type);
 
