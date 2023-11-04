@@ -286,10 +286,12 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         ERROR(expr->span, "No public default constructor for struct '{0}'", structure->name);
     }
 
+    // FIXME: Storing this as a map is dumb and should be changed since we know how many fields we would have in advance.
     std::map<int, llvm::Value*> args;
     int index = 0;
     bool is_constant_value = true;
 
+    // FIXME: Constructor values are not type-checked against the struct fields
     for (auto& entry : expr->fields) {
         int i = index;
         StructField field;
