@@ -237,7 +237,14 @@ quart::Type* Visitor::visit(ast::NamedTypeExpr* expr) {
         auto structure = scope->get_struct(expr->name);
         return structure->type;
     } else if (scope->has_type_alias(expr->name)) {
-        return scope->get_type_alias(expr->name)->type;
+        TypeAlias* alias = scope->get_type_alias(expr->name);
+        if (alias->is_generic() && !alias->is_instantiable_without_args()) {
+            ERROR(expr->span, "Expected type arguments for type '{0}'", expr->name);
+        } else if (alias->is_generic() && alias->is_instantiable_without_args()) {
+            return alias->instantiate(*this);
+        }
+
+        return alias->type;
     } else if (scope->has_enum(expr->name)) {
         return scope->get_enum(expr->name)->type;
     }
@@ -322,6 +329,7 @@ quart::Type* Visitor::visit(ast::ReferenceTypeExpr* expr) {
 
 quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
     // TODO: Parse parents
+    // TODO: Allow for struct types
     quart::TypeAlias* alias = this->scope->get_type_alias(expr->parent->name);
 
     std::vector<quart::Type*> args;
@@ -344,35 +352,12 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
         i++;
     }
 
-    auto iterator = alias->cache.find(args);
-    if (iterator != alias->cache.end()) {
-        return iterator->second;
-    }
-
     if (args.size() != alias->parameters.size()) {
         ERROR(expr->span, "Expected {0} type parameters, got {1}", alias->parameters.size(), args.size());
     }
 
-    Scope* scope = new Scope("generic", ScopeType::Anonymous);
-    scope->parent = this->scope;
 
-    for (auto entry : llvm::zip(alias->parameters, args)) {
-        const GenericTypeParameter& paremeter = std::get<0>(entry);
-        quart::Type* type = std::get<1>(entry);
-
-        // TODO: Apply constraints
-
-        scope->type_aliases[paremeter.name] = quart::TypeAlias(paremeter.name, type, paremeter.span);
-    }
-
-    this->scope = scope;
-    quart::Type* ty = alias->expr->accept(*this);
-
-    this->scope = scope->parent;
-    delete scope;
-
-    alias->cache[args] = ty;
-    return ty;
+    return alias->instantiate(*this, args);
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
@@ -394,7 +379,7 @@ Value Visitor::visit(ast::TypeAliasExpr* expr) {
 
 
         this->scope->type_aliases[expr->name] = quart::TypeAlias(
-            expr->name, parameters, std::move(expr->type), expr->span
+            expr->name, parameters, *expr->type, expr->span
         );
     } else {
         this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, expr->type->accept(*this), expr->span);

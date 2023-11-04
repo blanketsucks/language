@@ -38,7 +38,7 @@ llvm::Function* Visitor::create_function(
 static Value evaluate_function_argument(
     Visitor& visitor,
     std::unique_ptr<ast::Expr>& expr,
-    Parameter& param
+    const Parameter& param
 ) {
     visitor.inferred = param.type;
     if (param.is_reference()) {
@@ -62,30 +62,30 @@ static Value evaluate_function_argument(
 
 std::vector<llvm::Value*> Visitor::handle_function_arguments(
     const Span& span,
-    Function* function,
+    Function const& function,
     llvm::Value* self,
     std::vector<std::unique_ptr<ast::Expr>>& args,
     std::map<std::string, std::unique_ptr<ast::Expr>>& kwargs
 ) {
     u32 argc = args.size() + kwargs.size() + (self ? 1 : 0);
-    bool is_variadic = function->is_variadic() || function->is_c_variadic();
+    bool is_variadic = function.is_variadic() || function.is_c_variadic();
 
-    if (function->has_any_default_value()) {
-        if (argc + function->get_default_arguments_count() < function->argc()) {
-            ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
-        } else if (argc > function->argc() && !is_variadic) {
-            ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+    if (function.has_any_default_value()) {
+        if (argc + function.get_default_arguments_count() < function.argc()) {
+            ERROR(span, "Function expects at least {0} arguments but got {1}", function.argc(), argc);
+        } else if (argc > function.argc() && !is_variadic) {
+            ERROR(span, "Function expects at most {0} arguments but got {1}", function.argc(), argc);
         }
     } else {
-        if (argc < function->argc()) {
-            ERROR(span, "Function expects at least {0} arguments but got {1}", function->argc(), argc);
-        } else if (argc > function->argc() && !is_variadic) {
-            ERROR(span, "Function expects at most {0} arguments but got {1}", function->argc(), argc);
+        if (argc < function.argc()) {
+            ERROR(span, "Function expects at least {0} arguments but got {1}", function.argc(), argc);
+        } else if (argc > function.argc() && !is_variadic) {
+            ERROR(span, "Function expects at most {0} arguments but got {1}", function.argc(), argc);
         }
     }
 
-    if (!this->current_function && function->flags & Function::NoReturn) {
-        ERROR(span, "Cannot call noreturn function '{0}' from global scope", function->name);
+    if (!this->current_function && function.flags & Function::NoReturn) {
+        ERROR(span, "Cannot call noreturn function '{0}' from global scope", function.name);
     }
 
     std::map<int64_t, llvm::Value*> values;
@@ -93,13 +93,13 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 
     u32 i = self ? 1 : 0;
 
-    std::vector<Parameter> params = function->params;
-    for (auto& entry : function->kwargs) params.push_back(entry.second);
+    std::vector<Parameter> params = function.params;
+    for (auto& entry : function.kwargs) params.push_back(entry.second);
 
     for (auto& arg : args) {
         if (i >= params.size()) {
             if (!is_variadic) {
-                ERROR(arg->span,  "Function expects {0} arguments but got {1}", function->value->size(), i);
+                ERROR(arg->span,  "Function expects {0} arguments but got {1}", params.size(), i);
             }
 
             Value value = arg->accept(*this);
@@ -117,11 +117,11 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     }
 
     for (auto& entry : kwargs) {
-        if (!function->has_keyword_parameter(entry.first)) {
+        if (!function.has_keyword_parameter(entry.first)) {
             ERROR(entry.second->span, "Function does not have a keyword parameter named '{0}'", entry.first);
         }
 
-        Parameter& param = function->kwargs[entry.first];
+        const Parameter& param = function.kwargs.at(entry.first);
         Value value = evaluate_function_argument(*this, entry.second, param);
 
         values[param.index] = value;
@@ -146,15 +146,15 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
 }
 
 Value Visitor::call(
-    std::shared_ptr<Function> function, 
+    Function const& function, 
     std::vector<llvm::Value*> args, 
     llvm::Value* self, 
     bool is_constructor,
     llvm::FunctionType* type
 ) {
-    llvm::Value* result = this->call(function->value, args, self, is_constructor, type);
-    if (function->ret->is_reference()) {
-        return Value(result, function->ret.type);
+    llvm::Value* result = this->call(function.value, args, self, is_constructor, type);
+    if (function.get_return_type()->is_reference()) {
+        return Value(result, function.get_return_type());
     }
 
     return result;
@@ -660,7 +660,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
     if (func) {
         args = this->handle_function_arguments(
             expr->span,
-            func, 
+            *func, 
             callable.self,
             expr->args, 
             expr->kwargs

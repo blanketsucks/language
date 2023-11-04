@@ -354,10 +354,11 @@ Token Lexer::once() {
             if (next == '=') {
                 this->next();
                 return this->create_token(TokenKind::Gte, start, ">=");
-            } else if (next == '>') {
-                this->next();
-                return this->create_token(TokenKind::Rsh, start, ">>");
-            }
+            } 
+            // else if (next == '>') {
+            //     this->next();
+            //     return this->create_token(TokenKind::Rsh, start, ">>");
+            // }
 
             return this->create_token(TokenKind::Gt, start, ">");
         } case '<': {

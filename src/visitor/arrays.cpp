@@ -116,7 +116,7 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
 }
 
 Value Visitor::visit(ast::IndexExpr* expr) {
-    auto ref = this->as_reference(expr->value);
+    auto ref = this->as_reference(*expr->value);
 
     quart::Type* type = ref.type;
     llvm::Value* value = ref.value;
@@ -234,8 +234,8 @@ void Visitor::create_bounds_check(llvm::Value* index, u32 count, const Span& spa
     this->set_insert_point(merge);
 }
 
-Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value) {
-    auto ref = this->as_reference(expr->value);
+Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, ast::Expr& value) {
+    auto ref = this->as_reference(*expr->value);
     quart::Type* type = ref.type;
 
     if (!type->is_pointer() && !type->is_array()) {
@@ -259,8 +259,8 @@ Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_p
     quart::Type* expected = type->is_array() ? type->get_array_element_type() : type;
     this->inferred = expected;
 
-    Value element = value->accept(*this);
-    if (element.is_empty_value()) ERROR(value->span, "Expected a value");
+    Value element = value.accept(*this);
+    if (element.is_empty_value()) ERROR(value.span, "Expected a value");
 
     this->inferred = nullptr;
     if (element.flags & Value::Aggregate) {
@@ -269,7 +269,7 @@ Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_p
 
     if (!Type::can_safely_cast_to(element.type, expected)) {
         ERROR(
-            value->span, 
+            value.span, 
             "Cannot assign value of type '{0}' to {1} of type '{2}'", 
             element.type->get_as_string(),
             type->is_array() ? "an array" : "a pointer",

@@ -1358,6 +1358,11 @@ std::unique_ptr<ast::Expr> Parser::binary(int prec, std::unique_ptr<ast::Expr> l
         }
 
         TokenKind kind = this->current.type;
+        if (kind == TokenKind::Gt && this->peek() == TokenKind::Gt) {
+            this->next();
+            kind = TokenKind::Rsh;
+        }
+
         BinaryOp op = BINARY_OPS[kind];
 
         this->next();

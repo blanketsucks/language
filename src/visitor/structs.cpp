@@ -158,7 +158,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
 
     bool is_mutable = true;
 
-    auto ref = this->as_reference(expr->parent);
+    auto ref = this->as_reference(*expr->parent);
     if (!ref.is_null()) {
         is_mutable = ref.flags & ScopeLocal::Mutable;
 
@@ -405,8 +405,8 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
     return Value(alloca, structure->type, Value::Aggregate);
 }
 
-Value Visitor::evaluate_attribute_assignment(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> v) {
-    auto ref = this->as_reference(expr->parent);
+Value Visitor::evaluate_attribute_assignment(ast::AttributeExpr* expr, ast::Expr& v) {
+    auto ref = this->as_reference(*expr->parent);
     if (!ref.is_mutable()) {
         ERROR(expr->parent->span, "Cannot mutate immutable variable '{0}'", ref.name);
     }
@@ -470,13 +470,13 @@ Value Visitor::evaluate_attribute_assignment(ast::AttributeExpr* expr, std::uniq
 
     this->inferred = field.type;
 
-    Value value = v->accept(*this);
-    if (value.is_empty_value()) ERROR(v->span, "Expected a value");
+    Value value = v.accept(*this);
+    if (value.is_empty_value()) ERROR(v.span, "Expected a value");
 
     this->inferred = nullptr;
     if (!Type::can_safely_cast_to(value.type, field.type)) {
         ERROR(
-            v->span, 
+            v.span, 
             "Cannot assign value of type '{0}' to type '{1}' for field '{2}'", 
             value.type->get_as_string(), field.type->get_as_string(), field.name
         );

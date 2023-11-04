@@ -55,7 +55,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     A jump can be either a `return`, `break` or a `continue` since these statements cause a branch in the LLVM IR.
     
     */
-    if (!expr->ebody) {
+    if (!expr->else_body) {
         if (!function->current_block->getTerminator()) {
             this->builder->CreateBr(else_);
             this->set_insert_point(else_);
@@ -69,7 +69,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
     if (function->current_block->getTerminator()) {
         this->set_insert_point(else_);
-        expr->ebody->accept(*this);
+        expr->else_body->accept(*this);
 
         return nullptr;
     }
@@ -78,7 +78,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     this->builder->CreateBr(merge);
 
     this->set_insert_point(else_);
-    expr->ebody->accept(*this);
+    expr->else_body->accept(*this);
 
     if (function->current_block->getTerminator()) {
         this->set_insert_point(merge);

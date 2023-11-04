@@ -239,23 +239,23 @@ llvm::Value* Visitor::as_reference(llvm::Value* value) {
     return load->getPointerOperand();
 }
 
-ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_ampersand) {
+ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
     if (require_ampersand) {
-        if (expr->kind() != ast::ExprKind::UnaryOp) {
-            ERROR(expr->span, "Expected a reference or '&' before expression");
+        if (expr.kind() != ast::ExprKind::UnaryOp) {
+            ERROR(expr.span, "Expected a reference or '&' before expression");
         }
 
-        ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
+        ast::UnaryOpExpr* unary = expr.as<ast::UnaryOpExpr>();
         if (unary->op != UnaryOp::BinaryAnd) {
-            ERROR(expr->span, "Expected a reference '&' before expression");
+            ERROR(expr.span, "Expected a reference '&' before expression");
         }
 
-        return this->as_reference(unary->value);
+        return this->as_reference(*unary->value);
     }
 
-    switch (expr->kind()) {
+    switch (expr.kind()) {
         case ast::ExprKind::Variable: {
-            ast::VariableExpr* variable = expr->as<ast::VariableExpr>();
+            ast::VariableExpr* variable = expr.as<ast::VariableExpr>();
             ScopeLocal local = this->scope->get_local(variable->name);
 
             if (local.is_null()) {
@@ -265,9 +265,9 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
             return local;
         }
         case ast::ExprKind::Index: {
-            ast::IndexExpr* idx = expr->as<ast::IndexExpr>();
+            ast::IndexExpr* idx = expr.as<ast::IndexExpr>();
 
-            ScopeLocal parent = this->as_reference(idx->value);
+            ScopeLocal parent = this->as_reference(*idx->value);
             if (parent.is_null()) {
                 return parent;
             }
@@ -302,9 +302,9 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
             return ScopeLocal::from_scope_local(parent, result);
         }
         case ast::ExprKind::Attribute: {
-            ast::AttributeExpr* attribute = expr->as<ast::AttributeExpr>();
+            ast::AttributeExpr* attribute = expr.as<ast::AttributeExpr>();
 
-            ScopeLocal parent = this->as_reference(attribute->parent);
+            ScopeLocal parent = this->as_reference(*attribute->parent);
             if (parent.is_null()) {
                 return parent;
             }
@@ -329,7 +329,7 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
 
             int index = structure->get_field_index(attribute->attribute);
             if (index < 0) {
-                ERROR(expr->span, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
+                ERROR(expr.span, "Field '{0}' does not exist in struct '{1}'", attribute->attribute, structure->name);
             }
 
             StructField& field = structure->fields[attribute->attribute];
@@ -348,34 +348,20 @@ ScopeLocal Visitor::as_reference(std::unique_ptr<ast::Expr>& expr, bool require_
             return ref;
         }
         case ast::ExprKind::UnaryOp: {
-            ast::UnaryOpExpr* unary = expr->as<ast::UnaryOpExpr>();
+            ast::UnaryOpExpr* unary = expr.as<ast::UnaryOpExpr>();
             if (unary->op != UnaryOp::BinaryAnd) {
                 return ScopeLocal::null();
             }
 
-            return this->as_reference(unary->value);
+            return this->as_reference(*unary->value);
         }
         case ast::ExprKind::Maybe: {
-            ast::MaybeExpr* maybe = expr->as<ast::MaybeExpr>();
-            return this->as_reference(maybe->value);
+            ast::MaybeExpr* maybe = expr.as<ast::MaybeExpr>();
+            return this->as_reference(*maybe->value);
         }
         default:
             return ScopeLocal::null();
     }
-}
-
-Value Visitor::get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool require_ampersand) {
-    ScopeLocal local = this->as_reference(expr, require_ampersand);
-    if (local.is_null()) {
-        return EMPTY_VALUE;
-    }
-
-    quart::Type* type = local.type->get_reference_to(local.flags & ScopeLocal::Mutable);
-    u16 flags = Value::None;
-
-    if (local.flags & ScopeLocal::StackAllocated) flags |= Value::StackAllocated;
-
-    return Value(local.value, type, flags);
 }
 
 void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {

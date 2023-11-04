@@ -58,7 +58,7 @@ Value Visitor::visit(ast::TupleExpr* expr) {
 
 void Visitor::store_tuple(
     const Span& span, 
-    std::shared_ptr<Function> func, 
+    Function& function, 
     const Value& value, 
     const std::vector<ast::Ident>& identifiers,
     std::string consume_rest
@@ -75,7 +75,7 @@ void Visitor::store_tuple(
             this->builder->CreateStore(value, alloca);
 
             u8 flags = ident.is_mutable ? Variable::Mutable : Variable::None;
-            func->scope->variables[ident.value] = Variable::from_alloca(
+            function.scope->variables[ident.value] = Variable::from_alloca(
                 ident.value, alloca, value.type, flags, ident.span
             );
         }
@@ -87,7 +87,7 @@ void Visitor::store_tuple(
         llvm::AllocaInst* alloca = this->alloca(value->getType());
         this->builder->CreateStore(value, alloca);
 
-        func->scope->variables[consume_rest] = Variable::from_alloca(
+        function.scope->variables[consume_rest] = Variable::from_alloca(
             consume_rest, alloca, value.type, Variable::Mutable, span
         );
 
@@ -167,7 +167,7 @@ void Visitor::store_tuple(
         this->builder->CreateStore(values[i], ptr);
     }
 
-    func->scope->variables[consume_rest] = Variable::from_alloca(
+    function.scope->variables[consume_rest] = Variable::from_alloca(
         consume_rest, alloca, tuple, Variable::Mutable, span
     );
 
@@ -175,7 +175,7 @@ void Visitor::store_tuple(
         alloca = this->alloca(entry.value->getType());
         this->builder->CreateStore(entry.value, alloca);
 
-        func->scope->variables[entry.name] = Variable::from_alloca(
+        function.scope->variables[entry.name] = Variable::from_alloca(
             entry.name, alloca, entry.value.type, entry.is_mutable, entry.span
         );
     }

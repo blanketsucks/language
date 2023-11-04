@@ -87,7 +87,7 @@ public:
 
     void store_tuple(
         const Span& span, 
-        FunctionRef func, 
+        Function& function,
         const Value& value, 
         const std::vector<ast::Ident>& identifiers, 
         std::string consume_rest
@@ -115,14 +115,14 @@ public:
 
     std::vector<llvm::Value*> handle_function_arguments(
         const Span& span,
-        Function* function,
+        Function const& function,
         llvm::Value* self,
         std::vector<std::unique_ptr<ast::Expr>>& args,
         std::map<std::string, std::unique_ptr<ast::Expr>>& kwargs
     );
     
     Value call(
-        FunctionRef function, 
+        Function const& function, 
         std::vector<llvm::Value*> args, 
         llvm::Value* self = nullptr,
         bool is_constructor = false,
@@ -142,21 +142,20 @@ public:
     );
 
     llvm::Value* as_reference(llvm::Value* value);
-    ScopeLocal as_reference(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
-    Value get_reference_as_value(std::unique_ptr<ast::Expr>& expr, bool require_ampersand = false);
+    ScopeLocal as_reference(ast::Expr& expr, bool require_ampersand = false);
 
-    void panic(const std::string& message, const Span& span);
+    void panic(const std::string& message, const Span&);
 
-    std::shared_ptr<quart::Module> import(const std::string& name, bool is_relative, const Span& span);
+    ModuleRef import(const std::string& name, bool is_relative, const Span&);
 
     void mark_as_mutated(const std::string& name);
     void mark_as_mutated(const ScopeLocal& local);
 
-    void visit(std::vector<std::unique_ptr<ast::Expr>> statements);
+    void visit(ast::ExprList<ast::Expr> statements);
 
     Value evaluate_tuple_assignment(ast::BinaryOpExpr* expr);
-    Value evaluate_attribute_assignment(ast::AttributeExpr* expr, std::unique_ptr<ast::Expr> value);
-    Value evaluate_subscript_assignment(ast::IndexExpr* expr, std::unique_ptr<ast::Expr> value);
+    Value evaluate_attribute_assignment(ast::AttributeExpr* expr, ast::Expr& value);
+    Value evaluate_subscript_assignment(ast::IndexExpr* expr, ast::Expr& value);
     Value evaluate_assignment(ast::BinaryOpExpr* expr);
 
     Value evaluate_float_operation(const Value& lhs, BinaryOp op, const Value& rhs);

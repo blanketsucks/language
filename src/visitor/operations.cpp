@@ -71,11 +71,11 @@ Value Visitor::evaluate_assignment(ast::BinaryOpExpr* expr) {
     switch (expr->left->kind()) {
         case ast::ExprKind::Attribute:
             return this->evaluate_attribute_assignment(
-                expr->left->as<ast::AttributeExpr>(), std::move(expr->right)
+                expr->left->as<ast::AttributeExpr>(), *expr->right
             );
         case ast::ExprKind::Index:
             return this->evaluate_subscript_assignment(
-                expr->left->as<ast::IndexExpr>(), std::move(expr->right)
+                expr->left->as<ast::IndexExpr>(), *expr->left
             );
         case ast::ExprKind::Tuple:
             return this->evaluate_tuple_assignment(expr);
@@ -116,7 +116,7 @@ Value Visitor::evaluate_assignment(ast::BinaryOpExpr* expr) {
         default: break;
     }
 
-    auto ref = this->as_reference(expr->left);
+    auto ref = this->as_reference(*expr->left);
     if (ref.flags & ScopeLocal::Constant) {
         ERROR(expr->span, "Cannot assign to constant");
     } else if (!(ref.flags & ScopeLocal::Mutable)) {
@@ -234,7 +234,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             return Value(this->load(value), type);
         }
         case UnaryOp::BinaryAnd: {
-            auto ref = this->as_reference(expr->value);
+            auto ref = this->as_reference(*expr->value);
             if (!ref.value) {
                 llvm::AllocaInst* alloca = this->alloca(value->getType());
                 return Value(alloca, type->get_reference_to(true));
@@ -248,7 +248,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->span, "Unsupported unary operator '++' for type '{0}'", type->get_as_string());
             }
 
-            auto ref = this->as_reference(expr->value);
+            auto ref = this->as_reference(*expr->value);
             if (ref.is_null()) {
                 ERROR(expr->span, "Expected a variable, struct member or array element");
             }
@@ -268,7 +268,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->span, "Unsupported unary operator '--' for type '{0}'", type->get_as_string());
             }
 
-            auto ref = this->as_reference(expr->value);
+            auto ref = this->as_reference(*expr->value);
             if (ref.is_null()) {
                 ERROR(expr->span, "Expected a variable, struct member or array element");
             }
@@ -435,7 +435,7 @@ Value Visitor::visit(ast::InplaceBinaryOpExpr* expr) {
         rhs = this->cast(rhs, lhs.type);
     }
 
-    auto ref = this->as_reference(expr->left);
+    auto ref = this->as_reference(*expr->left);
     if (ref.is_constant()) {
         ERROR(expr->span, "Cannot assign to constant '{0}'", ref.name);
     } else if (!ref.is_mutable()) {

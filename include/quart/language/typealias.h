@@ -26,7 +26,7 @@ struct TypeAlias {
     quart::Type* type;
 
     std::vector<GenericTypeParameter> parameters;
-    std::unique_ptr<ast::TypeExpr> expr;
+    ast::TypeExpr* expr;
 
     GenericCache cache;
 
@@ -41,12 +41,16 @@ struct TypeAlias {
     TypeAlias(
         const std::string& name,
         std::vector<GenericTypeParameter> parameters,
-        std::unique_ptr<ast::TypeExpr> expr,
+        ast::TypeExpr& expr,
         const Span& span
-    ) : name(name), type(nullptr), parameters(parameters), expr(std::move(expr)), span(span) {}
+    ) : name(name), type(nullptr), parameters(parameters), expr(&expr), span(span) {}
 
     bool is_generic() const { return this->type == nullptr; }
 
+    bool is_instantiable_without_args() const;
+
+    quart::Type* instantiate(Visitor&);
+    quart::Type* instantiate(Visitor&, const std::vector<quart::Type*>& args);
 };
 
 }

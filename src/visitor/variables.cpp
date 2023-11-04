@@ -227,7 +227,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
     } else {
         // TODO: Actually implement the consume rest
         this->store_tuple(
-            expr->value->span, this->current_function, value, expr->identifiers, ""
+            expr->value->span, *this->current_function, value, expr->identifiers, ""
         );
     }
     

@@ -19,6 +19,7 @@ struct Value {
         StackAllocated    = 1 << 3,
         Aggregate         = 1 << 4,
 
+        // Flags to indicate the value inside the `extra` field
         Struct            = 1 << 5,
         Function          = 1 << 6,
         Builtin           = 1 << 7,
