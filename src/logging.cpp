@@ -34,21 +34,13 @@ void logging::error(const Span& span, const std::string& message, bool fatal) {
     stream << message << '\n';
 
     std::string fmt = FORMAT("{0} | ", span.start.line);
-
     stream << logging::color(COLOR_WHITE, fmt);
+
     stream.write(span.line.data(), span.line.size());
-
-    size_t len = span.line.size();
-    size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
-
-    u32 padding = span.length() <= 0 ? 1 : span.length();
-
     stream << '\n';
 
-    for (size_t i = 0; i < offset; i++) stream << ' ';
-    for (size_t i = 0; i < padding; i++) stream << '^';
-
-    stream << '\n';
+    for (u32 i = 0; i < span.start.column - 1 + fmt.length(); i++) stream << ' ';
+    for (u32 i = span.start.column; i < span.end.column; i++) stream << '^';
 
     std::cout << stream.str() << std::endl;
     if (fatal) exit(1);
@@ -61,20 +53,27 @@ void logging::note(const Span& span, const std::string& message) {
     stream << logging::color(COLOR_MAGENTA, "note:") << ' ';
 
     stream << message << '\n';
+
     std::string fmt = FORMAT("{0} | ", span.start.line);
-
     stream << logging::color(COLOR_WHITE, fmt);
+    
     stream.write(span.line.data(), span.line.size());
-
-    size_t len = span.line.size();
-    size_t offset = std::min(span.start.column - 1 + fmt.length(), len);
-
     stream << '\n';
 
-    for (size_t i = 0; i < offset; i++) stream << ' ';
-    for (size_t i = 0; i < span.length(); i++) stream << '^';
+    for (u32 i = 0; i < span.start.column - 1 + fmt.length(); i++) stream << ' ';
+    for (u32 i = span.start.column; i < span.end.column; i++) stream << '^';
 
-    stream << '\n';
     std::cout << stream.str() << std::endl;
 }
 
+void logging::error_with_note(
+    const Span& error_span,
+    const std::string& error,
+    const Span& note_span,
+    const std::string& note
+) {
+    logging::error(error_span, error, false);
+    logging::note(note_span, note);
+
+    exit(1);
+}

@@ -15,6 +15,7 @@
 
 #define ERROR(span, ...) do { logging::error(span, llvm::formatv(__VA_ARGS__)); exit(1); } while (0)
 #define NOTE(span, ...) logging::note(span, llvm::formatv(__VA_ARGS__))
+#define ERROR_WITH_NOTE(error_span, error, note_span, note) logging::error_with_note(error_span, error, note_span, note)
 
 #define TODO(x) \
     std::cout << FORMAT("{0}:{1} in {2}: '{3}'\n", __FILE__, __LINE__, __PRETTY_FUNCTION__, x); \
@@ -45,6 +46,14 @@ void underline_error(
 
 void error(const Span& span, const std::string& message, bool fatal = true);
 void note(const Span& span, const std::string& message);
+
+void error_with_note(
+    const Span& error_span,
+    const std::string& error,
+    const Span& note_span,
+    const std::string& note
+);
+
 
 }
 
