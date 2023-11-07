@@ -345,10 +345,10 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (this->module->getFunction(fn)) {
         auto function = this->functions[fn];
 
-        logging::error(expr->span, FORMAT("Function with the name '{0}' already defined", fn), false);
-        logging::note(function->span, FORMAT("'{0}' was previously defined here", fn));
-
-        exit(1);
+        ERROR_WITH_NOTE(
+            expr->span, FORMAT("Function with the name '{0}' already defined", fn),
+            function->span, FORMAT("'{0}' was previously defined here", fn)
+        );
     }
 
     if (this->is_reserved_function(fn)) {
