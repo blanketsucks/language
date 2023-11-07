@@ -2,8 +2,18 @@
 
 using namespace quart;
 
+struct ArrayElement {
+    Value value;
+    Span span;
+
+    operator Value() const { return this->value; }
+    operator llvm::Value*() const { return this->value.inner; }
+
+    quart::Type* type() const { return this->value.type; }
+};
+
 Value Visitor::visit(ast::ArrayExpr* expr) {
-    std::vector<Value> elements;
+    std::vector<ArrayElement> elements;
     bool is_const = true;
 
     for (auto& element : expr->elements) {
@@ -14,12 +24,11 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         Value value = element->accept(*this);
         if (value.is_empty_value()) ERROR(element->span, "Expected a value");
 
-        elements.push_back(value);
+        elements.push_back({value, element->span});
     }
 
     if (elements.empty()) {
         if (!this->inferred) {
-            logging::note(expr->span, "The type of empty arrays defaults to [int; 0]");
              return llvm::ConstantAggregateZero::get(
                 llvm::ArrayType::get(llvm::Type::getInt32Ty(*this->context), 0)
             );
@@ -35,17 +44,27 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         };
     }
 
-    quart::Type* etype = elements[0].type;
+    quart::Type* etype = elements[0].type();
     for (size_t i = 1; i < elements.size(); i++) {
         auto& element = elements[i];
-        if (!Type::can_safely_cast_to(element.type, etype)) {
-            ERROR(
-                expr->span, 
-                "All elements of an array must be of the same type (element {0} is of type '{1}' but the first element is of type '{2}')", 
-                i, element.type->get_as_string(), etype->get_as_string()
+        if (!Type::can_safely_cast_to(element.type(), etype)) {
+            std::string error = FORMAT(
+                "Cannot assign value of type '{0}' to array of type '{1}'", 
+                element.type()->get_as_string(), 
+                etype->get_as_string()
+            );
+
+            ERROR_WITH_NOTE(
+                element.span, 
+                error,
+                elements[0].span,
+                FORMAT(
+                    "Array element type was inferred to be '{0}' from here",
+                    etype->get_as_string()
+                )
             );
         } else {
-            element = this->cast(element, etype);
+            element.value = this->cast(element, etype);
         }
     }
 
@@ -55,7 +74,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
     if (is_const) {
         std::vector<llvm::Constant*> constants;
         for (auto element : elements) {
-            constants.push_back(llvm::cast<llvm::Constant>(element.inner));
+            constants.push_back(llvm::cast<llvm::Constant>(element.value.inner));
         }
         
         llvm::Constant* array = llvm::ConstantArray::get(
