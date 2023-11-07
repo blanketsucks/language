@@ -1,5 +1,7 @@
 // TODO: Rewrite when possible maybe?
 
+#include <llvm-14/llvm/ADT/STLExtras.h>
+#include <llvm-14/llvm/Transforms/Utils/ValueMapper.h>
 #include <quart/visitor.h>
 
 using namespace quart;
@@ -50,6 +52,18 @@ StructRef Visitor::make_struct(
     this->structs[type] = structure;
     
     return structure;
+}
+
+Value Visitor::create_struct_value(Struct& structure, const std::vector<llvm::Value*>& args) {
+    llvm::AllocaInst* alloca = this->alloca(structure.type->to_llvm_type());
+    for (auto& entry : llvm::enumerate(args)) {
+        entry.value()->dump();
+
+        llvm::Value* ptr = this->builder->CreateStructGEP(structure.type->to_llvm_type(), alloca, entry.index());
+        this->builder->CreateStore(entry.value(), ptr);
+    }
+
+    return Value(alloca, structure.type, Value::Aggregate);
 }
 
 Value Visitor::visit(ast::StructExpr* expr) {
@@ -278,7 +292,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
     }
 
     Struct* structure = parent.as<Struct*>();
-    bool all_private = std::all_of(structure->fields.begin(), structure->fields.end(), [](auto& pair) {
+    bool all_private = llvm::all_of(structure->fields, [](const auto& pair) {
         return pair.second.is_private();
     });
 
@@ -286,41 +300,34 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         ERROR(expr->span, "No public default constructor for struct '{0}'", structure->name);
     }
 
-    // FIXME: Storing this as a map is dumb and should be changed since we know how many fields we would have in advance.
-    std::map<int, llvm::Value*> args;
-    int index = 0;
+    std::map<u32, llvm::Value*> args;
     bool is_constant_value = true;
 
-    // FIXME: Constructor values are not type-checked against the struct fields
     for (auto& entry : expr->fields) {
-        int i = index;
-        StructField field;
-
-        if (!entry.name.empty()) {
-            i = structure->get_field_index(entry.name);
-            if (i < 0) {
-                ERROR(entry.value->span, "Field '{0}' does not exist in struct '{1}'", entry.name, structure->name);
-            } else if (args.find(i) != args.end()) {
-                ERROR(entry.value->span, "Field '{0}' already initialized", entry.name);
-            }
-
-            field = structure->fields.at(entry.name);
-            if (this->current_struct.get() != structure && field.is_private()) {
-                ERROR(entry.value->span, "Field '{1}' is private and cannot be initialized", entry.name);
-            }
-        } else {
-            field = structure->get_field_at(index);
+        i32 index = structure->get_field_index(entry.name);
+        if (index < 0) {
+            ERROR(entry.value->span, "Field '{0}' does not exist in struct '{1}'", entry.name, structure->name);
         }
 
+        StructField& field = structure->fields.at(entry.name);
         this->inferred = field.type;
 
         Value value = entry.value->accept(*this);
         if (value.is_empty_value()) ERROR(entry.value->span, "Expected a value");
 
-        is_constant_value &= value.flags & Value::Constant;
-        args[i] = value;
+        if (!Type::can_safely_cast_to(value.type, field.type)) {
+            ERROR(
+                entry.value->span, 
+                "Cannot assign value of type '{0}' to type '{1}' for field '{2}'", 
+                value.type->get_as_string(), field.type->get_as_string(), field.name
+            );
+        }
 
-        index++;
+        value = this->cast(value, field.type);
+
+        is_constant_value &= value.flags & Value::Constant;
+        args[index] = value.inner;
+
         this->inferred = nullptr;
     }
 
@@ -339,34 +346,27 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         for (auto& entry : structure->fields) {
             StructField& field = entry.second;
 
-            if (args.find(field.index) == args.end()) {
-                args[field.index] = llvm::Constant::getNullValue(field.type->to_llvm_type());
-            }
+            auto value = args[field.index];
+            if (value) continue;
+
+            args[field.index] = llvm::Constant::getNullValue(field.type->to_llvm_type());
         }
     }
-
+    
     llvm::Type* type = structure->type->to_llvm_type();
-    if (args.empty()) {
-        return {llvm::ConstantAggregateZero::get(type), structure->type, Value::Constant};
-    }
-
     if (is_constant_value && !this->current_function) {
-        std::vector<llvm::Constant*> values;
-        for (auto& entry : args) {
-            values.push_back(llvm::cast<llvm::Constant>(entry.second));
-        }
+        auto range = llvm::map_range(
+            args, [](const auto& entry) { return llvm::cast<llvm::Constant>(entry.second); }
+        );
 
+        std::vector<llvm::Constant*> values(range.begin(), range.end());
         llvm::Constant* constant = llvm::ConstantStruct::get(static_cast<llvm::StructType*>(type), values);
+
         return Value(constant, structure->type, Value::Constant);
     }
 
-    llvm::Value* alloca = this->alloca(type);
-    for (auto& arg : args) {
-        llvm::Value* ptr = this->builder->CreateStructGEP(type, alloca, arg.first);
-        this->builder->CreateStore(arg.second, ptr);
-    }
-
-    return Value(alloca, structure->type, Value::Aggregate);
+    auto range = llvm::map_range(args, [](const auto& entry) { return entry.second; });
+    return this->create_struct_value(*structure, { range.begin(), range.end() });
 }
 
 Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
@@ -374,11 +374,11 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
     if (!(parent.flags & Value::Struct)) ERROR(expr->span, "Expected a struct");
 
     Struct* structure = parent.as<Struct*>();
-    std::vector<std::pair<llvm::Value*, int>> args;
+    std::vector<llvm::Value*> args;
 
     for (auto& entry : structure->fields) {
         llvm::Type* type = entry.second.type->to_llvm_type();
-        args.push_back({llvm::Constant::getNullValue(type), entry.second.index});
+        args.push_back(llvm::Constant::getNullValue(type));
     }
 
     llvm::Type* type = structure->type->to_llvm_type();
@@ -388,23 +388,15 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
 
     if (!this->current_function) {
         std::vector<llvm::Constant*> values;
-        llvm::sort(args, [](auto& a, auto& b) { return a.second < b.second; });
-        
         for (auto& arg : args) {
-            values.push_back(llvm::cast<llvm::Constant>(arg.first));
+            values.push_back(llvm::cast<llvm::Constant>(arg));
         }
 
         llvm::Constant* constant = llvm::ConstantStruct::get(static_cast<llvm::StructType*>(type), values);
         return Value(constant, structure->type, Value::Constant);
     }
 
-    llvm::Value* alloca = this->alloca(type);
-    for (auto& arg : args) {
-        llvm::Value* ptr = this->builder->CreateStructGEP(type, alloca, arg.second);
-        this->builder->CreateStore(arg.first, ptr);
-    }
-
-    return Value(alloca, structure->type, Value::Aggregate);
+    return this->create_struct_value(*structure, args);
 }
 
 Value Visitor::evaluate_attribute_assignment(ast::AttributeExpr* expr, ast::Expr& v) {

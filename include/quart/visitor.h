@@ -97,6 +97,9 @@ public:
     std::vector<Value> unpack(const Value& value, u32 n, const Span& span);
 
     StructRef make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
+    Value create_struct_value(
+        Struct& structure, const std::vector<llvm::Value*>& args
+    );
 
     void create_bounds_check(llvm::Value* index, u32 count, const Span& span);
 
