@@ -1480,9 +1480,10 @@ std::unique_ptr<ast::Expr> Parser::call() {
         ((this->peek() == TokenKind::Identifier && this->peek(2) == TokenKind::Colon) || this->peek() == TokenKind::RBrace) &&
         (expr->kind() == ast::ExprKind::Variable || expr->kind() == ast::ExprKind::Path)
     ) {
+        Span end = this->current.span;
         this->next();
-        std::vector<ast::ConstructorField> fields;
 
+        std::vector<ast::ConstructorField> fields;
         if (this->current == TokenKind::RBrace) {
             this->next();
             return std::make_unique<ast::EmptyConstructorExpr>(
@@ -1505,7 +1506,7 @@ std::unique_ptr<ast::Expr> Parser::call() {
         }
 
         this->expect(TokenKind::RBrace, "}");
-        expr = std::make_unique<ast::ConstructorExpr>(Span::merge(start, this->current.span), std::move(expr), std::move(fields));
+        expr = std::make_unique<ast::ConstructorExpr>(Span::merge(start, end), std::move(expr), std::move(fields));
     }
 
     if (this->current == TokenKind::Dot) {
