@@ -202,6 +202,7 @@ public:
     }
 
     ExprKind kind() const { return this->_kind; }
+    bool is(ExprKind kind) const { return this->_kind == kind; }
 
     template<typename T> T* as() {
         assert(T::classof(this) && "Invalid cast.");
@@ -209,7 +210,7 @@ public:
     }
 
     virtual ~Expr() = default;
-    virtual Value accept(Visitor& visitor) = 0;
+    virtual Value accept(Visitor&) = 0;
 
 private:
     ExprKind _kind;
@@ -281,7 +282,7 @@ class VariableExpr : public ExprMixin<ExprKind::Variable> {
 public:
     std::string name;
 
-    VariableExpr(Span span, std::string name) : ExprMixin(span), name(name) {}
+    VariableExpr(Span span, std::string name) : ExprMixin(span), name(std::move(name)) {}
     Value accept(Visitor& visitor) override;
 };
 
@@ -299,7 +300,8 @@ public:
         std::unique_ptr<TypeExpr> type, 
         std::unique_ptr<Expr> value,
         bool external = false
-    ) : ExprMixin(span), identifiers(std::move(identifiers)), type(std::move(type)), value(std::move(value)), external(external) {}
+    ) : ExprMixin(span), identifiers(std::move(identifiers)), type(std::move(type)), 
+        value(std::move(value)), external(external) {}
     
     Value accept(Visitor& visitor) override;
 
@@ -314,7 +316,7 @@ public:
 
     ConstExpr(
         Span span, std::string name, std::unique_ptr<TypeExpr> type, std::unique_ptr<Expr> value
-    ) : ExprMixin(span), name(name), type(std::move(type)), value(std::move(value)) {}
+    ) : ExprMixin(span), name(std::move(name)), type(std::move(type)), value(std::move(value)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -408,7 +410,7 @@ public:
         bool is_c_variadic,
         bool is_operator,
         ExternLinkageSpecifier linkage
-    ) : ExprMixin(span), name(name), args(std::move(args)), return_type(std::move(return_type)), 
+    ) : ExprMixin(span), name(std::move(name)), args(std::move(args)), return_type(std::move(return_type)), 
         is_c_variadic(is_c_variadic), is_operator(is_operator), linkage(linkage) {}
 
     Value accept(Visitor& visitor) override;
@@ -482,7 +484,7 @@ public:
         bool opaque,
         std::vector<StructField> fields, 
         std::vector<std::unique_ptr<Expr>> methods
-    ) : ExprMixin(span), name(name), opaque(opaque), fields(std::move(fields)), methods(std::move(methods)) {}
+    ) : ExprMixin(span), name(std::move(name)), opaque(opaque), fields(std::move(fields)), methods(std::move(methods)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -514,7 +516,7 @@ public:
     std::string attribute;
 
     AttributeExpr(Span span, std::unique_ptr<Expr> parent, std::string attribute) :
-        ExprMixin(span), parent(std::move(parent)), attribute(attribute) {}
+        ExprMixin(span), parent(std::move(parent)), attribute(std::move(attribute)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -555,7 +557,7 @@ public:
     std::string field;
 
     OffsetofExpr(Span span, std::unique_ptr<Expr> value, std::string field) :
-        ExprMixin(span), value(std::move(value)), field(field) {}
+        ExprMixin(span), value(std::move(value)), field(std::move(field)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -566,7 +568,7 @@ public:
     std::string name;
 
     PathExpr(Span span, std::unique_ptr<Expr> parent, std::string name) :
-        ExprMixin(span), parent(std::move(parent)), name(name) {}
+        ExprMixin(span), parent(std::move(parent)), name(std::move(name)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -597,7 +599,7 @@ public:
     std::vector<EnumField> fields;
 
     EnumExpr(Span span, std::string name, std::unique_ptr<TypeExpr> type, std::vector<EnumField> fields) :
-        ExprMixin(span), name(name), type(std::move(type)), fields(std::move(fields)) {}
+        ExprMixin(span), name(std::move(name)), type(std::move(type)), fields(std::move(fields)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -610,7 +612,7 @@ public:
 
     ImportExpr(
         Span span, std::string name, bool is_wildcard, bool is_relative
-    ) : ExprMixin(span), name(name), is_wildcard(is_wildcard), is_relative(is_relative) {}
+    ) : ExprMixin(span), name(std::move(name)), is_wildcard(is_wildcard), is_relative(is_relative) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -621,7 +623,7 @@ public:
     std::vector<std::unique_ptr<Expr>> body;
 
     ModuleExpr(Span span, std::string name, std::vector<std::unique_ptr<Expr>> body) :
-        ExprMixin(span), name(name), body(std::move(body)) {}
+        ExprMixin(span), name(std::move(name)), body(std::move(body)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -646,7 +648,7 @@ public:
     std::unique_ptr<Expr> body;
 
     ForExpr(Span span, Ident name, std::unique_ptr<Expr> iterable, std::unique_ptr<Expr> body) :
-        ExprMixin(span), name(name), iterable(std::move(iterable)), body(std::move(body)) {}
+        ExprMixin(span), name(std::move(name)), iterable(std::move(iterable)), body(std::move(body)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -661,7 +663,7 @@ public:
 
     RangeForExpr(
         Span span, Ident name, std::unique_ptr<Expr> start, std::unique_ptr<Expr> end, std::unique_ptr<Expr> body
-    ) : ExprMixin(span), name(name), start(std::move(start)), end(std::move(end)), body(std::move(body)) {}
+    ) : ExprMixin(span), name(std::move(name)), start(std::move(start)), end(std::move(end)), body(std::move(body)) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -698,7 +700,7 @@ public:
     std::deque<std::string> parents;
 
     NamedTypeExpr(Span span, std::string name, std::deque<std::string> parents) : 
-        TypeExpr(span, TypeKind::Named), name(name), parents(std::move(parents)) {}
+        TypeExpr(span, TypeKind::Named), name(std::move(name)), parents(std::move(parents)) {}
 
     Type* accept(Visitor& visitor) override;
 };
@@ -786,7 +788,7 @@ public:
 
     TypeAliasExpr(
         Span span, std::string name, std::unique_ptr<TypeExpr> type, std::vector<GenericParameter> parameters
-    ) : ExprMixin(span), name(name), type(std::move(type)), parameters(std::move(parameters)) {}
+    ) : ExprMixin(span), name(std::move(name)), type(std::move(type)), parameters(std::move(parameters)) {}
 
     Value accept(Visitor& visitor) override;
 
@@ -799,7 +801,7 @@ public:
     std::string message;
 
     StaticAssertExpr(Span span, std::unique_ptr<Expr> condition, std::string message)
-        : ExprMixin(span), condition(std::move(condition)), message(message) {}
+        : ExprMixin(span), condition(std::move(condition)), message(std::move(message)) {}
 
     Value accept(Visitor& visitor) override;
 };

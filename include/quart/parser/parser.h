@@ -26,7 +26,8 @@ public:
     Token next();
     Token rewind(u32 n = 1);
 
-    Token peek(u32 offset = 1);
+    Token const& peek(u32 offset = 1) const;
+    Token& peek(u32 offset = 1);
 
     Token expect(TokenKind type, llvm::StringRef value);
 
@@ -35,6 +36,8 @@ public:
     int get_token_precendence();
 
     AttributeHandler::Result handle_expr_attributes(const ast::Attributes& attrs);
+
+    bool is_upcoming_constructor(ast::Expr const& previous) const;
     
     std::unique_ptr<ast::TypeExpr> parse_type();
 
