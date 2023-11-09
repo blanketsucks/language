@@ -79,27 +79,15 @@ llvm::StringRef Token::get_type_value(TokenKind type) {
     }
 }
 
-bool Token::match(TokenKind type, const std::string& value) {
-    return this->type == type && this->value == value;
-}
-
-bool Token::match(TokenKind type, std::vector<std::string> values) {
-    return this->type == type && (std::find(values.begin(), values.end(), this->value) != values.end());
-}
-
-bool Token::match(std::vector<TokenKind> types) {
-    return std::find(types.begin(), types.end(), this->type) != types.end();
-}
-
-bool Token::operator==(TokenKind type) {
+bool Token::operator==(TokenKind type) const {
     return this->type == type;
 }
 
-bool Token::operator==(const Token& token) {
+bool Token::operator==(const Token& token) const {
     return this->type == token.type && this->value == token.value;
 }
 
-bool Token::operator!=(TokenKind type) {
+bool Token::operator!=(TokenKind type) const {
     return this->type != type;
 }
 

@@ -158,13 +158,23 @@ struct Token {
 
     static llvm::StringRef get_type_value(TokenKind type);
 
-    bool match(TokenKind type, const std::string& value);
-    bool match(TokenKind type, std::vector<std::string> values);
-    bool match(std::vector<TokenKind> types);
+    inline bool is_keyword() const { return quart::is_keyword(this->value); }
 
-    bool operator==(TokenKind type);
-    bool operator==(const Token& token);
-    bool operator!=(TokenKind type);
+    bool is(TokenKind type) const {
+        return this->type == type;
+    }
+
+    bool is(const std::vector<TokenKind>& types) const { 
+        return std::find(types.begin(), types.end(), this->type) != types.end();
+    }
+
+    template<typename... Args> bool is(TokenKind type, Args... args) const { 
+        return this->is(type) || this->is(args...);
+    }
+
+    bool operator==(TokenKind type) const;
+    bool operator==(const Token& token) const;
+    bool operator!=(TokenKind type) const;
 };
 
 static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
