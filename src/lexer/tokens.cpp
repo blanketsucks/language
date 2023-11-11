@@ -24,6 +24,8 @@ llvm::StringRef quart::get_unary_op_value(UnaryOp type) {
         case UnaryOp::BinaryAnd: return "&";
         case UnaryOp::Mul: return "*";
     }
+
+    return "";
 }
 
 llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
@@ -48,6 +50,8 @@ llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
         case BinaryOp::Lte: return "<=";
         case BinaryOp::Assign: return "=";
     }
+
+    return "";
 }
 
 llvm::StringRef Token::get_type_value(TokenKind type) {
@@ -75,8 +79,9 @@ llvm::StringRef Token::get_type_value(TokenKind type) {
         case TokenKind::Gte: return ">=";
         case TokenKind::Lte: return "<=";
         case TokenKind::Assign: return "=";
-        default: return "";
     }
+
+    return "";
 }
 
 bool Token::operator==(TokenKind type) const {
