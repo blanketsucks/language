@@ -222,7 +222,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
         }
 
         auto function = scope->functions[expr->attribute];
-        if (this->current_struct.get() != structure && (function->flags & Function::Private)) {
+        if (this->current_struct.get() != structure && function->is_private()) {
             ERROR(expr->parent->span, "Cannot access private method '{0}'", expr->attribute);
         }
 
@@ -270,16 +270,10 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
     }
 
     if (type->is_pointer()) {
-        return {
-            this->load(
-                this->builder->CreateStructGEP(
-                    type->to_llvm_type()->getPointerElementType(), 
-                    self, 
-                    index
-                )
-            ), 
-            result
-        };
+        llvm::Type* llvm_type = type->to_llvm_type()->getPointerElementType();
+        llvm::Value* ptr = this->builder->CreateStructGEP(llvm_type, self, index);
+
+        return {this->load(ptr), result};
     }
 
     return {this->builder->CreateExtractValue(self, index), field.type};

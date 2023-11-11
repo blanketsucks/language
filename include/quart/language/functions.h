@@ -90,6 +90,7 @@ struct Function {
     operator llvm::Function*() const { return this->value; }
     
     inline bool is_entry() const { return this->flags & Flags::Entry; }
+    inline bool is_private() const { return this->flags & Flags::Private; }
     inline bool has_return() const { return this->flags & Flags::HasReturn; }
 
     u32 argc() const { return this->params.size() + this->kwargs.size(); }
