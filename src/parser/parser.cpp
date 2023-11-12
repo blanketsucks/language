@@ -924,7 +924,6 @@ std::unique_ptr<ast::EnumExpr> Parser::parse_enum() {
     return std::make_unique<ast::EnumExpr>(
         Span::merge(start, end), std::move(name), std::move(type), std::move(fields)
     );
-
 }
 
 std::unique_ptr<ast::Expr> Parser::parse_anonymous_function() {
@@ -953,6 +952,44 @@ std::unique_ptr<ast::Expr> Parser::parse_anonymous_function() {
     
     return std::make_unique<ast::FunctionExpr>(
         Span::merge(prototype->span, this->current.span), std::move(prototype), std::move(body)
+    );
+}
+
+std::unique_ptr<ast::CallExpr> Parser::parse_call(
+    Span start, std::unique_ptr<ast::Expr> callee
+) {
+    std::vector<std::unique_ptr<ast::Expr>> args;
+    std::map<std::string, std::unique_ptr<ast::Expr>> kwargs;
+
+    bool has_kwargs = false;
+    while (this->current != TokenKind::RParen) {
+        if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
+            std::string name = this->current.value;
+            this->next(); this->next();
+
+            auto value = this->expr(false);
+            kwargs[name] = std::move(value);
+
+            has_kwargs = true;
+        } else {
+            if (has_kwargs) {
+                ERROR(this->current.span, "Positional arguments must come before keyword arguments");
+            }
+
+            auto value = this->expr(false);
+            args.push_back(std::move(value));
+        }
+
+        if (this->current != TokenKind::Comma) {
+            break;
+        }
+
+        this->next();
+    }
+
+    Span end = this->expect(TokenKind::RParen, ")").span;
+    return std::make_unique<ast::CallExpr>(
+        Span::merge(start, end), std::move(callee), std::move(args), std::move(kwargs)
     );
 }
 
@@ -1464,43 +1501,10 @@ std::unique_ptr<ast::Expr> Parser::call() {
     auto expr = this->factor();
     while (this->current == TokenKind::LParen) {
         this->next();
-
-        std::vector<std::unique_ptr<ast::Expr>> args;
-        std::map<std::string, std::unique_ptr<ast::Expr>> kwargs;
-
-        bool has_kwargs = false;
-        while (this->current != TokenKind::RParen) {
-            if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Assign) {
-                std::string name = this->current.value;
-                this->next(); this->next();
-
-                auto value = this->expr(false);
-                kwargs[name] = std::move(value);
-
-                has_kwargs = true;
-            } else {
-                if (has_kwargs) {
-                    ERROR(this->current.span, "Positional arguments must come before keyword arguments");
-                }
-
-                auto value = this->expr(false);
-                args.push_back(std::move(value));
-            }
-
-            if (this->current != TokenKind::Comma) {
-                break;
-            }
-
-            this->next();
-        }
-
-        this->expect(TokenKind::RParen, ")");
-        expr = std::make_unique<ast::CallExpr>(
-            Span::merge(start, this->current.span), std::move(expr), std::move(args), std::move(kwargs)
-        );
+        expr = this->parse_call(start, std::move(expr));
     }
 
-    if (this->current == TokenKind::Inc || this->current == TokenKind::Dec) {
+    if (this->current.is(TokenKind::Inc, TokenKind::Dec)) {
         UnaryOp op = this->current.type == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
         expr = std::make_unique<ast::UnaryOpExpr>(Span::merge(start, this->current.span), std::move(expr), op);
 

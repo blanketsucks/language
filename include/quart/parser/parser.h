@@ -68,6 +68,10 @@ public:
     std::unique_ptr<ast::Expr> parse_anonymous_function();
     std::unique_ptr<ast::MatchExpr> parse_match_expr();
 
+    std::unique_ptr<ast::CallExpr> parse_call(
+        Span span, std::unique_ptr<ast::Expr> callee
+    );
+
     // Parses `foo::bar::baz` into a deque of strings
     Path parse_path(llvm::Optional<std::string> name = llvm::None);
 
