@@ -10,7 +10,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
         condition = this->builder->CreateIsNotNull(condition);
     }
 
-    FunctionRef function = this->current_function;
+    RefPtr<Function> function = this->current_function;
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function->value);
     llvm::BasicBlock* end = llvm::BasicBlock::Create(*this->context);
@@ -42,7 +42,7 @@ Value Visitor::visit(ast::WhileExpr* expr) {
 }
 
 Value Visitor::visit(ast::RangeForExpr* expr) {
-    FunctionRef function = this->current_function;
+    RefPtr<Function> function = this->current_function;
 
     llvm::BasicBlock* loop = llvm::BasicBlock::Create(*this->context, "", function->value);
     llvm::BasicBlock* stop = llvm::BasicBlock::Create(*this->context);

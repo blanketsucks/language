@@ -67,10 +67,10 @@ struct Scope {
 
     ValueMap<Variable> variables;
     ValueMap<Constant> constants;
-    ValueMap<FunctionRef> functions;
-    ValueMap<StructRef> structs;
-    ValueMap<EnumRef> enums;
-    ValueMap<ModuleRef> modules;
+    ValueMap<RefPtr<Function>> functions;
+    ValueMap<RefPtr<Struct>> structs;
+    ValueMap<RefPtr<Enum>> enums;
+    ValueMap<RefPtr<Module>> modules;
     ValueMap<TypeAlias> type_aliases;
 
     std::vector<ast::Expr*> defers;
@@ -90,10 +90,10 @@ struct Scope {
     Variable* get_variable(const std::string& name);
     Constant* get_constant(const std::string& name);
 
-    FunctionRef get_function(const std::string& name);
-    StructRef get_struct(const std::string& name);
-    EnumRef get_enum(const std::string& name);
-    ModuleRef get_module(const std::string& name);
+    RefPtr<Function> get_function(const std::string& name);
+    RefPtr<Struct> get_struct(const std::string& name);
+    RefPtr<Enum> get_enum(const std::string& name);
+    RefPtr<Module> get_module(const std::string& name);
 
     TypeAlias* get_type_alias(const std::string& name);
 

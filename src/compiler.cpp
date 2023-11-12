@@ -183,13 +183,13 @@ const llvm::Target* Compiler::create_target(
     return llvm::TargetRegistry::lookupTarget(triple, error);
 }
 
-std::unique_ptr<llvm::TargetMachine> Compiler::create_target_machine(
+OwnPtr<llvm::TargetMachine> Compiler::create_target_machine(
     llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
 ) {
     llvm::TargetOptions options;
     auto reloc = llvm::Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
 
-    std::unique_ptr<llvm::TargetMachine> machine(
+    OwnPtr<llvm::TargetMachine> machine(
         target->createTargetMachine(triple, "generic", "", options, reloc)
     );
 
@@ -242,7 +242,7 @@ CompilerError Compiler::compile() {
     if (!target) return CompilerError(1, FORMAT("Could not create target: '{0}'", err));
 
     if (this->options.verbose) { std::cout << "\nLLVM Target Triple: " << std::quoted(triple) << '\n'; }
-    std::unique_ptr<llvm::TargetMachine> machine = this->create_target_machine(
+    OwnPtr<llvm::TargetMachine> machine = this->create_target_machine(
         *visitor.module, target, triple
     );
 

@@ -39,14 +39,14 @@ public:
 
     bool is_upcoming_constructor(ast::Expr const& previous) const;
     
-    std::unique_ptr<ast::TypeExpr> parse_type();
+    OwnPtr<ast::TypeExpr> parse_type();
 
-    std::unique_ptr<ast::BlockExpr> parse_block();
+    OwnPtr<ast::BlockExpr> parse_block();
     std::pair<std::vector<ast::Argument>, bool> parse_arguments(); // Returns a pair of arguments and whether or not the arguments are variadic
-    std::unique_ptr<ast::PrototypeExpr> parse_prototype(
+    OwnPtr<ast::PrototypeExpr> parse_prototype(
         ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
     );
-    std::unique_ptr<ast::Expr> parse_function_definition(
+    OwnPtr<ast::Expr> parse_function_definition(
         ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::None, 
         bool is_operator = false
     );
@@ -56,40 +56,40 @@ public:
 
     // The difference between this and parse_function_definition is that this one can never return a prototype forcing an 
     // implementation to be provided
-    std::unique_ptr<ast::FunctionExpr> parse_function();
+    OwnPtr<ast::FunctionExpr> parse_function();
 
-    std::unique_ptr<ast::IfExpr> parse_if_statement();
-    std::unique_ptr<ast::StructExpr> parse_struct();
-    std::unique_ptr<ast::Expr> parse_variable_definition(bool is_const = false);
-    std::unique_ptr<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
-    std::unique_ptr<ast::Expr> parse_extern_block();
-    std::unique_ptr<ast::EnumExpr> parse_enum();
-    std::unique_ptr<ast::TypeAliasExpr> parse_type_alias();
-    std::unique_ptr<ast::Expr> parse_anonymous_function();
-    std::unique_ptr<ast::MatchExpr> parse_match_expr();
+    OwnPtr<ast::IfExpr> parse_if_statement();
+    OwnPtr<ast::StructExpr> parse_struct();
+    OwnPtr<ast::Expr> parse_variable_definition(bool is_const = false);
+    OwnPtr<ast::Expr> parse_extern(ast::ExternLinkageSpecifier linkage);
+    OwnPtr<ast::Expr> parse_extern_block();
+    OwnPtr<ast::EnumExpr> parse_enum();
+    OwnPtr<ast::TypeAliasExpr> parse_type_alias();
+    OwnPtr<ast::Expr> parse_anonymous_function();
+    OwnPtr<ast::MatchExpr> parse_match_expr();
 
-    std::unique_ptr<ast::CallExpr> parse_call(
-        Span span, std::unique_ptr<ast::Expr> callee
+    OwnPtr<ast::CallExpr> parse_call(
+        Span span, OwnPtr<ast::Expr> callee
     );
 
     // Parses `foo::bar::baz` into a deque of strings
     Path parse_path(llvm::Optional<std::string> name = llvm::None);
 
-    std::unique_ptr<ast::Expr> parse_immediate_binary_op(std::unique_ptr<ast::Expr> right, std::unique_ptr<ast::Expr> left, TokenKind op);
-    std::unique_ptr<ast::Expr> parse_immediate_unary_op(std::unique_ptr<ast::Expr> expr, TokenKind op);
+    OwnPtr<ast::Expr> parse_immediate_binary_op(OwnPtr<ast::Expr> right, OwnPtr<ast::Expr> left, TokenKind op);
+    OwnPtr<ast::Expr> parse_immediate_unary_op(OwnPtr<ast::Expr> expr, TokenKind op);
 
     ast::Attributes parse_attributes();
 
-    std::vector<std::unique_ptr<ast::Expr>> parse();
-    std::vector<std::unique_ptr<ast::Expr>> statements();
-    std::unique_ptr<ast::Expr> statement();
-    std::unique_ptr<ast::Expr> expr(bool semicolon = true);
-    std::unique_ptr<ast::Expr> binary(int prec, std::unique_ptr<ast::Expr> left);
-    std::unique_ptr<ast::Expr> unary();
-    std::unique_ptr<ast::Expr> call();
-    std::unique_ptr<ast::Expr> attr(Span start, std::unique_ptr<ast::Expr> expr);
-    std::unique_ptr<ast::Expr> element(Span start, std::unique_ptr<ast::Expr> expr);
-    std::unique_ptr<ast::Expr> factor();
+    std::vector<OwnPtr<ast::Expr>> parse();
+    std::vector<OwnPtr<ast::Expr>> statements();
+    OwnPtr<ast::Expr> statement();
+    OwnPtr<ast::Expr> expr(bool semicolon = true);
+    OwnPtr<ast::Expr> binary(int prec, OwnPtr<ast::Expr> left);
+    OwnPtr<ast::Expr> unary();
+    OwnPtr<ast::Expr> call();
+    OwnPtr<ast::Expr> attr(Span start, OwnPtr<ast::Expr> expr);
+    OwnPtr<ast::Expr> element(Span start, OwnPtr<ast::Expr> expr);
+    OwnPtr<ast::Expr> factor();
 
     size_t index;
     Token current;

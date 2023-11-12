@@ -75,7 +75,7 @@ struct Function {
         HasReturn     = 1 << 8
     };
 
-    static std::shared_ptr<Function> create(
+    static RefPtr<Function> create(
         llvm::Function* value,
         quart::Type* type,
         const std::string& name,
@@ -141,7 +141,5 @@ private:
         const ast::Attributes& attrs
     );
 };
-
-using FunctionRef = std::shared_ptr<Function>;
 
 }

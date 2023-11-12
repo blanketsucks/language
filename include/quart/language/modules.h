@@ -22,6 +22,4 @@ struct Module {
     std::string to_string(char sep = '.');
 };
 
-using ModuleRef = std::shared_ptr<Module>;
-
 }

@@ -18,8 +18,8 @@ void jit::ExitOnError(llvm::Error error) {
 jit::QuartJIT::QuartJIT(
     const std::string& filename,
     const std::string& entry,
-    std::unique_ptr<llvm::Module> module, 
-    std::unique_ptr<llvm::LLVMContext> context
+    OwnPtr<llvm::Module> module, 
+    OwnPtr<llvm::LLVMContext> context
 ) {
     this->filename = filename;
     this->entry = entry;

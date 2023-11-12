@@ -19,7 +19,7 @@ Value Visitor::visit(ast::IfExpr* expr) {
     Value condition = expr->condition->accept(*this);
     if (condition.is_empty_value()) ERROR(expr->condition->span, "Expected a value");
 
-    FunctionRef function = this->current_function;
+    RefPtr<Function> function = this->current_function;
 
     llvm::BasicBlock* then = llvm::BasicBlock::Create(*this->context, "", function->value);
     llvm::BasicBlock* else_ = llvm::BasicBlock::Create(*this->context);
@@ -93,8 +93,8 @@ Value Visitor::visit(ast::IfExpr* expr) {
 
 static Value parse_branchless_ternary(
     const Value& condition,
-    std::unique_ptr<ast::Expr>& true_expr,
-    std::unique_ptr<ast::Expr>& false_expr,
+    OwnPtr<ast::Expr>& true_expr,
+    OwnPtr<ast::Expr>& false_expr,
     Visitor& visitor
 ) {
     Value true_value = true_expr->accept(visitor);

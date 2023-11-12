@@ -45,7 +45,7 @@ template<typename T> using RefPtr = std::shared_ptr<T>;
 template<typename T> using OwnPtr = std::unique_ptr<T>;
 
 template<typename T, typename... Args>
-OwnPtr<T> make(Args&&... args) { return std::make_unique<T>(std::forward<Args>(args)...); }
+OwnPtr<T> make_own(Args&&... args) { return std::make_unique<T>(std::forward<Args>(args)...); }
 
 template<typename T, typename... Args>
 RefPtr<T> make_ref(Args&&... args) { return std::make_shared<T>(std::forward<Args>(args)...); }

@@ -21,7 +21,7 @@ Function::Function(
     }
 }
 
-FunctionRef Function::create(
+RefPtr<Function> Function::create(
     llvm::Function* value,
     quart::Type* type,
     const std::string& name,
@@ -32,7 +32,7 @@ FunctionRef Function::create(
     const Span& span,
     const ast::Attributes& attrs
 ) {
-    return std::shared_ptr<Function>(new Function(value, type, name, params, kwargs, return_type, flags, span, attrs));
+    return RefPtr<Function>(new Function(value, type, name, params, kwargs, return_type, flags, span, attrs));
 }
 
 bool Function::is_variadic() const { return false; }

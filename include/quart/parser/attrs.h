@@ -31,12 +31,12 @@ struct Attribute {
     Type type;
 
     llvm::Any value;
-    std::shared_ptr<ast::Expr> expr;
+    ast::Expr* expr;
 
     Attribute() = default;
     Attribute(Type type) : type(type) {}
     Attribute(Type type, llvm::Any value) : type(type), value(value) {}
-    Attribute(Type type, std::shared_ptr<ast::Expr> expr) : type(type), expr(expr) {}
+    Attribute(Type type, ast::Expr* expr) : type(type), expr(expr) {}
 
     template<typename T> T as() const { return llvm::any_cast<T>(value); }
 };

@@ -20,7 +20,7 @@ class TypeRegistry {
 public:
     template<typename K, typename V> using TypeMap = std::map<K, V, std::equal_to<K>>;
 
-    static std::unique_ptr<TypeRegistry> create(llvm::LLVMContext& context);
+    static OwnPtr<TypeRegistry> create(llvm::LLVMContext& context);
 
     Type* wrap(llvm::Type* type);
     StructType* wrap(llvm::StructType* type);

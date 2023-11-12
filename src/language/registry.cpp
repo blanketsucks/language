@@ -8,8 +8,8 @@ TypeRegistry::TypeRegistry(
     i1(this, 1, true), i8(this, 8, true), i16(this, 16, true), i32(this, 32, true), i64(this, 64, true),
     u8(this, 8, false), u16(this, 16, false), u32(this, 32, false), u64(this, 64, false) {}
 
-std::unique_ptr<TypeRegistry> TypeRegistry::create(llvm::LLVMContext& context) {
-    return std::unique_ptr<TypeRegistry>(new TypeRegistry(context));
+OwnPtr<TypeRegistry> TypeRegistry::create(llvm::LLVMContext& context) {
+    return OwnPtr<TypeRegistry>(new TypeRegistry(context));
 }
 
 quart::Type* TypeRegistry::wrap(llvm::Type* type) {

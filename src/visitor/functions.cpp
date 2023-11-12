@@ -37,7 +37,7 @@ llvm::Function* Visitor::create_function(
 
 static Value evaluate_function_argument(
     Visitor& visitor,
-    std::unique_ptr<ast::Expr>& expr,
+    OwnPtr<ast::Expr>& expr,
     const Parameter& param
 ) {
     visitor.inferred = param.type;
@@ -64,8 +64,8 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     const Span& span,
     Function const& function,
     llvm::Value* self,
-    std::vector<std::unique_ptr<ast::Expr>>& args,
-    std::map<std::string, std::unique_ptr<ast::Expr>>& kwargs
+    std::vector<OwnPtr<ast::Expr>>& args,
+    std::map<std::string, OwnPtr<ast::Expr>>& kwargs
 ) {
     u32 argc = args.size() + kwargs.size() + (self ? 1 : 0);
     bool is_variadic = function.is_variadic() || function.is_c_variadic();
@@ -246,7 +246,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         if (arg.is_self) {
             quart::Type* self = this->self;
             if (!self) {
-                std::shared_ptr<Struct> structure = this->current_struct;
+                RefPtr<Struct> structure = this->current_struct;
                 self = structure->type;
             }
 
@@ -367,7 +367,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     if (is_anonymous) flags |= Function::Anonymous;
 
     quart::Type* type = this->registry->create_function_type(ret, types)->get_pointer_to(false);
-    std::shared_ptr<Function> func = Function::create(
+    RefPtr<Function> func = Function::create(
         function, type, expr->name, params, kwargs,
         ret, flags, expr->span, expr->attributes
     );
@@ -390,7 +390,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
 
 Value Visitor::visit(ast::FunctionExpr* expr) {
     auto iterator = this->scope->functions.find(expr->prototype->name);
-    FunctionRef func = nullptr;
+    RefPtr<Function> func = nullptr;
 
     if (iterator == this->scope->functions.end()) {
         expr->prototype->attributes.update(expr->attributes);

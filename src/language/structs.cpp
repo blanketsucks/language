@@ -13,14 +13,14 @@ Struct::Struct(
     this->scope = nullptr;
 }
 
-StructRef Struct::create(const std::string& name, quart::StructType* type, bool opaque) {
-    return std::shared_ptr<Struct>(new Struct(name, type, opaque));
+RefPtr<Struct> Struct::create(const std::string& name, quart::StructType* type, bool opaque) {
+    return RefPtr<Struct>(new Struct(name, type, opaque));
 }
 
-StructRef Struct::create(
+RefPtr<Struct> Struct::create(
     const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
 ) {
-    return std::shared_ptr<Struct>(new Struct(name, type, fields, opaque));
+    return RefPtr<Struct>(new Struct(name, type, fields, opaque));
 }
 
 
@@ -28,7 +28,7 @@ bool Struct::has_method(const std::string& name) {
     return this->scope->functions.find(name) != this->scope->functions.end(); 
 }
 
-FunctionRef Struct::get_method(const std::string& name) { return this->scope->functions[name]; }
+RefPtr<Function> Struct::get_method(const std::string& name) { return this->scope->functions[name]; }
 
 int Struct::get_field_index(const std::string& name) {
     if (this->fields.find(name) == this->fields.end()) {

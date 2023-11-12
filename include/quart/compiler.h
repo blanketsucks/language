@@ -159,7 +159,7 @@ public:
     void dump();
 
     const llvm::Target* create_target(std::string& error, std::string& triple);
-    std::unique_ptr<llvm::TargetMachine> create_target_machine(
+    OwnPtr<llvm::TargetMachine> create_target_machine(
         llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
     );
 

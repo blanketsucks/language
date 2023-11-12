@@ -6,10 +6,10 @@ using namespace quart;
 Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(options) {
     this->name = name;
 
-    this->context = std::make_unique<llvm::LLVMContext>();
-    this->module = std::make_unique<llvm::Module>(name, *this->context);
-    this->builder = std::make_unique<llvm::IRBuilder<>>(*this->context);
-    this->fpm = std::make_unique<llvm::legacy::FunctionPassManager>(this->module.get());
+    this->context = make_own<llvm::LLVMContext>();
+    this->module = make_own<llvm::Module>(name, *this->context);
+    this->builder = make_own<llvm::IRBuilder<>>(*this->context);
+    this->fpm = make_own<llvm::legacy::FunctionPassManager>(this->module.get());
 
     this->registry = TypeRegistry::create(*this->context);
 
@@ -423,7 +423,7 @@ void Visitor::mark_as_mutated(const ScopeLocal& local) {
     this->mark_as_mutated(local.name);
 }
 
-void Visitor::visit(std::vector<std::unique_ptr<ast::Expr>> statements) {
+void Visitor::visit(std::vector<OwnPtr<ast::Expr>> statements) {
     for (auto& stmt : statements) {
         if (!stmt) {
             continue;

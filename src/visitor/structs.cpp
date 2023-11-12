@@ -6,14 +6,14 @@
 
 using namespace quart;
 
-StructRef Visitor::get_struct_from_type(quart::Type* type) {
+RefPtr<Struct> Visitor::get_struct_from_type(quart::Type* type) {
     if (type->is_pointer()) type = type->get_pointee_type();
     if (!type->is_struct()) return nullptr;
 
     return this->structs[type];
 }
 
-StructRef Visitor::make_struct(
+RefPtr<Struct> Visitor::make_struct(
     const std::string& name, const std::map<std::string, quart::Type*>& fields
 ) {
     std::map<std::string, StructField> sfields;
@@ -79,7 +79,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
     }
 
     std::vector<quart::Type*> types;
-    StructRef structure = nullptr;
+    RefPtr<Struct> structure = nullptr;
 
     if (this->scope->structs.find(expr->name) == this->scope->structs.end()) {
         std::string name = this->format_symbol(expr->name);

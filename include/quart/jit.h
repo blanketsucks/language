@@ -37,8 +37,8 @@ public:
     QuartJIT(
         const std::string& filename,
         const std::string& entry,
-        std::unique_ptr<llvm::Module> module, 
-        std::unique_ptr<llvm::LLVMContext> context
+        OwnPtr<llvm::Module> module, 
+        OwnPtr<llvm::LLVMContext> context
     );
 
     llvm::orc::JITDylib& dylib() const;
@@ -64,7 +64,7 @@ private:
     std::string filename;
     std::string entry;
 
-    std::unique_ptr<llvm::orc::LLJIT> jit;
+    OwnPtr<llvm::orc::LLJIT> jit;
     llvm::orc::ThreadSafeModule module;
 
     llvm::orc::SymbolMap symbols;

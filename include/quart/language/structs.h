@@ -49,8 +49,8 @@ struct Struct {
 
     Span span;
 
-    static std::shared_ptr<Struct> create(const std::string& name, quart::StructType* type, bool opaque);
-    static std::shared_ptr<Struct> create(
+    static RefPtr<Struct> create(const std::string& name, quart::StructType* type, bool opaque);
+    static RefPtr<Struct> create(
         const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
     );
 
@@ -59,7 +59,7 @@ struct Struct {
     std::vector<StructField> get_fields(bool with_private = false);
 
     bool has_method(const std::string& name);
-    std::shared_ptr<Function> get_method(const std::string& name);
+    RefPtr<Function> get_method(const std::string& name);
 
     std::vector<Struct*> expand();
 
@@ -67,7 +67,5 @@ private:
     Struct(const std::string& name, quart::StructType* type, bool opaque);
     Struct(const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque);
 };
-
-using StructRef = std::shared_ptr<Struct>;
 
 }

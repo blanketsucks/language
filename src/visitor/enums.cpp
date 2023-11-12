@@ -11,7 +11,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     }
     
     quart::EnumType* type = this->registry->create_enum_type(expr->name, inner);
-    auto enumeration = std::make_shared<Enum>(expr->name, type);
+    auto enumeration = make_ref<Enum>(expr->name, type);
 
     this->scope->enums[expr->name] = enumeration;
     enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);

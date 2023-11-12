@@ -30,7 +30,7 @@ fs::Path search_file_paths(fs::Path path) {
     return fs::Path::empty();
 }
 
-std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relative, const Span& span) {
+RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const Span& span) {
     Scope* scope = this->scope;
     auto outer = this->current_module;
 
@@ -89,7 +89,7 @@ std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relativ
             if (this->modules.find(current_path) != this->modules.end()) {
                 module = this->modules[current_path];
             } else {
-                module = std::make_shared<Module>(current, path);
+                module = make_ref<Module>(current, path);
                 module->scope = new Scope(current, ScopeType::Module);
 
                 this->scope->children.push_back(module->scope);
@@ -122,7 +122,7 @@ std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relativ
 
         path = dir.join("module.qr");
         if (!path.exists()) {
-            auto module = std::make_shared<Module>(module_name, dir);
+            auto module = make_ref<Module>(module_name, dir);
             module->scope = new Scope(module_name, ScopeType::Module);
 
             this->scope->children.push_back(module->scope);
@@ -149,7 +149,7 @@ std::shared_ptr<Module> Visitor::import(const std::string& name, bool is_relativ
     Parser parser(tokens);
     auto ast = parser.parse();
 
-    auto module = std::make_shared<Module>(module_name, path);
+    auto module = make_ref<Module>(module_name, path);
     
     this->scope->modules[module_name] = module;
     scope->modules[module_name] = module;
@@ -178,7 +178,7 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
 
     auto outer = this->current_module;
 
-    auto module = std::make_shared<Module>(expr->name, expr->name);
+    auto module = make_ref<Module>(expr->name, expr->name);
     this->scope->modules[expr->name] = module;
 
     module->scope = this->create_scope(expr->name, ScopeType::Module);

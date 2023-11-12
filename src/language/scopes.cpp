@@ -140,16 +140,16 @@ Variable* Scope::get_variable(const std::string& name) { GET_VALUE_REF(variables
 Constant* Scope::get_constant(const std::string& name) { GET_VALUE_REF(constants, get_constant); }
 TypeAlias* Scope::get_type_alias(const std::string& name) { GET_VALUE_REF(type_aliases, get_type_alias); }
 
-FunctionRef Scope::get_function(const std::string& name) { GET_VALUE(functions, get_function); }
-StructRef Scope::get_struct(const std::string& name) { GET_VALUE(structs, get_struct); }
-EnumRef Scope::get_enum(const std::string& name) { GET_VALUE(enums, get_enum); }
-ModuleRef Scope::get_module(const std::string& name) { GET_VALUE(modules, get_module); }
+RefPtr<Function> Scope::get_function(const std::string& name) { GET_VALUE(functions, get_function); }
+RefPtr<Struct> Scope::get_struct(const std::string& name) { GET_VALUE(structs, get_struct); }
+RefPtr<Enum> Scope::get_enum(const std::string& name) { GET_VALUE(enums, get_enum); }
+RefPtr<Module> Scope::get_module(const std::string& name) { GET_VALUE(modules, get_module); }
 
 void Scope::exit(Visitor* visitor) {
     visitor->scope = this->parent;
 }
 
-void finalize(std::shared_ptr<Function>& func) {
+void finalize(RefPtr<Function>& func) {
     if (!func) return;
     if (func->flags & Function::Finalized) return;
 

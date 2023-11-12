@@ -96,14 +96,14 @@ public:
     llvm::Value* make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type);
     std::vector<Value> unpack(const Value& value, u32 n, const Span& span);
 
-    StructRef make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
+    RefPtr<Struct> make_struct(const std::string& name, const std::map<std::string, quart::Type*>& fields);
     Value create_struct_value(
         Struct& structure, const std::vector<llvm::Value*>& args
     );
 
     void create_bounds_check(llvm::Value* index, u32 count, const Span& span);
 
-    StructRef get_struct_from_type(quart::Type* type);
+    RefPtr<Struct> get_struct_from_type(quart::Type* type);
 
     llvm::AllocaInst* alloca(llvm::Type* type);
 
@@ -120,8 +120,8 @@ public:
         const Span& span,
         Function const& function,
         llvm::Value* self,
-        std::vector<std::unique_ptr<ast::Expr>>& args,
-        std::map<std::string, std::unique_ptr<ast::Expr>>& kwargs
+        std::vector<OwnPtr<ast::Expr>>& args,
+        std::map<std::string, OwnPtr<ast::Expr>>& kwargs
     );
     
     Value call(
@@ -149,7 +149,7 @@ public:
 
     void panic(const std::string& message, const Span&);
 
-    ModuleRef import(const std::string& name, bool is_relative, const Span&);
+    RefPtr<Module> import(const std::string& name, bool is_relative, const Span&);
 
     void mark_as_mutated(const std::string& name);
     void mark_as_mutated(const ScopeLocal& local);
@@ -242,19 +242,19 @@ public:
 
     u64 id = 0;
     
-    std::unique_ptr<llvm::LLVMContext> context;
-    std::unique_ptr<llvm::Module> module;
-    std::unique_ptr<llvm::IRBuilder<>> builder;
-    std::unique_ptr<llvm::DIBuilder> dbuilder;
-    std::unique_ptr<llvm::legacy::FunctionPassManager> fpm;
+    OwnPtr<llvm::LLVMContext> context;
+    OwnPtr<llvm::Module> module;
+    OwnPtr<llvm::IRBuilder<>> builder;
+    OwnPtr<llvm::DIBuilder> dbuilder;
+    OwnPtr<llvm::legacy::FunctionPassManager> fpm;
 
-    std::unique_ptr<quart::TypeRegistry> registry;
+    OwnPtr<quart::TypeRegistry> registry;
 
     DebugInfo debug;
 
-    std::map<quart::Type*, StructRef> structs;
-    std::map<std::string, ModuleRef> modules;
-    std::map<std::string, FunctionRef> functions;
+    std::map<quart::Type*, RefPtr<Struct>> structs;
+    std::map<std::string, RefPtr<Module>> modules;
+    std::map<std::string, RefPtr<Function>> functions;
 
     std::map<llvm::Type*, llvm::StructType*> variadics;
     std::map<quart::Type*, Impl> impls;
@@ -264,9 +264,9 @@ public:
     Scope* global_scope = nullptr;
     Scope* scope = nullptr;
 
-    FunctionRef current_function = nullptr;
-    StructRef current_struct = nullptr;
-    ModuleRef current_module = nullptr;
+    RefPtr<Function> current_function = nullptr;
+    RefPtr<Struct> current_struct = nullptr;
+    RefPtr<Module> current_module = nullptr;
     Impl* current_impl = nullptr;
 
     std::map<std::string, BuiltinFunction> builtins;
