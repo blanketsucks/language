@@ -248,7 +248,7 @@ public:
     bool is_float;
 
     IntegerExpr(Span span, std::string value, u32 bits = 32, bool is_float = false) :
-        ExprMixin(span), value(value), bits(bits), is_float(is_float) {}
+        ExprMixin(span), value(std::move(value)), bits(bits), is_float(is_float) {}
 
     Value accept(Visitor& visitor) override;
 };
@@ -274,7 +274,7 @@ class StringExpr : public ExprMixin<ExprKind::String> {
 public:
     std::string value;
 
-    StringExpr(Span span, std::string value) : ExprMixin(span), value(value) {}
+    StringExpr(Span span, std::string value) : ExprMixin(span), value(std::move(value)) {}
     Value accept(Visitor& visitor) override;
 };
 
