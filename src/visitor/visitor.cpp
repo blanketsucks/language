@@ -50,8 +50,6 @@ void Visitor::finalize() {
     for (auto& entry : this->finalizers) {
         entry(*this);
     }
-
-    this->registry->clear();
 }
 
 void Visitor::add_finalizer(Visitor::Finalizer finalizer) {

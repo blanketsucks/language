@@ -1,11 +1,5 @@
 #include <quart/language/registry.h>
 
-#define CLEAR(map)                  \
-    for (auto& pair : map) {        \
-        delete pair.second;         \
-    }                               \
-    map.clear();
-
 using namespace quart;
 
 TypeRegistry::TypeRegistry(
@@ -16,15 +10,6 @@ TypeRegistry::TypeRegistry(
 
 std::unique_ptr<TypeRegistry> TypeRegistry::create(llvm::LLVMContext& context) {
     return std::unique_ptr<TypeRegistry>(new TypeRegistry(context));
-}
-
-void TypeRegistry::clear() {
-    CLEAR(this->structs);
-    CLEAR(this->enums);
-    CLEAR(this->arrays);
-    CLEAR(this->integers);
-    CLEAR(this->pointers);
-    CLEAR(this->references);
 }
 
 quart::Type* TypeRegistry::wrap(llvm::Type* type) {
@@ -58,7 +43,7 @@ quart::StructType* TypeRegistry::wrap(llvm::StructType* type) {
     auto iterator = this->structs.find(name);
 
     if (iterator != this->structs.end()) {
-        return iterator->second;
+        return &*iterator->second;
     }
 
     std::vector<quart::Type*> fields;
@@ -67,7 +52,7 @@ quart::StructType* TypeRegistry::wrap(llvm::StructType* type) {
     }
 
     StructType* ty = new StructType(this, name, fields, type);
-    this->structs[name] = ty;
+    this->structs[name] = OwnPtr<StructType>(ty);
 
     return ty;
 }
@@ -86,10 +71,10 @@ IntType* TypeRegistry::create_int_type(::u32 bits, bool is_signed) {
     } else {
         auto iterator = this->integers.find({bits, is_signed});
         if (iterator != this->integers.end()) {
-            return iterator->second;
+            return &*iterator->second;
         } else {
             IntType* type = new IntType(this, bits, is_signed);
-            this->integers[{bits, is_signed}] = type;
+            this->integers[{bits, is_signed}] = OwnPtr<IntType>(type);
 
             return type;
         }
@@ -101,10 +86,10 @@ StructType* TypeRegistry::create_struct_type(
 ) {
     auto iterator = this->structs.find(name);
     if (iterator != this->structs.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         StructType* type = new StructType(this, name, fields, llvm_type);
-        this->structs[name] = type;
+        this->structs[name] = OwnPtr<StructType>(type);
 
         return type;
     }
@@ -113,10 +98,10 @@ StructType* TypeRegistry::create_struct_type(
 ArrayType* TypeRegistry::create_array_type(Type* element, size_t size) {
     auto iterator = this->arrays.find({element, size});
     if (iterator != this->arrays.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         ArrayType* type = new ArrayType(this, element, size);
-        this->arrays[{element, size}] = type;
+        this->arrays[{element, size}] = OwnPtr<ArrayType>(type);
 
         return type;
     }
@@ -125,10 +110,10 @@ ArrayType* TypeRegistry::create_array_type(Type* element, size_t size) {
 EnumType* TypeRegistry::create_enum_type(const std::string& name, Type* inner) {
     auto iterator = this->enums.find(name);
     if (iterator != this->enums.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         EnumType* type = new EnumType(this, name, inner);
-        this->enums[name] = type;
+        this->enums[name] = OwnPtr<EnumType>(type);
 
         return type;
     }
@@ -137,10 +122,10 @@ EnumType* TypeRegistry::create_enum_type(const std::string& name, Type* inner) {
 TupleType* TypeRegistry::create_tuple_type(const std::vector<Type*>& elements) {
     auto iterator = this->tuples.find(elements);
     if (iterator != this->tuples.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         TupleType* type = new TupleType(this, elements);
-        this->tuples[elements] = type;
+        this->tuples[elements] = OwnPtr<TupleType>(type);
 
         return type;
     }
@@ -149,10 +134,10 @@ TupleType* TypeRegistry::create_tuple_type(const std::vector<Type*>& elements) {
 PointerType* TypeRegistry::create_pointer_type(Type* pointee, bool is_mutable) {
     auto iterator = this->pointers.find({pointee, is_mutable});
     if (iterator != this->pointers.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         PointerType* type = new PointerType(this, pointee, is_mutable);
-        this->pointers[{pointee, is_mutable}] = type;
+        this->pointers[{pointee, is_mutable}] = OwnPtr<PointerType>(type);
 
         return type;
     }
@@ -161,10 +146,10 @@ PointerType* TypeRegistry::create_pointer_type(Type* pointee, bool is_mutable) {
 ReferenceType* TypeRegistry::create_reference_type(Type* type, bool is_mutable) {
     auto iterator = this->references.find({type, is_mutable});
     if (iterator != this->references.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         ReferenceType* reference = new ReferenceType(this, type, is_mutable);
-        this->references[{type, is_mutable}] = reference;
+        this->references[{type, is_mutable}] = OwnPtr<ReferenceType>(reference);
 
         return reference;
     }
@@ -175,10 +160,10 @@ FunctionType* TypeRegistry::create_function_type(
 ) {
     auto iterator = this->functions.find({return_type, parameters});
     if (iterator != this->functions.end()) {
-        return iterator->second;
+        return &*iterator->second;
     } else {
         FunctionType* type = new FunctionType(this, return_type, parameters);
-        this->functions[{return_type, parameters}] = type;
+        this->functions[{return_type, parameters}] = OwnPtr<FunctionType>(type);
 
         return type;
     }

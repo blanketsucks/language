@@ -5,7 +5,6 @@
 #include <quart/llvm.h>
 #include <quart/common.h>
 
-#include <llvm/ADT/DenseMap.h>
 #include <memory>
 #include <map>
 
@@ -22,8 +21,6 @@ public:
     template<typename K, typename V> using TypeMap = std::map<K, V, std::equal_to<K>>;
 
     static std::unique_ptr<TypeRegistry> create(llvm::LLVMContext& context);
-
-    void clear();
 
     Type* wrap(llvm::Type* type);
     StructType* wrap(llvm::StructType* type);
@@ -54,14 +51,14 @@ private:
     IntType i1, i8, i16, i32, i64;
     IntType u8, u16, u32, u64;
 
-    std::map<std::string, StructType*> structs;
-    std::map<std::string, EnumType*> enums;
-    std::map<ArrayTypeStorageKey, ArrayType*> arrays;
-    std::map<TupleTypeStorageKey, TupleType*> tuples;
-    std::map<IntTypeStorageKey, IntType*> integers;
-    std::map<PointerTypeStorageKey, PointerType*> pointers;
-    std::map<PointerTypeStorageKey, ReferenceType*> references;
-    std::map<FunctionTypeStorageKey, FunctionType*> functions;
+    std::map<std::string, OwnPtr<StructType>> structs;
+    std::map<std::string, OwnPtr<EnumType>> enums;
+    std::map<ArrayTypeStorageKey, OwnPtr<ArrayType>> arrays;
+    std::map<TupleTypeStorageKey, OwnPtr<TupleType>> tuples;
+    std::map<IntTypeStorageKey, OwnPtr<IntType>> integers;
+    std::map<PointerTypeStorageKey, OwnPtr<PointerType>> pointers;
+    std::map<PointerTypeStorageKey, OwnPtr<ReferenceType>> references;
+    std::map<FunctionTypeStorageKey, OwnPtr<FunctionType>> functions;
 };
 
 }
