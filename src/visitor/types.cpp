@@ -21,6 +21,24 @@ static std::map<std::string, u32> TYPE_SIZES = {
     {"void", 0}
 };
 
+static TypeAlias* resolve_type_alias(
+    Visitor& visitor, const std::string& name, std::deque<std::string> parents
+) {
+    Scope* scope = visitor.scope;
+    while (!parents.empty()) {
+        std::string name = parents.front();
+        parents.pop_front();
+
+        if (scope->has_module(name)) {
+            scope = scope->get_module(name)->scope;
+        } else {
+            return nullptr;
+        }
+    }
+
+    return scope->get_type_alias(name);
+}
+
 u32 Visitor::getsizeof(llvm::Value* value) {
     return this->getsizeof(value->getType());
 }
@@ -328,9 +346,20 @@ quart::Type* Visitor::visit(ast::ReferenceTypeExpr* expr) {
 }
 
 quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
+    quart::TypeAlias* alias = resolve_type_alias(
+        *this, expr->parent->name, std::move(expr->parent->parents)
+    );
+
+    if (!alias) {
+        ERROR(expr->span, "Unrecognised type '{0}'", expr->parent->name);
+    }
+
+    if (!alias->is_generic()) {
+        ERROR(expr->span, "Type '{0}' is not generic", expr->parent->name);
+    }
+
     // TODO: Parse parents
     // TODO: Allow for struct types
-    quart::TypeAlias* alias = this->scope->get_type_alias(expr->parent->name);
 
     std::vector<quart::Type*> args;
     for (auto& arg : expr->args) {
@@ -361,29 +390,32 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
 }
 
 Value Visitor::visit(ast::TypeAliasExpr* expr) {
-    if (expr->is_generic_alias()) {
-        std::vector<GenericTypeParameter> parameters;
-        for (auto& param : expr->parameters) {
-            std::vector<quart::Type*> constraints;
-            for (auto& constraint : param.constraints) {
-                constraints.push_back(constraint->accept(*this));
-            }
+    if (!expr->is_generic_alias()) {
+        quart::Type* type = expr->type->accept(*this);
+        this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, type, expr->span);
 
-            quart::Type* default_type = nullptr;
-            if (param.default_type) {
-                default_type = param.default_type->accept(*this);
-            }
+        return EMPTY_VALUE;
+    }
 
-            parameters.push_back({param.name, constraints, default_type, param.span});
+    std::vector<GenericTypeParameter> parameters;
+    for (auto& param : expr->parameters) {
+        std::vector<quart::Type*> constraints;
+        for (auto& constraint : param.constraints) {
+            constraints.push_back(constraint->accept(*this));
         }
 
+        quart::Type* default_type = nullptr;
+        if (param.default_type) {
+            default_type = param.default_type->accept(*this);
+        }
 
-        this->scope->type_aliases[expr->name] = quart::TypeAlias(
-            expr->name, parameters, *expr->type, expr->span
-        );
-    } else {
-        this->scope->type_aliases[expr->name] = quart::TypeAlias(expr->name, expr->type->accept(*this), expr->span);
+        parameters.push_back({param.name, constraints, default_type, param.span});
     }
+
+
+    this->scope->type_aliases[expr->name] = quart::TypeAlias(
+        expr->name, parameters, std::move(expr->type), expr->span
+    );
 
     return EMPTY_VALUE;
 }

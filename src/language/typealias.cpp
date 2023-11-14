@@ -25,7 +25,9 @@ quart::Type* quart::TypeAlias::instantiate(Visitor& visitor, const std::vector<q
         return iterator->second;
     }
 
-    Scope* scope = Scope::create("generic", ScopeType::Anonymous, visitor.scope);
+    Scope* scope = Scope::create("generic", ScopeType::Anonymous);
+
+    scope->parent = visitor.scope;
     visitor.scope = scope;
 
     for (auto entry : llvm::zip(this->parameters, args)) {

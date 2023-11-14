@@ -188,7 +188,7 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
     this->visit(std::move(expr->body));
 
     this->current_module = outer;
-    this->scope = scope;
+    this->scope = prev;
 
     return nullptr;
 }

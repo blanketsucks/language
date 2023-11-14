@@ -26,7 +26,7 @@ struct TypeAlias {
     quart::Type* type;
 
     std::vector<GenericTypeParameter> parameters;
-    ast::TypeExpr* expr;
+    OwnPtr<ast::TypeExpr> expr;
 
     GenericCache cache;
 
@@ -41,9 +41,9 @@ struct TypeAlias {
     TypeAlias(
         const std::string& name,
         std::vector<GenericTypeParameter> parameters,
-        ast::TypeExpr& expr,
+        OwnPtr<ast::TypeExpr> expr,
         const Span& span
-    ) : name(name), type(nullptr), parameters(parameters), expr(&expr), span(span) {}
+    ) : name(name), type(nullptr), parameters(parameters), expr(std::move(expr)), span(span) {}
 
     bool is_generic() const { return this->type == nullptr; }
 
