@@ -1458,6 +1458,20 @@ OwnPtr<ast::Expr> Parser::unary() {
 
     if (iterator == UNARY_OPS.end()) {
         expr = this->call();
+    } else if (this->current.is(TokenKind::BinaryAnd)) {
+        Span start = this->current.span;
+        this->next();
+
+        bool is_mutable = false;
+        if (this->current == TokenKind::Mut) {
+            is_mutable = true;
+            this->next();
+        }
+
+        auto value = this->expr(false);
+        expr = make_own<ast::ReferenceExpr>(
+            Span::merge(start, value->span), std::move(value), is_mutable
+        );
     } else {
         Span start = this->current.span;
 

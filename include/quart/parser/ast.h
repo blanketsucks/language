@@ -38,6 +38,7 @@ enum class ExprKind {
     Const,
     Array,
     UnaryOp,
+    Reference,
     BinaryOp,
     InplaceBinaryOp,
     Call,
@@ -337,6 +338,17 @@ public:
 
     UnaryOpExpr(Span span, OwnPtr<Expr> value, UnaryOp op)
         : ExprMixin(span), value(std::move(value)), op(op) {}
+
+    Value accept(Visitor& visitor) override;
+};
+
+class ReferenceExpr : public ExprMixin<ExprKind::Reference> {
+public:
+    OwnPtr<Expr> value;
+    bool is_mutable;
+
+    ReferenceExpr(Span span, OwnPtr<Expr> value, bool is_mutable) :
+        ExprMixin(span), value(std::move(value)), is_mutable(is_mutable) {}
 
     Value accept(Visitor& visitor) override;
 };

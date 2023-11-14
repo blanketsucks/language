@@ -48,7 +48,8 @@
     Op(MaybeExpr)                           \
     Op(ImplExpr)                            \
     Op(TypeAliasExpr)                       \
-    Op(MatchExpr)
+    Op(MatchExpr)                           \
+    Op(ReferenceExpr)
 
 #define TYPE_EXPR_LIST(Op)                  \
     Op(BuiltinTypeExpr)                     \

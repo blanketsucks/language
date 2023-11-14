@@ -172,6 +172,7 @@ public:
     Value visit(ast::VariableAssignmentExpr* expr);
     Value visit(ast::ConstExpr* expr);
 
+    Value visit(ast::ReferenceExpr* expr);
     Value visit(ast::UnaryOpExpr* expr);
     Value visit(ast::BinaryOpExpr* expr);
     Value visit(ast::InplaceBinaryOpExpr* expr);

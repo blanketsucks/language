@@ -185,6 +185,30 @@ Value Visitor::evaluate_float_operation(const Value& lhs, BinaryOp op, const Val
     return nullptr;
 }
 
+Value Visitor::visit(ast::ReferenceExpr* expr) {
+    auto ref = this->as_reference(*expr->value);
+    if (!ref.value) {
+        Value value = expr->value->accept(*this);
+
+        llvm::AllocaInst* alloca = this->alloca(value->getType());
+        this->builder->CreateStore(value, alloca);
+
+        return Value(alloca, value.type->get_reference_to(expr->is_mutable));
+    }
+
+    quart::Type* type = ref.type;
+    if (!ref.is_mutable() && expr->is_mutable) {
+        ERROR(expr->span, "Cannot take a mutable reference of an immutable value");
+    }
+
+    if (expr->is_mutable) {
+        this->mark_as_mutated(ref);
+    }
+
+    u16 flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
+    return Value(ref.value, type->get_reference_to(expr->is_mutable), flags);
+}
+
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
     Value value = expr->value->accept(*this);
     if (value.is_empty_value()) ERROR(expr->span, "Expected a value");
