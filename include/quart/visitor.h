@@ -33,18 +33,6 @@ struct Impl {
     Scope* scope;
 };
 
-struct ContextType {
-    llvm::Type* type = nullptr;
-    bool is_immutable = true;
-
-    void reset() {
-        this->type = nullptr;
-        this->is_immutable = true;
-    }
-
-    llvm::Type* operator->() const { return this->type; }
-};
-
 class Visitor {
 public:
     using TupleKey = std::vector<llvm::Type*>;
@@ -58,6 +46,9 @@ public:
     void dump(llvm::raw_ostream& stream);
 
     void set_insert_point(llvm::BasicBlock* block, bool push = true);
+
+    void push_scope(Scope* scope);
+    Scope* pop_scope();
 
     quart::Scope* create_scope(const std::string& name, quart::ScopeType type);
 

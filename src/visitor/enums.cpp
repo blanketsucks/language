@@ -14,7 +14,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     auto enumeration = make_ref<Enum>(expr->name, type);
 
     this->scope->enums[expr->name] = enumeration;
-    enumeration->scope = this->create_scope(expr->name, ScopeType::Enum);
+    enumeration->scope = Scope::create(expr->name, ScopeType::Enum, this->scope);
 
     if (inner->is_int()) {
         int64_t counter = 0;

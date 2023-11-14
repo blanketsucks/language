@@ -22,8 +22,8 @@ Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(op
 
     this->fpm->doInitialization();
 
-    this->global_scope = new Scope(name, ScopeType::Global);
-    this->scope = this->global_scope;
+    this->global_scope = Scope::create(name, ScopeType::Global);
+    this->push_scope(global_scope);
 
     Builtins::init(*this);
 }
@@ -73,11 +73,14 @@ void Visitor::set_insert_point(llvm::BasicBlock* block, bool push) {
     this->builder->SetInsertPoint(block);
 }
 
-quart::Scope* Visitor::create_scope(const std::string& name, ScopeType type) {
-    Scope* scope = new quart::Scope(name, type, this->scope);
-    this->scope->children.push_back(scope);
-
+void Visitor::push_scope(Scope* scope) {
     this->scope = scope;
+}
+
+Scope* Visitor::pop_scope() {
+    Scope* scope = this->scope;
+    this->scope = scope->parent;
+
     return scope;
 }
 
@@ -499,8 +502,8 @@ Value Visitor::visit(ast::StringExpr* expr) {
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
-    Scope* prev = this->scope;
-    Scope* scope = this->create_scope("block", ScopeType::Anonymous);
+    Scope* scope = Scope::create("block", ScopeType::Anonymous, this->scope);
+    this->push_scope(scope);
 
     Value last = nullptr;
     for (auto& stmt : expr->block) {
@@ -515,7 +518,7 @@ Value Visitor::visit(ast::BlockExpr* expr) {
         defer->accept(*this);
     }
 
-    this->scope = prev;
+    this->pop_scope();
     return last;
 }
 

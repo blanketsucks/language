@@ -97,7 +97,8 @@ Value Visitor::visit(ast::StructExpr* expr) {
         this->scope->structs[expr->name] = structure;
         this->structs[type] = structure;
 
-        structure->scope = this->create_scope(name, ScopeType::Struct);
+        Scope* scope = Scope::create(name, ScopeType::Struct, this->scope);
+        structure->scope = scope;
         
         u32 index = fields.empty() ? 0 : fields.rbegin()->second.index + 1;
         u32 offset = 0;
@@ -150,8 +151,9 @@ Value Visitor::visit(ast::StructExpr* expr) {
         }
 
         structure = this->scope->structs[expr->name];
-        this->scope = structure->scope;
     }
+
+    this->push_scope(structure->scope);
 
     this->scope->structs["Self"] = structure;
     this->current_struct = structure;
@@ -161,7 +163,7 @@ Value Visitor::visit(ast::StructExpr* expr) {
     }
 
     this->current_struct = nullptr;
-    this->scope->exit(this);
+    this->pop_scope();
     
     return nullptr;
 }

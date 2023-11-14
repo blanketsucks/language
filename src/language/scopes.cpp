@@ -98,13 +98,11 @@ llvm::Constant* ScopeLocal::get_constant_value() {
     return nullptr;
 }
 
-Scope::Scope(const std::string& name, ScopeType type, Scope* parent) : name(name), type(type), parent(parent) {
-    this->structs = {};
-    this->functions = {};
-    this->constants = {};
-    this->enums = {};
-    this->variables = {};
-    this->modules = {};
+Scope* Scope::create(const std::string& name, ScopeType type, Scope* parent) {
+    Scope* scope = new Scope(name, type, parent);
+    if (parent) parent->add_child(scope);
+
+    return scope;
 }
 
 bool Scope::has_struct(const std::string& name) { HAS_VALUE(structs, has_struct); }

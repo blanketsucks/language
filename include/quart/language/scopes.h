@@ -59,12 +59,15 @@ struct ScopeLocal {
 struct Scope {
     template<typename T> using ValueMap = std::map<std::string, T>;
 
+    static Scope* create(const std::string& name, ScopeType type, Scope* parent = nullptr);
+
     std::string name;
     ScopeType type;
 
     Scope* parent;
     std::vector<Scope*> children;
 
+    // TODO: Maybe a single map for all of these?
     ValueMap<Variable> variables;
     ValueMap<Constant> constants;
     ValueMap<RefPtr<Function>> functions;
@@ -75,7 +78,7 @@ struct Scope {
 
     std::vector<ast::Expr*> defers;
 
-    Scope(const std::string& name, ScopeType type, Scope* parent = nullptr);
+    void add_child(Scope* child) { this->children.push_back(child); }
 
     ScopeLocal get_local(const std::string& name, bool use_store_value = true);
 
@@ -100,6 +103,10 @@ struct Scope {
     void exit(Visitor* visitor);
 
     void finalize(bool eliminate_dead_functions = true);
+
+private:
+    Scope(const std::string& name, ScopeType type, Scope* parent) :
+        name(name), type(type), parent(parent) {}
 };
 
 }

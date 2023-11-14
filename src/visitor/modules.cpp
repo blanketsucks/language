@@ -51,10 +51,6 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
         }
 
         this->scope->modules[module_name] = module;
-
-        this->scope = scope;
-        this->current_module = outer;
-
         return module;
     }
 
@@ -90,9 +86,9 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
                 module = this->modules[current_path];
             } else {
                 module = make_ref<Module>(current, path);
-                module->scope = new Scope(current, ScopeType::Module);
-
-                this->scope->children.push_back(module->scope);
+                
+                module->scope = Scope::create(current, ScopeType::Module);
+                this->scope->add_child(module->scope);
             }
 
             this->scope->modules[current] = module;
@@ -123,9 +119,9 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
         path = dir.join("module.qr");
         if (!path.exists()) {
             auto module = make_ref<Module>(module_name, dir);
-            module->scope = new Scope(module_name, ScopeType::Module);
+            module->scope = Scope::create(module_name, ScopeType::Module);
 
-            this->scope->children.push_back(module->scope);
+            this->scope->add_child(module->scope);
             this->scope->modules[module_name] = module;
 
             this->scope = scope;
@@ -156,8 +152,8 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
 
     this->modules[name] = module;
 
-    module->scope = new Scope(module_name, ScopeType::Module);
-    this->scope->children.push_back(module->scope);
+    module->scope = Scope::create(module_name, ScopeType::Module);
+    this->scope->add_child(module->scope);
 
     this->scope = module->scope;
     this->current_module = module;
@@ -181,13 +177,18 @@ Value Visitor::visit(ast::ModuleExpr* expr) {
     auto module = make_ref<Module>(expr->name, expr->name);
     this->scope->modules[expr->name] = module;
 
-    module->scope = this->create_scope(expr->name, ScopeType::Module);
+    module->scope = Scope::create(expr->name, ScopeType::Module);
+    this->scope->add_child(module->scope);
+
+    Scope* prev = this->scope;
+
     this->current_module = module;
+    this->push_scope(module->scope);
 
     this->visit(std::move(expr->body));
 
     this->current_module = outer;
-    this->scope = this->scope->parent;
+    this->scope = scope;
 
     return nullptr;
 }

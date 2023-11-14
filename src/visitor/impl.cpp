@@ -16,7 +16,8 @@ Value Visitor::visit(ast::ImplExpr* expr) {
             ERROR(expr->type->span, "Cannot implement type '{0}'", name);
         }
 
-        Scope* scope = this->create_scope(name, ScopeType::Impl);
+        Scope* scope = Scope::create(name, ScopeType::Impl, this->scope);
+        
         Impl impl = {
             .name = name,
             .type = type,
@@ -26,12 +27,13 @@ Value Visitor::visit(ast::ImplExpr* expr) {
         this->self = type;
         this->current_impl = &impl;
     
+        this->push_scope(scope);
         for (auto& function : expr->body) {
             function->accept(*this);
         }
 
         this->impls[type] = impl;
-        scope->exit(this);
+        this->pop_scope();
 
         this->current_impl = nullptr;
         this->self = nullptr;
@@ -43,14 +45,14 @@ Value Visitor::visit(ast::ImplExpr* expr) {
         ERROR(expr->type->span, "An implementation already exists for struct '{0}'", structure->name);
     }
 
-    this->scope = structure->scope;
+    this->push_scope(structure->scope);
     this->current_struct = structure;
 
     for (auto& function : expr->body) {
         function->accept(*this);
     }
 
-    this->scope = this->scope->parent;
+    this->pop_scope();
     this->current_struct = nullptr;
 
     return nullptr;

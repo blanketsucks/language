@@ -419,7 +419,8 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         func->ret.block = llvm::BasicBlock::Create(*this->context, "ret");
     }
 
-    func->scope = this->create_scope(func->name, ScopeType::Function);
+    func->scope = Scope::create(func->name, ScopeType::Function, this->scope);
+    this->push_scope(func->scope);
 
     std::vector<Parameter> params = func->params;
     for (auto& entry : func->kwargs) params.push_back(entry.second);
@@ -517,7 +518,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         }
     }
 
-    this->scope->exit(this);
+    this->pop_scope();
 
     this->current_function = outer;
     if (outer) {
