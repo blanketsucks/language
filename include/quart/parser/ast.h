@@ -203,7 +203,11 @@ public:
     }
 
     ExprKind kind() const { return this->_kind; }
+
     bool is(ExprKind kind) const { return this->_kind == kind; }
+    template<typename... Args> bool is(ExprKind kind, Args... args) const {
+        return this->_kind == kind || this->is(args...);
+    }
 
     template<typename T> T* as() {
         assert(T::classof(this) && "Invalid cast.");

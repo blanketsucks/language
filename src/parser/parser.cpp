@@ -146,11 +146,11 @@ bool Parser::is_upcoming_constructor(ast::Expr const& previous) const {
     auto& peek = this->peek();
     if (peek == TokenKind::RBrace) return true;
     
-    if (!peek.is(TokenKind::Identifier) && !this->peek().is(TokenKind::Colon)) {
+    if (!peek.is(TokenKind::Identifier) || !this->peek(2).is(TokenKind::Colon)) {
         return false;
     }
 
-    return previous.is(ast::ExprKind::Variable) || previous.is(ast::ExprKind::Path);
+    return previous.is(ast::ExprKind::Variable, ast::ExprKind::Path);
 }
 
 AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attrs) {
@@ -1503,7 +1503,7 @@ OwnPtr<ast::Expr> Parser::unary() {
 OwnPtr<ast::Expr> Parser::call() {
     Span start = this->current.span;
 
-    auto expr = this->factor();
+    auto expr = this->primary();
     while (this->current == TokenKind::LParen) {
         this->next();
         expr = this->parse_call(start, std::move(expr));
@@ -1588,7 +1588,7 @@ OwnPtr<ast::Expr> Parser::element(Span start, OwnPtr<ast::Expr> expr) {
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::factor() {
+OwnPtr<ast::Expr> Parser::primary() {
     OwnPtr<ast::Expr> expr;
 
     Span start = this->current.span;

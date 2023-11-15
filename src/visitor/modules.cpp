@@ -146,14 +146,12 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
     auto ast = parser.parse();
 
     auto module = make_ref<Module>(module_name, path);
-    
-    this->scope->modules[module_name] = module;
-    scope->modules[module_name] = module;
-
-    this->modules[name] = module;
-
     module->scope = Scope::create(module_name, ScopeType::Module);
+
     this->scope->add_child(module->scope);
+
+    scope->modules[module_name] = module;
+    this->modules[name] = module;
 
     this->scope = module->scope;
     this->current_module = module;

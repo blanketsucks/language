@@ -23,6 +23,8 @@ public:
 
     void end();
 
+    void error(const Span& span, const std::string& message);
+
     Token next();
     Token rewind(u32 n = 1);
 
@@ -90,7 +92,7 @@ public:
     OwnPtr<ast::Expr> call();
     OwnPtr<ast::Expr> attr(Span start, OwnPtr<ast::Expr> expr);
     OwnPtr<ast::Expr> element(Span start, OwnPtr<ast::Expr> expr);
-    OwnPtr<ast::Expr> factor();
+    OwnPtr<ast::Expr> primary();
 
     size_t index;
     Token current;
@@ -101,7 +103,6 @@ public:
     bool self_usage_allowed = false;
 
     std::vector<Token> tokens;
-
     std::map<llvm::StringRef, AttributeFunc> attributes;
 };
 

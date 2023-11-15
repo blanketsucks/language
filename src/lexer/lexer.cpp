@@ -8,7 +8,7 @@
 
 using namespace quart;
 
-static const std::map<char, TokenKind> CHAR_TO_TOKENKIND = {
+static const std::map<char, TokenKind> SINGLE_CHAR_TOKENS = {
     {'~', TokenKind::BinaryNot},
     {'(', TokenKind::LParen},
     {')', TokenKind::RParen},
@@ -142,12 +142,6 @@ size_t Lexer::lex_while(
     return n;
 }
 
-// void Lexer::skip_comment() {
-//     while (this->current != '\n' && this->current != 0) {
-//         this->next();
-//     }
-// }
-
 Token Lexer::lex_identifier(bool accept_keywords) {
     std::string value;
     Location start = this->current_location();
@@ -278,8 +272,8 @@ Token Lexer::once() {
         return this->lex_number();
     } else if (this->is_valid_identifier(current)) {
         return this->lex_identifier();
-    } else if (CHAR_TO_TOKENKIND.find(current) != CHAR_TO_TOKENKIND.end()) {
-        TokenKind kind = CHAR_TO_TOKENKIND.at(current);
+    } else if (SINGLE_CHAR_TOKENS.find(current) != SINGLE_CHAR_TOKENS.end()) {
+        TokenKind kind = SINGLE_CHAR_TOKENS.at(current);
         this->next();
 
         return this->create_token(kind, start, std::string(1, current));
@@ -355,10 +349,6 @@ Token Lexer::once() {
                 this->next();
                 return this->create_token(TokenKind::Gte, start, ">=");
             } 
-            // else if (next == '>') {
-            //     this->next();
-            //     return this->create_token(TokenKind::Rsh, start, ">>");
-            // }
 
             return this->create_token(TokenKind::Gt, start, ">");
         } case '<': {
