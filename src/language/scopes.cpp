@@ -143,10 +143,6 @@ RefPtr<Struct> Scope::get_struct(const std::string& name) { GET_VALUE(structs, g
 RefPtr<Enum> Scope::get_enum(const std::string& name) { GET_VALUE(enums, get_enum); }
 RefPtr<Module> Scope::get_module(const std::string& name) { GET_VALUE(modules, get_module); }
 
-void Scope::exit(Visitor* visitor) {
-    visitor->scope = this->parent;
-}
-
 void finalize(RefPtr<Function>& func) {
     if (!func) return;
     if (func->flags & Function::Finalized) return;

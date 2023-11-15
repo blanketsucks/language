@@ -100,8 +100,6 @@ struct Scope {
 
     TypeAlias* get_type_alias(const std::string& name);
 
-    void exit(Visitor* visitor);
-
     void finalize(bool eliminate_dead_functions = true);
 
 private:

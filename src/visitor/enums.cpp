@@ -16,6 +16,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
     this->scope->enums[expr->name] = enumeration;
     enumeration->scope = Scope::create(expr->name, ScopeType::Enum, this->scope);
 
+    this->push_scope(enumeration->scope);
     if (inner->is_int()) {
         int64_t counter = 0;
         for (auto& field : expr->fields) {
@@ -48,7 +49,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
             counter++;
         }
 
-        this->scope->exit(this);
+        this->pop_scope();
         return nullptr;
     }
 
@@ -68,7 +69,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
         enumeration->add_enumerator(field.name, constant, field.value->span);
     }
 
-    this->scope->exit(this);
+    this->pop_scope();
     return nullptr;
 }
 
