@@ -143,36 +143,37 @@ RefPtr<Struct> Scope::get_struct(const std::string& name) { GET_VALUE(structs, g
 RefPtr<Enum> Scope::get_enum(const std::string& name) { GET_VALUE(enums, get_enum); }
 RefPtr<Module> Scope::get_module(const std::string& name) { GET_VALUE(modules, get_module); }
 
-void finalize(RefPtr<Function>& func) {
-    if (!func) return;
-    if (func->flags & Function::Finalized) return;
+static void finalize(Function& func) {
+    if (func.flags & Function::Finalized) return;
 
-    llvm::Function* function = func->value;
-    if (function->use_empty() && !func->is_entry()) {
+    llvm::Function* function = func.value;
+    if (function->use_empty() && !func.is_entry()) {
         if (function->getParent()) {
             function->eraseFromParent();
         }
 
-        for (auto& call : func->calls) {
-            if (call->use_empty()) {
-                if (call->getParent()) {
-                    call->eraseFromParent();
-                }
+        for (auto& call : func.calls) {
+            if (!call->use_empty() && !call->getParent()) {
+                continue;
             }
+
+            call->eraseFromParent();
         }
     }
 
-    func->flags |= Function::Finalized;
+    func.flags |= Function::Finalized;
 }
 
 void Scope::finalize(bool eliminate_dead_functions) {
     if (eliminate_dead_functions) {
         for (auto& entry : this->functions) {
-            ::finalize(entry.second);
+            if (!entry.second) continue;
+            ::finalize(*entry.second);
         }
     }
 
     for (auto scope : this->children) {
-        scope->finalize(eliminate_dead_functions); delete scope;
+        scope->finalize(eliminate_dead_functions);
+        delete scope;
     }
 }
