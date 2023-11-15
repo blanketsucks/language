@@ -118,6 +118,15 @@ Token Parser::expect(TokenKind type, llvm::StringRef value) {
     return token;
 }
 
+llvm::Optional<Token> Parser::try_expect(TokenKind type) {
+    if (this->current != type) return llvm::None;
+
+    Token token = this->current;
+    this->next();
+
+    return token;
+}
+
 bool Parser::is_valid_attribute(llvm::StringRef name) {
     return this->attributes.find(name) != this->attributes.end();
 }
@@ -161,12 +170,7 @@ OwnPtr<ast::TypeExpr> Parser::parse_type() {
     switch (this->current.type) {
         case TokenKind::BinaryAnd: {
             this->next();
-            bool is_mutable = false;
-
-            if (this->current == TokenKind::Mut) {
-                is_mutable = true;
-                this->next();
-            }
+            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
 
             return make_own<ast::ReferenceTypeExpr>(
                 this->current.span, this->parse_type(), is_mutable
@@ -174,12 +178,7 @@ OwnPtr<ast::TypeExpr> Parser::parse_type() {
         }
         case TokenKind::Mul: {
             this->next();
-            bool is_mutable = false;
-
-            if (this->current == TokenKind::Mut) {
-                is_mutable = true;
-                this->next();
-            }
+            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
 
             auto type = this->parse_type();
             if (type->kind == ast::TypeKind::Reference) {
@@ -1294,11 +1293,7 @@ OwnPtr<ast::Expr> Parser::statement() {
             Span start = this->current.span;
             this->next();
 
-            bool is_mutable = false;
-            if (this->current == TokenKind::Mut) {
-                is_mutable = true;
-                this->next();
-            }
+            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
 
             Token token = this->expect(TokenKind::Identifier, "identifier");
             ast::Ident ident = { std::move(token.value), is_mutable, token.span };
@@ -1462,11 +1457,7 @@ OwnPtr<ast::Expr> Parser::unary() {
         Span start = this->current.span;
         this->next();
 
-        bool is_mutable = false;
-        if (this->current == TokenKind::Mut) {
-            is_mutable = true;
-            this->next();
-        }
+        bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
 
         auto value = this->expr(false);
         expr = make_own<ast::ReferenceExpr>(

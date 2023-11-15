@@ -30,6 +30,7 @@ public:
     Token& peek(u32 offset = 1);
 
     Token expect(TokenKind type, llvm::StringRef value);
+    llvm::Optional<Token> try_expect(TokenKind type);
 
     bool is_valid_attribute(llvm::StringRef name);
 
