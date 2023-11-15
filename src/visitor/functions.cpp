@@ -97,9 +97,9 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
     for (auto& entry : function.kwargs) params.push_back(entry.second);
 
     for (auto& arg : args) {
-        if (i >= params.size()) {
+        if (i >= function.params.size()) {
             if (!is_variadic) {
-                ERROR(arg->span,  "Function expects {0} arguments but got {1}", params.size(), i);
+                ERROR(arg->span,  "Function expects {0} positional arguments but got {1}", function.params.size(), i + 1);
             }
 
             Value value = arg->accept(*this);
@@ -109,7 +109,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
             continue;
         }
 
-        Parameter& param = params[i];
+        const Parameter& param = function.params[i];
         Value value = evaluate_function_argument(*this, arg, param);
 
         values[i] = value;
