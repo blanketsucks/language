@@ -59,8 +59,6 @@ enum class TokenKind {
     Impl,
     Match,
 
-    Reserved,
-
     Add,
     Minus,
     Mul,
@@ -212,9 +210,6 @@ static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     {"operator", TokenKind::Operator},
     {"impl", TokenKind::Impl},
     {"match", TokenKind::Match},
-
-    // Reserved words
-    {"__tuple", TokenKind::Reserved}
 };
 
 static std::map<TokenKind, int> PRECEDENCES = {
