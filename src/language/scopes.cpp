@@ -14,7 +14,7 @@
                                                          \
     return false                                         \
 
-
+    
 #define GET_VALUE(map, method)                           \
     auto iterator = this->map.find(name);                \
     if (iterator != this->map.end()) {                   \
@@ -153,7 +153,7 @@ static void finalize(Function& func) {
         }
 
         for (auto& call : func.calls) {
-            if (!call->use_empty() && !call->getParent()) {
+            if (!call->use_empty() || !call->getParent()) {
                 continue;
             }
 
