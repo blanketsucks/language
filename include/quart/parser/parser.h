@@ -88,11 +88,11 @@ public:
     OwnPtr<ast::Expr> binary(i32 prec, OwnPtr<ast::Expr> left);
     OwnPtr<ast::Expr> unary();
     OwnPtr<ast::Expr> call();
-    OwnPtr<ast::Expr> attr(Span start, OwnPtr<ast::Expr> expr);
-    OwnPtr<ast::Expr> element(Span start, OwnPtr<ast::Expr> expr);
+    OwnPtr<ast::Expr> attribute(Span start, OwnPtr<ast::Expr> expr);
+    OwnPtr<ast::Expr> index(Span start, OwnPtr<ast::Expr> expr);
     OwnPtr<ast::Expr> primary();
 
-    size_t index;
+    size_t offset;
     Token current;
 
     bool is_inside_function = false;

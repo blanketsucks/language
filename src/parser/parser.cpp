@@ -64,7 +64,7 @@ static std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
 
 
 Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {
-    this->index = 0;
+    this->offset = 0;
     this->current = this->tokens.front();
 
     Attributes::init(*this);
@@ -72,7 +72,7 @@ Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {
 
 void Parser::end() {
     if (this->current != TokenKind::SemiColon) {
-        Token last = this->tokens[this->index - 1];
+        Token last = this->tokens[this->offset - 1];
         ERROR(last.span, "Expected ';'");
     }
 
@@ -80,31 +80,31 @@ void Parser::end() {
 }
 
 Token Parser::next() {
-    this->index++;
+    this->offset++;
 
-    if (this->index >= this->tokens.size()) {
+    if (this->offset >= this->tokens.size()) {
         this->current = this->tokens.back(); // EOF
     } else {
-        this->current = this->tokens[this->index];
+        this->current = this->tokens[this->offset];
     }
 
     return this->current;
 }
 
 Token const& Parser::peek(u32 offset) const {
-    if (this->index >= this->tokens.size()) {
+    if (this->offset >= this->tokens.size()) {
         return this->tokens.back(); // EOF
     }
 
-    return this->tokens[this->index + offset];
+    return this->tokens[this->offset + offset];
 }
 
 Token& Parser::peek(u32 offset) {
-    if (this->index >= this->tokens.size()) {
+    if (this->offset >= this->tokens.size()) {
         return this->tokens.back(); // EOF
     }
 
-    return this->tokens[this->index + offset];
+    return this->tokens[this->offset + offset];
 }
 
 Token Parser::expect(TokenKind type, llvm::StringRef value) {
@@ -1535,16 +1535,19 @@ OwnPtr<ast::Expr> Parser::call() {
         expr = make_own<ast::ConstructorExpr>(Span::merge(start, end), std::move(expr), std::move(fields));
     }
 
-    if (this->current == TokenKind::Dot) {
-        expr = this->attr(start, std::move(expr));
-    } else if (this->current == TokenKind::LBracket) {
-        expr = this->element(start, std::move(expr));
+
+    switch (this->current.type) {
+        case TokenKind::Dot: 
+            expr = this->attribute(start, std::move(expr)); break;
+        case TokenKind::LBracket: 
+            expr = this->index(start, std::move(expr)); break;
+        default: break;
     }
 
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::attr(Span start, OwnPtr<ast::Expr> expr) {
+OwnPtr<ast::Expr> Parser::attribute(Span start, OwnPtr<ast::Expr> expr) {
     while (this->current == TokenKind::Dot) {
         this->next();
         
@@ -1555,13 +1558,13 @@ OwnPtr<ast::Expr> Parser::attr(Span start, OwnPtr<ast::Expr> expr) {
     }
 
     if (this->current == TokenKind::LBracket) {
-        return this->element(start, std::move(expr));
+        return this->index(start, std::move(expr));
     }
     
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::element(Span start, OwnPtr<ast::Expr> expr) {
+OwnPtr<ast::Expr> Parser::index(Span start, OwnPtr<ast::Expr> expr) {
     while (this->current == TokenKind::LBracket) {
         this->next();
         auto index = this->expr(false);
@@ -1573,7 +1576,7 @@ OwnPtr<ast::Expr> Parser::element(Span start, OwnPtr<ast::Expr> expr) {
     }
 
     if (this->current == TokenKind::Dot) {
-        return this->attr(start, std::move(expr));
+        return this->attribute(start, std::move(expr));
     }
 
     return expr;
@@ -1748,10 +1751,12 @@ OwnPtr<ast::Expr> Parser::primary() {
         expr = make_own<ast::PathExpr>(Span::merge(start, this->current.span), std::move(expr), value);
     }
 
-    if (this->current == TokenKind::Dot) {
-        expr = this->attr(start, std::move(expr));
-    } else if (this->current == TokenKind::LBracket) {
-        expr = this->element(start, std::move(expr));
+    switch (this->current.type) {
+        case TokenKind::Dot: 
+            expr = this->attribute(start, std::move(expr)); break;
+        case TokenKind::LBracket: 
+            expr = this->index(start, std::move(expr)); break;
+        default: break;
     }
 
     return expr;
