@@ -36,8 +36,6 @@ public:
 
     bool is_valid_attribute(llvm::StringRef name);
 
-    int get_token_precendence();
-
     AttributeHandler::Result handle_expr_attributes(const ast::Attributes& attrs);
 
     bool is_upcoming_constructor(ast::Expr const& previous) const;
@@ -87,7 +85,7 @@ public:
     std::vector<OwnPtr<ast::Expr>> statements();
     OwnPtr<ast::Expr> statement();
     OwnPtr<ast::Expr> expr(bool semicolon = true);
-    OwnPtr<ast::Expr> binary(int prec, OwnPtr<ast::Expr> left);
+    OwnPtr<ast::Expr> binary(i32 prec, OwnPtr<ast::Expr> left);
     OwnPtr<ast::Expr> unary();
     OwnPtr<ast::Expr> call();
     OwnPtr<ast::Expr> attr(Span start, OwnPtr<ast::Expr> expr);

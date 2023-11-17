@@ -131,15 +131,6 @@ bool Parser::is_valid_attribute(llvm::StringRef name) {
     return this->attributes.find(name) != this->attributes.end();
 }
 
-int Parser::get_token_precendence() {
-    auto it = PRECEDENCES.find(this->current.type);
-    if (it == PRECEDENCES.end()) {
-        return -1;
-    }
-
-    return it->second;
-}
-
 bool Parser::is_upcoming_constructor(ast::Expr const& previous) const {
     if (this->current != TokenKind::LBrace) return false;
 
@@ -1412,9 +1403,9 @@ OwnPtr<ast::Expr> Parser::expr(bool semicolon) {
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::binary(int prec, OwnPtr<ast::Expr> left) {
+OwnPtr<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
     while (true) {
-        int precedence = this->get_token_precendence();
+        i8 precedence = this->current.precedence();
         if (precedence < prec) {
             return left;
         }
@@ -1430,7 +1421,7 @@ OwnPtr<ast::Expr> Parser::binary(int prec, OwnPtr<ast::Expr> left) {
         this->next();
         auto right = this->unary();
 
-        int next = this->get_token_precendence();
+        i8 next = this->current.precedence();
         if (precedence < next) {
             right = this->binary(precedence + 1, std::move(right));
         }

@@ -3,6 +3,7 @@
 #include <quart/lexer/location.h>
 
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/STLExtras.h>
 
 #include <vector>
 #include <iostream>
@@ -158,17 +159,13 @@ struct Token {
 
     inline bool is_keyword() const { return quart::is_keyword(this->value); }
 
-    bool is(TokenKind type) const {
-        return this->type == type;
-    }
-
-    bool is(const std::vector<TokenKind>& types) const { 
-        return std::find(types.begin(), types.end(), this->type) != types.end();
-    }
-
+    bool is(TokenKind type) const { return this->type == type; }
+    bool is(const std::vector<TokenKind>& types) const { return llvm::is_contained(types, this->type); }
     template<typename... Args> bool is(TokenKind type, Args... args) const { 
         return this->is(type) || this->is(args...);
     }
+
+    i8 precedence() const;
 
     bool operator==(TokenKind type) const;
     bool operator==(const Token& token) const;
@@ -212,7 +209,7 @@ static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     {"match", TokenKind::Match},
 };
 
-static std::map<TokenKind, int> PRECEDENCES = {
+static std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Assign, 5},
 
     {TokenKind::And, 10},
