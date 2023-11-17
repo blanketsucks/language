@@ -11,7 +11,7 @@ void Visitor::panic(const std::string& message, const Span& span) {
 
     llvm::Function* function = this->module->getFunction("__quart_panic"); // Defined in lib/panic.c
     if (!function) {
-        function = this->create_function(
+        function = this->create_llvm_function(
             "__quart_panic",
             this->builder->getVoidTy(),
             {

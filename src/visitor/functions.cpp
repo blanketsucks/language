@@ -24,7 +24,7 @@ bool Visitor::is_reserved_function(const std::string& name) {
     ) != RESERVED_FUNCTION_NAMES.end();
 }
 
-llvm::Function* Visitor::create_function(
+llvm::Function* Visitor::create_llvm_function(
     const std::string& name, 
     llvm::Type* ret, 
     std::vector<llvm::Type*> args, 
@@ -183,6 +183,81 @@ llvm::Value* Visitor::call(
     return ret;
 }
 
+Parameter Visitor::parse_function_parameter(ast::Argument& argument, u32 index) {
+    quart::Type* type = nullptr;
+    bool is_mutable = argument.is_mutable;
+
+    if (argument.is_self) {
+        quart::Type* self = this->self;
+        if (!self) {
+            RefPtr<Struct> structure = this->current_struct;
+            self = structure->type;
+        }
+
+        type = self->get_pointer_to(is_mutable);
+    } else if (argument.is_variadic) {
+        TODO("Support for `*` variadics");
+    } else {
+        type = argument.type->accept(*this);
+        if (!type->is_sized_type()) {
+            ERROR(argument.type->span, "Cannot define a parameter of type '{0}'", type->get_as_string());
+        }
+
+        if (type->is_reference() || type->is_pointer()) {
+            if (!type->is_mutable() && argument.is_mutable) {
+                ERROR(argument.span, "Cannot mark an immutable type as mutable");
+            }
+
+            if (type->is_mutable() && argument.is_mutable) {
+                NOTE(argument.span, "Parameter type was already marked as mutable. Redundant 'mut' keyword");
+            }
+
+            is_mutable = type->is_mutable();
+        }
+    }
+
+    llvm::Value* default_value = nullptr;
+    if (argument.default_value) {
+        this->inferred = type;
+
+        Value value = argument.default_value->accept(*this);
+        if (value.is_empty_value()) {
+            ERROR(argument.default_value->span, "Expected a constant value");
+        }
+
+        if (!llvm::isa<llvm::Constant>(value.inner)) {
+            ERROR(argument.default_value->span, "Default values must be constants");
+        }
+
+        if (!Type::can_safely_cast_to(value.type, type)) {
+            ERROR(
+                argument.default_value->span, 
+                "Cannot pass value of type '{0}' to parameter of type '{1}'", 
+                value.type->get_as_string(), type->get_as_string()
+            );
+        }
+
+        default_value = this->cast(value, type);
+        this->inferred = nullptr;
+    }
+
+    u8 flags = Parameter::None;
+
+    if (is_mutable) flags |= Parameter::Mutable;
+    if (argument.is_self) flags |= Parameter::Self;
+    if (argument.is_variadic) flags |= Parameter::Variadic;
+    if (argument.is_kwarg) flags |= Parameter::Keyword;
+
+    return {
+        argument.name, 
+        type, 
+        default_value,
+        flags,
+        index,
+        argument.span
+    };
+}
+
 Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::string name;
 
@@ -239,90 +314,18 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
     std::vector<quart::Type*> types;
 
     u32 index = 0;
-    for (auto& arg : expr->args) {
-        quart::Type* type = nullptr;
-        bool is_mutable = arg.is_mutable;
-
-        if (arg.is_self) {
-            quart::Type* self = this->self;
-            if (!self) {
-                RefPtr<Struct> structure = this->current_struct;
-                self = structure->type;
-            }
-
-            type = self->get_pointer_to(is_mutable);
-        } else if (arg.is_variadic) {
-            TODO("Support for `*` variadics");
+    for (auto& argument : expr->args) {
+        Parameter parameter = this->parse_function_parameter(argument, index);
+        if (argument.is_kwarg) {
+            kwargs[argument.name] = parameter;
         } else {
-            type = arg.type->accept(*this);
-            if (!type->is_sized_type()) {
-                ERROR(arg.type->span, "Cannot define a parameter of type '{0}'", type->get_as_string());
-            }
-
-            if (type->is_reference() || type->is_pointer()) {
-                if (!type->is_mutable() && arg.is_mutable) {
-                    ERROR(arg.span, "Cannot mark an immutable type as mutable");
-                }
-
-                if (type->is_mutable() && arg.is_mutable) {
-                    NOTE(arg.span, "Parameter type was already marked as mutable. Redundant 'mut' keyword");
-                }
-
-                is_mutable = type->is_mutable();
-            }
+            params.push_back(parameter);
         }
 
-        llvm::Value* default_value = nullptr;
-        if (arg.default_value) {
-            this->inferred = type;
-
-            Value val = arg.default_value->accept(*this);
-            if (val.is_empty_value()) {
-                ERROR(arg.default_value->span, "Expected a constant value");
-            }
-
-            if (!llvm::isa<llvm::Constant>(val.inner)) {
-                ERROR(arg.default_value->span, "Default values must be constants");
-            }
-
-            if (!Type::can_safely_cast_to(val.type, type)) {
-                ERROR(
-                    arg.default_value->span, 
-                    "Cannot pass value of type '{0}' to parameter of type '{1}'", 
-                    val.type->get_as_string(), type->get_as_string()
-                );
-            }
-
-            default_value = this->cast(val, type);
-            this->inferred = nullptr;
-        }
-
-        u8 flags = Parameter::None;
-
-        if (is_mutable) flags |= Parameter::Mutable;
-        if (arg.is_self) flags |= Parameter::Self;
-        if (arg.is_variadic) flags |= Parameter::Variadic;
-        if (arg.is_kwarg) flags |= Parameter::Keyword;
-
-        Parameter param = {
-            arg.name, 
-            type, 
-            default_value,
-            flags,
-            index,
-            arg.span
-        };
-
-        if (arg.is_kwarg) {
-            kwargs[arg.name] = param;
-        } else {
-            params.push_back(param);
-        }
-
-        llvm::Type* ltype = type->to_llvm_type();
+        llvm::Type* ltype = parameter.type->to_llvm_type();
 
         llvm_params.push_back(ltype);
-        types.push_back(type);
+        types.push_back(parameter.type);
 
         index++;
     }
@@ -355,7 +358,7 @@ Value Visitor::visit(ast::PrototypeExpr* expr) {
         ERROR(expr->span, "Function name '{0}' is reserved", fn);
     }
 
-    llvm::Function* function = this->create_function(
+    llvm::Function* function = this->create_llvm_function(
         fn, ret->to_llvm_type(), llvm_params, expr->is_c_variadic, linkage
     );
 

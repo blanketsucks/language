@@ -370,7 +370,7 @@ void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
         return;
     }
 
-    llvm::Function* function = this->create_function(
+    llvm::Function* function = this->create_llvm_function(
         "__global_constructors_init",
         this->builder->getVoidTy(),
         {},

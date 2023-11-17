@@ -99,7 +99,8 @@ public:
     llvm::AllocaInst* alloca(llvm::Type* type);
 
     bool is_reserved_function(const std::string& name);
-    llvm::Function* create_function(
+    Parameter parse_function_parameter(ast::Argument& argument, u32 index);
+    llvm::Function* create_llvm_function(
         const std::string& name, 
         llvm::Type* ret,
         std::vector<llvm::Type*> args, 
