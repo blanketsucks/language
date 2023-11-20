@@ -15,7 +15,7 @@ $ cmake ..
 $ make
 ```
 
-By the end of the build process, a `quart` executable will be created in a `build` directory.
+By the end of the build process, a `quart` executable will be created in the `build` directory.
 
 ```console
 $ ./build/quart --help
