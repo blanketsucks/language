@@ -4,14 +4,15 @@ Small language made for fun.
 
 ## Building
 
-Make sure to have Python installed, a C++ compiler (such as `g++`) and LLVM installed. LLVM 14 (Other versions of LLVM are currently not supported) is required.
-
-The build system uses a Python file rather than make or CMake because I don't really like either.
+Make sure to have `cmake` installed, a C++ compiler (such as `g++`) and LLVM 14 installed (other versions are not supported).
 
 ```console
 $ git clone https://github.com/blanketsucks/language.git
 $ cd language
-$ python3 build.py
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
 ```
 
 By the end of the build process, a `quart` executable will be created in a `build` directory.
