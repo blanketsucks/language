@@ -4,7 +4,13 @@
 
 using namespace quart;
 
+int run_jit(int argc, char** argv);
+
 int main(int argc, char** argv) {
+    if (getenv("QUART_USE_JIT") != nullptr) {
+        return run_jit(argc, argv);
+    }
+
     cl::Arguments args = cl::parse_arguments(argc, argv);
     Compiler::init();
 
@@ -40,11 +46,13 @@ int main(int argc, char** argv) {
 
     for (auto& import : args.imports) {
         if (!fs::exists(import)) {
-            Compiler::error("Could not find import path '{0}'", import); exit(1);
+            Compiler::error("Could not find import path '{0}'", import);
+            return 1;
         }
         
         if (!fs::isdir(import)) {
-            Compiler::error("Import path '{0}' must be a directory", import); exit(1);
+            Compiler::error("Import path '{0}' must be a directory", import);
+            return 1;
         }
 
         compiler.add_import_path(import);
@@ -60,4 +68,33 @@ int main(int argc, char** argv) {
     Compiler::shutdown();
 
     return 0;
+}
+
+int run_jit(int argc, char** argv) {
+    if (argc < 2) {
+        Compiler::error("No input file specified");
+        return 1;
+    }
+
+    fs::Path input(argv[1]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    if (!input.exists()) {
+        Compiler::error("Input file '{0}' does not exist", input);
+        return 1;
+    }
+
+    if (!input.isfile()) {
+        Compiler::error("Input '{0}' must be a file", input);
+        return 1;
+    }
+
+    Compiler::init();
+    CompilerOptions options;
+
+    options.input = input;
+    options.entry = "main";
+
+    Compiler compiler(options);
+    compiler.add_import_path(QUART_PATH);
+
+    return compiler.jit(argc - 1, argv + 1); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 }
