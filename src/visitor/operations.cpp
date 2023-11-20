@@ -2,7 +2,7 @@
 
 using namespace quart;
 
-static std::map<TokenKind, std::string> STRUCT_OP_MAPPING = {
+static const std::map<TokenKind, std::string> STRUCT_OP_MAPPING = {
     {TokenKind::Add, "add"},
     {TokenKind::Minus, "sub"},
     {TokenKind::Mul, "mul"},
@@ -36,7 +36,7 @@ Value Visitor::evaluate_tuple_assignment(ast::BinaryOpExpr* expr) {
     size_t i = 0;
 
     for (auto& element : tuple->elements) {
-        ast::VariableExpr* variable = element->as<ast::VariableExpr>();
+        auto variable = element->as<ast::VariableExpr>();
         auto ref = this->scope->get_local(variable->name, true);
 
         if (ref.is_null()) {
@@ -193,7 +193,7 @@ Value Visitor::visit(ast::ReferenceExpr* expr) {
         llvm::AllocaInst* alloca = this->alloca(value->getType());
         this->builder->CreateStore(value, alloca);
 
-        return Value(alloca, value.type->get_reference_to(expr->is_mutable));
+        return { alloca, value.type->get_reference_to(expr->is_mutable) };
     }
 
     quart::Type* type = ref.type;
@@ -206,7 +206,7 @@ Value Visitor::visit(ast::ReferenceExpr* expr) {
     }
 
     u16 flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
-    return Value(ref.value, type->get_reference_to(expr->is_mutable), flags);
+    return { ref.value, type->get_reference_to(expr->is_mutable), flags };
 }
 
 Value Visitor::visit(ast::UnaryOpExpr* expr) {
@@ -237,9 +237,9 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             }
 
             if (is_floating_point) {
-                return Value(this->builder->CreateFNeg(value), type);
+                return { this->builder->CreateFNeg(value), type };
             } else {
-                return Value(this->builder->CreateNeg(value), type);
+                return { this->builder->CreateNeg(value), type };
             }
         case UnaryOp::Not:
             return {this->builder->CreateIsNull(value), type};
@@ -255,17 +255,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
                 ERROR(expr->span, "Cannot dereference a value of type '{0}'", type->get_as_string());
             }
 
-            return Value(this->load(value), type);
-        }
-        case UnaryOp::BinaryAnd: {
-            auto ref = this->as_reference(*expr->value);
-            if (!ref.value) {
-                llvm::AllocaInst* alloca = this->alloca(value->getType());
-                return Value(alloca, type->get_reference_to(true));
-            }
-
-            u16 flags = ref.flags & ScopeLocal::StackAllocated ? Value::StackAllocated : Value::None;
-            return Value(ref.value, type->get_reference_to(ref.is_mutable()), flags);
+            return { this->load(value), type };
         }
         case UnaryOp::Inc: {
             if (!is_numeric) {
@@ -285,7 +275,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             llvm::Value* result = this->builder->CreateAdd(value, one);
 
             this->builder->CreateStore(result, ref.value);
-            return {result, type};
+            return { result, type };
         }
         case UnaryOp::Dec: {
             if (!is_numeric) {
@@ -305,7 +295,7 @@ Value Visitor::visit(ast::UnaryOpExpr* expr) {
             llvm::Value* result = this->builder->CreateSub(value, one);
 
             this->builder->CreateStore(result, ref.value);
-            return {result, type};
+            return { result, type };
         }
     }
 

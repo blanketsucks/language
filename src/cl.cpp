@@ -1,3 +1,4 @@
+#include <llvm-14/llvm/Support/CommandLine.h>
 #include <quart/cl.h>
 
 #include <llvm/Support/CommandLine.h>
@@ -98,7 +99,7 @@ cl::Arguments cl::parse_arguments(int argc, char** argv) {
     args.library_names = std::set<std::string>(libraries.begin(), libraries.end());
 
     if (output.empty()) {
-        llvm::StringRef extension = OUTPUT_FORMATS_TO_EXT[args.format];
+        llvm::StringRef extension = OUTPUT_FORMATS_TO_EXT.at(args.format);
         args.output = args.file.with_extension(extension.str());
     } else {
         args.output = output;

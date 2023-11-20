@@ -18,19 +18,19 @@ Value Visitor::visit(ast::EnumExpr* expr) {
 
     this->push_scope(enumeration->scope);
     if (inner->is_int()) {
-        int64_t counter = 0;
+        i64 counter = 0;
         for (auto& field : expr->fields) {
             if (field.value) {
                 Value value = field.value->accept(*this);
                 if (value.is_empty_value()) ERROR(field.value->span, "Expected a constant value");
 
-                llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+                auto constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
                 if (!constant) {
                     ERROR(field.value->span, "Expected a constant integer");
                 }
 
                 if (constant->getBitWidth() != inner->get_int_bit_width()) {
-                    constant = static_cast<llvm::ConstantInt*>(
+                    constant = llvm::cast<llvm::ConstantInt>(
                         llvm::ConstantInt::get(
                             inner->to_llvm_type(), 
                             constant->getSExtValue(), 
@@ -61,7 +61,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
         Value value = field.value->accept(*this);
         if (value.is_empty_value()) ERROR(field.value->span, "Expected a constant value");
 
-        llvm::Constant* constant = llvm::dyn_cast<llvm::Constant>(value.inner);
+        auto constant = llvm::dyn_cast<llvm::Constant>(value.inner);
         if (!constant) {
             ERROR(field.value->span, "Expected a constant value");
         }
@@ -74,7 +74,7 @@ Value Visitor::visit(ast::EnumExpr* expr) {
 }
 
 struct MatchBlock {
-    llvm::BasicBlock* block;
+    llvm::BasicBlock* block = nullptr;
     Value result;
     Span span;
 };
@@ -154,7 +154,7 @@ Value Visitor::visit(ast::MatchExpr* expr) {
                     ERROR(pattern->span, "Expected a constant value");
                 }
 
-                llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+                auto constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
                 if (!constant) {
                     ERROR(pattern->span, "Expected a constant integer");
                 }
@@ -211,7 +211,7 @@ Value Visitor::visit(ast::MatchExpr* expr) {
 
     this->set_insert_point(merge);
     if (alloca) {
-        return {this->load(alloca), rtype};
+        return { this->load(alloca), rtype };
     }
 
     return EMPTY_VALUE;

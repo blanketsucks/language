@@ -113,13 +113,8 @@ struct Attributes {
         values[attr.type] = attr;
     }
 
-    bool has(Attribute::Type type) const {
-        return this->values.find(type) != values.end();
-    }
-
-    Attribute& get(Attribute::Type type) {
-        return this->values[type];
-    }
+    [[nodiscard]] bool has(Attribute::Type type) const { return this->values.find(type) != values.end(); }
+    [[nodiscard]] Attribute const& get(Attribute::Type type) const { return this->values.at(type); }
 
     void update(const Attributes& other) {
         this->values.insert(other.values.begin(), other.values.end());
@@ -202,14 +197,14 @@ public:
         this->attributes = Attributes();
     }
 
-    ExprKind kind() const { return this->_kind; }
+    [[nodiscard]] ExprKind kind() const { return this->_kind; }
 
-    bool is(ExprKind kind) const { return this->_kind == kind; }
-    template<typename... Args> bool is(ExprKind kind, Args... args) const {
+    [[nodiscard]] bool is(ExprKind kind) const { return this->_kind == kind; }
+    template<typename... Args> [[nodiscard]] bool is(ExprKind kind, Args... args) const {
         return this->_kind == kind || this->is(args...);
     }
 
-    template<typename T> T* as() {
+    template<typename T> [[nodiscard]] T* as() {
         assert(T::classof(this) && "Invalid cast.");
         return static_cast<T*>(this);
     }
@@ -310,7 +305,7 @@ public:
     
     Value accept(Visitor& visitor) override;
 
-    bool has_multiple_variables() const { return this->identifiers.size() > 1; }
+    [[nodiscard]] bool has_multiple_variables() const { return this->identifiers.size() > 1; }
 };
 
 class ConstExpr : public ExprMixin<ExprKind::Const> {
@@ -691,6 +686,7 @@ public:
 
     TypeExpr(Span span, TypeKind kind) : span(span), kind(kind) {}
 
+    virtual ~TypeExpr() = default;
     virtual Type* accept(Visitor& visitor) = 0;
 };
 
@@ -808,7 +804,7 @@ public:
 
     Value accept(Visitor& visitor) override;
 
-    bool is_generic_alias() const { return !this->parameters.empty(); }
+    [[nodiscard]] bool is_generic_alias() const { return !this->parameters.empty(); }
 };
 
 class StaticAssertExpr : public ExprMixin<ExprKind::StaticAssert> {

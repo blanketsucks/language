@@ -108,7 +108,7 @@ bool Lexer::is_valid_identifier(u8 c) {
 
 u8 Lexer::parse_unicode_identifier(std::string& buffer, u8 current) {  
     u8 expected = 0;
-    buffer.push_back(current);
+    buffer.push_back(static_cast<i8>(current));
 
     if (current < 0x80) {
         return 0;
@@ -538,7 +538,7 @@ char StreamLexer::next() {
         ERROR(this->make_span(), "Lexer index overflow.");
     }
 
-    this->current = this->stream.get();
+    this->current = static_cast<i8>(this->stream.get());
     this->index++;
 
     if (!this->stream.good()) {
@@ -555,14 +555,16 @@ char StreamLexer::next() {
 }
 
 char StreamLexer::peek(u32 offset) { 
-    return this->stream.peek(); 
+    return static_cast<i8>(this->stream.get()); 
 }
 
-char StreamLexer::prev() { 
-    this->stream.seekg(this->index - 1, std::ifstream::beg);
-    char c = this->stream.get();
+char StreamLexer::prev() {
+    i64 index = static_cast<i64>(this->index);
 
-    this->stream.seekg(this->index, std::ifstream::beg);
+    this->stream.seekg(index - 1, std::ifstream::beg);
+    char c = static_cast<i8>(this->stream.get());
+
+    this->stream.seekg(index, std::ifstream::beg);
     return c;
 }
 
@@ -570,10 +572,12 @@ char StreamLexer::rewind(u32 offset) {
     this->index -= offset - 1;
     this->column -= offset;
 
-    this->stream.seekg(this->index - 1, std::ifstream::beg);
-    this->current = this->stream.get();
+    i64 index = static_cast<i64>(this->index);
 
-    this->stream.seekg(this->index, std::ifstream::beg);
+    this->stream.seekg(index - 1, std::ifstream::beg);
+    this->current = static_cast<i8>(this->stream.get());
+
+    this->stream.seekg(index, std::ifstream::beg);
     return this->current;
 }
 
@@ -585,16 +589,17 @@ void StreamLexer::reset() {
 }
 
 llvm::StringRef StreamLexer::get_line_for(const Location& location) {
-    if (this->lines.find(location.line) == this->lines.end()) {
-        size_t offset = location.index - location.column;
+    auto iterator = this->lines.find(location.line);
+    if (iterator == this->lines.end()) {
+        i64 offset = static_cast<i64>(location.index - location.column);
         this->stream.seekg(offset, std::ifstream::beg);
 
         std::string line;
         std::getline(this->stream, line);
 
-        this->stream.seekg(this->index, std::ifstream::beg);
+        this->stream.seekg(static_cast<i64>(this->index), std::ifstream::beg);
         this->lines[location.line] = line;
     }
 
-    return this->lines[location.line];
+    return iterator->second;
 }

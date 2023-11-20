@@ -12,13 +12,13 @@
 
 using namespace quart;
 
-static std::vector<ast::ExprKind> NUMERIC_KINDS = {
+static const std::vector<ast::ExprKind> NUMERIC_KINDS = {
     ast::ExprKind::String,
     ast::ExprKind::Integer,
     ast::ExprKind::Float
 };
 
-static std::vector<TokenKind> NAMESPACE_ALLOWED_KEYWORDS = {
+static const std::vector<TokenKind> NAMESPACE_ALLOWED_KEYWORDS = {
     TokenKind::Struct,
     TokenKind::Func,
     TokenKind::Type,
@@ -28,14 +28,14 @@ static std::vector<TokenKind> NAMESPACE_ALLOWED_KEYWORDS = {
     TokenKind::Extern
 };
 
-static std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
+static const std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
     TokenKind::Func,
     TokenKind::Type,
     TokenKind::Const
 };
 
 // {name: (bits, is_float)}
-static std::map<llvm::StringRef, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
+static const std::map<llvm::StringRef, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
     {"i8", {8, false}},
     {"i16", {16, false}},
     {"i32", {32, false}},
@@ -45,7 +45,7 @@ static std::map<llvm::StringRef, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
     {"f64", {64, true}}
 };
 
-static std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
+static const std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
     {"void", ast::BuiltinType::Void},
     {"bool", ast::BuiltinType::Bool},
     {"i8", ast::BuiltinType::i8},
@@ -63,8 +63,7 @@ static std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
 };
 
 
-Parser::Parser(std::vector<Token> tokens) : tokens(std::move(tokens)) {
-    this->offset = 0;
+Parser::Parser(std::vector<Token> tokens) : offset(0), tokens(std::move(tokens)) {
     this->current = this->tokens.front();
 
     Attributes::init(*this);
@@ -225,7 +224,7 @@ OwnPtr<ast::TypeExpr> Parser::parse_type() {
 
             if (STR_TO_TYPE.find(name) != STR_TO_TYPE.end()) {
                 return make_own<ast::BuiltinTypeExpr>(
-                    Span::merge(start, this->current.span), STR_TO_TYPE[name]
+                    Span::merge(start, this->current.span), STR_TO_TYPE.at(name)
                 );
             }
 
@@ -935,7 +934,7 @@ OwnPtr<ast::Expr> Parser::parse_anonymous_function() {
         "",
         std::move(pair.first), 
         std::move(ret), 
-        std::move(pair.second),
+        pair.second,
         false,
         ast::ExternLinkageSpecifier::None
     );
@@ -945,9 +944,7 @@ OwnPtr<ast::Expr> Parser::parse_anonymous_function() {
     );
 }
 
-OwnPtr<ast::CallExpr> Parser::parse_call(
-    Span start, OwnPtr<ast::Expr> callee
-) {
+OwnPtr<ast::CallExpr> Parser::parse_call(Span start, OwnPtr<ast::Expr> callee) {
     std::vector<OwnPtr<ast::Expr>> args;
     std::map<std::string, OwnPtr<ast::Expr>> kwargs;
 
@@ -1416,7 +1413,7 @@ OwnPtr<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
             kind = TokenKind::Rsh;
         }
 
-        BinaryOp op = BINARY_OPS[kind];
+        BinaryOp op = BINARY_OPS.at(kind);
 
         this->next();
         auto right = this->unary();
@@ -1591,12 +1588,13 @@ OwnPtr<ast::Expr> Parser::primary() {
             std::string value = this->current.value;
             this->next();
 
-            int bits = 32;
+            u32 bits = 32;
             bool is_float = false;
 
-            if (NUM_TYPES_BIT_MAPPING.find(this->current.value) != NUM_TYPES_BIT_MAPPING.end()) {
-                auto pair = NUM_TYPES_BIT_MAPPING[this->current.value];
-                bits = pair.first; is_float = pair.second;
+            auto iterator = NUM_TYPES_BIT_MAPPING.find(this->current.value);
+            if (iterator != NUM_TYPES_BIT_MAPPING.end()) {
+                bits = iterator->second.first;
+                is_float = iterator->second.second;
 
                 this->next();
             }

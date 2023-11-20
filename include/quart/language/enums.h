@@ -34,6 +34,4 @@ struct Enum {
     Enumerator* get_enumerator(const std::string& name);
 };
 
-using EnumRef = RefPtr<Enum>;
-
 }

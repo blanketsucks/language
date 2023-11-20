@@ -12,6 +12,8 @@ quart::Type* quart::TypeAlias::instantiate(Visitor& visitor) {
     }
 
     std::vector<quart::Type*> args;
+    args.reserve(this->parameters.size());
+
     for (const auto& param : this->parameters) {
         args.push_back(param.default_type);
     }
@@ -25,10 +27,10 @@ quart::Type* quart::TypeAlias::instantiate(Visitor& visitor, const std::vector<q
         return iterator->second;
     }
 
-    Scope* scope = Scope::create("generic", ScopeType::Anonymous);
+    auto scope = OwnPtr<Scope>(Scope::create("generic", ScopeType::Anonymous));
 
     scope->parent = visitor.scope;
-    visitor.scope = scope;
+    visitor.scope = scope.get();
 
     for (auto entry : llvm::zip(this->parameters, args)) {
         const GenericTypeParameter& paremeter = std::get<0>(entry);
@@ -40,9 +42,7 @@ quart::Type* quart::TypeAlias::instantiate(Visitor& visitor, const std::vector<q
     }
 
     quart::Type* ty = this->expr->accept(visitor);
-
     visitor.scope = scope->parent;
-    delete scope;
 
     this->cache[args] = ty;
     return ty;

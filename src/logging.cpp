@@ -36,7 +36,7 @@ void logging::error(const Span& span, const std::string& message, bool fatal) {
     std::string fmt = FORMAT("{0} | ", span.start.line);
     stream << logging::color(COLOR_WHITE, fmt);
 
-    stream.write(span.line.data(), span.line.size());
+    stream.write(span.line.data(), static_cast<long>(span.line.size()));
     stream << '\n';
 
     for (u32 i = 0; i < span.start.column - 1 + fmt.length(); i++) stream << ' ';
@@ -57,7 +57,7 @@ void logging::note(const Span& span, const std::string& message) {
     std::string fmt = FORMAT("{0} | ", span.start.line);
     stream << logging::color(COLOR_WHITE, fmt);
     
-    stream.write(span.line.data(), span.line.size());
+    stream.write(span.line.data(), static_cast<long>(span.line.size()));
     stream << '\n';
 
     for (u32 i = 0; i < span.start.column - 1 + fmt.length(); i++) stream << ' ';

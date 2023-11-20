@@ -17,7 +17,7 @@ ATTR(llvm_intrinsic) {
     std::string name = parser.expect(TokenKind::String, "string").value;
     parser.expect(TokenKind::RParen, ")");
 
-    return Attribute(Attribute::LLVMIntrinsic, name);
+    return { Attribute::LLVMIntrinsic, name };
 }
 
 ATTR(link) {
@@ -55,7 +55,7 @@ ATTR(link) {
     }
 
     parser.expect(TokenKind::RParen, ")");
-    return Attribute(Attribute::Link, args);
+    return { Attribute::Link, args };
 }
 
 void Attributes::init(Parser& parser) {

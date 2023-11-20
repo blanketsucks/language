@@ -3,9 +3,9 @@
 
 using namespace quart;
 
-Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(options) {
-    this->name = name;
-
+Visitor::Visitor(
+    const std::string& name, CompilerOptions& options
+) : name(name), options(options), global_scope(Scope::create(name, ScopeType::Global)) {
     this->context = make_own<llvm::LLVMContext>();
     this->module = make_own<llvm::Module>(name, *this->context);
     this->builder = make_own<llvm::IRBuilder<>>(*this->context);
@@ -21,8 +21,7 @@ Visitor::Visitor(const std::string& name, CompilerOptions& options) : options(op
     this->fpm->add(llvm::createDeadStoreEliminationPass());
 
     this->fpm->doInitialization();
-
-    this->global_scope = Scope::create(name, ScopeType::Global);
+    
     this->push_scope(global_scope);
 
     Builtins::init(*this);
@@ -159,7 +158,7 @@ std::vector<Value> Visitor::unpack(const Value& value, u32 n, const Span& span) 
         values.reserve(n);
 
         if (llvm::isa<llvm::ConstantStruct>(value.inner)) {
-            llvm::ConstantStruct* constant = llvm::cast<llvm::ConstantStruct>(value.inner);
+            auto constant = llvm::cast<llvm::ConstantStruct>(value.inner);
             for (u32 i = 0; i < n; i++) {
                 Value element = Value(
                     constant->getAggregateElement(i), 
@@ -236,7 +235,7 @@ llvm::Value* Visitor::as_reference(llvm::Value* value) {
         return nullptr;
     }
     
-    llvm::LoadInst* load = llvm::cast<llvm::LoadInst>(value);
+    auto load = llvm::cast<llvm::LoadInst>(value);
     return load->getPointerOperand();
 }
 
@@ -246,7 +245,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
             ERROR(expr.span, "Expected a reference or '&' before expression");
         }
 
-        ast::UnaryOpExpr* unary = expr.as<ast::UnaryOpExpr>();
+        auto unary = expr.as<ast::UnaryOpExpr>();
         if (unary->op != UnaryOp::BinaryAnd) {
             ERROR(expr.span, "Expected a reference '&' before expression");
         }
@@ -256,7 +255,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
 
     switch (expr.kind()) {
         case ast::ExprKind::Variable: {
-            ast::VariableExpr* variable = expr.as<ast::VariableExpr>();
+            auto variable = expr.as<ast::VariableExpr>();
             ScopeLocal local = this->scope->get_local(variable->name);
 
             if (local.is_null()) {
@@ -266,7 +265,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
             return local;
         }
         case ast::ExprKind::Index: {
-            ast::IndexExpr* idx = expr.as<ast::IndexExpr>();
+            auto idx = expr.as<ast::IndexExpr>();
 
             ScopeLocal parent = this->as_reference(*idx->value);
             if (parent.is_null()) {
@@ -303,7 +302,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
             return ScopeLocal::from_scope_local(parent, result);
         }
         case ast::ExprKind::Attribute: {
-            ast::AttributeExpr* attribute = expr.as<ast::AttributeExpr>();
+            auto attribute = expr.as<ast::AttributeExpr>();
 
             ScopeLocal parent = this->as_reference(*attribute->parent);
             if (parent.is_null()) {
@@ -349,7 +348,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
             return ref;
         }
         case ast::ExprKind::UnaryOp: {
-            ast::UnaryOpExpr* unary = expr.as<ast::UnaryOpExpr>();
+            auto unary = expr.as<ast::UnaryOpExpr>();
             if (unary->op != UnaryOp::BinaryAnd) {
                 return ScopeLocal::null();
             }
@@ -357,7 +356,7 @@ ScopeLocal Visitor::as_reference(ast::Expr& expr, bool require_ampersand) {
             return this->as_reference(*unary->value);
         }
         case ast::ExprKind::Maybe: {
-            ast::MaybeExpr* maybe = expr.as<ast::MaybeExpr>();
+            auto maybe = expr.as<ast::MaybeExpr>();
             return this->as_reference(*maybe->value);
         }
         default:
@@ -398,7 +397,7 @@ void Visitor::create_global_constructors(llvm::Function::LinkageTypes linkage) {
     );
     llvm::Constant* init = llvm::ConstantStruct::get(
         type, {
-            this->builder->getInt32(65535), 
+            this->builder->getInt32(UINT16_MAX), 
             function, 
             llvm::ConstantPointerNull::get(this->builder->getInt8PtrTy())
         }
@@ -469,12 +468,12 @@ Value Visitor::visit(ast::IntegerExpr* expr) {
         constant = this->builder->getInt(value);
     }
 
-    return Value(constant, type, Value::Constant);
+    return { constant, type, Value::Constant };
 }
 
 Value Visitor::visit(ast::CharExpr* expr) {
     quart::Type* type = this->registry->create_int_type(8, true);
-    return Value(this->builder->getInt8(expr->value), type, Value::Constant);
+    return { this->builder->getInt8(expr->value), type, Value::Constant };
 }
 
 Value Visitor::visit(ast::FloatExpr* expr) {
@@ -485,20 +484,20 @@ Value Visitor::visit(ast::FloatExpr* expr) {
         type = this->builder->getFloatTy();
     }
 
-    return Value(
+    return {
         llvm::ConstantFP::get(type, expr->value),
         this->registry->wrap(type),
         Value::Constant
-    );
+    };
 }
 
 Value Visitor::visit(ast::StringExpr* expr) {
     llvm::Value* str = this->builder->CreateGlobalStringPtr(expr->value, ".str", 0, this->module.get());
-    return Value(
+    return {
         str,
         this->registry->create_int_type(8, true)->get_pointer_to(false),
         Value::Constant
-    );
+    };
 }
 
 Value Visitor::visit(ast::BlockExpr* expr) {
@@ -545,11 +544,11 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
     }
 
     StructField& field = structure->fields[expr->field];
-    return Value(
+    return {
         this->builder->getInt32(field.offset),
         this->registry->create_int_type(32, true),
         Value::Constant
-    );
+    };
 }
 
 Value Visitor::visit(ast::StaticAssertExpr* expr) {
@@ -558,7 +557,7 @@ Value Visitor::visit(ast::StaticAssertExpr* expr) {
         ERROR(expr->condition->span, "Expected an expression");
     }
 
-    llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+    auto constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
     if (!constant) {
         ERROR(
             expr->condition->span, 

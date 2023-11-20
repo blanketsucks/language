@@ -4,7 +4,7 @@
 #include <cstring>
 #include <vector>
 #include <sys/stat.h>
-#include <assert.h>
+#include <cassert>
 #include <fstream>
 #include <sstream>
 
@@ -41,19 +41,17 @@ enum class OpenMode {
 struct Path {
     std::string name;
 
-    Path(const std::string& name);
-    Path();
+    Path(std::string name = "");
 
     bool operator==(const Path& other) const;
     bool operator==(const std::string& other) const;
 
-    Path operator/(const std::string& other);
-    Path operator/(const Path& other);
+    Path operator/(const std::string& other) const;
+    Path operator/(const Path& other) const;
 
     operator std::string() const;
     operator llvm::StringRef() const;
 
-    static Path empty();
     static Path cwd();
     static Path home();
 
@@ -63,32 +61,32 @@ struct Path {
     struct stat stat();
     struct stat stat(int& err);
 
-    bool exists() const;
-    bool isfile() const;
-    bool isdir() const;
-    bool isempty() const;
+    [[nodiscard]] bool exists() const;
+    [[nodiscard]] bool isfile() const;
+    [[nodiscard]] bool isdir() const;
+    [[nodiscard]] bool isempty() const;
 
-    bool is_part_of(const Path& other) const;
+    [[nodiscard]] bool is_part_of(const Path& other) const;
 
-    fs::Path remove_prefix(const fs::Path& prefix);
+    fs::Path remove_prefix(const fs::Path& prefix) const;
 
-    std::string filename();
-    fs::Path parent();
+    std::string filename() const;
+    fs::Path parent() const;
 
-    fs::Path resolve();
+    fs::Path resolve() const;
 
-    std::vector<std::string> parts();
+    std::vector<std::string> parts() const;
 
-    std::vector<Path> listdir();
-    std::vector<Path> listdir(bool recursive);
+    std::vector<Path> listdir() const;
+    std::vector<Path> listdir(bool recursive) const;
 
     static std::vector<Path> glob(const std::string& pattern, int flags = 0);
 
     std::fstream open(OpenMode mode = OpenMode::Read);
     std::stringstream read(bool binary = false);
 
-    Path join(const std::string& path);
-    Path join(const Path& path);
+    Path join(const std::string& path) const;
+    Path join(const Path& path) const;
 
     std::string extension();
 

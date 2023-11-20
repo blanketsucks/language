@@ -16,19 +16,19 @@ Value Visitor::visit(ast::PathExpr* expr) {
 
     if (scope->has_constant(expr->name)) {
         Constant* constant = scope->get_constant(expr->name);
-        return Value(constant->value, constant->type, Value::Constant);
+        return { constant->value, constant->type, Value::Constant };
     } else if (scope->has_struct(expr->name)) {
         auto structure = scope->get_struct(expr->name);
-        return Value(nullptr, Value::Struct, structure.get());
+        return { nullptr, Value::Struct, structure.get() };
     } else if (scope->has_enum(expr->name)) {
         auto enumeration = scope->get_enum(expr->name);
-        return Value(nullptr, Value::Scope, enumeration->scope);
+        return { nullptr, Value::Scope, enumeration->scope };
     } else if (scope->has_function(expr->name)) {
         auto function = scope->get_function(expr->name);
-        return Value(function->value, function->type, Value::Function | Value::Constant, function.get());
+        return { function->value, function->type, Value::Function | Value::Constant, function.get() };
     } else if (scope->has_module(expr->name)) {
         auto module = scope->get_module(expr->name);
-        return Value(nullptr, Value::Scope, module->scope);
+        return { nullptr, Value::Scope, module->scope };
     }
 
     ERROR(expr->span, "Member '{0}' does not exist in namespace '{1}'", expr->name, scope->name);
@@ -40,7 +40,7 @@ Value Visitor::visit(ast::UsingExpr* expr) {
         ERROR(expr->span, "Expected a namespace or module");
     }
 
-    Scope* scope = value.as<Scope*>();
+    auto scope = value.as<Scope*>();
     for (auto member : expr->members) {
         // TODO: Improve this somehow??
         if (scope->structs.find(member) != scope->structs.end()) {

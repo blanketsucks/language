@@ -11,9 +11,9 @@
 namespace quart {
 
 struct Location {
-    u32 line;
-    u32 column;
-    size_t index;
+    u32 line = 0;
+    u32 column = 0;
+    size_t index = 0;
 };
 
 struct Span {
@@ -28,7 +28,7 @@ struct Span {
 
     static Span merge(const Span& start, const Span& end);
 
-    size_t length() const;
+    [[nodiscard]] size_t length() const;
 };
 
 }

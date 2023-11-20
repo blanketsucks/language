@@ -9,7 +9,7 @@ struct ArrayElement {
     operator Value() const { return this->value; }
     operator llvm::Value*() const { return this->value.inner; }
 
-    quart::Type* type() const { return this->value.type; }
+    [[nodiscard]] quart::Type* type() const { return this->value.type; }
 };
 
 Value Visitor::visit(ast::ArrayExpr* expr) {
@@ -73,7 +73,9 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
 
     if (is_const) {
         std::vector<llvm::Constant*> constants;
-        for (auto element : elements) {
+        constants.reserve(elements.size());
+
+        for (const auto& element : elements) {
             constants.push_back(llvm::cast<llvm::Constant>(element.value.inner));
         }
         
@@ -81,7 +83,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
             llvm::cast<llvm::ArrayType>(atype), constants
         );
 
-        return Value(array, type, Value::Constant);
+        return { array, type, Value::Constant };
     }
 
     llvm::Value* array = llvm::ConstantAggregateZero::get(atype);
@@ -89,7 +91,7 @@ Value Visitor::visit(ast::ArrayExpr* expr) {
         array = this->builder->CreateInsertValue(array, elements[i], {0, i});
     }
 
-    return {array, type};
+    return { array, type };
 }
 
 Value Visitor::visit(ast::ArrayFillExpr* expr) {
@@ -106,11 +108,11 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
     Value count = expr->count->accept(*this);
     if (count.is_empty_value()) ERROR(expr->count->span, "Expected a value");
 
-    llvm::ConstantInt* size = llvm::dyn_cast<llvm::ConstantInt>(count.inner);
+    auto size = llvm::dyn_cast<llvm::ConstantInt>(count.inner);
     if (!size) ERROR(expr->count->span, "Expected a constant integer");
 
     quart::ArrayType* type = this->registry->create_array_type(element.type, size->getZExtValue());
-    llvm::ArrayType* atype = llvm::cast<llvm::ArrayType>(type->to_llvm_type());
+    auto atype = llvm::cast<llvm::ArrayType>(type->to_llvm_type());
 
     if (llvm::isa<llvm::Constant>(element.inner)) {
         llvm::Constant* constant = llvm::ConstantArray::get(
@@ -131,7 +133,7 @@ Value Visitor::visit(ast::ArrayFillExpr* expr) {
         this->builder->CreateStore(element, ptr);
     }
 
-    return Value(alloca, type, Value::Aggregate);
+    return { alloca, type, Value::Aggregate }; 
 }
 
 Value Visitor::visit(ast::IndexExpr* expr) {
@@ -167,7 +169,7 @@ Value Visitor::visit(ast::IndexExpr* expr) {
         Value index = expr->index->accept(*this);
         if (index.is_empty_value()) ERROR(expr->index->span, "Expected a value");
 
-        llvm::ConstantInt* idx = llvm::dyn_cast<llvm::ConstantInt>(index.inner);
+        auto idx = llvm::dyn_cast<llvm::ConstantInt>(index.inner);
         if (!idx) ERROR(expr->index->span, "Tuple indices must be integer constants");
 
         size_t n = type->get_tuple_size();
@@ -176,12 +178,12 @@ Value Visitor::visit(ast::IndexExpr* expr) {
         }
 
         if (is_constant) {
-            llvm::ConstantStruct* tuple = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
-            return Value(
+            auto tuple = llvm::cast<llvm::ConstantStruct>(ref.get_constant_value());
+            return {
                 tuple->getAggregateElement(idx->getSExtValue()),
                 Value::Constant,
                 type->get_tuple_element(idx->getSExtValue())
-            );
+            };
         }
 
         return {
@@ -198,19 +200,23 @@ Value Visitor::visit(ast::IndexExpr* expr) {
     if (!index.type->is_int()) ERROR(expr->index->span, "Indicies must be integers");
 
     if (is_constant && llvm::isa<llvm::ConstantInt>(index.inner)) {
-        int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
-        llvm::ConstantArray* array = llvm::cast<llvm::ConstantArray>(ref.get_constant_value());
+        i64 idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
+        auto array = llvm::cast<llvm::ConstantArray>(ref.get_constant_value());
 
-        int64_t size = array->getType()->getArrayNumElements();
-        if (idx > size - 1) {
+        if (idx < 0) {
+            ERROR(expr->index->span, "Index cannot be negative");
+        }
+
+        u64 size = array->getType()->getArrayNumElements();
+        if (static_cast<u64>(idx) > size - 1) {
             ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
         }
 
-        return Value(
+        return {
             array->getAggregateElement(idx), 
             type->get_array_element_type(), 
             Value::Constant
-        );
+        };
     }
 
     llvm::Value* ptr = nullptr;
@@ -220,12 +226,16 @@ Value Visitor::visit(ast::IndexExpr* expr) {
         ptr = this->builder->CreateGEP(element_type->to_llvm_type(), value, index);
     } else {
         if (llvm::isa<llvm::ConstantInt>(index.inner)) {
-            int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
-            int64_t size = type->get_array_size();
+            i64 idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
+            size_t size = type->get_array_size();
 
-            if (idx == size) {
+            if (idx < 0) {
+                ERROR(expr->index->span, "Index cannot be negative");
+            }
+
+            if (static_cast<size_t>(idx) == size) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
-            } else if (idx > size - 1) {
+            } else if (static_cast<size_t>(idx) > size - 1) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
         }
@@ -303,12 +313,16 @@ Value Visitor::evaluate_subscript_assignment(ast::IndexExpr* expr, ast::Expr& va
 
     if (ref.type->is_array()) {
         if (llvm::isa<llvm::ConstantInt>(index.inner)) {
-            int64_t idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
-            int64_t size = type->get_array_size();
+            i64 idx = llvm::cast<llvm::ConstantInt>(index.inner)->getSExtValue();
+            size_t size = type->get_array_size();
 
-            if (idx == size) {
+            if (idx < 0) {
+                ERROR(expr->index->span, "Index cannot be negative");
+            }
+
+            if (static_cast<size_t>(idx) == size) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements (Indices start at 0)", idx, size);
-            } else if (idx > size - 1) {
+            } else if (static_cast<size_t>(idx) > size - 1) {
                 ERROR(expr->index->span, "Element index out of bounds. Index is {0} but the array has {1} elements", idx, size);
             }
         }

@@ -14,7 +14,7 @@ struct GenericTypeParameter {
 
     Span span;
 
-    bool is_optional() const { return this->default_type != nullptr; }  
+    [[nodiscard]] bool is_optional() const { return this->default_type != nullptr; }  
 };
 
 // Cache for generic types so we don't have to re-instantiate them every time.
@@ -23,7 +23,7 @@ using GenericCache = std::map<std::vector<quart::Type*>, quart::Type*>;
 
 struct TypeAlias {
     std::string name;
-    quart::Type* type;
+    quart::Type* type = nullptr;
 
     std::vector<GenericTypeParameter> parameters;
     OwnPtr<ast::TypeExpr> expr;
@@ -37,13 +37,13 @@ struct TypeAlias {
         const std::string& name,
         quart::Type* type,
         const Span& span
-    ) : name(name), type(type), span(span), expr(nullptr) {}
+    ) : name(name), type(type), span(span) {}
     TypeAlias(
         const std::string& name,
         std::vector<GenericTypeParameter> parameters,
         OwnPtr<ast::TypeExpr> expr,
         const Span& span
-    ) : name(name), type(nullptr), parameters(parameters), expr(std::move(expr)), span(span) {}
+    ) : name(name), parameters(std::move(parameters)), expr(std::move(expr)), span(span) {}
 
     bool is_generic() const { return this->type == nullptr; }
 

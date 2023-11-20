@@ -157,22 +157,22 @@ struct Token {
 
     static llvm::StringRef get_type_value(TokenKind type);
 
-    inline bool is_keyword() const { return quart::is_keyword(this->value); }
+    [[nodiscard]] inline bool is_keyword() const { return quart::is_keyword(this->value); }
 
-    bool is(TokenKind type) const { return this->type == type; }
-    bool is(const std::vector<TokenKind>& types) const { return llvm::is_contained(types, this->type); }
-    template<typename... Args> bool is(TokenKind type, Args... args) const { 
+    [[nodiscard]] bool is(TokenKind type) const { return this->type == type; }
+    [[nodiscard]] bool is(const std::vector<TokenKind>& types) const { return llvm::is_contained(types, this->type); }
+    template<typename... Args> [[nodiscard]] bool is(TokenKind type, Args... args) const { 
         return this->is(type) || this->is(args...);
     }
 
-    i8 precedence() const;
+    [[nodiscard]] i8 precedence() const;
 
     bool operator==(TokenKind type) const;
     bool operator==(const Token& token) const;
     bool operator!=(TokenKind type) const;
 };
 
-static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
+static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     // Keywords
     {"extern", TokenKind::Extern},
     {"func", TokenKind::Func},
@@ -209,7 +209,7 @@ static std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     {"match", TokenKind::Match},
 };
 
-static std::map<TokenKind, u8> PRECEDENCES = {
+static const std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Assign, 5},
 
     {TokenKind::And, 10},
@@ -239,7 +239,7 @@ static std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Mul, 40}
 };
 
-static std::map<TokenKind, UnaryOp> UNARY_OPS = {
+static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
     {TokenKind::Not, UnaryOp::Not},
     {TokenKind::Add, UnaryOp::Add},
     {TokenKind::Minus, UnaryOp::Sub},
@@ -250,7 +250,7 @@ static std::map<TokenKind, UnaryOp> UNARY_OPS = {
     {TokenKind::Dec, UnaryOp::Dec}
 };
 
-static std::map<TokenKind, BinaryOp> BINARY_OPS = {
+static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Add, BinaryOp::Add},
     {TokenKind::Minus, BinaryOp::Sub},
     {TokenKind::Mul, BinaryOp::Mul},
@@ -272,7 +272,7 @@ static std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Assign, BinaryOp::Assign}
 };
 
-static std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
+static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
     {TokenKind::IAdd, BinaryOp::Add},
     {TokenKind::IMinus, BinaryOp::Sub},
     {TokenKind::IMul, BinaryOp::Mul},

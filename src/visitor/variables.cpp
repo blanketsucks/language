@@ -7,11 +7,11 @@ Value Visitor::visit(ast::VariableExpr* expr) {
         quart::Type* type = this->registry->create_int_type(1, true);
         if (this->inferred) type = this->inferred;
 
-        return Value(
+        return {
             llvm::Constant::getNullValue(type->to_llvm_type()),
             type, 
             Value::Constant
-        );
+        };
     }
 
     Scope* scope = this->scope;
@@ -19,28 +19,28 @@ Value Visitor::visit(ast::VariableExpr* expr) {
     if (local.value) {
         if (!this->current_function) {
             u16 flags = local.flags & ScopeLocal::Constant ? Value::Constant : Value::None;
-            return Value(local.value, local.type, flags);
+            return { local.value, local.type, flags };
         }
 
-        return Value(this->load(local.value), local.type);
+        return { this->load(local.value), local.type };
     }
 
     if (scope->has_struct(expr->name)) {
         auto structure = scope->get_struct(expr->name);
-        return Value(nullptr, Value::Struct, structure.get());
+        return { nullptr, Value::Struct, structure.get() };
     } else if (scope->has_enum(expr->name)) {
         auto enumeration = scope->get_enum(expr->name);
-        return Value(nullptr, Value::Scope, enumeration->scope);
+        return { nullptr, Value::Scope, enumeration->scope };
     } else if (scope->has_function(expr->name)) {
         auto function = scope->get_function(expr->name);
-        return Value(function->value, function->type, Value::Function | Value::Constant, function.get());
+        return { function->value, function->type, Value::Function | Value::Constant, function.get() };
     } else if (scope->has_module(expr->name)) {
         auto module = scope->get_module(expr->name);
-        return Value(nullptr, Value::Scope, module->scope);
+        return { nullptr, Value::Scope, module->scope };
     }
 
     if (this->builtins.count(expr->name)) {
-        return Value(nullptr, Value::Builtin, this->builtins[expr->name]);
+        return { nullptr, Value::Builtin, this->builtins[expr->name] };
     }
 
     ERROR(expr->span, "Name '{0}' does not exist in this scope", expr->name);
@@ -139,7 +139,7 @@ Value Visitor::visit(ast::VariableAssignmentExpr* expr) {
             this->module->getOrInsertGlobal(name, type->to_llvm_type());
 
             llvm::GlobalVariable* global = this->module->getGlobalVariable(name);
-            llvm::Constant* constant = llvm::cast<llvm::Constant>(value.inner);
+            auto constant = llvm::cast<llvm::Constant>(value.inner);
 
             global->setInitializer(constant);
             if (!(value.flags & Value::EarlyFunctionCall)) {

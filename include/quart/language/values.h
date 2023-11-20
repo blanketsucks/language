@@ -53,14 +53,14 @@ struct Value {
     operator llvm::Value*() const { return this->inner; }
     llvm::Value* operator->() const { return this->inner; }
 
-    bool is_reference() const;
-    bool is_mutable() const;
-    bool is_aggregate() const;
-    bool is_empty_value() const;
+    [[nodiscard]] bool is_reference() const;
+    [[nodiscard]] bool is_mutable() const;
+    [[nodiscard]] bool is_aggregate() const;
+    [[nodiscard]] bool is_empty_value() const;
 
     // Helper function to cast the `extra` field to a specific type
     template<typename T> T as() const { return llvm::any_cast<T>(this->extra); }
-    template<typename T> bool isa() const { return llvm::any_isa<T>(this->extra); }
+    template<typename T> [[nodiscard]] bool isa() const { return llvm::any_isa<T>(this->extra); }
 };
 
 }

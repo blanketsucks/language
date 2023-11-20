@@ -1,7 +1,5 @@
 // TODO: Rewrite when possible maybe?
 
-#include <llvm-14/llvm/ADT/STLExtras.h>
-#include <llvm-14/llvm/Transforms/Utils/ValueMapper.h>
 #include <quart/visitor.h>
 
 using namespace quart;
@@ -57,13 +55,11 @@ RefPtr<Struct> Visitor::make_struct(
 Value Visitor::create_struct_value(Struct& structure, const std::vector<llvm::Value*>& args) {
     llvm::AllocaInst* alloca = this->alloca(structure.type->to_llvm_type());
     for (auto& entry : llvm::enumerate(args)) {
-        entry.value()->dump();
-
         llvm::Value* ptr = this->builder->CreateStructGEP(structure.type->to_llvm_type(), alloca, entry.index());
         this->builder->CreateStore(entry.value(), ptr);
     }
 
-    return Value(alloca, structure.type, Value::Aggregate);
+    return { alloca, structure.type, Value::Aggregate };
 }
 
 Value Visitor::visit(ast::StructExpr* expr) {
@@ -243,7 +239,7 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
             this->mark_as_mutated(ref);
         }
 
-        return Value(function->value, function->type, Value::Function, function.get(), self);
+        return { function->value, function->type, Value::Function, function.get(), self };
     }
 
     if (!structure) {
@@ -287,7 +283,7 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         ERROR(expr->parent->span, "Expected a struct");
     }
 
-    Struct* structure = parent.as<Struct*>();
+    auto structure = parent.as<Struct*>();
     bool all_private = llvm::all_of(structure->fields, [](const auto& pair) {
         return pair.second.is_private();
     });
@@ -356,9 +352,9 @@ Value Visitor::visit(ast::ConstructorExpr* expr) {
         );
 
         std::vector<llvm::Constant*> values(range.begin(), range.end());
-        llvm::Constant* constant = llvm::ConstantStruct::get(static_cast<llvm::StructType*>(type), values);
+        llvm::Constant* constant = llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(type), values);
 
-        return Value(constant, structure->type, Value::Constant);
+        return { constant, structure->type, Value::Constant };
     }
 
     auto range = llvm::map_range(args, [](const auto& entry) { return entry.second; });
@@ -369,7 +365,7 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
     Value parent = expr->parent->accept(*this);
     if (!(parent.flags & Value::Struct)) ERROR(expr->span, "Expected a struct");
 
-    Struct* structure = parent.as<Struct*>();
+    auto structure = parent.as<Struct*>();
     std::vector<llvm::Value*> args;
 
     for (auto& entry : structure->fields) {
@@ -384,12 +380,14 @@ Value Visitor::visit(ast::EmptyConstructorExpr* expr) {
 
     if (!this->current_function) {
         std::vector<llvm::Constant*> values;
+        values.reserve(args.size());
+
         for (auto& arg : args) {
             values.push_back(llvm::cast<llvm::Constant>(arg));
         }
 
-        llvm::Constant* constant = llvm::ConstantStruct::get(static_cast<llvm::StructType*>(type), values);
-        return Value(constant, structure->type, Value::Constant);
+        llvm::Constant* constant = llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(type), values);
+        return { constant, structure->type, Value::Constant };
     }
 
     return this->create_struct_value(*structure, args);

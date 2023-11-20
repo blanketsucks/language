@@ -17,7 +17,7 @@ struct Path {
 
 class Parser {
 public:
-    typedef Attribute (*AttributeFunc)(Parser&);
+    using AttributeFunc = Attribute(*)(Parser &);
     
     Parser(std::vector<Token> tokens);
 

@@ -54,7 +54,7 @@ struct Struct {
         const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
     );
 
-    int get_field_index(const std::string& name);
+    i32 get_field_index(const std::string& name);
     StructField get_field_at(u32 index);
     std::vector<StructField> get_fields(bool with_private = false);
 

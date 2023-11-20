@@ -3,7 +3,7 @@
 
 using namespace quart;
 
-static fs::Path SEARCH_PATH = fs::Path(QUART_PATH);
+static const fs::Path SEARCH_PATH = fs::Path(QUART_PATH);
 
 std::vector<std::string> split(std::string s, const std::string& delimiter) {
     std::vector<std::string> result;
@@ -21,13 +21,13 @@ std::vector<std::string> split(std::string s, const std::string& delimiter) {
     return result;
 }
 
-fs::Path search_file_paths(fs::Path path) {
+static fs::Path search_file_paths(const fs::Path& path) {
     fs::Path p = SEARCH_PATH / path;
     if (p.exists()) {
         return p;
     }
 
-    return fs::Path::empty();
+    return {};
 }
 
 RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const Span& span) {
@@ -54,9 +54,7 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
         return module;
     }
 
-    for (auto it = paths.begin(); it != paths.end(); ++it) {
-        std::string current = *it;
-
+    for (auto current : paths) {
         current_path += current;
         fs::Path path(current_path);
 

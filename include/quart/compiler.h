@@ -20,7 +20,7 @@ enum class OutputFormat {
     SharedLibrary
 };
 
-static std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
+static const std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Object, "Object"},
     {OutputFormat::LLVM, "LLVM IR"},
     {OutputFormat::Bitcode, "LLVM Bitcode"},
@@ -29,7 +29,7 @@ static std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::SharedLibrary, "Shared Library"}
 };
 
-static std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_EXT = {
+static const std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_EXT = {
     {OutputFormat::Object, "o"},
     {OutputFormat::LLVM, "ll"},
     {OutputFormat::Bitcode, "bc"},
@@ -64,10 +64,10 @@ struct OptimizationOptions {
 };
 
 struct CompilerError {
-    u32 code;
+    i32 code;
     std::string message;
 
-    CompilerError(u32 code, const std::string& message);
+    CompilerError(i32 code, std::string message);
     static CompilerError ok();
 
     void unwrap();

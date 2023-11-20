@@ -18,16 +18,16 @@
 
 using namespace quart;
 
-CompilerError::CompilerError(u32 code, const std::string& message) : code(code), message(message) {}
+CompilerError::CompilerError(i32 code, std::string message) : code(code), message(std::move(message)) {}
 
 CompilerError CompilerError::ok() {
-    return CompilerError(0, "Success");
+    return { 0, "Success" };
 }
 
 void CompilerError::unwrap() {
     if (this->code != 0) {
         Compiler::error(this->message);
-        exit(this->code);
+        exit(static_cast<i32>(this->code));
     }
 }
 
@@ -64,8 +64,8 @@ void Compiler::shutdown() {
 void Compiler::add_library(const std::string& name) { this->options.library_names.insert(name); }
 void Compiler::add_library_path(const std::string& path) { this->options.library_paths.insert(path); }
 
-void Compiler::set_libraries(std::set<std::string> names) { this->options.library_names = names; }
-void Compiler::set_library_paths(std::set<std::string> paths) { this->options.library_paths = paths; }
+void Compiler::set_libraries(std::set<std::string> names) { this->options.library_names = std::move(names); }
+void Compiler::set_library_paths(std::set<std::string> paths) { this->options.library_paths = std::move(paths); }
 
 void Compiler::add_import_path(const std::string& path) { this->options.imports.push_back(path); }
 
@@ -81,8 +81,13 @@ void Compiler::set_target(const std::string& target) { this->options.target = ta
 void Compiler::set_verbose(bool verbose) { this->options.verbose = verbose; }
 void Compiler::set_linker(const std::string& linker) { this->options.linker = linker; }
 
-void Compiler::add_extra_linker_option(const std::string& name, const std::string& value) { this->options.extras.push_back({name, value}); }
-void Compiler::add_extra_linker_option(const std::string& name) { this->options.extras.push_back({name, ""}); }
+void Compiler::add_extra_linker_option(const std::string& name, const std::string& value) { 
+    this->options.extras.emplace_back(name, value);
+}
+
+void Compiler::add_extra_linker_option(const std::string& name) { 
+    this->options.extras.emplace_back(name, "");
+}
 
 void Compiler::add_object_file(const std::string& file) { this->options.object_files.push_back(file); }
 
@@ -96,7 +101,7 @@ void Compiler::dump() {
     const char* opt = this->options.opts.level == OptimizationLevel::Debug ? "Debug" : "Release";
     stream << FORMAT("Optimization level: '{0}'", opt) << '\n';
 
-    llvm::StringRef format = OUTPUT_FORMATS_TO_STR[this->options.format];
+    llvm::StringRef format = OUTPUT_FORMATS_TO_STR.at(this->options.format);
     stream << FORMAT("Output format: '{0}'", format) << '\n';
 
     if (!this->options.target.empty()) {
@@ -146,7 +151,8 @@ std::vector<std::string> Compiler::get_linker_arguments() {
     };
 
     if (this->options.entry != "main" || this->options.linker == "ld") {
-        args.push_back("-e"); args.push_back(this->options.entry);
+        args.emplace_back("-e"); 
+        args.push_back(this->options.entry);
     }
 
     for (auto& pair : this->options.extras) {
@@ -170,7 +176,7 @@ std::vector<std::string> Compiler::get_linker_arguments() {
     }
 
     if (this->options.format == OutputFormat::SharedLibrary) {
-        args.push_back("-shared");
+        args.emplace_back("-shared");
     }
 
     return args;
@@ -239,7 +245,7 @@ CompilerError Compiler::compile() {
     std::string err, triple;
     const llvm::Target* target = this->create_target(err, triple);
 
-    if (!target) return CompilerError(1, FORMAT("Could not create target: '{0}'", err));
+    if (!target) return { 1, FORMAT("Could not create target: '{0}'", err) };
 
     if (this->options.verbose) { std::cout << "\nLLVM Target Triple: " << std::quoted(triple) << '\n'; }
     OwnPtr<llvm::TargetMachine> machine = this->create_target_machine(
@@ -257,7 +263,7 @@ CompilerError Compiler::compile() {
 
     llvm::raw_fd_ostream dest(object, error, llvm::sys::fs::OF_None);
     if (error) {
-        return CompilerError(1, FORMAT("Could not open file '{0}': {1}", object, error.message()));
+        return { 1, FORMAT("Could not open file '{0}': {1}", object, error.message()) };
     }
 
     llvm::CodeGenFileType type = llvm::CodeGenFileType::CGFT_ObjectFile;
@@ -284,7 +290,7 @@ CompilerError Compiler::compile() {
 
     llvm::legacy::PassManager pass;
     if (machine->addPassesToEmitFile(pass, dest, nullptr, type)) {
-        return CompilerError(1, "Target machine can't emit a file of this type");
+        return { 1, "Target machine can't emit a file of this type" };
     }
 
     pass.run(*visitor.module);
@@ -303,11 +309,11 @@ CompilerError Compiler::compile() {
         start = Compiler::now();
     }
     
-    int code = std::system(command.c_str());
+    i32 code = std::system(command.c_str());
     VERBOSE("Linking");
     
     if (code != 0) {
-        return CompilerError(code, FORMAT("Linker exited with code {0}", code));
+        return { code, FORMAT("Linker exited with code {0}", code) };
     }
 
     return CompilerError::ok();

@@ -18,6 +18,8 @@ namespace quart {
 
 class Lexer {
 public:
+    virtual ~Lexer() = default;
+
     virtual void reset() = 0;
 
     virtual char next() = 0;
@@ -52,6 +54,8 @@ public:
     std::vector<Token> lex();
 
 protected:
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+
     u32 line;
     u32 column;
     size_t index;
@@ -61,6 +65,8 @@ protected:
 
     std::string filename;
     std::map<u32, std::string> lines;
+
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 };
 
 class MemoryLexer : public Lexer {
@@ -96,7 +102,7 @@ public:
     llvm::StringRef get_line_for(const Location& location) override;
 
 private:
-    std::ifstream& stream;
+    std::ifstream& stream; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 }

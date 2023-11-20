@@ -3,15 +3,12 @@
 
 using namespace quart;
 
-Struct::Struct(const std::string& name, quart::StructType* type, bool opaque) : name(name), type(type), opaque(opaque) {
-    this->scope = nullptr;
-}
+Struct::Struct(const std::string& name, quart::StructType* type, bool opaque) 
+    : name(name), type(type), scope(nullptr), opaque(opaque) {}
 
 Struct::Struct(
     const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
-) : name(name), type(type), fields(fields), opaque(opaque) {
-    this->scope = nullptr;
-}
+) : name(name), type(type), fields(std::move(fields)), scope(nullptr), opaque(opaque) {}
 
 RefPtr<Struct> Struct::create(const std::string& name, quart::StructType* type, bool opaque) {
     return RefPtr<Struct>(new Struct(name, type, opaque));
@@ -20,7 +17,7 @@ RefPtr<Struct> Struct::create(const std::string& name, quart::StructType* type, 
 RefPtr<Struct> Struct::create(
     const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
 ) {
-    return RefPtr<Struct>(new Struct(name, type, fields, opaque));
+    return RefPtr<Struct>(new Struct(name, type, std::move(fields), opaque));
 }
 
 
@@ -30,12 +27,13 @@ bool Struct::has_method(const std::string& name) {
 
 RefPtr<Function> Struct::get_method(const std::string& name) { return this->scope->functions[name]; }
 
-int Struct::get_field_index(const std::string& name) {
+i32 Struct::get_field_index(const std::string& name) {
     if (this->fields.find(name) == this->fields.end()) {
         return -1;
     }
 
-    return this->fields[name].index;
+    auto& field = this->fields[name];
+    return static_cast<i32>(field.index);
 }
 
 StructField Struct::get_field_at(u32 index) {
@@ -50,13 +48,13 @@ StructField Struct::get_field_at(u32 index) {
 
 std::vector<StructField> Struct::get_fields(bool with_private) {
     std::vector<StructField> fields;
-    for (auto pair : this->fields) {
-        if (pair.second.is_private()) {
+    for (const auto& entry : this->fields) {
+        if (entry.second.is_private()) {
             if (with_private) {
-                fields.push_back(pair.second);
+                fields.push_back(entry.second);
             }   
         } else {
-            fields.push_back(pair.second);
+            fields.push_back(entry.second);
         }
     }
 

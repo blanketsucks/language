@@ -8,7 +8,7 @@
 
 using namespace quart;
 
-static std::map<std::string, u32> TYPE_SIZES = {
+static const std::map<std::string, u32> TYPE_SIZES = {
     {"i8", 1},
     {"i16", 2},
     {"i32", 4},
@@ -59,7 +59,7 @@ u32 Visitor::getsizeof(llvm::Type* type) {
         return type->getArrayNumElements() * this->getsizeof(type->getArrayElementType());
     }
 
-    return type->getPrimitiveSizeInBits() / 8;
+    return static_cast<u32>(type->getPrimitiveSizeInBits() / 8);
 }
 
 Value Visitor::cast(const Value& value, quart::Type* to) {
@@ -77,7 +77,7 @@ Value Visitor::cast(const Value& value, quart::Type* to) {
             result = this->builder->CreateBitCast(value, to->to_llvm_type()); break;
     }
 
-    return Value(result, to);
+    return { result, to };
 }
 
 quart::Type* Visitor::get_builtin_type(ast::BuiltinType value) {
@@ -128,7 +128,7 @@ Value Visitor::visit(ast::CastExpr* expr) {
                 result = this->builder->CreateSIToFP(value, type);
             }
 
-            return {result, to};
+            return { result, to };
         } else if (to->is_int()) {
             u32 bits = from->get_int_bit_width();
             if (bits < to->get_int_bit_width()) {
@@ -137,9 +137,9 @@ Value Visitor::visit(ast::CastExpr* expr) {
                 return {this->builder->CreateTrunc(value, type), to};
             }
 
-            return {value, to};
+            return { value, to };
         } else if (to->is_pointer()) {
-            return {this->builder->CreateIntToPtr(value, type), to};
+            return { this->builder->CreateIntToPtr(value, type), to };
         }
             
         ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
@@ -154,15 +154,15 @@ Value Visitor::visit(ast::CastExpr* expr) {
                 result = this->builder->CreateFPToSI(value, type);
             }
 
-            return {result, to};
+            return { result, to };
         }
             
         ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
     } else if (from->is_pointer()) {
         if (to->is_int()) {
-            return {this->builder->CreatePtrToInt(value, type), to};
+            return { this->builder->CreatePtrToInt(value, type), to };
         } else if (to->is_pointer()) {
-            return {this->builder->CreateBitCast(value, type), to};
+            return { this->builder->CreateBitCast(value, type), to };
         }
         
         ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
@@ -171,13 +171,13 @@ Value Visitor::visit(ast::CastExpr* expr) {
             ERROR(expr->span, err, from->get_as_string(), to->get_as_string());
         }
 
-        return {this->builder->CreateBitCast(value, type), to};
+        return { this->builder->CreateBitCast(value, type), to };
     }
 
     if (from->is_enum()) {
         quart::Type* inner = from->get_inner_enum_type();
         if (inner == to) {
-            return {value, to};
+            return { value, to };
         }
 
         return this->cast(value, inner);
@@ -187,18 +187,21 @@ Value Visitor::visit(ast::CastExpr* expr) {
 }
 
 Value Visitor::visit(ast::SizeofExpr* expr) {
+    quart::Type* type = this->registry->create_int_type(sizeof(i32), true);
     u32 size = 0;
 
     if (expr->value->kind() == ast::ExprKind::Variable) {
-        ast::VariableExpr* id = expr->value->as<ast::VariableExpr>();
-        if (TYPE_SIZES.find(id->name) != TYPE_SIZES.end()) {
-            return Value(this->builder->getInt32(TYPE_SIZES[id->name]), true);
+        auto id = expr->value->as<ast::VariableExpr>();
+
+        auto iterator = TYPE_SIZES.find(id->name);
+        if (iterator != TYPE_SIZES.end()) {
+            return { this->builder->getInt32(iterator->second), type };
         }
     } 
 
     Value value = expr->value->accept(*this);
     if (value.flags & Value::Struct) {
-        quart::Struct* structure = value.as<quart::Struct*>();
+        auto structure = value.as<quart::Struct*>();
         size = this->getsizeof(structure->type);
     } else {
         if (value.is_empty_value()) {
@@ -208,11 +211,11 @@ Value Visitor::visit(ast::SizeofExpr* expr) {
         size = this->getsizeof(value.inner);
     }
 
-    return Value(
+    return {
         this->builder->getInt32(size),
         this->registry->create_int_type(32, true),
         Value::Constant
-    );
+    };
 }
 
 quart::Type* Visitor::visit(ast::BuiltinTypeExpr* expr) {
@@ -225,12 +228,12 @@ quart::Type* Visitor::visit(ast::IntegerTypeExpr* expr) {
         ERROR(expr->size->span, "Expected an expression");
     }
 
-    llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+    auto constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
     if (!constant) {
         ERROR(expr->size->span, "Integer type size must be a constant");
     }
 
-    int64_t size = constant->getSExtValue();
+    i64 size = constant->getSExtValue();
     if (size < 1 || size > quart::IntType::MAX_BITS) {
         ERROR(expr->size->span, "Integer type size must be between 1 and {0} bits", quart::IntType::MAX_BITS);
     }
@@ -294,7 +297,7 @@ quart::Type* Visitor::visit(ast::ArrayTypeExpr* expr) {
         ERROR(expr->size->span, "Expected an expression");
     }
 
-    llvm::ConstantInt* constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
+    auto constant = llvm::dyn_cast<llvm::ConstantInt>(value.inner);
     if (!constant) {
         ERROR(expr->size->span, "Array size must be a constant integer");
     }

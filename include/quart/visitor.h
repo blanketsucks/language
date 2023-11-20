@@ -35,7 +35,6 @@ struct Impl {
 
 class Visitor {
 public:
-    using TupleKey = std::vector<llvm::Type*>;
     using Finalizer = std::function<void(Visitor&)>;
 
     Visitor(const std::string& name, CompilerOptions& options);
@@ -81,7 +80,7 @@ public:
         Function& function,
         const Value& value, 
         const std::vector<ast::Ident>& identifiers, 
-        std::string consume_rest
+        const std::string& consume_rest
     );
 
     llvm::Value* make_tuple(std::vector<llvm::Value*> values, llvm::StructType* type);
@@ -103,7 +102,7 @@ public:
     llvm::Function* create_llvm_function(
         const std::string& name, 
         llvm::Type* ret,
-        std::vector<llvm::Type*> args, 
+        const std::vector<llvm::Type*>& args, 
         bool is_variadic, 
         llvm::Function::LinkageTypes linkage
     );

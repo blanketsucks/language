@@ -3,9 +3,7 @@
 
 using namespace quart;
 
-Enum::Enum(const std::string& name, quart::Type* type) : name(name), type(type) {
-    this->scope = nullptr;
-}
+Enum::Enum(const std::string& name, quart::Type* type) : name(name), type(type), scope(nullptr) {}
 
 void Enum::add_enumerator(const std::string& name, llvm::Constant* value, const Span& span) {
     this->enumerators[name] = { name, value, this->type };

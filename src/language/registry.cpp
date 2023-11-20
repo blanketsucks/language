@@ -1,5 +1,7 @@
 #include <quart/language/registry.h>
 
+// NOLINTBEGIN(cppcoreguidelines-owning-memory)
+
 using namespace quart;
 
 TypeRegistry::TypeRegistry(
@@ -51,7 +53,7 @@ quart::StructType* TypeRegistry::wrap(llvm::StructType* type) {
         fields.push_back(this->wrap(field));
     }
 
-    StructType* ty = new StructType(this, name, fields, type);
+    auto ty = new StructType(this, name, fields, type);
     this->structs[name] = OwnPtr<StructType>(ty);
 
     return ty;
@@ -73,7 +75,7 @@ IntType* TypeRegistry::create_int_type(::u32 bits, bool is_signed) {
         if (iterator != this->integers.end()) {
             return &*iterator->second;
         } else {
-            IntType* type = new IntType(this, bits, is_signed);
+            auto type = new IntType(this, bits, is_signed);
             this->integers[{bits, is_signed}] = OwnPtr<IntType>(type);
 
             return type;
@@ -88,7 +90,7 @@ StructType* TypeRegistry::create_struct_type(
     if (iterator != this->structs.end()) {
         return &*iterator->second;
     } else {
-        StructType* type = new StructType(this, name, fields, llvm_type);
+        auto type = new StructType(this, name, fields, llvm_type);
         this->structs[name] = OwnPtr<StructType>(type);
 
         return type;
@@ -100,7 +102,7 @@ ArrayType* TypeRegistry::create_array_type(Type* element, size_t size) {
     if (iterator != this->arrays.end()) {
         return &*iterator->second;
     } else {
-        ArrayType* type = new ArrayType(this, element, size);
+        auto type = new ArrayType(this, element, size);
         this->arrays[{element, size}] = OwnPtr<ArrayType>(type);
 
         return type;
@@ -112,7 +114,7 @@ EnumType* TypeRegistry::create_enum_type(const std::string& name, Type* inner) {
     if (iterator != this->enums.end()) {
         return &*iterator->second;
     } else {
-        EnumType* type = new EnumType(this, name, inner);
+        auto type = new EnumType(this, name, inner);
         this->enums[name] = OwnPtr<EnumType>(type);
 
         return type;
@@ -124,7 +126,7 @@ TupleType* TypeRegistry::create_tuple_type(const std::vector<Type*>& elements) {
     if (iterator != this->tuples.end()) {
         return &*iterator->second;
     } else {
-        TupleType* type = new TupleType(this, elements);
+        auto type = new TupleType(this, elements);
         this->tuples[elements] = OwnPtr<TupleType>(type);
 
         return type;
@@ -136,7 +138,7 @@ PointerType* TypeRegistry::create_pointer_type(Type* pointee, bool is_mutable) {
     if (iterator != this->pointers.end()) {
         return &*iterator->second;
     } else {
-        PointerType* type = new PointerType(this, pointee, is_mutable);
+        auto type = new PointerType(this, pointee, is_mutable);
         this->pointers[{pointee, is_mutable}] = OwnPtr<PointerType>(type);
 
         return type;
@@ -148,7 +150,7 @@ ReferenceType* TypeRegistry::create_reference_type(Type* type, bool is_mutable) 
     if (iterator != this->references.end()) {
         return &*iterator->second;
     } else {
-        ReferenceType* reference = new ReferenceType(this, type, is_mutable);
+        auto reference = new ReferenceType(this, type, is_mutable);
         this->references[{type, is_mutable}] = OwnPtr<ReferenceType>(reference);
 
         return reference;
@@ -162,7 +164,7 @@ FunctionType* TypeRegistry::create_function_type(
     if (iterator != this->functions.end()) {
         return &*iterator->second;
     } else {
-        FunctionType* type = new FunctionType(this, return_type, parameters);
+        auto type = new FunctionType(this, return_type, parameters);
         this->functions[{return_type, parameters}] = OwnPtr<FunctionType>(type);
 
         return type;
@@ -172,3 +174,5 @@ FunctionType* TypeRegistry::create_function_type(
 quart::Type* TypeRegistry::get_void_type() { return &this->void_type; }
 quart::Type* TypeRegistry::get_f32_type() { return &this->f32; }
 quart::Type* TypeRegistry::get_f64_type() { return &this->f64; }
+
+// NOLINTEND(cppcoreguidelines-owning-memory)

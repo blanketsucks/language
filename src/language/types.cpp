@@ -244,7 +244,7 @@ llvm::Type* Type::to_llvm_type() const {
             return this->get_inner_enum_type()->to_llvm_type();
         }
         case TypeKind::Struct: {
-            const StructType* type = this->as<StructType>();
+            const auto* type = this->as<StructType>();
             llvm::StructType* structure = type->get_llvm_struct_type();
 
             if (structure) return structure;
@@ -257,7 +257,7 @@ llvm::Type* Type::to_llvm_type() const {
             return llvm::StructType::get(context, fields);
         }
         case TypeKind::Array: {
-            const ArrayType* type = this->as<ArrayType>();
+            const auto* type = this->as<ArrayType>();
 
             llvm::Type* element = type->get_element_type()->to_llvm_type();
             size_t size = type->get_size();
@@ -265,7 +265,7 @@ llvm::Type* Type::to_llvm_type() const {
             return llvm::ArrayType::get(element, size);
         }
         case TypeKind::Tuple: {
-            const TupleType* type = this->as<TupleType>();
+            const auto* type = this->as<TupleType>();
 
             std::vector<llvm::Type*> types;
             for (auto& type : type->get_types()) {
@@ -275,20 +275,19 @@ llvm::Type* Type::to_llvm_type() const {
             return llvm::StructType::get(context, types);
         }
         case TypeKind::Pointer: {
-            const PointerType* type = this->as<PointerType>();
+            const auto* type = this->as<PointerType>();
 
             llvm::Type* pointee = type->get_pointee_type()->to_llvm_type();
             return llvm::PointerType::get(pointee, 0);
         }
         case TypeKind::Reference: {
-            const ReferenceType* type = this->as<ReferenceType>();
+            const auto* type = this->as<ReferenceType>();
 
             llvm::Type* reference = type->get_reference_type()->to_llvm_type();
             return llvm::PointerType::get(reference, 0);
         }
         case TypeKind::Function: {
-            const FunctionType* type = this->as<FunctionType>();
-
+            const auto* type = this->as<FunctionType>();
             llvm::Type* return_type = type->get_return_type()->to_llvm_type();
 
             std::vector<llvm::Type*> params;

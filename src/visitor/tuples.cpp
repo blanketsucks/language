@@ -38,22 +38,24 @@ Value Visitor::visit(ast::TupleExpr* expr) {
     });
 
     quart::TupleType* type = this->registry->create_tuple_type(types);
-    llvm::StructType* structure = llvm::cast<llvm::StructType>(type->to_llvm_type());
+    auto structure = llvm::cast<llvm::StructType>(type->to_llvm_type());
 
     if (all_constant) {
         std::vector<llvm::Constant*> constants;
+        constants.reserve(values.size());
+
         for (auto& value : values) {
             constants.push_back(llvm::cast<llvm::Constant>(value));
         }
 
-        return Value(llvm::ConstantStruct::get(structure, constants), type, Value::Constant);
+        return { llvm::ConstantStruct::get(structure, constants), type, Value::Constant };
     }
 
     if (!this->current_function) {
         ERROR(expr->span, "Tuple literals cannot contain non-constant elements");
     }
 
-    return Value(this->make_tuple(values, structure), type);
+    return { this->make_tuple(values, structure), type };
 }  
 
 void Visitor::store_tuple(
@@ -61,7 +63,7 @@ void Visitor::store_tuple(
     Function& function, 
     const Value& value, 
     const std::vector<ast::Ident>& identifiers,
-    std::string consume_rest
+    const std::string& consume_rest
 ) {
     std::vector<Value> values;
     if (consume_rest.empty()) {
@@ -154,12 +156,14 @@ void Visitor::store_tuple(
     // The rest of the elements remaining in `values` are the values needed in order to create the tuple for
     // `bar` in the example above
     std::vector<quart::Type*> types;
+    types.reserve(values.size());
+
     for (auto& value : values) {
         types.push_back(value.type);
     }
 
     quart::TupleType* tuple = this->registry->create_tuple_type(types);
-    llvm::StructType* type = llvm::cast<llvm::StructType>(tuple->to_llvm_type());
+    auto type = llvm::cast<llvm::StructType>(tuple->to_llvm_type());
 
     llvm::AllocaInst* alloca = this->alloca(type);
     for (size_t i = 0; i < values.size(); i++) {

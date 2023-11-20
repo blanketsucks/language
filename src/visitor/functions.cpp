@@ -2,7 +2,7 @@
 
 using namespace quart;
 
-static std::vector<std::string> RESERVED_FUNCTION_NAMES = {
+static const std::vector<std::string> RESERVED_FUNCTION_NAMES = {
     "__global_constructors_init"
 };
 
@@ -19,15 +19,13 @@ void Visitor::evaluate_current_scope_defers() {
 }
 
 bool Visitor::is_reserved_function(const std::string& name) {
-    return std::find(
-        RESERVED_FUNCTION_NAMES.begin(), RESERVED_FUNCTION_NAMES.end(), name
-    ) != RESERVED_FUNCTION_NAMES.end();
+    return llvm::is_contained(RESERVED_FUNCTION_NAMES, name);
 }
 
 llvm::Function* Visitor::create_llvm_function(
     const std::string& name, 
     llvm::Type* ret, 
-    std::vector<llvm::Type*> args, 
+    const std::vector<llvm::Type*>& args, 
     bool is_variadic, 
     llvm::Function::LinkageTypes linkage
 ) {
@@ -88,7 +86,7 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
         ERROR(span, "Cannot call noreturn function '{0}' from global scope", function.name);
     }
 
-    std::map<int64_t, llvm::Value*> values;
+    std::map<i64, llvm::Value*> values;
     std::vector<llvm::Value*> c_variadic_values;
 
     u32 i = self ? 1 : 0;
@@ -154,7 +152,7 @@ Value Visitor::call(
 ) {
     llvm::Value* result = this->call(function.value, args, self, is_constructor, type);
     if (function.get_return_type()->is_reference()) {
-        return Value(result, function.get_return_type());
+        return { result, function.get_return_type() };
     }
 
     return result;
@@ -528,7 +526,7 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
         this->builder->SetInsertPoint(outer->current_block);
     }
 
-    return Value(function, true);
+    return { function, func->type, Value::Constant };
 }
 
 Value Visitor::visit(ast::ReturnExpr* expr) {
@@ -604,7 +602,7 @@ Value Visitor::visit(ast::DeferExpr* expr) {
 Value Visitor::visit(ast::CallExpr* expr) {
     Value callable = expr->callee->accept(*this);
     if (callable.flags & Value::Builtin) {
-        BuiltinFunction builtin = callable.as<BuiltinFunction>();
+        auto builtin = callable.as<BuiltinFunction>();
         return builtin(*this, expr);
     }
 
@@ -639,7 +637,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (callable.self) argc++;
 
-    llvm::Function* function = static_cast<llvm::Function*>(callable.inner);
+    auto function = llvm::cast<llvm::Function>(callable.inner);
     std::string name = function->getName().str();
 
     llvm::FunctionType* ftype = nullptr;
@@ -675,11 +673,11 @@ Value Visitor::visit(ast::CallExpr* expr) {
                 function, args, callable.self, nullptr
             });
             
-            return Value(nullptr, Value::EarlyFunctionCall);
+            return { nullptr, Value::EarlyFunctionCall };
         }
 
         llvm::Value* result = this->call(function, args, callable.self, is_constructor, ftype);
-        return Value(result, func->ret.type);
+        return { result, func->get_return_type() };
     }
 
     if (argc > ftype->getNumParams() && !ftype->isVarArg()) {
@@ -717,7 +715,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
             function, args, callable.self, nullptr
         });
         
-        return Value(nullptr, Value::EarlyFunctionCall);
+        return { nullptr, Value::EarlyFunctionCall };
     }
 
     return {

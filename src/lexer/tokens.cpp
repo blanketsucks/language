@@ -49,9 +49,8 @@ llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
         case BinaryOp::Gte: return ">=";
         case BinaryOp::Lte: return "<=";
         case BinaryOp::Assign: return "=";
+        default: return "";
     }
-
-    return "";
 }
 
 llvm::StringRef Token::get_type_value(TokenKind type) {
@@ -79,16 +78,15 @@ llvm::StringRef Token::get_type_value(TokenKind type) {
         case TokenKind::Gte: return ">=";
         case TokenKind::Lte: return "<=";
         case TokenKind::Assign: return "=";
+        default: return "";
     }
-
-    return "";
 }
 
 i8 Token::precedence() const {
     auto iterator = PRECEDENCES.find(this->type);
     if (iterator == PRECEDENCES.end()) return -1;
 
-    return iterator->second;
+    return static_cast<i8>(iterator->second);
 }
 
 bool Token::operator==(TokenKind type) const {

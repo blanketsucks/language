@@ -28,14 +28,14 @@ struct Attribute {
         Link
     };
 
-    Type type;
+    Type type = Invalid;
 
     llvm::Any value;
-    ast::Expr* expr;
+    ast::Expr* expr = nullptr;
 
     Attribute() = default;
     Attribute(Type type) : type(type) {}
-    Attribute(Type type, llvm::Any value) : type(type), value(value) {}
+    Attribute(Type type, llvm::Any value) : type(type), value(std::move(value)) {}
     Attribute(Type type, ast::Expr* expr) : type(type), expr(expr) {}
 
     template<typename T> T as() const { return llvm::any_cast<T>(value); }
