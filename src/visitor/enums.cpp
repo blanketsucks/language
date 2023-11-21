@@ -84,8 +84,21 @@ Value Visitor::visit(ast::MatchExpr* expr) {
     if (value.is_empty_value()) ERROR(expr->value->span, "Expected a value");
 
     quart::Type* type = value.type;
-    if (!type->is_int()) {
-        ERROR(expr->value->span, "Expected an integer");
+    if (!type->is_int() && !type->is_enum()) {
+        ERROR(expr->value->span, "Expected an integer but got '{0}' instead", type->get_as_string());
+    }
+
+    u32 bit_width = 0;
+    if (type->is_int()) {
+        bit_width = type->get_int_bit_width();
+    } else {
+        quart::Type* inner = type->get_inner_enum_type();
+        if (!inner->is_int()) {
+            // TODO: Match expressions for non-integer values
+            ERROR(expr->value->span, "Expected an integer but got '{0}' instead", inner->get_as_string());
+        }
+
+        bit_width = inner->get_int_bit_width();
     }
 
     llvm::BasicBlock* original_block = this->builder->GetInsertBlock();
@@ -103,7 +116,8 @@ Value Visitor::visit(ast::MatchExpr* expr) {
         const Value& result, llvm::BasicBlock* block, const ast::MatchArm& arm
     ) {
         if (arm.index == 0) {
-            rtype = result.is_empty_value() ? result.type : nullptr;
+            if (!result.is_empty_value()) rtype = result.type;
+
             if (rtype) {
                 this->set_insert_point(original_block, false);
                 alloca = this->alloca(rtype->to_llvm_type());
@@ -159,10 +173,10 @@ Value Visitor::visit(ast::MatchExpr* expr) {
                     ERROR(pattern->span, "Expected a constant integer");
                 }
 
-                if (constant->getBitWidth() != type->get_int_bit_width()) {
+                if (constant->getBitWidth() != bit_width) {
                     constant = static_cast<llvm::ConstantInt*>(
                         llvm::ConstantInt::get(
-                            this->builder->getIntNTy(type->get_int_bit_width()), 
+                            this->builder->getIntNTy(bit_width), 
                             constant->getSExtValue(), 
                             !type->is_int_unsigned()
                         )

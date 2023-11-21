@@ -1,7 +1,5 @@
 #pragma once
 
-// NOLINTBEGIN(modernize-use-nodiscard)
-
 #include <llvm/IR/Type.h>
 #include <llvm/IR/DerivedTypes.h>
 
@@ -276,7 +274,5 @@ inline bool is_structure_type(Type* type) {
     if (type->is_pointer()) type = type->get_pointee_type();
     return type->is_struct();
 }
-
-// NOLINTEND(modernize-use-nodiscard)
 
 }
