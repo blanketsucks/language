@@ -20,9 +20,7 @@ jit::QuartJIT::QuartJIT(
     const std::string& entry,
     OwnPtr<llvm::Module> module, 
     OwnPtr<llvm::LLVMContext> context
-) {
-    this->filename = filename;
-    this->entry = entry;
+) : filename(filename), entry(entry) {
 
     this->jit = jit::ExitOnError(llvm::orc::LLJITBuilder().create());
     this->module = llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
@@ -33,7 +31,7 @@ jit::QuartJIT::QuartJIT(
     auto generator = llvm::cantFail(
         llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(layout.getGlobalPrefix())
     );
-    
+
     dylib.addGenerator(std::move(generator));
 
     this->set_error_reporter(jit::checkError);

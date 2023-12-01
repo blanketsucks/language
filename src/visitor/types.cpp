@@ -250,7 +250,7 @@ quart::Type* Visitor::visit(ast::NamedTypeExpr* expr) {
         if (scope->has_module(name)) {
             scope = scope->get_module(name)->scope;
         } else {
-            ERROR(expr->span, "Unrecognised namespace '{0}'", name);
+            ERROR(expr->span, "Undefined namespace '{0}'", name);
         }
     }
 
@@ -270,7 +270,7 @@ quart::Type* Visitor::visit(ast::NamedTypeExpr* expr) {
         return scope->get_enum(expr->name)->type;
     }
 
-    ERROR(expr->span, "Unrecognised type '{0}'", expr->name);
+    ERROR(expr->span, "Undefined type '{0}'", expr->name);
 }
 
 quart::Type* Visitor::visit(ast::PointerTypeExpr* expr) {
@@ -354,7 +354,7 @@ quart::Type* Visitor::visit(ast::GenericTypeExpr* expr) {
     );
 
     if (!alias) {
-        ERROR(expr->span, "Unrecognised type '{0}'", expr->parent->name);
+        ERROR(expr->span, "Undefined type '{0}'", expr->parent->name);
     }
 
     if (!alias->is_generic()) {

@@ -4,11 +4,12 @@
 
 using namespace quart;
 
-int run_jit(int argc, char** argv);
+int run_jit(llvm::ArrayRef<char*> args);
 
 int main(int argc, char** argv) {
     if (getenv("QUART_USE_JIT") != nullptr) {
-        return run_jit(argc, argv);
+        llvm::ArrayRef<char*> args(argv, argc);
+        return run_jit(args);
     }
 
     cl::Arguments args = cl::parse_arguments(argc, argv);
@@ -70,13 +71,13 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-int run_jit(int argc, char** argv) {
-    if (argc < 2) {
+int run_jit(llvm::ArrayRef<char*> args) {
+    if (args.size() < 2) {
         Compiler::error("No input file specified");
         return 1;
     }
 
-    fs::Path input(argv[1]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    fs::Path input(args[1]);
     if (!input.exists()) {
         Compiler::error("Input file '{0}' does not exist", input);
         return 1;
@@ -96,5 +97,5 @@ int run_jit(int argc, char** argv) {
     Compiler compiler(options);
     compiler.add_import_path(QUART_PATH);
 
-    return compiler.jit(argc - 1, argv + 1); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    return compiler.jit(args.slice(1));
 }

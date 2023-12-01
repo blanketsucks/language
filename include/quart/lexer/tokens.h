@@ -269,7 +269,11 @@ static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Lt, BinaryOp::Lt},
     {TokenKind::Gte, BinaryOp::Gte},
     {TokenKind::Lte, BinaryOp::Lte},
-    {TokenKind::Assign, BinaryOp::Assign}
+    {TokenKind::Assign, BinaryOp::Assign},
+    {TokenKind::IAdd, BinaryOp::Add},
+    {TokenKind::IMinus, BinaryOp::Sub},
+    {TokenKind::IMul, BinaryOp::Mul},
+    {TokenKind::IDiv, BinaryOp::Div}
 };
 
 static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {

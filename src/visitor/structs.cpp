@@ -265,6 +265,9 @@ Value Visitor::visit(ast::AttributeExpr* expr) {
             // *mut i32 -> *i32
             result = result->get_pointee_type()->get_pointer_to(false);
         }
+    } else if (field.is_mutable() && is_mutable && !ref.is_null()) {
+        if (result->is_reference() || result->is_pointer())
+            this->mark_as_mutated(ref);
     }
 
     if (type->is_pointer()) {

@@ -45,6 +45,12 @@ struct Variable {
         u8 flags,
         const Span& span
     );
+
+    bool is_used() const { return this->flags & Variable::Used; }
+    bool is_mutated() const { return this->flags & Variable::Mutated; }
+    bool is_mutable() const { return this->flags & Variable::Mutable; }
+
+    bool can_ignore_usage() const { return this->name[0] == '_'; }
 };
 
 struct Constant {

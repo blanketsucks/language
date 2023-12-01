@@ -1372,12 +1372,12 @@ ast::Attributes Parser::parse_attributes() {
         this->next(); this->next();
         
         while (this->current != TokenKind::RBracket) {
-            std::string name = this->expect(TokenKind::Identifier, "attribute name").value;
-            if (!this->is_valid_attribute(name)) {
-                ERROR(this->current.span, "Unknown attribute '{0}'", name);
+            Token token = this->expect(TokenKind::Identifier, "attribute name");
+            if (!this->is_valid_attribute(token.value)) {
+                ERROR(token.span, "Unknown attribute '{0}'", token.value);
             }
 
-            auto& handler = this->attributes.at(name);
+            auto& handler = this->attributes.at(token.value);
             attrs.add(handler(*this));
 
             if (this->current != TokenKind::Comma) {
@@ -1447,7 +1447,7 @@ OwnPtr<ast::Expr> Parser::unary() {
 
         bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
 
-        auto value = this->expr(false);
+        auto value = this->call();
         expr = make_own<ast::ReferenceExpr>(
             Span::merge(start, value->span), std::move(value), is_mutable
         );

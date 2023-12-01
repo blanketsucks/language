@@ -319,7 +319,7 @@ CompilerError Compiler::compile() {
     return CompilerError::ok();
 }
 
-int Compiler::jit(int argc, char** argv) {
+int Compiler::jit(llvm::ArrayRef<char*> args) {
     MemoryLexer lexer(this->options.input);
     auto tokens = lexer.lex();
 
@@ -349,5 +349,8 @@ int Compiler::jit(int argc, char** argv) {
         std::move(visitor.context)
     );
 
-    return jit.run(argc, argv);
+    return jit.run(
+        static_cast<i32>(args.size()), 
+        const_cast<char**>(args.data()) // NOLINT(cppcoreguidelines-pro-type-const-cast)
+    );
 }

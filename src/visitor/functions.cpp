@@ -75,10 +75,8 @@ std::vector<llvm::Value*> Visitor::handle_function_arguments(
             ERROR(span, "Function expects at most {0} arguments but got {1}", function.argc(), argc);
         }
     } else {
-        if (argc < function.argc()) {
-            ERROR(span, "Function expects at least {0} arguments but got {1}", function.argc(), argc);
-        } else if (argc > function.argc() && !is_variadic) {
-            ERROR(span, "Function expects at most {0} arguments but got {1}", function.argc(), argc);
+        if (argc < function.argc() || (argc > function.argc() && !is_variadic)) {
+            ERROR(span, "Function expects {0} arguments but got {1}", function.argc(), argc);
         }
     }
 
@@ -504,17 +502,11 @@ Value Visitor::visit(ast::FunctionExpr* expr) {
 
     for (auto& entry : this->scope->variables) {
         Variable& variable = entry.second;
-
-        bool is_used = variable.flags & Variable::Used;
-        bool is_mutated = variable.flags & Variable::Mutated;
-        bool is_mutable = variable.flags & Variable::Mutable;
-
-        bool has_underscore = variable.name[0] == '_';
-        if (!is_used && !has_underscore) {
+        if (!variable.is_used() && !variable.can_ignore_usage()) {
             NOTE(variable.span, "'{0}' is defined but never used", variable.name);
         }
 
-        if (!is_mutated && is_mutable) {
+        if (!variable.is_mutated() && variable.is_mutable()) {
             NOTE(variable.span, "'{0}' is marked as 'mut' but is never mutated", variable.name);
         }
     }
@@ -637,7 +629,7 @@ Value Visitor::visit(ast::CallExpr* expr) {
 
     if (callable.self) argc++;
 
-    auto function = llvm::cast<llvm::Function>(callable.inner);
+    auto function = static_cast<llvm::Function*>(callable.inner);
     std::string name = function->getName().str();
 
     llvm::FunctionType* ftype = nullptr;

@@ -149,6 +149,8 @@ RefPtr<Module> Visitor::import(const std::string& name, bool is_relative, const 
     this->scope->add_child(module->scope);
 
     scope->modules[module_name] = module;
+    this->scope->modules[module_name] = module;
+
     this->modules[name] = module;
 
     this->scope = module->scope;

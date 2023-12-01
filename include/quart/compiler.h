@@ -164,7 +164,7 @@ public:
     );
 
     CompilerError compile();
-    int jit(int argc, char** argv);
+    int jit(llvm::ArrayRef<char*> args);
 
 private:
     CompilerOptions options;

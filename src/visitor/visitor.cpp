@@ -477,16 +477,16 @@ Value Visitor::visit(ast::CharExpr* expr) {
 }
 
 Value Visitor::visit(ast::FloatExpr* expr) {
-    llvm::Type* type = nullptr;
+    quart::Type* type = nullptr;
     if (expr->is_double) {
-        type = this->builder->getDoubleTy();
+        type = this->registry->get_f64_type();
     } else {
-        type = this->builder->getFloatTy();
+        type = this->registry->get_f32_type();
     }
 
     return {
-        llvm::ConstantFP::get(type, expr->value),
-        this->registry->wrap(type),
+        llvm::ConstantFP::get(type->to_llvm_type(), expr->value),
+        type,
         Value::Constant
     };
 }
@@ -543,12 +543,14 @@ Value Visitor::visit(ast::OffsetofExpr* expr) {
         ERROR(expr->span, "Field '{1}' does not exist in struct '{0}'", expr->field, structure->name);
     }
 
-    StructField& field = structure->fields[expr->field];
-    return {
-        this->builder->getInt32(field.offset),
-        this->registry->create_int_type(32, true),
-        Value::Constant
-    };
+    // T* ptr = nullptr;
+    // u64 offset = (u64)&ptr->field;
+
+    auto null = llvm::ConstantPointerNull::get(structure->type->to_llvm_type()->getPointerTo());
+    auto ptr = this->builder->CreateStructGEP(structure->type->to_llvm_type(), null, index);
+
+    auto offset = this->builder->CreatePtrToInt(ptr, this->builder->getInt64Ty());
+    return { offset, this->registry->create_int_type(64, false), Value::Constant };
 }
 
 Value Visitor::visit(ast::StaticAssertExpr* expr) {

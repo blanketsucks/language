@@ -45,7 +45,7 @@ struct Parameter {
     std::string name;
     quart::Type* type;
 
-    llvm::Value* default_value;
+    llvm::Value* default_value = nullptr;
     u8 flags;
 
     u32 index;
