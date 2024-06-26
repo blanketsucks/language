@@ -1,28 +1,29 @@
 #include <quart/filesystem.h>
+#include <quart/assert.h>
 
 #include <iostream>
 #include <cerrno>
 #include <glob.h>
 
-namespace gsl { template<typename T> using owner = T; }
+namespace quart::fs {
 
-fs::Path::Path(std::string name) : name(std::move(name)) {}
+Path::Path(String name) : m_name(move(name)) {}
 
-fs::Path fs::Path::cwd() {
+Path Path::cwd() {
 #if _WIN32 || _WIN64
     char buffer[MAX_PATH];
     GetCurrentDirectoryA(MAX_PATH, buffer);
 
     return Path(buffer);
 #else
-    std::array<char, FILENAME_MAX> buffer = {};
-    assert(getcwd(buffer.data(), FILENAME_MAX) && "getcwd() error");
+    Array<char, FILENAME_MAX> buffer = {};
+    ASSERT(getcwd(buffer.data(), FILENAME_MAX) && "getcwd() error");
 
     return { buffer.data() };
 #endif
 }
 
-fs::Path fs::Path::home() {
+Path Path::home() {
 #if _WIN32 || _WIN64
     char buffer[MAX_PATH];
     GetEnvironmentVariableA("USERPROFILE", buffer, MAX_PATH);
@@ -30,50 +31,50 @@ fs::Path fs::Path::home() {
     return Path(buffer);
 #else
     char* buffer = getenv("HOME");
-    assert(buffer && "getenv() error");
+    ASSERT(buffer && "getenv() error");
 
     return { buffer };
 #endif
 }
 
-fs::Path fs::Path::resolve() const {
-    char* result = realpath(this->name.c_str(), nullptr);
+Path Path::resolve() const {
+    char* result = realpath(m_name.c_str(), nullptr);
     if (!result) {
         return {};
     }
     
-    fs::Path path(result);
-    free(result);
+    Path path(result);
+    free(result); 
 
     return path;
 }
 
-bool fs::Path::operator==(const Path& other) const {
-    return this->name == other.name;
+bool Path::operator==(const Path& other) const {
+    return m_name == other.m_name;
 }
 
-bool fs::Path::operator==(const std::string& other) const {
-    return this->name == other;
+bool Path::operator==(const String& other) const {
+    return m_name == other;
 }
 
-fs::Path fs::Path::operator/(const std::string& other) const {
+Path Path::operator/(const String& other) const {
     return this->join(other);
 }
 
-fs::Path fs::Path::operator/(const Path& other) const {
-    return this->join(other.name);
+Path Path::operator/(const Path& other) const {
+    return this->join(other.m_name);
 }
 
-fs::Path::operator std::string() const {
-    return this->name;
+Path::operator String() const {
+    return m_name;
 }
 
-fs::Path::operator llvm::StringRef() const {
-    return this->name;
+Path::operator StringView() const {
+    return m_name;
 }
 
-fs::Path fs::Path::from_parts(const std::vector<std::string>& parts) {
-    std::string name;
+Path Path::from_parts(const Vector<String>& parts) {
+    String name;
     for (size_t i = 0; i < parts.size(); i++) {
         name.append(parts[i]);
         if (i != parts.size() - 1) {
@@ -84,7 +85,7 @@ fs::Path fs::Path::from_parts(const std::vector<std::string>& parts) {
     return name;
 }
 
-fs::Path fs::Path::from_env(const std::string& env) {
+Path Path::from_env(const String& env) {
     char* buffer = getenv(env.c_str());
     if (!buffer) {
         return {};
@@ -93,82 +94,82 @@ fs::Path fs::Path::from_env(const std::string& env) {
     return { buffer };
 }
 
-struct stat fs::Path::stat() {
+struct stat Path::stat() const {
     struct stat buffer = {};
-    ::stat(this->name.c_str(), &buffer);
+    ::stat(m_name.c_str(), &buffer);
 
     return buffer;
 }
 
-struct stat fs::Path::stat(int& err) {
+struct stat Path::stat(int& err) const {
     struct stat buffer = {};
-    err = ::stat(this->name.c_str(), &buffer);
+    err = ::stat(m_name.c_str(), &buffer);
 
     return buffer;
 }
 
-bool fs::Path::exists() const {
-    return fs::exists(this->name);
+bool Path::exists() const {
+    struct stat buffer = {};
+    return ::stat(m_name.c_str(), &buffer) == 0;
 }
 
-bool fs::Path::isfile() const {
-    struct stat buffer = {};
-    ::stat(this->name.c_str(), &buffer);
-
+bool Path::is_regular_file() const {
+    struct stat buffer = this->stat();
     return S_ISREG(buffer.st_mode);
 }
 
-bool fs::Path::isdir() const {
-    return fs::isdir(this->name);
+bool Path::is_dir() const {
+    struct stat buffer = this->stat();
+    return S_ISDIR(buffer.st_mode);
 }
 
-bool fs::Path::isempty() const {
-    return this->name.empty();
+bool Path::empty() const {
+    return m_name.empty();
 }
 
-bool fs::Path::is_part_of(const fs::Path& other) const {
-    return this->name.find(other.name) == 0;
+bool Path::is_part_of(const Path& other) const {
+    return m_name.find(other.m_name) == 0;
 }
 
-fs::Path fs::Path::remove_prefix(const fs::Path& prefix) const {
+Path Path::remove_prefix(const Path& prefix) const {
     if (!this->is_part_of(prefix)) {
-        return this->name;
+        return m_name;
     }
 
-    return this->name.substr(prefix.name.size());
+    return m_name.substr(prefix.m_name.size());
 }
 
-std::string fs::Path::filename() const {
-    if (this->isdir()) {
-        return this->name;
+String Path::filename() const {
+    if (this->is_dir()) {
+        return m_name;
     }
 
-    auto pos = this->name.find_last_of("/\\");
-    if (pos == std::string::npos) {
-        return this->name;
+    auto pos = m_name.find_last_of("/\\");
+    if (pos == String::npos) {
+        return m_name;
     }
 
-    return this->name.substr(pos + 1);
+    return m_name.substr(pos + 1);
 }
 
-fs::Path fs::Path::parent() const {
-    if (this->isdir()) {
-        return this->name;
+Path Path::parent() const {
+    if (this->is_dir()) {
+        return m_name;
     }
 
-    auto pos = this->name.find_last_of("/\\");
-    if (pos == std::string::npos) {
-        return this->name;
+    auto pos = m_name.find_last_of("/\\");
+    if (pos == String::npos) {
+        return m_name;
     }
 
-    return this->name.substr(0, pos);
+    return m_name.substr(0, pos);
 }
 
-std::vector<std::string> fs::Path::parts() const {
-    std::vector<std::string> parts;
-    std::string part;
+Vector<String> Path::parts() const {
+    Vector<String> parts;
+    String part;
 
-    for (auto& c : this->name) {
+    for (auto& c : m_name) {
         if (c == '/' || c == '\\') {
             parts.push_back(part);
             part.clear();
@@ -184,11 +185,11 @@ std::vector<std::string> fs::Path::parts() const {
     return parts;
 }
 
-std::vector<fs::Path> fs::Path::listdir() const {
-    std::vector<fs::Path> paths;
+Vector<Path> Path::listdir() const {
+    Vector<Path> paths;
 
 #if _WIN32 || _WIN64
-    std::string search = this->name + "/*.*";
+    String search = m_name + "/*.*";
     WIN32_FIND_DATA fd;
 
     std::wstring wsearch = std::wstring(search.begin(), search.end());
@@ -204,14 +205,13 @@ std::vector<fs::Path> fs::Path::listdir() const {
         FindClose(handle);
     }
 #else
-    DIR* dir = opendir(this->name.c_str());
+    DIR* dir = opendir(m_name.c_str());
     if (!dir) {
         return paths;
     }
 
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
     struct dirent* entry = nullptr;
-
     while ((entry = readdir(dir))) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -227,11 +227,11 @@ std::vector<fs::Path> fs::Path::listdir() const {
     return paths;
 }
 
-std::vector<fs::Path> fs::Path::listdir(bool recursive) const {
-    std::vector<fs::Path> paths;
+Vector<Path> Path::listdir(bool recursive) const {
+    Vector<Path> paths;
 
     for (auto& path : this->listdir()) {
-        if (path.isdir() && recursive) {
+        if (path.is_dir() && recursive) {
             auto subpaths = path.listdir(true);
             paths.insert(paths.end(), subpaths.begin(), subpaths.end());
 
@@ -244,8 +244,8 @@ std::vector<fs::Path> fs::Path::listdir(bool recursive) const {
     return paths;
 }
 
-std::vector<fs::Path> fs::Path::glob(const std::string& pattern, int flags) {
-    std::vector<fs::Path> paths;
+Vector<Path> Path::glob(const String& pattern, int flags) {
+    Vector<Path> paths;
 
 #if _WIN32 || _WIN64
     WIN32_FIND_DATA fd;
@@ -255,7 +255,7 @@ std::vector<fs::Path> fs::Path::glob(const std::string& pattern, int flags) {
 
     if (handle != INVALID_HANDLE_VALUE) {
         do {
-            paths.push_back(fs::Path(fd.cFileName));
+            paths.push_back(Path(fd.cFileName));
         } while (FindNextFile(handle, &fd));
 
         FindClose(handle);
@@ -264,6 +264,7 @@ std::vector<fs::Path> fs::Path::glob(const std::string& pattern, int flags) {
     glob_t result;
     ::glob(pattern.c_str(), flags, nullptr, &result);
 
+    paths.reserve(result.gl_pathc);
     for (size_t i = 0; i < result.gl_pathc; i++) {
         paths.emplace_back(result.gl_pathv[i]);
     }
@@ -274,25 +275,27 @@ std::vector<fs::Path> fs::Path::glob(const std::string& pattern, int flags) {
     return paths;
 }
 
-std::fstream fs::Path::open(fs::OpenMode mode) {
-    assert(this->isfile() && "Path is not a file");
+std::fstream Path::open(OpenMode mode) {
+    // FIXME: Remove this assert
+    ASSERT(this->is_regular_file() && "Path is not a file");
 
-    if (mode == fs::OpenMode::Read) {
-        return std::fstream(this->name, std::fstream::in);
+    if (mode == OpenMode::Read) {
+        return std::fstream(m_name, std::fstream::in);
     } else {
-        return std::fstream(this->name, std::fstream::out);
+        return std::fstream(m_name, std::fstream::out);
     }
 }
 
-std::stringstream fs::Path::read(bool binary) {
-    assert(this->isfile() && "Path is not a file");
+std::stringstream Path::read(bool binary) {
+    // FIXME: Remove this assert
+    ASSERT(this->is_regular_file() && "Path is not a file");
 
     std::fstream::openmode mode = std::fstream::in;
     if (binary) {
         mode |= std::fstream::binary;
     }
 
-    std::fstream file(this->name, mode);
+    std::fstream file(m_name, mode);
     std::stringstream buffer;
 
     buffer << file.rdbuf();
@@ -301,70 +304,72 @@ std::stringstream fs::Path::read(bool binary) {
     return buffer;
 }
 
-fs::Path fs::Path::join(const std::string& path) const {
-    std::string name;
-    if (path[0] == '/' || this->name.back() == '/') {
-        name = this->name + path;
+Path Path::join(const String& path) const {
+    String name;
+    if (path[0] == '/' || m_name.back() == '/') {
+        name = m_name + path;
     } else {
-        name = this->name + "/" + path;
+        name = m_name + "/" + path;
     }
 
     return name;
 }
 
-fs::Path fs::Path::join(const fs::Path& path) const {
-    return this->join(path.name);
+Path Path::join(const Path& path) const {
+    return this->join(path.m_name);
 }
 
-std::string fs::Path::extension() {
-    auto pos = this->name.find_last_of('.');
-    if (pos == std::string::npos) {
+String Path::extension() const {
+    auto pos = m_name.find_last_of('.');
+    if (pos == String::npos) {
         return "";
     }
 
-    return this->name.substr(pos + 1);
+    return m_name.substr(pos + 1);
 }
 
-fs::Path fs::Path::with_extension(const std::string& extension) {
+Path Path::with_extension(const String& extension) const {
     if (extension.empty()) {
-        return fs::remove_extension(this->name);
+        return remove_extension(m_name);
     }
 
-    return fs::replace_extension(this->name, extension);
+    return replace_extension(m_name, extension);
 }
 
-fs::Path fs::Path::with_extension() {
-    return fs::remove_extension(this->name);
+Path Path::with_extension() const {
+    return remove_extension(m_name);
 }
 
-bool fs::exists(const std::string& path) {
+bool exists(const String& path) {
     struct stat buffer = {};
     return ::stat(path.c_str(), &buffer) == 0;
 }
 
-bool fs::isdir(const std::string& path) {
+bool isdir(const String& path) {
     struct stat buffer = {};
     ::stat(path.c_str(), &buffer);
 
     return S_ISDIR(buffer.st_mode);
 }
 
-bool fs::has_extension(const std::string& filename) {
-    return filename.find_last_of('.') != std::string::npos;
+bool has_extension(const String& filename) {
+    return filename.find_last_of('.') != String::npos;
 }
 
-std::string fs::remove_extension(const std::string& filename) {
-    if (fs::has_extension(filename)) {
+String remove_extension(const String& filename) {
+    if (has_extension(filename)) {
         return filename.substr(0, filename.find_last_of('.'));
     } else {
         return filename;
     }
 }
 
-std::string fs::replace_extension(const std::string& filename, std::string extension) {
+String replace_extension(const String& filename, String extension) {
     if (extension[0] == '.') {
         extension = extension.substr(1);
     }
 
-    return fs::remove_extension(filename) + "." + extension;
+    return remove_extension(filename) + "." + extension;
+}
+
 }

@@ -1,27 +1,18 @@
 #include <quart/compiler.h>
-#include <quart/llvm.h>
 #include <quart/cl.h>
 
 using namespace quart;
 
-int run_jit(llvm::ArrayRef<char*> args);
-
 int main(int argc, char** argv) {
-    if (getenv("QUART_USE_JIT") != nullptr) {
-        llvm::ArrayRef<char*> args(argv, argc);
-        return run_jit(args);
+    ErrorOr<cl::Arguments> result = cl::parse_arguments(argc, argv);
+    if (result.is_err()) {
+        auto error = result.error();
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", error.message());
+
+        return 1;
     }
 
-    cl::Arguments args = cl::parse_arguments(argc, argv);
-    Compiler::init();
-
-    if (args.print_all_targets) {
-        llvm::TargetRegistry::printRegisteredTargetsForVersion(llvm::outs());
-        Compiler::shutdown();
-
-        return 0;
-    }
-
+    cl::Arguments args = result.release_value();
     CompilerOptions options = {
         .input = args.file,
         .output = args.output,
@@ -42,60 +33,6 @@ int main(int argc, char** argv) {
         .extras = {}
     };
 
-    Compiler compiler(options);
-    compiler.add_import_path(QUART_PATH);
-
-    for (auto& import : args.imports) {
-        if (!fs::exists(import)) {
-            Compiler::error("Could not find import path '{0}'", import);
-            return 1;
-        }
-        
-        if (!fs::isdir(import)) {
-            Compiler::error("Import path '{0}' must be a directory", import);
-            return 1;
-        }
-
-        compiler.add_import_path(import);
-    }
-
-    if (!args.standalone) {
-        compiler.add_library("c");
-    } else {
-        compiler.set_linker("ld");
-    }
-
-    compiler.compile().unwrap();    
-    Compiler::shutdown();
-
-    return 0;
-}
-
-int run_jit(llvm::ArrayRef<char*> args) {
-    if (args.size() < 2) {
-        Compiler::error("No input file specified");
-        return 1;
-    }
-
-    fs::Path input(args[1]);
-    if (!input.exists()) {
-        Compiler::error("Input file '{0}' does not exist", input);
-        return 1;
-    }
-
-    if (!input.isfile()) {
-        Compiler::error("Input '{0}' must be a file", input);
-        return 1;
-    }
-
-    Compiler::init();
-    CompilerOptions options;
-
-    options.input = input;
-    options.entry = "main";
-
-    Compiler compiler(options);
-    compiler.add_import_path(QUART_PATH);
-
-    return compiler.jit(args.slice(1));
+    Compiler compiler(move(options));
+    return compiler.compile();
 }

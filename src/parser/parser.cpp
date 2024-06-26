@@ -1,151 +1,139 @@
 #include <quart/parser/parser.h>
 #include <quart/parser/attrs.h>
 #include <quart/parser/ast.h>
-#include <quart/logging.h>
 
 #include <llvm/ADT/StringRef.h>
 
 #include <memory>
-#include <string>
 #include <cstring>
-#include <vector>
 
-using namespace quart;
+namespace quart {
 
-static const std::vector<ast::ExprKind> NUMERIC_KINDS = {
-    ast::ExprKind::String,
-    ast::ExprKind::Integer,
-    ast::ExprKind::Float
+struct IntegerSuffix {
+    u32 bits;
+    bool is_float;
 };
 
-static const std::vector<TokenKind> NAMESPACE_ALLOWED_KEYWORDS = {
-    TokenKind::Struct,
-    TokenKind::Func,
-    TokenKind::Type,
-    TokenKind::Const,
-    TokenKind::Enum,
-    TokenKind::Namespace,
-    TokenKind::Extern
-};
-
-static const std::vector<TokenKind> STRUCT_ALLOWED_KEYWORDS = {
-    TokenKind::Func,
-    TokenKind::Type,
-    TokenKind::Const
-};
-
-// {name: (bits, is_float)}
-static const std::map<llvm::StringRef, std::pair<u32, bool>> NUM_TYPES_BIT_MAPPING = {
-    {"i8", {8, false}},
-    {"i16", {16, false}},
-    {"i32", {32, false}},
-    {"i64", {64, false}},
-    {"i128", {128, false}},
-    {"f32", {32, true}},
-    {"f64", {64, true}}
+static const HashMap<StringView, IntegerSuffix> INTEGER_SUFFIXES = {
+    { "i8", { 8, false } },
+    { "i16", { 16, false } },
+    { "i32", { 32, false } },
+    { "i64", { 64, false } },
+    { "i128", { 128, false } },
+    { "f32", { 32, true } },
+    { "f64", { 64, true } }
 };
 
 static const std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
-    {"void", ast::BuiltinType::Void},
-    {"bool", ast::BuiltinType::Bool},
-    {"i8", ast::BuiltinType::i8},
-    {"i16", ast::BuiltinType::i16},
-    {"i32", ast::BuiltinType::i32},
-    {"i64", ast::BuiltinType::i64},
-    {"i128", ast::BuiltinType::i128},
-    {"u8", ast::BuiltinType::u8},
-    {"u16", ast::BuiltinType::u16},
-    {"u32", ast::BuiltinType::u32},
-    {"u64", ast::BuiltinType::u64},
-    {"u128", ast::BuiltinType::u128},
-    {"f32", ast::BuiltinType::f32},
-    {"f64", ast::BuiltinType::f64}
+    { "void", ast::BuiltinType::Void },
+    { "bool", ast::BuiltinType::Bool },
+    { "i8", ast::BuiltinType::i8 },
+    { "i16", ast::BuiltinType::i16 },
+    { "i32", ast::BuiltinType::i32 },
+    { "i64", ast::BuiltinType::i64 },
+    { "i128", ast::BuiltinType::i128 },
+    { "u8", ast::BuiltinType::u8 },
+    { "u16", ast::BuiltinType::u16 },
+    { "u32", ast::BuiltinType::u32 },
+    { "u64", ast::BuiltinType::u64 },
+    { "u128", ast::BuiltinType::u128 },
+    { "f32", ast::BuiltinType::f32 },
+    { "f64", ast::BuiltinType::f64 }
 };
 
 
-Parser::Parser(std::vector<Token> tokens) : offset(0), tokens(std::move(tokens)) {
-    this->current = this->tokens.front();
-
+Parser::Parser(Vector<Token> tokens) : m_tokens(move(tokens)), m_current(m_tokens.front()) {
     Attributes::init(*this);
 }
 
-void Parser::end() {
-    if (this->current != TokenKind::SemiColon) {
-        Token last = this->tokens[this->offset - 1];
-        ERROR(last.span, "Expected ';'");
-    }
-
-    this->next();
+void Parser::set_attributes(HashMap<StringView, AttributeFunc> attributes) {
+    m_attributes = move(attributes);
 }
 
 Token Parser::next() {
-    this->offset++;
+    m_offset++;
 
-    if (this->offset >= this->tokens.size()) {
-        this->current = this->tokens.back(); // EOF
+    if (m_offset >= m_tokens.size()) {
+        m_current = m_tokens.back(); // EOF
     } else {
-        this->current = this->tokens[this->offset];
+        m_current = m_tokens[m_offset];
     }
 
-    return this->current;
+    return m_current;
 }
 
-Token const& Parser::peek(u32 offset) const {
-    if (this->offset >= this->tokens.size()) {
-        return this->tokens.back(); // EOF
+void Parser::skip(size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        this->next();
+    }
+}
+
+Token const& Parser::peek(size_t offset) const {
+    if (m_offset >= m_tokens.size()) {
+        return m_tokens.back(); // EOF
     }
 
-    return this->tokens[this->offset + offset];
+    return m_tokens[m_offset + offset];
 }
 
-Token& Parser::peek(u32 offset) {
-    if (this->offset >= this->tokens.size()) {
-        return this->tokens.back(); // EOF
+Token& Parser::peek(size_t offset) {
+    if (m_offset >= m_tokens.size()) {
+        return m_tokens.back(); // EOF
     }
 
-    return this->tokens[this->offset + offset];
+    return m_tokens[m_offset + offset];
 }
 
-Token Parser::expect(TokenKind type, llvm::StringRef value) {
-    if (this->current.type != type) {
-        ERROR(this->current.span, "Expected {0}", value);
+ErrorOr<Token> Parser::expect(TokenKind kind, StringView value) {
+    auto span = m_current.span();
+    auto option = this->try_expect(kind);
+
+    if (option.has_value()) {
+        return option.value();
     }
 
-    Token token = this->current;
-    this->next();
-
-    return token;
+    if (value.empty()) {
+        return err(span, "Expected '{0}'", token_kind_to_str(kind));
+    } else {
+        return err(span, "Expected '{0}'", value);
+    }
 }
 
-llvm::Optional<Token> Parser::try_expect(TokenKind type) {
-    if (this->current != type) return llvm::None;
+Optional<Token> Parser::try_expect(TokenKind kind) {
+    if (m_current.kind() != kind) {
+        return {};
+    }
 
-    Token token = this->current;
+    Token token = m_current;
     this->next();
 
     return token;
 }
 
 bool Parser::is_valid_attribute(llvm::StringRef name) {
-    return this->attributes.find(name) != this->attributes.end();
+    return m_attributes.find(name) != m_attributes.end();
 }
 
 bool Parser::is_upcoming_constructor(ast::Expr const& previous) const {
-    if (this->current != TokenKind::LBrace) return false;
+    if (m_current.kind() != TokenKind::LBrace) {
+        return false;
+    }
 
     auto& peek = this->peek();
-    if (peek == TokenKind::RBrace) return true;
+    if (peek.kind() == TokenKind::RBrace) {
+        return true;
+    }
     
     if (!peek.is(TokenKind::Identifier) || !this->peek(2).is(TokenKind::Colon)) {
         return false;
     }
 
-    return previous.is(ast::ExprKind::Variable, ast::ExprKind::Path);
+    return previous.is(ast::ExprKind::Identifier, ast::ExprKind::Path);
 }
 
-AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attrs) {
-    for (auto& entry : attrs.values) {
-        auto result = AttributeHandler::handle(*this, entry.second);
+AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attributes) {
+    for (auto& [_, attribute] : attributes.values) {
+        auto result = AttributeHandler::handle(*this, attribute);
         if (result != AttributeHandler::Ok) {
             return result;
         }
@@ -154,164 +142,174 @@ AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& a
     return AttributeHandler::Ok;
 }
 
-OwnPtr<ast::TypeExpr> Parser::parse_type() {
-    Span start = this->current.span;
+ParseResult<ast::TypeExpr> Parser::parse_type() {
+    Span start = m_current.span();
 
-    switch (this->current.type) {
+    switch (m_current.kind()) {
         case TokenKind::BinaryAnd: {
             this->next();
-            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
+            bool is_mutable = this->try_expect(TokenKind::Mut).has_value();
 
-            return make_own<ast::ReferenceTypeExpr>(
-                this->current.span, this->parse_type(), is_mutable
-            );
+            return { make<ast::ReferenceTypeExpr>(m_current.span(), TRY(this->parse_type()), is_mutable) };
         }
         case TokenKind::Mul: {
             this->next();
-            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
+            bool is_mutable = this->try_expect(TokenKind::Mut).has_value();
 
-            auto type = this->parse_type();
-            if (type->kind == ast::TypeKind::Reference) {
-                ERROR(type->span, "Cannot have a pointer to a reference");
+            auto type = TRY(this->parse_type());
+            if (type->is<ast::ReferenceTypeExpr>()) {
+                return err(type->span(), "Cannot create a pointer type to a reference");
             }
 
-            return make_own<ast::PointerTypeExpr>(
-                this->current.span, std::move(type), is_mutable
-            );
+            return { make<ast::PointerTypeExpr>(m_current.span(), move(type), is_mutable) };
         }
         case TokenKind::LParen: {
             this->next();
-            if (this->current == TokenKind::RParen) {
-                ERROR(this->current.span, "Tuple type literals must atleast have a single element");
+            if (m_current.is(TokenKind::RParen)) {
+                return err(m_current.span(), "Tuple types mist at least have a single element");
             }
 
-            std::vector<OwnPtr<ast::TypeExpr>> types;
-            while (this->current != TokenKind::RParen) {
-                types.push_back(this->parse_type());
-                if (this->current != TokenKind::Comma) {
+            ast::ExprList<ast::TypeExpr> elements;
+            while (!m_current.is(TokenKind::RParen)) {
+                elements.push_back(TRY(this->parse_type()));
+                if (!m_current.is(TokenKind::Comma)) {
                     break;
                 }
 
                 this->next();
             }
 
-            Span end = this->expect(TokenKind::RParen, ")").span;
-            return make_own<ast::TupleTypeExpr>(Span::merge(start, end), std::move(types));
+            Span end = TRY(this->expect(TokenKind::RParen)).span();
+            Span span { start, end };
+
+            return { make<ast::TupleTypeExpr>(span, move(elements)) };
         }
         case TokenKind::LBracket: {
             this->next();
-            auto type = this->parse_type();
+            auto type = TRY(this->parse_type());
 
-            this->expect(TokenKind::SemiColon, ";");
-            auto size = this->expr(false);
+            TRY(this->expect(TokenKind::SemiColon));
+            auto size = TRY(this->expr(false));
 
-            Span end = this->expect(TokenKind::RBracket, "]").span;
-            return make_own<ast::ArrayTypeExpr>(Span::merge(start, end), std::move(type), std::move(size));
+            Span end = TRY(this->expect(TokenKind::RParen)).span();
+            Span span { start, end };
+
+            return { make<ast::ArrayTypeExpr>(span, move(type), move(size)) };
         }
         case TokenKind::Identifier: {
-            std::string name = this->current.value;
+            String name = m_current.value();
             this->next();
 
             if (name == "int") {
-                this->expect(TokenKind::LParen, "(");
-                auto size = this->expr(false);
+                TRY(this->expect(TokenKind::LParen));
+                auto size = TRY(this->expr(false));
 
-                Span end = this->expect(TokenKind::RParen, ")").span;
-                return make_own<ast::IntegerTypeExpr>(
-                    Span::merge(start, end), std::move(size)
-                );
+                Span end = TRY(this->expect(TokenKind::RParen)).span();
+                Span span { start, end };
+
+                return { make<ast::IntegerTypeExpr>(span, move(size)) };
             }
 
-            if (STR_TO_TYPE.find(name) != STR_TO_TYPE.end()) {
-                return make_own<ast::BuiltinTypeExpr>(
-                    Span::merge(start, this->current.span), STR_TO_TYPE.at(name)
-                );
+            auto iterator = STR_TO_TYPE.find(name);
+            if (iterator != STR_TO_TYPE.end()) {
+                Span span { start, m_current.span() };
+                return { make<ast::BuiltinTypeExpr>(span, iterator->second) };
             }
 
-            Path p = this->parse_path(name);
-            auto type = make_own<ast::NamedTypeExpr>(
-                Span::merge(start, this->current.span),
-                std::move(p.name), 
-                std::move(p.segments)
-            );
+            Path path = TRY(this->parse_path(name));
+            Span span { start, m_current.span() };
 
-            if (this->current == TokenKind::Lt) {
-                return make_own<ast::GenericTypeExpr>(
-                    Span::merge(start, this->current.span), std::move(type), this->parse_generic_arguments()
-                );
+            auto type = make<ast::NamedTypeExpr>(span, move(path));
+            if (m_current.is(TokenKind::Lt)) {
+                auto args = TRY(this->parse_generic_arguments());
+                span = { start, m_current.span() };
+
+                return { make<ast::GenericTypeExpr>(span, move(type), move(args)) };
             }
 
-            return type;
+            return { move(type) };
         }
         case TokenKind::Func: {
-            this->next(); this->expect(TokenKind::LParen, "(");
+            this->next();
+            TRY(this->expect(TokenKind::LParen));
 
-            std::vector<OwnPtr<ast::TypeExpr>> args;
-            while (this->current != TokenKind::RParen) {
-                args.push_back(this->parse_type());
-                if (this->current != TokenKind::Comma) {
+            ast::ExprList<ast::TypeExpr> params;
+            while (!m_current.is(TokenKind::RParen)) {
+                params.push_back(TRY(this->parse_type()));
+                if (!m_current.is(TokenKind::Comma)) {
                     break;
                 }
                 
                 this->next();
             }
 
-            Span end = this->expect(TokenKind::RParen, ")").span;
-            OwnPtr<ast::TypeExpr> ret = nullptr;
+            Span end = TRY(this->expect(TokenKind::RParen)).span();
+            OwnPtr<ast::TypeExpr> return_type = nullptr;
 
-            if (this->current == TokenKind::Arrow) {
-                end = this->next().span; ret = this->parse_type();
+            if (m_current.is(TokenKind::Arrow)) {
+                end = this->next().span();
+                return_type = TRY(this->parse_type());
             }
 
-            return make_own<ast::FunctionTypeExpr>(
-                Span::merge(start, end), std::move(args), std::move(ret)
-            );
+            Span span { start, end };
+            return { make<ast::FunctionTypeExpr>(span, move(params), move(return_type)) };
         }
-        default: ERROR(this->current.span, "Expected type");
+        default:
+            return err(m_current.span(), "Expected type");
     }
 }
+ErrorOr<ExprBlock> Parser::parse_expr_block() {
+    ast::ExprList<> block;
+    Span start = m_current.span();
 
-OwnPtr<ast::BlockExpr> Parser::parse_block() {
-    std::vector<OwnPtr<ast::Expr>> body;
-    Span start = this->current.span;
-
-    while (this->current != TokenKind::RBrace) {
-        ast::Attributes attrs = this->parse_attributes();
-        auto expr = this->statement();
+    while (!m_current.is(TokenKind::RBrace)) {
+        ast::Attributes attrs = TRY(this->parse_attributes());
+        auto expr = TRY(this->statement());
 
         if (expr) {
             if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
                 continue;
             }
 
-            expr->attributes.update(attrs);
-            body.push_back(std::move(expr));
+            expr->attributes().update(attrs);
+            block.push_back(move(expr));
         }
     }
 
-    Span end = this->expect(TokenKind::RBrace, "}").span;
-    return make_own<ast::BlockExpr>(Span::merge(start, end), std::move(body));
+    Span end = TRY(this->expect(TokenKind::RBrace)).span();
+    Span span { start, end };
+
+    return ExprBlock { move(block), span };
 }
 
-std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
-    std::vector<ast::GenericParameter> parameters;
+ParseResult<ast::BlockExpr> Parser::parse_block() {
+    auto [block, span] = TRY(this->parse_expr_block());
+    return { make<ast::BlockExpr>(span, move(block)) };
+}
 
-    this->expect(TokenKind::Lt, "<");
-    while (this->current != TokenKind::Gt) {
-        Token token = this->expect(TokenKind::Identifier, "identifier");
+ErrorOr<Vector<ast::GenericParameter>> Parser::parse_generic_parameters() {
+    Vector<ast::GenericParameter> parameters;
 
-        std::string name = token.value;
-        Span span = token.span;
+    TRY(this->expect(TokenKind::Lt, "<"));
+    while (!m_current.is(TokenKind::Gt)) {
+        Token token = TRY(this->expect(TokenKind::Identifier));
+
+        String name = token.value();
+        Span span = token.span();
 
         ast::ExprList<ast::TypeExpr> constraints;
         OwnPtr<ast::TypeExpr> default_type = nullptr;
 
-        if (this->current == TokenKind::Colon) {
+        if (m_current.is(TokenKind::Colon)) {
             this->next();
 
-            while (this->current != TokenKind::Comma && this->current != TokenKind::Gt) {
-                constraints.push_back(this->parse_type());
-                if (this->current != TokenKind::Add) {
+            auto should_continue_parsing = [](Token& token) {
+                return !token.is(TokenKind::Comma) && !token.is(TokenKind::Gt) && !token.is(TokenKind::Assign);
+            };
+
+            while (should_continue_parsing(m_current)) {
+                constraints.push_back(TRY(this->parse_type()));
+                if (!m_current.is(TokenKind::Add)) {
                     break;
                 }
 
@@ -319,711 +317,626 @@ std::vector<ast::GenericParameter> Parser::parse_generic_parameters() {
             }
         }
 
-        if (this->current == TokenKind::Assign) {
+        if (m_current.is(TokenKind::Assign)) {
             this->next();
-            default_type = this->parse_type();
+            default_type = TRY(this->parse_type());
         }
 
         parameters.push_back({
-            std::move(name),
-            std::move(constraints), 
-            std::move(default_type), 
+            move(name),
+            move(constraints), 
+            move(default_type), 
             span
         });
-        if (this->current != TokenKind::Comma) {
+
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
         this->next();
     }
 
-    this->expect(TokenKind::Gt, ">");
+    TRY(this->expect(TokenKind::Gt));
     return parameters;
 }
 
-ast::ExprList<ast::TypeExpr> Parser::parse_generic_arguments() {
+ErrorOr<ast::ExprList<ast::TypeExpr>> Parser::parse_generic_arguments() {
     ast::ExprList<ast::TypeExpr> arguments;
 
-    this->expect(TokenKind::Lt, "<");
-    while (this->current != TokenKind::Gt) {
-        arguments.push_back(this->parse_type());
-        if (this->current != TokenKind::Comma) {
+    TRY(this->expect(TokenKind::Lt));
+    while (!m_current.is(TokenKind::Gt)) {
+        arguments.push_back(TRY(this->parse_type()));
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
         this->next();
     }
 
-    this->expect(TokenKind::Gt, ">");
+    TRY(this->expect(TokenKind::Gt));
     return arguments;
 }
 
-OwnPtr<ast::TypeAliasExpr> Parser::parse_type_alias() {
-    Span start = this->current.span;
-    std::vector<ast::GenericParameter> parameters;
+ParseResult<ast::TypeAliasExpr> Parser::parse_type_alias() {
+    Span start = m_current.span();
+    Vector<ast::GenericParameter> parameters;
 
-    std::string name = this->expect(TokenKind::Identifier, "identifier").value;
-    if (this->current == TokenKind::Lt) {
-        parameters = this->parse_generic_parameters();
+    String name = TRY(this->expect(TokenKind::Identifier)).value();
+    if (m_current.is(TokenKind::Lt)) {
+        parameters = TRY(this->parse_generic_parameters());
     }
 
-    this->expect(TokenKind::Assign, "=");
+    TRY(this->expect(TokenKind::Assign));
 
-    auto type = this->parse_type();
-    Span end = this->expect(TokenKind::SemiColon, ";").span;
+    auto type = TRY(this->parse_type());
+    Span end = TRY(this->expect(TokenKind::SemiColon)).span();
 
-    return make_own<ast::TypeAliasExpr>(
-        Span::merge(start, end), std::move(name), std::move(type), std::move(parameters)
-    );
+    Span span { start, end };
+    return { make<ast::TypeAliasExpr>(span, move(name), move(type), move(parameters)) };
 }
 
-std::pair<std::vector<ast::Argument>, bool> Parser::parse_arguments() {
-    std::vector<ast::Argument> args;
+ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
+    Vector<ast::Parameter> params;
 
     bool has_kwargs = false;
     bool has_default_values = false;
     bool is_c_variadic = false;
     bool is_variadic = false;
 
-    while (this->current != TokenKind::RParen) {
-        std::string argument = this->current.value;
-        if (!this->current.is(
-            TokenKind::Mut, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis
-        )) {
-            ERROR(this->current.span, "Expected argument name, '*' or '...'");
+    while (!m_current.is(TokenKind::RParen)) {
+        if (!m_current.is(TokenKind::Mut, TokenKind::Identifier, TokenKind::Mul, TokenKind::Ellipsis)) {
+            return err(m_current.span(), "Expected parameter name, 'mut', '*', or '...'");
         }
 
-        bool is_mutable = false;
-        Span span = this->current.span;
+        u8 flags = 0;
+        Span span = m_current.span();
 
-        if (this->current == TokenKind::Ellipsis) {
-            if (is_c_variadic) {
-                ERROR(this->current.span, "Cannot have multiple variadic arguments");
-            }
+        String name;
+        switch (m_current.kind()) {
+            case TokenKind::Ellipsis: {
+                is_c_variadic = true;
+                this->next();
+            } break;
+            case TokenKind::Mut: {
+                this->next();
+                flags |= ast::Parameter::Mutable;
 
-            is_c_variadic = true;
-            this->next();
+                Token token = TRY(this->expect(TokenKind::Identifier));
 
-            break;
-        } else if (this->current == TokenKind::Mul && this->peek() == TokenKind::Identifier) {
-            if (is_variadic) {
-                ERROR(this->current.span, "Cannot have multiple variadic arguments");
-            } else if (is_c_variadic) {
-                ERROR(this->current.span, "Cannot mix `...` and `*` variadic arguments");
-            } else if (has_kwargs) {
-                ERROR(this->current.span, "Cannot have a variadic argument after `*`");
-            }
-            
-            is_variadic = true;
-
-            this->next();
-
-            argument = this->current.value;
-        } else if (this->current == TokenKind::Mul) {
-            if (has_kwargs) {
-                ERROR(this->current.span, "Only one '*' seperator is allowed in a function prototype");
-            }
-
-            has_kwargs = true;
-            this->next();
-
-            this->expect(TokenKind::Comma, ",");
-            continue;
-        } else if (this->current == TokenKind::Mut) {
-            this->next();
-            is_mutable = true;
-
-            if (this->current != TokenKind::Identifier) {
-                ERROR(this->current.span, "Expected identifier");
-            }
-
-            argument = this->current.value;
-            span = Span::merge(span, this->current.span);
+                name = token.value();
+                span = Span { span, token.span() };
+            } break;
+            case TokenKind::Identifier: {
+                name = m_current.value();
+                this->next();
+            } break;
+            default:
+                ASSERT(false);
         }
 
         OwnPtr<ast::TypeExpr> type = nullptr;
-        bool is_self = false;
-
-        bool allow_self = this->is_inside_struct || this->self_usage_allowed;
-        if (argument == "self" && allow_self && !has_kwargs) {
-            is_self = true; this->next();
+        
+        // FIXME: A function only has one `self` parameter
+        if (name == "self" && m_self_allowed) {
+            flags |= ast::Parameter::Self;
+            this->next();
         } else {
-            this->next(); this->expect(TokenKind::Colon, ":");
-            type = this->parse_type();
+            this->next();
+            TRY(this->expect(TokenKind::Colon));
+
+            type = TRY(this->parse_type());
         }
 
         OwnPtr<ast::Expr> default_value = nullptr;
-        if (this->current == TokenKind::Assign) {
+        if (m_current.is(TokenKind::Assign)) {
             has_default_values = true;
             this->next();
 
-            default_value = this->expr(false);
+            default_value = TRY(this->expr(false));
         } else {
             if (has_default_values) {
-                ERROR(this->current.span, "Cannot have non-default arguments follow default arguments");
+                return err(m_current.span(), "Every parameter following one with a default value must also have a default value");
             }
         }
 
-        if (default_value && is_variadic) {
-            ERROR(this->current.span, "Cannot have a default value for a variadic argument");
+        params.push_back({ move(name), move(type), move(default_value), flags, span });
+        if (is_c_variadic) {
+            break;
         }
-        
-        args.push_back({
-            std::move(argument), 
-            std::move(type),
-            std::move(default_value),
-            is_self, 
-            has_kwargs, 
-            is_mutable,
-            is_variadic,
-            span
-        });
 
-        // Everything after `*args` is a keyword argument since it cannot be passed in positionally
-        if (is_variadic) { has_kwargs = true; is_variadic = false; }
-
-        if (this->current != TokenKind::Comma) {
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
         this->next();
     }
 
-    this->expect(TokenKind::RParen, ")");
-    return {std::move(args), is_c_variadic};
+    TRY(this->expect(TokenKind::RParen));
+    return params;
 }
 
-OwnPtr<ast::PrototypeExpr> Parser::parse_prototype(
-    ast::ExternLinkageSpecifier linkage, bool with_name, bool is_operator
-) {
-    Span span = this->current.span;
-    std::string name;
+ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpecifier linkage, bool with_name) {
+    Span start = m_current.span();
+    String name = "<anonymous>";
 
     if (with_name) {
-        name = this->expect(TokenKind::Identifier, "function name").value;
-        this->expect(TokenKind::LParen, "(");
+        name = TRY(this->expect(TokenKind::Identifier, "function name")).value();
+        TRY(this->expect(TokenKind::LParen));
     }
 
-    auto pair = this->parse_arguments();
+    Vector<ast::Parameter> params = TRY(this->parse_function_parameters());
 
-    Span end = this->current.span;
-    OwnPtr<ast::TypeExpr> ret = nullptr;
+    Span end = m_current.span();
+    OwnPtr<ast::TypeExpr> return_type = nullptr;
 
-    if (this->current == TokenKind::Arrow) {
-        end = this->next().span; ret = this->parse_type();
+    if (m_current.is(TokenKind::Arrow)) {
+        end = this->next().span();
+        return_type = TRY(this->parse_type());
     }
 
-    return make_own<ast::PrototypeExpr>(
-        span, std::move(name), std::move(pair.first), std::move(ret), 
-        pair.second, is_operator, linkage
-    );
+    Span span { start, end };
+    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage) };
 }
 
-OwnPtr<ast::Expr> Parser::parse_function_definition(
-    ast::ExternLinkageSpecifier linkage, bool is_operator
-) {
-    Span start = this->current.span;
-    auto prototype = this->parse_prototype(linkage, true, is_operator);
-
-    if (this->current == TokenKind::SemiColon) {
-        this->next();
-        return prototype;
+ParseResult<ast::Expr> Parser::parse_function(ast::LinkageSpecifier linkage) {
+    auto decl = TRY(this->parse_function_decl(linkage, true));
+    if (m_current.is(TokenKind::SemiColon)) {
+        return { move(decl) };
     }
     
-    this->expect(TokenKind::LBrace, "{");
-    this->is_inside_function = true;
+    TRY(this->expect(TokenKind::LBrace));
+    m_in_function = true;
 
-    std::vector<OwnPtr<ast::Expr>> body;
-    while (!this->current.is(TokenKind::RBrace, TokenKind::EOS)) {
-        ast::Attributes attrs = this->parse_attributes();
-        auto expr = this->statement();
+    auto [body, _] = TRY(this->parse_expr_block());
+    m_in_function = false;
 
-        if (expr) {
-            if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
-                continue;
-            }
-
-            expr->attributes.update(attrs);
-            body.push_back(std::move(expr));
-        }
-    }
-
-    auto end = this->expect(TokenKind::RBrace, "}").span;
-    this->is_inside_function = false;
-
-    return make_own<ast::FunctionExpr>(
-        Span::merge(start, end), std::move(prototype), std::move(body)
-    );
+    return { make<ast::FunctionExpr>(decl->span(), move(decl), move(body)) };
 }
 
-OwnPtr<ast::FunctionExpr> Parser::parse_function() {
-    Span start = this->current.span;
-    auto prototype = this->parse_prototype(ast::ExternLinkageSpecifier::Unspecified, true, false);
-    
-    this->expect(TokenKind::LBrace, "{");
-    this->is_inside_function = true;
-
-    std::vector<OwnPtr<ast::Expr>> body;
-    while (!this->current.is(TokenKind::RBrace, TokenKind::EOS)) {
-        ast::Attributes attrs = this->parse_attributes();
-        auto expr = this->statement();
-
-        if (expr) {
-            expr->attributes.update(attrs);
-            body.push_back(std::move(expr));
-        }
-    }
-
-    auto end = this->expect(TokenKind::RBrace, "}").span;
-    this->is_inside_function = false;
-
-    return make_own<ast::FunctionExpr>(
-        Span::merge(start, end), std::move(prototype), std::move(body)
-    );
-}
-
-OwnPtr<ast::IfExpr> Parser::parse_if_statement() {
-    Span start = this->current.span;
-    auto condition = this->expr(false);
+ParseResult<ast::IfExpr> Parser::parse_if() {
+    Span start = m_current.span();
+    auto condition = TRY(this->expr(false));
 
     OwnPtr<ast::Expr> body;
-    if (this->current != TokenKind::LBrace) {
-        body = this->statement();
+    if (!m_current.is(TokenKind::LBrace)) {
+        body = TRY(this->statement());
     } else {
         this->next();
-        body = this->parse_block();
+        body = TRY(this->parse_block());
     }
 
-    Span end = body->span;
-    OwnPtr<ast::Expr> else_body;
-    if (this->current == TokenKind::Else) {
+    Span end = body->span();
+    OwnPtr<ast::Expr> else_body = nullptr;
+    if (m_current.is(TokenKind::Else)) {
         this->next();
-        if (this->current != TokenKind::LBrace) {
-            else_body = this->statement();
+        if (!m_current.is(TokenKind::LBrace)) {
+            else_body = TRY(this->statement());
         } else {
             this->next();
-            else_body = this->parse_block();
+            else_body = TRY(this->parse_block());
         }
 
-        end = else_body->span;
+        end = else_body->span();
     }
 
-    return make_own<ast::IfExpr>(
-        Span::merge(start, end), std::move(condition), std::move(body), std::move(else_body)
-    );
+    Span span { start, end };
+    return { make<ast::IfExpr>(span, move(condition), move(body), move(else_body)) };
 }
 
-OwnPtr<ast::StructExpr> Parser::parse_struct() {
-    Span start = this->current.span;
-    Token token = this->expect(TokenKind::Identifier, "struct name");
-    
-    std::string name = token.value;
-    Span end = token.span;
+ParseResult<ast::Expr> Parser::parse_for() {
+    ast::Ident ident = TRY(this->parse_identifier());
 
-    std::vector<ast::StructField> fields;
-    std::vector<OwnPtr<ast::Expr>> methods;
+    TRY(this->expect(TokenKind::In));
 
-    if (this->current == TokenKind::SemiColon) {
+    bool has_outer_loop = m_in_loop;
+    m_in_loop = true;
+
+    auto expr = TRY(this->expr(false));
+    if (m_current.is(TokenKind::DoubleDot)) {
         this->next();
-        return make_own<ast::StructExpr>(
-            Span::merge(start, this->current.span), std::move(name), true, std::move(fields), std::move(methods)
-        );
+
+        OwnPtr<ast::Expr> end = nullptr;
+        if (!m_current.is(TokenKind::LBrace)) {
+            end = TRY(this->expr(false));
+        }
+        
+        TRY(this->expect(TokenKind::LBrace));
+
+        auto body = TRY(this->parse_block());
+        m_in_loop = has_outer_loop;
+
+        return { make<ast::RangeForExpr>(ident.span, move(ident), move(expr), move(end), move(body)) };
     }
 
-    this->is_inside_struct = true;
+    TRY(this->expect(TokenKind::LBrace));
 
-    this->expect(TokenKind::LBrace, "{");
+    auto body = TRY(this->parse_block());
+    m_in_loop = has_outer_loop;
+
+    return { make<ast::ForExpr>(ident.span, move(ident), move(expr), move(body)) };
+}
+
+ParseResult<ast::StructExpr> Parser::parse_struct() {
+    Span start = m_current.span();
+    Token token = TRY(this->expect(TokenKind::Identifier, "struct name"));
+    
+    String name = token.value();
+    Span end = token.span();
+
+    Vector<ast::StructField> fields;
+    ast::ExprList<> members;
+
+    if (m_current.is(TokenKind::SemiColon)) {
+        this->next();
+        Span span { start, m_current.span() };
+
+        return { make<ast::StructExpr>(span, move(name), true, move(fields), move(members)) };
+    }
+
+    m_in_struct = true;
+    m_self_allowed = true;
+
+    TRY(this->expect(TokenKind::LBrace));
     u32 index = 0;
 
-    while (this->current != TokenKind::RBrace) {
-        ast::Attributes attributes = this->parse_attributes();
+    while (!m_current.is(TokenKind::RBrace)) {
+        ast::Attributes attrs = TRY(this->parse_attributes());
 
         bool is_private = false;
         bool is_readonly = false;
-        bool is_operator = false;
 
-        switch (this->current.type) {
+        switch (m_current.kind()) {
             case TokenKind::Private: is_private = true; this->next(); break;
             case TokenKind::Readonly: is_readonly = true; this->next(); break;
-            case TokenKind::Operator: is_operator = true; this->next(); break;
             default: break;
         }
 
-
-        if (this->current != TokenKind::Identifier && !this->current.is(STRUCT_ALLOWED_KEYWORDS)) {
-            ERROR(this->current.span, "Expected field name or function definition");
-        }
-
-        switch (this->current.type) {
+        switch (m_current.kind()) {
             case TokenKind::Func: {
                 this->next();
-                auto definition = this->parse_function_definition(
-                    ast::ExternLinkageSpecifier::None, is_operator
-                );
+                auto expr = TRY(this->parse_function());
 
-                // TODO: fix private 
-
-                definition->attributes.update(attributes);
-                methods.push_back(std::move(definition));
+                expr->attributes().update(attrs);
+                members.push_back(move(expr));
             } break;
             case TokenKind::Const: {
                 this->next();
-                methods.push_back(this->parse_variable_definition(true));
+                members.push_back(TRY(this->parse_variable_definition(false, true)));
             } break;
             case TokenKind::Type: {
                 this->next();
-                methods.push_back(this->parse_type_alias());
+                members.push_back(TRY(this->parse_type_alias()));
             } break;
-            default: {
-                if (index == UINT32_MAX) {
-                    ERROR(this->current.span, "Cannot define more than {0} fields inside a struct", UINT32_MAX);
-                }
-
-                std::string name = this->current.value;
+            case TokenKind::Identifier: {
+                String name = m_current.value();
                 this->next();
 
-                this->expect(TokenKind::Colon, ":");
+                TRY(this->expect(TokenKind::Colon));
                 fields.push_back({
-                    std::move(name), 
-                    this->parse_type(), 
+                    move(name), 
+                    TRY(this->parse_type()), 
                     index,
                     is_private, 
                     is_readonly
                 });
 
-                this->expect(TokenKind::SemiColon, ";");
+                TRY(this->expect(TokenKind::SemiColon));
                 index++;
-            }
+            } break;
+            default:
+                return err(m_current.span(), "Expected function definition, constant, type alias, or field");
         }
     }
 
-    this->expect(TokenKind::RBrace, "}");
-    this->is_inside_struct = false;
+    TRY(this->expect(TokenKind::RBrace));
 
-    return make_own<ast::StructExpr>(
-        Span::merge(start, end), std::move(name), false, std::move(fields), std::move(methods)
-    );    
+    m_self_allowed = false;
+    m_in_struct = false;
+
+    Span span { start, end };
+    return { make<ast::StructExpr>(span, move(name), false, move(fields), move(members)) };   
 }
 
-OwnPtr<ast::Expr> Parser::parse_variable_definition(bool is_const) {
-    Span span = this->current.span;
+ErrorOr<ast::Ident> Parser::parse_identifier() {
+    bool is_mutable = this->try_expect(TokenKind::Mut).has_value();
+    Token token = TRY(this->expect(TokenKind::Identifier, "identifier"));
+
+    return ast::Ident { token.value(), is_mutable, token.span() };
+}
+
+ParseResult<ast::Expr> Parser::parse_single_variable_definition(bool is_const) {
+    Span span = m_current.span();
 
     OwnPtr<ast::TypeExpr> type = nullptr;
-    std::vector<ast::Ident> names;
+    ast::Ident ident = TRY(this->parse_identifier());
 
-    bool has_consume_rest = false;
-    bool is_mutable = false;
+    if (is_const && ident.is_mutable) {
+        return err(m_current.span(), "Constants cannot be mutable");
+    }
 
-    if (is_const && this->current == TokenKind::Mut) {
-        ERROR(this->current.span, "Cannot use 'mut' with 'const'");
-    } else if (!is_const && this->current == TokenKind::Mut) {
-        is_mutable = true;
+    if (m_current.is(TokenKind::Colon)) {
         this->next();
+        type = TRY(this->parse_type());
     }
 
-    if (this->current == TokenKind::LParen) {
-        this->next();
-
-        bool mut_prefixed = is_mutable;
-        while (this->current != TokenKind::RParen) {
-            if (mut_prefixed && this->current == TokenKind::Mut) {
-                NOTE(this->current.span, "Redundant 'mut'");
-            }
-
-            if (mut_prefixed) {
-                is_mutable = true;
-            }
-            
-            if (this->current == TokenKind::Mut) {
-                is_mutable = true;
-                this->next();
-            }
-
-            if (this->current == TokenKind::Mul) {
-                if (has_consume_rest) {
-                    ERROR(this->current.span, "Cannot consume rest of the arguments more than once");
-                }
-
-                this->next();
-                has_consume_rest = true;
-            }
-
-            Token token = this->expect(TokenKind::Identifier, "variable name");
-            names.push_back({token.value, is_mutable, token.span});
-
-            if (this->current != TokenKind::Comma) {
-                break;
-            }
-
-            this->next();
-            is_mutable = false;
-        }
-
-        this->expect(TokenKind::RParen, ")");
-        if (names.empty()) {
-            ERROR(span, "Expected atleast a single variable name");
-        }
-    } else {
-        Token token = this->expect(TokenKind::Identifier, "variable name");
-        names.push_back({std::move(token.value), is_mutable, Span::merge(span, token.span)});
-    }
-
-    if (this->current == TokenKind::Colon) {
-        this->next(); type = this->parse_type();
-    }
-    
     OwnPtr<ast::Expr> expr = nullptr;
-    Span end;
+    Span end = {};
 
-    if (this->current != TokenKind::Assign) {
-        end = this->expect(TokenKind::SemiColon, ";").span;
-
+    if (!m_current.is(TokenKind::Assign)) {
         if (!type) {
-            ERROR(end, "Un-initialized variables must have an inferred type");
+            return err(m_current.span(), "Un-initialized variables must have a specified type");
         }
+
+        end = TRY(this->expect(TokenKind::SemiColon)).span();
     } else {
         this->next();
-        expr = this->expr(false);
+        expr = TRY(this->expr(false));
         
-        this->expect(TokenKind::SemiColon, ";");
-        end = expr->span;
-    };
-
-    if (names.size() > 1 && !expr) {
-        ERROR(expr->span, "Expected an expression when using multiple named assignments");
+        TRY(this->expect(TokenKind::SemiColon));
+        end = expr->span();
     }
-    
+
     if (is_const) {
         if (!expr) {
-            ERROR(this->current.span, "Constants must have an initializer");
+            return err(m_current.span(), "Constants must have an initializer");
         }
 
-        return make_own<ast::ConstExpr>(
-            span, std::move(names[0].value), std::move(type), std::move(expr)
-        );
-    } else {
-        return make_own<ast::VariableAssignmentExpr>(
-            span, std::move(names), std::move(type), std::move(expr), false
-        );
+        return { make<ast::ConstExpr>(span, move(ident.value), move(type), move(expr)) };
     }
+
+    return { make<ast::AssignmentExpr>(span, move(ident), move(type), move(expr)) };
 }
 
-OwnPtr<ast::Expr> Parser::parse_extern(ast::ExternLinkageSpecifier linkage) {
-    OwnPtr<ast::Expr> definition;
-    Span start = this->current.span;
-    
-    ast::Attributes attrs = this->parse_attributes();
-    if (this->current == TokenKind::Identifier) {
-        std::string name = this->current.value;
-        Span span = this->current.span;
+ParseResult<ast::Expr> Parser::parse_tuple_variable_definition() {
+    Span span = m_current.span();
 
-        this->next();
+    OwnPtr<ast::TypeExpr> type = nullptr;
+    Vector<ast::Ident> idents;
 
-        this->expect(TokenKind::Colon, ":");
-        auto type = this->parse_type();
+    bool all_mutable = this->try_expect(TokenKind::Mut).has_value();
 
-        OwnPtr<ast::Expr> expr;
-        if (this->current == TokenKind::Assign) {
-            expr = this->expr(false);
-        }
+    TRY(this->expect(TokenKind::LParen));
+    while (!m_current.is(TokenKind::RParen)) {
+        // if (all_mutable && m_current == TokenKind::Mut) {
+        //     this->next();
+        //     NOTE(m_current.span, "Redundant 'mut'");
+        // }
 
-        Span end = this->expect(TokenKind::SemiColon, ";").span;
-
-        std::vector<ast::Ident> names = {{std::move(name), true, span},};
-        definition = make_own<ast::VariableAssignmentExpr>(
-            Span::merge(start, end), std::move(names), std::move(type), std::move(expr), true
-        );
-    } else {
-        if (this->current != TokenKind::Func) {
-            ERROR(this->current.span, "Expected function");
+        ast::Ident ident = TRY(this->parse_identifier());
+        ident.is_mutable = all_mutable || ident.is_mutable;
+        
+        idents.push_back(move(ident));
+        if (!m_current.is(TokenKind::Comma)) {
+            break;
         }
 
         this->next();
-        definition = this->parse_function_definition(linkage);
     }
 
-    definition->attributes.update(attrs);
+    if (m_current.is(TokenKind::Colon)) {
+        this->next();
+        type = TRY(this->parse_type());
+    }
+
+    OwnPtr<ast::Expr> expr = nullptr;
+    Span end = {};
+
+    if (!m_current.is(TokenKind::Assign)) {
+        if (!type) {
+            return err(m_current.span(), "Un-initialized variables must have a specified type");
+        }
+
+        end = TRY(this->expect(TokenKind::SemiColon)).span();
+    } else {
+        this->next();
+        expr = TRY(this->expr(false));
+        
+        TRY(this->expect(TokenKind::SemiColon));
+        end = expr->span();
+    }
+
+    return { make<ast::TupleAssignmentExpr>(span, move(idents), move(type), move(expr)) };
+}
+
+ParseResult<ast::Expr> Parser::parse_variable_definition(bool allow_tuple, bool is_const) {
+    if (allow_tuple && m_current.is(TokenKind::LParen)) {
+        return this->parse_tuple_variable_definition();
+    }
+
+    return this->parse_single_variable_definition(is_const);
+}
+
+ParseResult<ast::Expr> Parser::parse_extern(ast::LinkageSpecifier linkage) {
+    OwnPtr<ast::Expr> definition;
+    
+    ast::Attributes attrs = TRY(this->parse_attributes());
+    if (m_current.is(TokenKind::Let)) {
+        this->next();
+        definition = TRY(this->parse_single_variable_definition(false));
+    } else {
+        if (!m_current.is(TokenKind::Func)) {
+            return err(m_current.span(), "Expected function definition or variable declaration");
+        }
+
+        this->next();
+        definition = TRY(this->parse_function(linkage));
+    }
+
+    definition->attributes().update(attrs);
     return definition;
 }
 
-OwnPtr<ast::Expr> Parser::parse_extern_block() {
-    Span start = this->current.span;
-    ast::ExternLinkageSpecifier linkage = ast::ExternLinkageSpecifier::Unspecified;
+ParseResult<ast::Expr> Parser::parse_extern_block() {
+    Span start = m_current.span();
+    ast::LinkageSpecifier linkage = ast::LinkageSpecifier::Unspecified;
 
-    if (this->current == TokenKind::String) {
-        if (this->current.value != "C") {
-            ERROR(this->current.span, "Unknown extern linkage specifier");
+    if (m_current.is(TokenKind::String)) {
+        if (m_current.value() != "C") {
+            return err(m_current.span(), "Unknown linkage specifier '{0}'", m_current.value());
         }
 
         this->next();
-        linkage = ast::ExternLinkageSpecifier::C;
+        linkage = ast::LinkageSpecifier::C;
     }
 
-    // TODO: Allow const/let defitnitions
-    if (this->current == TokenKind::LBrace) {
-        std::vector<OwnPtr<ast::Expr>> definitions;
+    if (m_current.is(TokenKind::LBrace)) {
+        ast::ExprList<> definitions;
         this->next();
 
-        while (this->current != TokenKind::RBrace) {
-            auto def = this->parse_extern(linkage);
-            if (this->handle_expr_attributes(def->attributes) != AttributeHandler::Ok) {
+        while (!m_current.is(TokenKind::RBrace)) {
+            auto expr = TRY(this->parse_extern(linkage));
+            if (this->handle_expr_attributes(expr->attributes()) != AttributeHandler::Ok) {
                 continue;
             }
 
-            definitions.push_back(std::move(def));
+            definitions.push_back(move(expr));
         }
 
-        Span end = this->expect(TokenKind::RBrace, "}").span;
-        return make_own<ast::ExternBlockExpr>(Span::merge(start, end), std::move(definitions));
+        Span end = TRY(this->expect(TokenKind::RBrace)).span();
+        Span span = { start, end };
+
+        return { make<ast::ExternBlockExpr>(span, move(definitions)) };
     }
 
     return this->parse_extern(linkage);
 }
 
-OwnPtr<ast::EnumExpr> Parser::parse_enum() {
-    Span start = this->current.span;
-    std::string name = this->expect(TokenKind::Identifier, "enum name").value;
+ParseResult<ast::EnumExpr> Parser::parse_enum() {
+    Span start = m_current.span();
+    String name = TRY(this->expect(TokenKind::Identifier, "enum name")).value();
 
-    OwnPtr<ast::TypeExpr> type;
-    if (this->current == TokenKind::Colon) {
-        this->next(); type = this->parse_type();
+    OwnPtr<ast::TypeExpr> type = nullptr;
+    if (m_current.is(TokenKind::Colon)) {
+        this->next(); 
+        type = TRY(this->parse_type());
     }
 
-    this->expect(TokenKind::LBrace, "{");
+    TRY(this->expect(TokenKind::LBrace));
 
-    std::vector<ast::EnumField> fields;
-    while (this->current != TokenKind::RBrace) {
-        std::string field = this->expect(TokenKind::Identifier, "enum field name").value;
+    Vector<ast::EnumField> fields;
+    while (!m_current.is(TokenKind::RBrace)) {
+        String field = TRY(this->expect(TokenKind::Identifier, "enum field name")).value();
         OwnPtr<ast::Expr> value = nullptr;
 
-        if (this->current == TokenKind::Assign) {
+        if (m_current.is(TokenKind::Assign)) {
             this->next();
-            value = this->expr(false);
+            value = TRY(this->expr(false));
         }
 
-        fields.push_back({std::move(field), std::move(value)});
-        if (this->current != TokenKind::Comma) {
+        fields.push_back({ move(field), move(value) });
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
         this->next();
     }
 
-    Span end = this->expect(TokenKind::RBrace, "}").span;
-    return make_own<ast::EnumExpr>(
-        Span::merge(start, end), std::move(name), std::move(type), std::move(fields)
-    );
+    Span end = TRY(this->expect(TokenKind::RBrace)).span();
+    Span span { start, end };
+
+    return { make<ast::EnumExpr>(span, move(name), move(type), move(fields)) };
 }
 
-OwnPtr<ast::Expr> Parser::parse_anonymous_function() {
-    auto pair = this->parse_arguments();
+ParseResult<ast::Expr> Parser::parse_anonymous_function() {
+    Vector<ast::Parameter> params = TRY(this->parse_function_parameters());
+    OwnPtr<ast::TypeExpr> return_type = nullptr;
 
-    OwnPtr<ast::TypeExpr> ret = nullptr;
-    if (this->current == TokenKind::Colon) {
+    if (m_current.is(TokenKind::Colon)) {
         this->next();
-        ret = this->parse_type();
+        return_type = TRY(this->parse_type());
     }
 
-    this->expect(TokenKind::DoubleArrow, "=>");
+    TRY(this->expect(TokenKind::FatArrow));
 
-    std::vector<OwnPtr<ast::Expr>> body;
-    body.push_back(this->expr(false));
-    
-    auto prototype = make_own<ast::PrototypeExpr>(
-        this->current.span,
-        "",
-        std::move(pair.first), 
-        std::move(ret), 
-        pair.second,
-        false,
-        ast::ExternLinkageSpecifier::None
-    );
-    
-    return make_own<ast::FunctionExpr>(
-        Span::merge(prototype->span, this->current.span), std::move(prototype), std::move(body)
-    );
+    ast::ExprList<> body;
+    body.push_back(TRY(this->expr(false)));
+
+    Span start = params.front().span;
+    Span end = params.back().span;
+
+    Span span = { start, end };
+    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), ast::LinkageSpecifier::None);
+
+    return { make<ast::FunctionExpr>(span, move(decl), move(body)) };
 }
 
-OwnPtr<ast::CallExpr> Parser::parse_call(Span start, OwnPtr<ast::Expr> callee) {
-    std::vector<OwnPtr<ast::Expr>> args;
-    std::map<std::string, OwnPtr<ast::Expr>> kwargs;
+ParseResult<ast::CallExpr> Parser::parse_call(OwnPtr<ast::Expr> callee) {
+    ast::ExprList<> args;
+    HashMap<String, OwnPtr<ast::Expr>> kwargs;
 
     bool has_kwargs = false;
-    while (this->current != TokenKind::RParen) {
-        if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
-            std::string name = this->current.value;
-            this->next(); this->next();
+    while (!m_current.is(TokenKind::RParen)) {
+        if (m_current.is(TokenKind::Identifier) && this->peek().is(TokenKind::Colon)) {
+            String name = m_current.value();
+            this->skip(2);
 
-            auto value = this->expr(false);
-            kwargs[name] = std::move(value);
-
-            has_kwargs = true;
+            auto expr = TRY(this->expr(false));
+            kwargs[name] = move(expr);
         } else {
             if (has_kwargs) {
-                ERROR(this->current.span, "Positional arguments must come before keyword arguments");
+                return err(m_current.span(), "Positional arguments must come before keyword arguments");
             }
 
-            auto value = this->expr(false);
-            args.push_back(std::move(value));
+            auto expr = TRY(this->expr(false));
+            args.push_back(move(expr));
         }
 
-        if (this->current != TokenKind::Comma) {
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
         this->next();
     }
 
-    Span end = this->expect(TokenKind::RParen, ")").span;
-    return make_own<ast::CallExpr>(
-        Span::merge(start, end), std::move(callee), std::move(args), std::move(kwargs)
-    );
+    Span end = TRY(this->expect(TokenKind::RParen)).span();
+    Span span = { callee->span(), end };
+
+    return { make<ast::CallExpr>(span, move(callee), move(args), move(kwargs)) };
 }
 
-OwnPtr<ast::MatchExpr> Parser::parse_match_expr() {
-    auto value = this->expr(false);
-    this->expect(TokenKind::LBrace, "{");
+ParseResult<ast::MatchExpr> Parser::parse_match() {
+    auto value = TRY(this->expr(false));
+    TRY(this->expect(TokenKind::LBrace));
 
-    std::vector<ast::MatchArm> arms;
+    Vector<ast::MatchArm> arms;
     bool has_wildcard = false;
 
-    size_t i = 0;
-    while (this->current != TokenKind::RBrace) {
+    size_t index = 0;
+    while (!m_current.is(TokenKind::RBrace)) {
         ast::MatchPattern pattern;
-        pattern.is_wildcard = false;
 
-        if (this->current == TokenKind::Else) {
+        if (m_current.is(TokenKind::Else)) {
             if (has_wildcard) {
-                ERROR(this->current.span, "Cannot have multiple wildcard match arms");
+                return err(m_current.span(), "Wildcard pattern already exists");
             }
 
             pattern.is_wildcard = true;
-            pattern.span = this->current.span;
+            pattern.span = m_current.span();
 
             has_wildcard = true;
 
             this->next();
-        } else if (this->current == TokenKind::If) {
+        } else if (m_current.is(TokenKind::If)) {
             this->next();
 
-            auto expr = this->expr(false);
-            Span span = expr->span;
+            auto expr = TRY(this->expr(false));
+            Span span = expr->span();
 
-            pattern.values.push_back(std::move(expr));
+            pattern.values.push_back(move(expr));
             pattern.is_conditional = true;
 
             pattern.span = span;
         } else {
-            auto expr = this->expr(false);
-            Span span = expr->span;
+            auto expr = TRY(this->expr(false));
+            Span span = expr->span();
 
-            pattern.values.push_back(std::move(expr));
-            while (this->current != TokenKind::DoubleArrow) {
-                expr = this->expr(false);
-                span = Span::merge(span, expr->span);
+            pattern.values.push_back(move(expr));
+            while (!m_current.is(TokenKind::FatArrow)) {
+                expr = TRY(this->expr(false));
+                span = { span, expr->span() };
 
-                pattern.values.push_back(std::move(expr));
-                if (this->current != TokenKind::BinaryOr) {
+                pattern.values.push_back(move(expr));
+                if (!m_current.is(TokenKind::BinaryOr)) {
                     break;
                 }
 
@@ -1033,105 +946,131 @@ OwnPtr<ast::MatchExpr> Parser::parse_match_expr() {
             pattern.span = span;
         }
 
-        this->expect(TokenKind::DoubleArrow, "=>");
-        auto body = this->expr(false);
+        TRY(this->expect(TokenKind::FatArrow));
+        auto body = TRY(this->expr(false));
 
-        arms.push_back({std::move(pattern), std::move(body), i});
-        if (this->current != TokenKind::Comma) {
+        arms.push_back({ move(pattern), move(body), index });
+        if (!m_current.is(TokenKind::Comma)) {
             break;
         }
 
-        i++;
+        index++;
         this->next();
     }
 
-    this->expect(TokenKind::RBrace, "}");
-    return make_own<ast::MatchExpr>(value->span, std::move(value), std::move(arms));
+    TRY(this->expect(TokenKind::RBrace));
+    return { make<ast::MatchExpr>(value->span(), move(value), move(arms)) };
 }
 
-Path Parser::parse_path(llvm::Optional<std::string> name) {
-    Path p = {
-        .name = name ? *name : this->expect(TokenKind::Identifier, "identifier").value,
-        .segments = {},
-    };
+ParseResult<ast::ImplExpr> Parser::parse_impl() {
+    auto type = TRY(this->parse_type());
+    TRY(this->expect(TokenKind::LBrace));
 
-    while (this->current == TokenKind::DoubleColon) {
+    ast::ExprList<> body;
+    m_self_allowed = true;
+
+    while (!m_current.is(TokenKind::RBrace)) {
+        // FIXME: Handle attributes
+        // FIXME: Should we allow definitions other than functions?
+        if (!m_current.is(TokenKind::Func)) {
+            return err(m_current.span(), "Expected function definition");
+        }
+
+        switch (m_current.kind()) {
+            case TokenKind::Func:
+                body.push_back(TRY(this->parse_function()));
+                break;
+            default:
+                ASSERT(false);
+        }
+    }
+
+    return { make<ast::ImplExpr>(type->span(), move(type), move(body)) };
+}
+
+ErrorOr<Path> Parser::parse_path(Optional<String> name) {
+    if (!name.has_value()) {
+        name = TRY(this->expect(TokenKind::Identifier)).value();
+    }
+
+    Path path = { move(*name), {} };
+    while (m_current.is(TokenKind::DoubleColon)) {
         this->next();
-        p.segments.push_back(this->expect(TokenKind::Identifier, "identifier").value);
+
+        String segment = TRY(this->expect(TokenKind::Identifier)).value();
+        path.segments.push_back(move(segment));
     }
 
-    if (!p.segments.empty()) {
-        std::string back = p.segments.back();
-        p.segments.pop_back();
+    if (!path.segments.empty()) {
+        String back = path.segments.back();
+        path.segments.pop_back();
 
-        p.segments.push_back(p.name);
-        p.name = back;
+        path.segments.push_back(path.name);
+        path.name = back;
     }
 
-    return p;
+    return path;
 }
 
-std::vector<OwnPtr<ast::Expr>> Parser::parse() {
+ErrorOr<ast::ExprList<>> Parser::parse() {
     return this->statements();
 }
 
-std::vector<OwnPtr<ast::Expr>> Parser::statements() {
-    std::vector<OwnPtr<ast::Expr>> statements;
+ErrorOr<ast::ExprList<>> Parser::statements() {
+    ast::ExprList<> statements;
 
-    while (this->current != TokenKind::EOS) {
-        ast::Attributes attrs = this->parse_attributes();
-        auto expr = this->statement();
+    while (!m_current.is(TokenKind::EOS)) {
+        ast::Attributes attrs = TRY(this->parse_attributes());
+        auto expr = TRY(this->statement());
 
         if (expr) {
             if (this->handle_expr_attributes(attrs) != AttributeHandler::Ok) {
                 continue;
             }
 
-            expr->attributes.update(attrs);
-            statements.push_back(std::move(expr));
+            expr->attributes().update(attrs);
+            statements.push_back(move(expr));
         }
     }
 
     return statements;
 }
 
-OwnPtr<ast::Expr> Parser::statement() {
-    switch (this->current.type) {
+ParseResult<ast::Expr> Parser::statement() {
+    switch (m_current.kind()) {
         case TokenKind::Extern: {
             this->next();
             return this->parse_extern_block();
         } 
         case TokenKind::Func: {
             this->next();
-            return this->parse_function_definition();
+            return this->parse_function();
         }
         case TokenKind::Return: {
-            if (!this->is_inside_function) {
-                ERROR(this->current.span, "Return statement outside of function");
+            if (!m_in_function) {
+                return err(m_current.span(), "Return statement outside of function");
             }
 
-            Span start = this->current.span;
+            Span start = m_current.span();
             this->next();
 
-            if (this->current == TokenKind::SemiColon) {
-                Span end = this->current.span;
-
-                this->next();
-                return make_own<ast::ReturnExpr>(Span::merge(start, end), nullptr);
+            OwnPtr<ast::Expr> expr = nullptr;
+            if (!m_current.is(TokenKind::SemiColon)) {
+                expr = TRY(this->expr(false));
             }
 
-            auto expr = this->expr(false);
+            Span end = TRY(this->expect(TokenKind::SemiColon)).span();
+            Span span = { start, end };
 
-            Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return make_own<ast::ReturnExpr>(Span::merge(start, end), std::move(expr));
+            return { make<ast::ReturnExpr>(span, move(expr)) };
         } 
         case TokenKind::If: {
-            if (!this->is_inside_function) {
-                ERROR(this->current.span, "If statement outside of function");
+            if (!m_in_function) {
+                return err(m_current.span(), "If statement outside of function");
             }
 
             this->next();
-            return this->parse_if_statement();
+            return this->parse_if();
         } 
         case TokenKind::Let: {
             this->next();
@@ -1150,265 +1089,208 @@ OwnPtr<ast::Expr> Parser::statement() {
             return this->parse_type_alias();
         }
         case TokenKind::While: {
-            bool has_outer_loop = this->is_inside_loop;
-            Span start = this->current.span;
+            bool has_outer_loop = m_in_loop;
+            Span start = m_current.span();
 
             this->next();
-            auto condition = this->expr(false);
+            auto condition = TRY(this->expr(false));
 
-            this->expect(TokenKind::LBrace, "{");
+            TRY(this->expect(TokenKind::LBrace));
 
-            this->is_inside_loop = true;
-            auto body = this->parse_block();
+            m_in_loop = true;
+            auto body = TRY(this->parse_block());
 
-            this->is_inside_loop = has_outer_loop;
-            return make_own<ast::WhileExpr>(Span::merge(start, body->span), std::move(condition), std::move(body));
+            m_in_loop = has_outer_loop;
+            Span span = { start, condition->span() };
+
+            return { make<ast::WhileExpr>(span, move(condition), move(body)) };
         }
         case TokenKind::Break: {
-            if (!this->is_inside_loop) {
-                ERROR(this->current.span, "Break statement outside of loop");
+            if (!m_in_loop) {
+                return err(m_current.span(), "Break statement outside of loop");
             }
 
-            Span start = this->current.span;
+            Span span = m_current.span();
             this->next();
 
-            Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return make_own<ast::BreakExpr>(Span::merge(start, end));
+            TRY(this->expect(TokenKind::SemiColon));
+            return { make<ast::BreakExpr>(span) };
         } 
         case TokenKind::Continue: {
-            if (!this->is_inside_loop) {
-                ERROR(this->current.span, "Continue statement outside of loop");
+            if (!m_in_loop) {
+                return err(m_current.span(), "Continue statement outside of loop");
             }
 
-            Span start = this->current.span;
+            Span span = m_current.span();
             this->next();
 
-            Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return make_own<ast::ContinueExpr>(Span::merge(start, end));
+            TRY(this->expect(TokenKind::SemiColon));
+            return { make<ast::ContinueExpr>(span) };
         } 
         case TokenKind::Using: {
-            Span start = this->current.span;
+            Span start = m_current.span();
             this->next();
 
-            std::vector<std::string> members;
-            if (this->current != TokenKind::LParen) {
-                members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
+            Vector<String> symbols;
+
+            if (!m_current.is(TokenKind::LParen)) {
+                String symbol = TRY(this->expect(TokenKind::Identifier)).value();
+                symbols.push_back(move(symbol));
             } else {
                 this->next();
-                while (this->current != TokenKind::RParen) {
-                    members.push_back(this->expect(TokenKind::Identifier, "identifier").value);
-                    if (this->current != TokenKind::Comma) {
+                while (!m_current.is(TokenKind::RParen)) {
+                    String symbol = TRY(this->expect(TokenKind::Identifier)).value();
+                    symbols.push_back(move(symbol));
+
+                    if (!m_current.is(TokenKind::Comma)) {
                         break;
                     }
                     this->next();
                 }
 
-                this->expect(TokenKind::RParen, ")");
+                TRY(this->expect(TokenKind::RParen));
             }
 
-            if (this->current != TokenKind::From) {
-                ERROR(this->current.span, "Expected 'from' keyword.");
-            }
+            TRY(this->expect(TokenKind::From));
 
             this->next();
-            auto parent = this->expr();
+            auto parent = TRY(this->expr());
 
-            return make_own<ast::UsingExpr>(
-                Span::merge(start, this->current.span), std::move(members), std::move(parent)
-            );
+            Span span = { start, parent->span() };
+            return { make<ast::UsingExpr>(span, move(parent), move(symbols)) };
         } 
         case TokenKind::Defer: {
-            if (!this->is_inside_function) {
-                ERROR(this->current.span, "Defer statement outside of function");
+            if (!m_in_function) {
+                return err(m_current.span(), "Defer statement outside of function");
             }
 
-            Span start = this->current.span;
+            Span span = m_current.span();
             this->next();
 
-            auto expr = this->expr();
-            return make_own<ast::DeferExpr>(Span::merge(start, this->current.span), std::move(expr));
+            auto expr = TRY(this->expr());
+            return { make<ast::DeferExpr>(span, move(expr)) };
         } 
         case TokenKind::Enum: {
             this->next();
             return this->parse_enum();
         } 
         case TokenKind::Import: {
-            Span start = this->current.span;
+            Span start = m_current.span();
             this->next();
 
             bool is_relative = false;
-            if (this->current == TokenKind::DoubleColon) {
+            if (m_current.is(TokenKind::DoubleColon)) {
                 is_relative = true;
                 this->next();
             }
 
-            std::string name = this->expect(TokenKind::Identifier, "module name").value;
+            Path path = TRY(this->parse_path());
             bool is_wildcard = false;
 
-            while (this->current == TokenKind::DoubleColon) {
+            if (m_current.is(TokenKind::Mul)) {
+                is_wildcard = true;
                 this->next();
-
-                if (this->current == TokenKind::Mul) {
-                    is_wildcard = true;
-                    this->next();
-
-                    break;
-                }
-
-                name += FORMAT("::{0}", this->expect(TokenKind::Identifier, "module name").value);
             }
 
-            Span end = this->expect(TokenKind::SemiColon, ";").span;
-            return make_own<ast::ImportExpr>(Span::merge(start, end), std::move(name), is_wildcard, is_relative);
+            Span end = TRY(this->expect(TokenKind::SemiColon)).span();
+            Span span = { start, end };
+            
+            // FIXME: Rather than an ImportExpr, we should just resolve the everything here and return ModuleExpr
+            return { make<ast::ImportExpr>(span, move(path), is_relative, is_wildcard) };
         }
         case TokenKind::Module: {
             this->next();
-            std::string name = this->expect(TokenKind::Identifier, "module name").value;
 
-            Span start = this->expect(TokenKind::LBrace, "{").span;
-            std::vector<OwnPtr<ast::Expr>> body;
+            Token token = TRY(this->expect(TokenKind::Identifier));
 
-            while (this->current != TokenKind::RBrace) {
-                body.push_back(this->statement());
-            }
+            String name = token.value();
+            Span span = token.span();
 
-            Span end = this->expect(TokenKind::RBrace, "}").span;
-            return make_own<ast::ModuleExpr>(
-                Span::merge(start, end), std::move(name), std::move(body)
-            );
+            TRY(this->expect(TokenKind::LBrace));
+            auto [body, _] = TRY(this->parse_expr_block());
+
+            return { make<ast::ModuleExpr>(span, move(name), move(body)) };
         }
         case TokenKind::For: {
-            Span start = this->current.span;
             this->next();
-
-            bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
-
-            Token token = this->expect(TokenKind::Identifier, "identifier");
-            ast::Ident ident = { std::move(token.value), is_mutable, token.span };
-
-            this->expect(TokenKind::In, "in");
-
-            bool outer = this->is_inside_loop;
-            this->is_inside_loop = true;
-
-            auto expr = this->expr(false);
-
-            if (this->current == TokenKind::DoubleDot) {
-                this->next();
-
-                OwnPtr<ast::Expr> end = nullptr;
-                if (this->current != TokenKind::LBrace) {
-                    end = this->expr(false);
-                }
-                
-                this->expect(TokenKind::LBrace, "{");
-
-                auto body = this->parse_block();
-                this->is_inside_loop = outer;
-
-                return make_own<ast::RangeForExpr>(
-                    Span::merge(start, body->span), std::move(ident), std::move(expr), std::move(end), std::move(body)
-                );
-            }
-
-            this->expect(TokenKind::LBrace, "{");
-
-            auto body = this->parse_block();
-            this->is_inside_loop = outer;
-
-            return make_own<ast::ForExpr>(
-                Span::merge(start, body->span), std::move(ident), std::move(expr), std::move(body)
-            );
+            return this->parse_for();
         } 
         case TokenKind::StaticAssert: {
-            Span start = this->current.span;
-            this->next(); this->expect(TokenKind::LParen, "(");
-
-            auto expr = this->expr(false);
-            std::string message;
-            if (this->current == TokenKind::Comma) {
-                this->next(); message = this->expect(TokenKind::String, "string").value;
-            }
-
-            this->expect(TokenKind::RParen, ")"); 
-            Span end = this->expect(TokenKind::SemiColon, ";").span;
-                
-            return make_own<ast::StaticAssertExpr>(Span::merge(start, end), std::move(expr), std::move(message));
-        }
-        case TokenKind::Impl: {
-            Span start = this->current.span;
+            Span span = m_current.span();
             this->next();
 
-            auto type = this->parse_type();
-            this->expect(TokenKind::LBrace, "{");
+            TRY(this->expect(TokenKind::LParen));
+            auto expr = TRY(this->expr(false));
 
-            ast::ExprList<ast::FunctionExpr> body;
-            this->self_usage_allowed = true;
-
-            while (this->current != TokenKind::RBrace) {
-                this->expect(TokenKind::Func, "func");
-                body.push_back(this->parse_function());
+            String message = {};
+            if (m_current.is(TokenKind::Comma)) {
+                this->next();
+                message = TRY(this->expect(TokenKind::String)).value();
             }
 
-            Span end = this->expect(TokenKind::RBrace, "}").span;
-            return make_own<ast::ImplExpr>(
-                Span::merge(start, end), std::move(type), std::move(body)
-            );
+            TRY(this->expect_and(TokenKind::RParen, TokenKind::SemiColon));
+            return { make<ast::StaticAssertExpr>(span, move(expr), move(message)) };
+        }
+        case TokenKind::Impl: {
+            this->next();
+            return this->parse_impl();
+
         }
         case TokenKind::SemiColon:
             this->next();
-            return nullptr;
+            return this->statement();
         default:
             return this->expr();
     }
 
-    ERROR(this->current.span, "Unreachable");
-    return nullptr;
+    // Should be unreachable
+    return err(m_current.span(), "Expected statement");
 }
 
-ast::Attributes Parser::parse_attributes() {
+ErrorOr<ast::Attributes> Parser::parse_attributes() {
     ast::Attributes attrs;
-    if (this->current == TokenKind::Not && this->peek() == TokenKind::LBracket) {
-        this->next(); this->next();
-        
-        while (this->current != TokenKind::RBracket) {
-            Token token = this->expect(TokenKind::Identifier, "attribute name");
-            if (!this->is_valid_attribute(token.value)) {
-                ERROR(token.span, "Unknown attribute '{0}'", token.value);
+    if (m_current.is(TokenKind::Not) && this->peek().is(TokenKind::LBracket)) {
+        this->skip(2);
+
+        while (!m_current.is(TokenKind::RBracket)) {
+            Token token = TRY(this->expect(TokenKind::Identifier));
+            if (!this->is_valid_attribute(token.value())) {
+                return err(token.span(), "Unknown attribute '{0}'", token.value());
             }
 
-            auto& handler = this->attributes.at(token.value);
-            attrs.add(handler(*this));
+            auto& handler = m_attributes.at(token.value());
+            attrs.add(TRY(handler(*this)));
 
-            if (this->current != TokenKind::Comma) {
-                break;
+            if (m_current.is(TokenKind::Comma)) {
+                this->next();
             }
-
-            this->next();
         }
-
-        this->expect(TokenKind::RBracket, "]");
+        
+        TRY(this->expect(TokenKind::RBracket));
     }
 
     return attrs;
 }
 
-OwnPtr<ast::Expr> Parser::expr(bool semicolon) {
-    auto expr = this->binary(0, this->unary());
-    if (semicolon) this->end();
+ParseResult<ast::Expr> Parser::expr(bool enforce_semicolon) {
+    auto expr = TRY(this->binary(0, TRY(this->unary())));
+    if (enforce_semicolon) {
+        TRY(this->expect(TokenKind::SemiColon));
+    }
 
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
+ParseResult<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
     while (true) {
-        i8 precedence = this->current.precedence();
+        i8 precedence = m_current.precedence();
         if (precedence < prec) {
             return left;
         }
 
-        TokenKind kind = this->current.type;
-        if (kind == TokenKind::Gt && this->peek() == TokenKind::Gt) {
+        TokenKind kind = m_current.kind();
+        // Special case for `>>` operator
+        if (kind == TokenKind::Gt && this->peek().is(TokenKind::Gt)) {
             this->next();
             kind = TokenKind::Rsh;
         }
@@ -1416,346 +1298,358 @@ OwnPtr<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
         BinaryOp op = BINARY_OPS.at(kind);
 
         this->next();
-        auto right = this->unary();
+        auto right = TRY(this->unary());
 
-        i8 next = this->current.precedence();
+        i8 next = m_current.precedence();
         if (precedence < next) {
-            right = this->binary(precedence + 1, std::move(right));
+            right = TRY(this->binary(precedence + 1, move(right)));
         }
        
+        Span span = { left->span(), right->span() };
         if (INPLACE_OPERATORS.find(kind) != INPLACE_OPERATORS.end()) {
-            left = make_own<ast::InplaceBinaryOpExpr>(
-                Span::merge(left->span, right->span), op, std::move(left), std::move(right)
-            );
+            left = make<ast::InplaceBinaryOpExpr>(span, op, move(left), move(right));
         } else {
-            left = make_own<ast::BinaryOpExpr>(
-                Span::merge(left->span, right->span), op, std::move(left), std::move(right)
-            );
+            left = make<ast::BinaryOpExpr>(span, op, move(left), move(right));
         }
     }
 }
 
-OwnPtr<ast::Expr> Parser::unary() {
-    auto iterator = UNARY_OPS.find(this->current.type);
-    OwnPtr<ast::Expr> expr;
+ParseResult<ast::Expr> Parser::unary() {
+    auto iterator = UNARY_OPS.find(m_current.kind());
+    OwnPtr<ast::Expr> expr = nullptr;
 
     if (iterator == UNARY_OPS.end()) {
-        expr = this->call();
-    } else if (this->current.is(TokenKind::BinaryAnd)) {
-        Span start = this->current.span;
+        expr = TRY(this->call());
+    } else if (m_current.is(TokenKind::BinaryAnd)) {
+        Span start = m_current.span();
         this->next();
 
-        bool is_mutable = this->try_expect(TokenKind::Mut).hasValue();
+        bool is_mutable = this->try_expect(TokenKind::Mut).has_value();
 
-        auto value = this->call();
-        expr = make_own<ast::ReferenceExpr>(
-            Span::merge(start, value->span), std::move(value), is_mutable
-        );
+        auto value = TRY(this->call());
+
+        Span span = Span { start, value->span() };
+        expr = make<ast::ReferenceExpr>(span, move(value), is_mutable);
     } else {
-        Span start = this->current.span;
+        Span start = m_current.span();
 
         UnaryOp op = iterator->second;
         this->next();
 
-        auto value = this->call();
-        expr = make_own<ast::UnaryOpExpr>(Span::merge(start, value->span), std::move(value), op);
+        auto value = TRY(this->call());
+
+        Span span = Span { start, value->span() };
+        expr = make<ast::UnaryOpExpr>(span, move(value), op);
     }
 
-    switch (this->current.type) {
+    switch (m_current.kind()) {
         case TokenKind::As: {
             this->next();
-            auto type = this->parse_type();
+            auto type = TRY(this->parse_type());
 
-            Span span = Span::merge(expr->span, type->span);
-            return make_own<ast::CastExpr>(span, std::move(expr), std::move(type));
+            Span span = { expr->span(), type->span() };
+            return { make<ast::CastExpr>(span, move(expr), move(type)) };
         }
         case TokenKind::If: {
             this->next();
-            auto condition = this->expr(false);
+            auto condition = TRY(this->expr(false));
 
-            if (this->current != TokenKind::Else) {
-                ERROR(this->current.span, "Expected 'else' after 'if' in ternary expression");
-            }
+            TRY(this->expect(TokenKind::Else));
 
             this->next();
-            auto else_expr = this->expr(false);
+            auto else_expr = TRY(this->expr(false));
 
-            return make_own<ast::TernaryExpr>(
-                Span::merge(expr->span, else_expr->span), std::move(condition), std::move(expr), std::move(else_expr)
-            );
+            Span span = { expr->span(), else_expr->span() };
+            return { make<ast::TernaryExpr>(span, move(condition), move(expr), move(else_expr)) };
         }
-        default: return expr;
+        default:
+            return expr;
     }
 }
 
-OwnPtr<ast::Expr> Parser::call() {
-    Span start = this->current.span;
+ParseResult<ast::Expr> Parser::call() {
+    Span start = m_current.span();
 
-    auto expr = this->primary();
-    while (this->current == TokenKind::LParen) {
+    auto expr = TRY(this->primary());
+    while (m_current.is(TokenKind::LParen)) {
         this->next();
-        expr = this->parse_call(start, std::move(expr));
+        expr = TRY(this->parse_call(move(expr)));
     }
 
-    if (this->current.is(TokenKind::Inc, TokenKind::Dec)) {
-        UnaryOp op = this->current.type == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
-        expr = make_own<ast::UnaryOpExpr>(Span::merge(start, this->current.span), std::move(expr), op);
+    if (m_current.is(TokenKind::Inc, TokenKind::Dec)) {
+        UnaryOp op = m_current.kind() == TokenKind::Inc ? UnaryOp::Inc : UnaryOp::Dec;
+        Span span = { start, m_current.span() };
 
+        expr = make<ast::UnaryOpExpr>(span, move(expr), op);
         this->next();
     } else if (this->is_upcoming_constructor(*expr)) {
-        Span end = this->current.span;
         this->next();
 
-        std::vector<ast::ConstructorField> fields;
-        if (this->current == TokenKind::RBrace) {
+        Vector<ast::ConstructorField> fields;
+        if (m_current.is(TokenKind::RBrace)) {
             this->next();
-            return make_own<ast::EmptyConstructorExpr>(
-                Span::merge(start, this->current.span), std::move(expr)
-            );
+            return { make<ast::EmptyConstructorExpr>(expr->span(), move(expr)) };
         }
 
-        while (this->current != TokenKind::RBrace) {
-            std::string name = this->expect(TokenKind::Identifier, "field name").value;
-            this->expect(TokenKind::Colon, ":");
+        while (!m_current.is(TokenKind::RBrace)) {
+            String name = TRY(this->expect(TokenKind::Identifier)).value();
+            TRY(this->expect(TokenKind::Colon));
 
-            auto value = this->expr(false);
-            fields.push_back({ name, std::move(value) });
+            auto value = TRY(this->expr(false));
+            fields.push_back({ name, move(value) });
 
-            if (this->current != TokenKind::Comma) {
+            if (!m_current.is(TokenKind::Comma)) {
                 break;
             }
 
             this->next();
         }
 
-        this->expect(TokenKind::RBrace, "}");
-        expr = make_own<ast::ConstructorExpr>(Span::merge(start, end), std::move(expr), std::move(fields));
+        TRY(this->expect(TokenKind::RBrace));
+        expr = make<ast::ConstructorExpr>(expr->span(), move(expr), move(fields));
     }
 
 
-    switch (this->current.type) {
+    switch (m_current.kind()) {
         case TokenKind::Dot: 
-            expr = this->attribute(start, std::move(expr)); break;
+            expr = TRY(this->attribute(move(expr))); break;
         case TokenKind::LBracket: 
-            expr = this->index(start, std::move(expr)); break;
+            expr = TRY(this->index(move(expr))); break;
         default: break;
     }
 
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::attribute(Span start, OwnPtr<ast::Expr> expr) {
-    while (this->current == TokenKind::Dot) {
+ParseResult<ast::Expr> Parser::attribute(OwnPtr<ast::Expr> expr) {
+    while (m_current.is(TokenKind::Dot)) {
         this->next();
-        
-        std::string value = this->expect(TokenKind::Identifier, "attribute name").value;
-        expr = make_own<ast::AttributeExpr>(
-            Span::merge(start, this->current.span), std::move(expr), value
-        );
+
+        String value = TRY(this->expect(TokenKind::Identifier)).value();
+        Span span = { expr->span(), m_current.span() };
+
+        expr = make<ast::AttributeExpr>(span, move(expr), value);
     }
 
-    if (this->current == TokenKind::LBracket) {
-        return this->index(start, std::move(expr));
+    if (m_current.is(TokenKind::LBracket)) {
+        return this->index(move(expr));
     }
     
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::index(Span start, OwnPtr<ast::Expr> expr) {
-    while (this->current == TokenKind::LBracket) {
+ParseResult<ast::Expr> Parser::index(OwnPtr<ast::Expr> expr) {
+    while (m_current.is(TokenKind::LBracket)) {
         this->next();
-        auto index = this->expr(false);
+        auto index = TRY(this->expr(false));
 
-        this->expect(TokenKind::RBracket, "]");
-        expr = make_own<ast::IndexExpr>(
-            Span::merge(start, this->current.span), std::move(expr), std::move(index)
-        );
+        TRY(this->expect(TokenKind::RBracket));
+        Span span = { expr->span(), m_current.span() };
+
+        expr = make<ast::IndexExpr>(span, move(expr), move(index));
     }
 
-    if (this->current == TokenKind::Dot) {
-        return this->attribute(start, std::move(expr));
+    if (m_current.is(TokenKind::Dot)) {
+        return this->attribute(move(expr));
     }
 
     return expr;
 }
 
-OwnPtr<ast::Expr> Parser::primary() {
-    OwnPtr<ast::Expr> expr;
+ParseResult<ast::Expr> Parser::primary() {
+    OwnPtr<ast::Expr> expr = nullptr;
+    Span start = m_current.span();
 
-    Span start = this->current.span;
-    switch (this->current.type) {
+    switch (m_current.kind()) {
         case TokenKind::Integer: {
-            std::string value = this->current.value;
+            String value = m_current.value();
             this->next();
 
-            u32 bits = 32;
-            bool is_float = false;
+            u32 width = 32;
 
-            auto iterator = NUM_TYPES_BIT_MAPPING.find(this->current.value);
-            if (iterator != NUM_TYPES_BIT_MAPPING.end()) {
-                bits = iterator->second.first;
-                is_float = iterator->second.second;
-
+            // FIXME: Handle f32 and f64 correctly
+            auto iterator = INTEGER_SUFFIXES.find(value);
+            if (iterator != INTEGER_SUFFIXES.end()) {
+                width = iterator->second.bits;
                 this->next();
             }
 
-            // Integers are not callable nor indexable so we can safely return from this function.
-            return make_own<ast::IntegerExpr>(Span::merge(start, this->current.span), value, bits, is_float);
+            // FIXME: This is ugly
+            u16 base = 10;
+            if (value.starts_with("0x")) {
+                base = 16;
+                value = value.substr(2);
+            } else if (value.starts_with("0b")) {
+                base = 2;
+                value = value.substr(2);
+            }
+
+            u64 result = 0;
+            std::stoull(value, &result, base);
+
+            return { make<ast::IntegerExpr>(start, result, width) };
         }
         case TokenKind::Char: {
-            std::string value = this->current.value; this->next();
-            return make_own<ast::CharExpr>(Span::merge(start, this->current.span), value[0]);
+            String value = m_current.value();
+            this->next();
+
+            return { make<ast::IntegerExpr>(start, value[0], 8) };
         }
         case TokenKind::Float: {
             double result = 0.0;
-            llvm::StringRef(this->current.value).getAsDouble(result);
+            llvm::StringRef(m_current.value()).getAsDouble(result);
 
             this->next();
             bool is_double = false;
 
-            if (this->current.is(TokenKind::Identifier) && this->current.value == "f64") {
+            if (m_current.value() == "f64") {
                 this->next();
                 is_double = true;
             }
 
-            return make_own<ast::FloatExpr>(Span::merge(start, this->current.span), result, is_double);
+            return { make<ast::FloatExpr>(start, result, is_double) };
         }
         case TokenKind::String: {
-            std::string value = this->current.value;
+            String value = m_current.value();
             this->next();
 
-            expr = make_own<ast::StringExpr>(Span::merge(start, this->current.span), value);
+            expr = make<ast::StringExpr>(start, value);
             break;
         }
         case TokenKind::Identifier: {
-            std::string name = this->current.value;
+            String name = m_current.value();
             this->next();
             if (name == "true") {
-                return make_own<ast::IntegerExpr>(Span::merge(start, this->current.span), "1", 1);
+                return { make<ast::IntegerExpr>(start, 1, 1) };
             } else if (name == "false") {
-                return make_own<ast::IntegerExpr>(Span::merge(start, this->current.span), "0", 1);
+                return { make<ast::IntegerExpr>(start, 0, 1) };
             }
 
-            expr = make_own<ast::VariableExpr>(Span::merge(start, this->current.span), name);
+            if (m_current.is(TokenKind::DoubleColon)) {
+                Path path = TRY(this->parse_path(name));
+                expr = make<ast::PathExpr>(start, move(path));
+            } else {
+                expr = make<ast::IdentifierExpr>(start, name);
+            }
+
             break;
         }
         case TokenKind::Sizeof: {
             this->next();
             
-            this->expect(TokenKind::LParen, "(");
-            OwnPtr<ast::Expr> expr = this->expr(false);
+            TRY(this->expect(TokenKind::LParen));
+            OwnPtr<ast::Expr> expr = TRY(this->expr(false));
 
-            Span end = this->expect(TokenKind::RParen, ")").span;
+            TRY(this->expect(TokenKind::RParen));
 
             // TODO: sizeof for types
-            return make_own<ast::SizeofExpr>(Span::merge(start, end), std::move(expr));
+            return { make<ast::SizeofExpr>(start, move(expr)) };
         }
         case TokenKind::Offsetof: {
-            Span start = this->current.span;
             this->next();
 
-            this->expect(TokenKind::LParen, "(");
-            auto value = this->expr(false);
+            TRY(this->expect(TokenKind::LParen));
+            auto value = TRY(this->expr(false));
 
-            this->expect(TokenKind::Comma, ",");
-            std::string field = this->expect(TokenKind::Identifier, "identifier").value;
+            TRY(this->expect(TokenKind::Comma));
+            String field = TRY(this->expect(TokenKind::Identifier)).value();
 
-            Span end = this->expect(TokenKind::RParen, ")").span;
-            return make_own<ast::OffsetofExpr>(Span::merge(start, end), std::move(value), field);
+            return { make<ast::OffsetofExpr>(start, move(value), field) };
         }
         case TokenKind::Match: {
             this->next();
-            return this->parse_match_expr();
+            return this->parse_match();
         }
         case TokenKind::LParen: {
-            Span start = this->current.span;
             this->next();
 
-            if (this->current == TokenKind::Identifier && this->peek() == TokenKind::Colon) {
+            if (m_current.is(TokenKind::Identifier) && this->peek().is(TokenKind::Colon)) {
                 return this->parse_anonymous_function();
             }
 
-            expr = this->expr(false);
-            if (this->current == TokenKind::Comma) {
-                std::vector<OwnPtr<ast::Expr>> elements;
-                elements.push_back(std::move(expr));
+            expr = TRY(this->expr(false));
+            if (m_current.is(TokenKind::Comma)) {
+                ast::ExprList<> elements;
+                elements.push_back(move(expr));
 
                 this->next();
-                while (this->current != TokenKind::RParen) {
-                    auto element = this->expr(false);
-                    elements.push_back(std::move(element));
-                    if (this->current != TokenKind::Comma) {
+                while (!m_current.is(TokenKind::RParen)) {
+                    auto element = TRY(this->expr(false));
+                    elements.push_back(move(element));
+
+                    if (!m_current.is(TokenKind::Comma)) {
                         break;
                     }
 
                     this->next();
                 }
 
-                Span end = this->expect(TokenKind::RParen, ")").span;
-                expr = make_own<ast::TupleExpr>(Span::merge(start, end), std::move(elements));
+                Span end = TRY(this->expect(TokenKind::RParen)).span();
+                Span span = { start, end };
+
+                expr = make<ast::TupleExpr>(span, move(elements));
             } else {
-                this->expect(TokenKind::RParen, ")");
+                TRY(this->expect(TokenKind::RParen));
             }
             break;
         }
         case TokenKind::LBracket: {
             this->next();
-            std::vector<OwnPtr<ast::Expr>> elements;
+            ast::ExprList<> elements;
 
-            if (this->current != TokenKind::RBracket) {
-                auto element = this->expr(false);
-                if (this->current == TokenKind::SemiColon) {
+            if (!m_current.is(TokenKind::RBracket)) {
+                auto element = TRY(this->expr(false));
+                if (m_current.is(TokenKind::SemiColon)) {
                     this->next();
-                    auto size = this->expr(false);
+                    auto size = TRY(this->expr(false));
 
-                    this->expect(TokenKind::RBracket, "]");
-                    return make_own<ast::ArrayFillExpr>(Span::merge(start, this->current.span), std::move(element), std::move(size));
+                    TRY(this->expect(TokenKind::RBracket));
+                    Span span = { start, m_current.span() };
+
+                    return { make<ast::ArrayFillExpr>(span, move(element), move(size)) };
                 }
 
-                elements.push_back(std::move(element));
-                this->expect(TokenKind::Comma, ",");
+                elements.push_back(move(element));
+                TRY(this->expect(TokenKind::Comma));
             }
 
-            while (this->current != TokenKind::RBracket) {
-                auto element = this->expr(false);
-                elements.push_back(std::move(element));
+            while (!m_current.is(TokenKind::RBracket)) {
+                auto element = TRY(this->expr(false));
+                elements.push_back(move(element));
 
-                if (this->current != TokenKind::Comma) {
+                if (!m_current.is(TokenKind::Comma)) {
                     break;
                 }
 
                 this->next();
             }
 
-            Span end = this->expect(TokenKind::RBracket, "]").span;
-            expr = make_own<ast::ArrayExpr>(Span::merge(start, end), std::move(elements));
+            Span end = TRY(this->expect(TokenKind::RBracket)).span();
+            Span span = { start, end };
+
+            expr = make<ast::ArrayExpr>(span, move(elements));
             break;
         }
         case TokenKind::LBrace: {
             this->next();
-            expr = this->parse_block();
+            expr = TRY(this->parse_block());
 
             break;
         }
         default: {
-            ERROR(this->current.span, "Expected an expression");
+            return err(m_current.span(), "Expected an expression");
         }
     }
 
-    while (this->current == TokenKind::DoubleColon) {
-        this->next();
-
-        std::string value = this->expect(TokenKind::Identifier, "identifier").value;
-        expr = make_own<ast::PathExpr>(Span::merge(start, this->current.span), std::move(expr), value);
-    }
-
-    switch (this->current.type) {
+    switch (m_current.kind()) {
         case TokenKind::Dot: 
-            expr = this->attribute(start, std::move(expr)); break;
+            expr = TRY(this->attribute(move(expr))); break;
         case TokenKind::LBracket: 
-            expr = this->index(start, std::move(expr)); break;
+            expr = TRY(this->index(move(expr))); break;
         default: break;
     }
 
     return expr;
+}
+
 }

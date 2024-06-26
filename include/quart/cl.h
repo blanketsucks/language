@@ -1,22 +1,24 @@
 #pragma once
 
-#include <quart/filesystem.h>
+#include <quart/common.h>
+#include <quart/errors.h>
 #include <quart/compiler.h>
 
-namespace quart {
+#include <set>
 
-namespace cl {
+namespace quart::cl {
 
 struct Arguments {
     fs::Path file;
-    std::string output;
-    std::string entry;
-    std::string target;
 
-    std::vector<std::string> imports;
+    String output;
+    String entry;
+    String target;
+
+    Vector<String> imports;
     
-    std::set<std::string> library_names;
-    std::set<std::string> library_paths;
+    std::set<String> library_names;
+    std::set<String> library_paths;
 
     OutputFormat format;
     MangleStyle mangle_style;
@@ -29,8 +31,6 @@ struct Arguments {
     bool jit = false;
 };
 
-Arguments parse_arguments(int argc, char** argv);
-
-}
+ErrorOr<Arguments> parse_arguments(int argc, char** argv);
 
 }

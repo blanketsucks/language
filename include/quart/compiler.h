@@ -1,6 +1,5 @@
 #pragma once
 
-#include <quart/logging.h>
 #include <quart/filesystem.h>
 #include <quart/common.h>
 
@@ -13,14 +12,14 @@ namespace quart {
 
 enum class OutputFormat {
     Object,
-    LLVM, // Refers to LLVM IR
+    LLVM,    // Refers to LLVM IR
     Bitcode, // Refers to LLVM Bitcode
     Assembly,
     Executable,
     SharedLibrary
 };
 
-static const std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
+static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Object, "Object"},
     {OutputFormat::LLVM, "LLVM IR"},
     {OutputFormat::Bitcode, "LLVM Bitcode"},
@@ -29,7 +28,7 @@ static const std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::SharedLibrary, "Shared Library"}
 };
 
-static const std::map<OutputFormat, llvm::StringRef> OUTPUT_FORMATS_TO_EXT = {
+static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_EXT = {
     {OutputFormat::Object, "o"},
     {OutputFormat::LLVM, "ll"},
     {OutputFormat::Bitcode, "bc"},
@@ -65,28 +64,28 @@ struct OptimizationOptions {
 
 struct CompilerError {
     i32 code;
-    std::string message;
+    String message;
 
-    CompilerError(i32 code, std::string message);
+    CompilerError(i32 code, String message);
     static CompilerError ok();
-
     void unwrap();
 };
 
 struct CompilerOptions {
-    using Extra = std::pair<std::string, std::string>;
+    using Extra = std::pair<String, String>;
 
     fs::Path input;
-    std::string output;
-    std::string entry;
-    std::string target;
+    String output;
 
-    std::set<std::string> library_names;
-    std::set<std::string> library_paths;
+    String entry;
+    String target;
 
-    std::vector<std::string> imports;
+    std::set<String> library_names;
+    std::set<String> library_paths;
 
-    std::string linker = "cc";
+    Vector<String> imports;
+
+    String linker = "cc";
 
     OutputFormat format = OutputFormat::Executable;
     OptimizationOptions opts;
@@ -94,12 +93,18 @@ struct CompilerOptions {
     bool verbose = false;
     bool standalone = false;
 
-    std::vector<std::string> object_files;
-    std::vector<Extra> extras;
+    Vector<String> object_files;
+    Vector<Extra> extras;
 
     bool has_target() const { return !this->target.empty(); }
     
-    void add_library_name(const std::string& name) { this->library_names.insert(name); }
+    void add_library_name(const String& name) {
+        library_names.insert(name);
+    }
+
+    void add_library_path(const String& path) {
+        library_paths.insert(path);
+    }
 };
 
 class Compiler {
@@ -113,61 +118,92 @@ public:
     static void init();
     static void shutdown();
 
-    template<typename... Ts> static void error(const std::string& str, Ts&&... values) {
-        std::string fmt = llvm::formatv(str.c_str(), std::forward<Ts>(values)...);
-        std::string message = FORMAT(
-            "{0} {1} {2}", logging::color(COLOR_WHITE, "quart:"), logging::color(COLOR_RED, "error:"), fmt
-        );
+    Compiler(CompilerOptions options) : m_options(move(options)) {}
+    
+    CompilerOptions const& options() { return m_options; }
 
-        std::cout << message << std::endl;
+    void add_library(const String& name) {
+        m_options.add_library_name(name);
     }
 
-    Compiler(const CompilerOptions& options) : options(options) {}
-    
-    CompilerOptions& get_options() { return this->options; }
+    void add_library_path(const String& path) {
+        m_options.add_library_path(path);
+    }
 
-    void add_library(const std::string& name);
-    void add_library_path(const std::string& path);
+    void set_libraries(std::set<String> names) {
+        m_options.library_names = move(names);
+    }
 
-    void set_libraries(std::set<std::string> names);
-    void set_library_paths(std::set<std::string> paths);
+    void set_library_paths(std::set<String> paths) {
+        m_options.library_paths = move(paths);
+    }
 
-    void add_import_path(const std::string& path);
+    void add_import_path(const String& path) {
+        m_options.imports.push_back(path);
+    }
 
-    void set_output_format(OutputFormat format);
-    void set_output_file(const std::string& output);
+    void set_output_format(OutputFormat format) {
+        m_options.format = format;
+    }
 
-    void set_optimization_level(OptimizationLevel level);
-    void set_optimization_options(const OptimizationOptions& optimization);
+    void set_output_file(const String& output) {
+        m_options.output = output;
+    }
 
-    void set_input_file(const fs::Path& input);
-    void set_entry_point(const std::string& entry);
+    void set_optimization_level(OptimizationLevel level) {
+        m_options.opts.level = level;
+    }
 
-    void set_target(const std::string& target);
+    void set_optimization_options(const OptimizationOptions& optimization) {
+        m_options.opts = optimization;
+    }
 
-    void set_verbose(bool verbose);
+    void set_input_file(const fs::Path& input) {
+        m_options.input = input;
+    }
 
-    void set_linker(const std::string& linker);
+    void set_entry_point(const String& entry) {
+        m_options.entry = entry;
+    }
 
-    void add_object_file(const std::string& file);
+    void set_target(const String& target) {
+        m_options.target = target;
+    }
 
-    void add_extra_linker_option(const std::string& name, const std::string& value);
-    void add_extra_linker_option(const std::string& name);
+    void set_verbose(bool verbose) {
+        m_options.verbose = verbose;
+    }
 
-    std::vector<std::string> get_linker_arguments();
+    void set_linker(const String& linker) {
+        m_options.linker = linker;
+    }
 
-    void dump();
+    void add_object_file(const String& file) {
+        m_options.object_files.push_back(file);
+    }
 
-    const llvm::Target* create_target(std::string& error, std::string& triple);
+    void add_extra_linker_option(const String& name, const String& value) {
+        m_options.extras.emplace_back(name, value);
+    }
+
+    void add_extra_linker_option(const String& name) {
+        m_options.extras.emplace_back(name, "");
+    }
+
+    Vector<String> get_linker_arguments() const;
+
+    void dump() const;
+
+    const llvm::Target* create_target(String& error, String& triple);
     OwnPtr<llvm::TargetMachine> create_target_machine(
         llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
     );
 
-    CompilerError compile();
+    int compile() const;
     int jit(llvm::ArrayRef<char*> args);
 
 private:
-    CompilerOptions options;
+    CompilerOptions m_options;
 };
 
 }

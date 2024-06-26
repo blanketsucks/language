@@ -1,9 +1,11 @@
 #pragma once
 
-#define ATTR(n) Attribute parse_##n##_attribute(Parser& parser)
-#define ATTR_HANDLER(n) AttributeHandler::Result handle_##n##_attribute(Parser& parser, const Attribute& attr)
+#define ATTRIBUTE(n) ErrorOr<Attribute> parse_##n##_attribute(Parser& parser)
+#define ATTRIBUTE_HANDLER(n) AttributeHandler::Result handle_##n##_attribute(Parser& parser, const Attribute& attr)
 
-#define SIMPLE_ATTR(n, t) ATTR(n) { (void)parser; return t; }
+#define SIMPLE_ATTRIBUTE(n, t) ATTRIBUTE(n) { (void)parser; return Attribute { t }; }
+
+#include <quart/errors.h>
 
 #include <llvm/ADT/Any.h>
 

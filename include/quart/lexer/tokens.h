@@ -1,6 +1,6 @@
 #pragma once
 
-#include <quart/lexer/location.h>
+#include <quart/source_code.h>
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -15,10 +15,12 @@ namespace quart {
 
 enum class TokenKind;
 
-bool is_keyword(llvm::StringRef word);
-TokenKind get_keyword_kind(llvm::StringRef word);
+bool is_keyword(StringView value);
+TokenKind get_keyword_kind(StringView word);
 
 enum class TokenKind {
+    None,
+
     Identifier,
     Integer,
     Float,
@@ -61,7 +63,7 @@ enum class TokenKind {
     Match,
 
     Add,
-    Minus,
+    Sub,
     Mul,
     Div,
     Mod,
@@ -79,7 +81,7 @@ enum class TokenKind {
     Lsh,
 
     IAdd,
-    IMinus,
+    ISub,
     IMul,
     IDiv,
 
@@ -104,7 +106,7 @@ enum class TokenKind {
     Dot,
     DoubleColon,
     Arrow, // ->
-    DoubleArrow, // =>
+    FatArrow, // =>
     Ellipsis,
     Newline,
     Maybe,
@@ -149,27 +151,36 @@ enum class BinaryOp {
 llvm::StringRef get_binary_op_value(BinaryOp op);
 llvm::StringRef get_unary_op_value(UnaryOp op);
 
-struct Token {
-    TokenKind type;
-    std::string value;
+StringView token_kind_to_str(TokenKind);
 
-    Span span;
+class Token {
+public:
+    Token() = default;
+    Token(TokenKind kind, String value, Span span) : m_kind(kind), m_value(move(value)), m_span(span) {}
 
-    static llvm::StringRef get_type_value(TokenKind type);
+    TokenKind kind() const { return m_kind; }
+    String const& value() const { return m_value; }
 
-    [[nodiscard]] inline bool is_keyword() const { return quart::is_keyword(this->value); }
+    Span span() const { return m_span; }
 
-    [[nodiscard]] bool is(TokenKind type) const { return this->type == type; }
-    [[nodiscard]] bool is(const std::vector<TokenKind>& types) const { return llvm::is_contained(types, this->type); }
-    template<typename... Args> [[nodiscard]] bool is(TokenKind type, Args... args) const { 
-        return this->is(type) || this->is(args...);
+    inline bool is_keyword() const { return quart::is_keyword(m_value); }
+
+    bool is(TokenKind kind) const {
+        return m_kind == kind;
+    }
+    
+    template<typename ...Args> requires(of_type_v<TokenKind, Args...>)
+    bool is(TokenKind kind, Args... args) const {
+        return this->is(kind) || this->is(args...);
     }
 
-    [[nodiscard]] i8 precedence() const;
+    i8 precedence() const;
 
-    bool operator==(TokenKind type) const;
-    bool operator==(const Token& token) const;
-    bool operator!=(TokenKind type) const;
+private:
+    TokenKind m_kind = TokenKind::None;
+    String m_value;
+
+    Span m_span;
 };
 
 static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
@@ -228,12 +239,12 @@ static const std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Lsh, 20},
 
     {TokenKind::IAdd, 25},
-    {TokenKind::IMinus, 25},
+    {TokenKind::ISub, 25},
     {TokenKind::IMul, 25},
     {TokenKind::IDiv, 25},
 
     {TokenKind::Add, 30},
-    {TokenKind::Minus, 30},
+    {TokenKind::Sub, 30},
     {TokenKind::Mod, 35},
     {TokenKind::Div, 40},
     {TokenKind::Mul, 40}
@@ -242,7 +253,7 @@ static const std::map<TokenKind, u8> PRECEDENCES = {
 static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
     {TokenKind::Not, UnaryOp::Not},
     {TokenKind::Add, UnaryOp::Add},
-    {TokenKind::Minus, UnaryOp::Sub},
+    {TokenKind::Sub, UnaryOp::Sub},
     {TokenKind::BinaryNot, UnaryOp::BinaryNot},
     {TokenKind::BinaryAnd, UnaryOp::BinaryAnd},
     {TokenKind::Mul, UnaryOp::Mul},
@@ -252,7 +263,7 @@ static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
 
 static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Add, BinaryOp::Add},
-    {TokenKind::Minus, BinaryOp::Sub},
+    {TokenKind::Sub, BinaryOp::Sub},
     {TokenKind::Mul, BinaryOp::Mul},
     {TokenKind::Div, BinaryOp::Div},
     {TokenKind::Mod, BinaryOp::Mod},
@@ -271,17 +282,28 @@ static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Lte, BinaryOp::Lte},
     {TokenKind::Assign, BinaryOp::Assign},
     {TokenKind::IAdd, BinaryOp::Add},
-    {TokenKind::IMinus, BinaryOp::Sub},
+    {TokenKind::ISub, BinaryOp::Sub},
     {TokenKind::IMul, BinaryOp::Mul},
     {TokenKind::IDiv, BinaryOp::Div}
 };
 
 static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
     {TokenKind::IAdd, BinaryOp::Add},
-    {TokenKind::IMinus, BinaryOp::Sub},
+    {TokenKind::ISub, BinaryOp::Sub},
     {TokenKind::IMul, BinaryOp::Mul},
     {TokenKind::IDiv, BinaryOp::Div},
     // TODO: add more
 };  
+
+}
+
+namespace llvm {
+
+template<>
+struct format_provider<quart::Token> {
+    static void format(const quart::Token& token, raw_ostream& stream, StringRef) {
+        stream << "Token { kind: " << int(token.kind()) << ", value: '" << token.value() << "' }";
+    }
+};
 
 }

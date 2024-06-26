@@ -1,8 +1,9 @@
 #pragma once
 
 #include <quart/lexer/tokens.h>
-#include <quart/filesystem.h>
+#include <quart/source_code.h>
 #include <quart/common.h>
+#include <quart/errors.h>
 
 #include <cstdint>
 #include <iostream>
@@ -16,93 +17,62 @@
 
 namespace quart {
 
+struct ExpectedToken {
+    TokenKind kind;
+    char c;
+};
+
 class Lexer {
 public:
-    virtual ~Lexer() = default;
+    Lexer(SourceCode&);
 
-    virtual void reset() = 0;
+    [[nodiscard]] ErrorOr<char> next();
+    [[nodiscard]] ErrorOr<void> skip(size_t n = 1);
 
-    virtual char next() = 0;
-    virtual char peek(u32 offset = 0) = 0;
-    virtual char prev() = 0;
-    virtual char rewind(u32 offset = 1) = 0;
+    char prev();
 
-    virtual llvm::StringRef get_line_for(const Location& location) = 0;
+    char peek(u32 offset = 0);
+    char rewind(u32 offset = 1);
 
-    Token create_token(TokenKind type, const std::string& value);
-    Token create_token(TokenKind type, const Location& loc, const std::string& value);
+    Optional<Token> expect(char prev, ExpectedToken);
 
-    Location current_location();
-    Span make_span();
-    Span make_span(const Location& start, const Location& end);
+    template<typename ...Args> requires(of_type_v<ExpectedToken, Args...>)
+    Optional<Token> expect(char prev, ExpectedToken expected, Args... args) {
+        auto option = this->expect(prev, expected);
+        if (!option.has_value()) {
+            return this->expect(prev, std::forward<Args>(args)...);
+        }
 
-    size_t lex_while(
+        return option.value();
+    }
+
+    Token create_token(TokenKind type, String value);
+    Token create_token(TokenKind type, String value, Span);
+
+    ErrorOr<size_t> lex_while(
         std::string& buffer,
         const std::function<bool(char)>& predicate
     );
 
-    char escape(char current);
+    ErrorOr<char> escape(char current);
+    ErrorOr<char> espace_next();
 
-    bool is_valid_identifier(u8 current);
-    u8 parse_unicode_identifier(std::string& buffer, u8 current);
+    bool is_valid_identifier(char current);
 
-    Token lex_identifier(bool accept_keywords = true);
-    Token lex_string();
-    Token lex_number();
+    ErrorOr<Token> lex_identifier(bool allow_keywords = true);
+    ErrorOr<Token> lex_string();
+    ErrorOr<Token> lex_number();
 
-    Token once();
-    std::vector<Token> lex();
+    ErrorOr<Token> once();
+    ErrorOr<Vector<Token>> lex();
 
-protected:
-    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
-
-    u32 line;
-    u32 column;
-    size_t index;
+private:
+    size_t m_offset = 0;
     
-    bool eof;
-    char current;
+    bool m_eof = false;
+    char m_current = 0;
 
-    std::string filename;
-    std::map<u32, std::string> lines;
-
-    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
-};
-
-class MemoryLexer : public Lexer {
-public:
-    MemoryLexer(std::string source, const std::string& filename);
-    MemoryLexer(fs::Path path);
-
-    void reset() override;
-
-    char next() override;
-    char peek(u32 offset = 0) override;
-    char prev() override;
-    char rewind(u32 offset = 1) override;
-
-    llvm::StringRef get_line_for(const Location& location) override;
-
-private:
-    std::string source;
-};
-
-class StreamLexer : public Lexer {
-public:
-    StreamLexer(std::ifstream& stream, const std::string& filename);
-    StreamLexer(const fs::Path& path);
-
-    void reset() override;
-
-    char next() override;
-    char peek(u32 offset = 0) override;
-    char prev() override;
-    char rewind(u32 offset = 1) override;
-
-    llvm::StringRef get_line_for(const Location& location) override;
-
-private:
-    std::ifstream& stream; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    StringView m_code;
 };
 
 }

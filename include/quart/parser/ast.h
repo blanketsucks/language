@@ -3,24 +3,45 @@
 #include <quart/lexer/tokens.h>
 #include <quart/parser/attrs.h>
 
+#include <quart/errors.h>
+#include <quart/bytecode/operand.h>
+#include <quart/bytecode/register.h>
+
 #include <memory>
 #include <vector>
 #include <deque>
 
 namespace quart {
 
+class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
+public:
+    BytecodeResult() = default;
+
+    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(move(error)) {}
+
+    BytecodeResult(bytecode::Operand value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
+    BytecodeResult(Optional<bytecode::Operand> value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
+};
+
+class State;
+
 class Visitor;
 struct Value;
 class Type;
+
+struct Path {
+    String name;
+    std::deque<String> segments;
+};
 
 namespace ast {
 
 class Expr;
 class TypeExpr;
 
-template<class T> using ExprList = std::vector<OwnPtr<T>>;
+template<class T = Expr> using ExprList = Vector<OwnPtr<T>>;
 
-enum class ExternLinkageSpecifier {
+enum class LinkageSpecifier {
     None,
     Unspecified,
     C,
@@ -30,11 +51,11 @@ enum class ExprKind {
     Block,
     ExternBlock,
     Integer,
-    Char,
     Float,
     String,
-    Variable,
-    VariableAssignment,
+    Identifier,
+    LetAssignment,
+    LetTupleAssignment,
     Const,
     Array,
     UnaryOp,
@@ -43,7 +64,7 @@ enum class ExprKind {
     InplaceBinaryOp,
     Call,
     Return,
-    Prototype,
+    FunctionDecl,
     Function,
     Defer,
     If,
@@ -122,28 +143,37 @@ struct Attributes {
 };
 
 struct Ident {
-    std::string value;
+    String value;
     bool is_mutable;
 
     Span span;
 };
 
-struct Argument {
-    std::string name;
+struct Parameter {
+    enum Flags {
+        Self     = 1 << 0,
+        Keyword  = 1 << 1,
+        Mutable  = 1 << 2,
+        Variadic = 1 << 3,
+    };
+
+    String name;
 
     OwnPtr<TypeExpr> type;
     OwnPtr<Expr> default_value;
 
-    bool is_self;
-    bool is_kwarg;
-    bool is_mutable;
-    bool is_variadic;
+    u8 flags;
 
     Span span;
+
+    bool is_self() const { return flags & Self; }
+    bool is_keyword() const { return flags & Keyword; }
+    bool is_mutable() const { return flags & Mutable; }
+    bool is_variadic() const { return flags & Variadic; }
 };
 
 struct StructField {
-    std::string name;
+    String name;
     OwnPtr<TypeExpr> type;
 
     u32 index;
@@ -153,17 +183,17 @@ struct StructField {
 };
 
 struct ConstructorField {
-    std::string name;
+    String name;
     OwnPtr<Expr> value;
 };
 
 struct EnumField {
-    std::string name;
+    String name;
     OwnPtr<Expr> value = nullptr;
 };
 
 struct GenericParameter {
-    std::string name;
+    String name;
 
     ExprList<TypeExpr> constraints;
     OwnPtr<TypeExpr> default_type;
@@ -175,7 +205,7 @@ struct MatchPattern {
     bool is_wildcard = false;
     bool is_conditional = false;
 
-    std::vector<OwnPtr<Expr>> values; // A | B | C
+    Vector<OwnPtr<Expr>> values; // A | B | C
     Span span;
 };
 
@@ -185,668 +215,905 @@ struct MatchArm {
 
     size_t index;
     
-    bool is_wildcard() { return this->pattern.is_wildcard; }
+    bool is_wildcard() const { return this->pattern.is_wildcard; }
 };
 
 class Expr {
 public:
-    Span span;
-    Attributes attributes;
+    NO_COPY(Expr)
+    DEFAULT_MOVE(Expr)
 
-    Expr(Span span, ExprKind kind) : span(span), _kind(kind) {
-        this->attributes = Attributes();
-    }
-
-    [[nodiscard]] ExprKind kind() const { return this->_kind; }
-
-    [[nodiscard]] bool is(ExprKind kind) const { return this->_kind == kind; }
-    template<typename... Args> [[nodiscard]] bool is(ExprKind kind, Args... args) const {
-        return this->_kind == kind || this->is(args...);
-    }
-
-    template<typename T> [[nodiscard]] T* as() {
-        assert(T::classof(this) && "Invalid cast.");
-        return static_cast<T*>(this);
-    }
-
+    Expr(Span span, ExprKind kind) : m_span(span), m_kind(kind) {}
     virtual ~Expr() = default;
-    virtual Value accept(Visitor&) = 0;
+
+    ExprKind kind() const { return m_kind; }
+    Span span() const { return m_span; }
+
+    Attributes& attributes() { return m_attributes; }
+    const Attributes& attributes() const { return m_attributes; }
+
+    bool is(ExprKind kind) const { return m_kind == kind; }
+
+    template<typename... Args> requires(of_type_v<ExprKind, Args...>)
+    bool is(ExprKind kind, Args... args) const {
+        return m_kind == kind || this->is(args...);
+    }
+
+    template<typename T> requires(std::is_base_of_v<Expr, T>)
+    bool is() const {
+        return T::classof(this);
+    }
+
+    template<typename T> requires(std::is_base_of_v<Expr, T>)
+    T const* as() const {
+        return T::classof(this) ? static_cast<T const*>(this) : nullptr;
+    }
+
+    virtual BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const = 0;
 
 private:
-    ExprKind _kind;
+    Span m_span;
+    Attributes m_attributes;
+
+    ExprKind m_kind;
 };
 
-// Designed after wabt's expression style
-// Source: https://github.com/WebAssembly/wabt/blob/main/include/wabt/ir.h
-template<ExprKind Kind> class ExprMixin : public Expr {
+template<ExprKind Kind>
+class ExprBase : public Expr {
 public:
     static bool classof(const Expr* expr) { return expr->kind() == Kind; }
-    ExprMixin(Span span) : Expr(span, Kind) {}
+
+    ExprBase(Span span) : Expr(span, Kind) {}
 };
 
-class BlockExpr : public ExprMixin<ExprKind::Block> {
+class BlockExpr : public ExprBase<ExprKind::Block> {
 public:
-    ExprList<Expr> block;
+    BlockExpr(Span span, ExprList<Expr> block) : ExprBase(span), m_block(move(block)) {}
 
-    BlockExpr(Span span, ExprList<Expr> block) : ExprMixin(span), block(std::move(block)) {}
-    Value accept(Visitor& visitor) override;
-};
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-class ExternBlockExpr : public ExprMixin<ExprKind::ExternBlock> {
-public:
-    ExprList<Expr> block;
-
-    ExternBlockExpr(Span span, ExprList<Expr> block) : ExprMixin(span), block(std::move(block)) {}
-    Value accept(Visitor& visitor) override;
-};
-
-class IntegerExpr : public ExprMixin<ExprKind::Integer> {
-public:
-    std::string value;
-
-    u32 bits;
-    bool is_float;
-
-    IntegerExpr(Span span, std::string value, u32 bits = 32, bool is_float = false) :
-        ExprMixin(span), value(std::move(value)), bits(bits), is_float(is_float) {}
-
-    Value accept(Visitor& visitor) override;
-};
-
-class CharExpr : public ExprMixin<ExprKind::Char> {
-public:
-    char value;
-
-    CharExpr(Span span, char value) : ExprMixin(span), value(value) {}
-    Value accept(Visitor& visitor) override;
-};
-
-class FloatExpr : public ExprMixin<ExprKind::Float> {
-public:
-    double value;
-    bool is_double;
-
-    FloatExpr(Span span, double value, bool is_double) : ExprMixin(span), value(value), is_double(is_double) {}
-    Value accept(Visitor& visitor) override;
-};
-
-class StringExpr : public ExprMixin<ExprKind::String> {
-public:
-    std::string value;
-
-    StringExpr(Span span, std::string value) : ExprMixin(span), value(std::move(value)) {}
-    Value accept(Visitor& visitor) override;
-};
-
-class VariableExpr : public ExprMixin<ExprKind::Variable> {
-public:
-    std::string name;
-
-    VariableExpr(Span span, std::string name) : ExprMixin(span), name(std::move(name)) {}
-    Value accept(Visitor& visitor) override;
-};
-
-class VariableAssignmentExpr : public ExprMixin<ExprKind::VariableAssignment> {
-public:
-    std::vector<Ident> identifiers;
-    OwnPtr<TypeExpr> type;
-    OwnPtr<Expr> value;
+    const ExprList<Expr>& block() const { return m_block; }
     
-    bool external;
+private:
+    ExprList<Expr> m_block;
+};
 
-    VariableAssignmentExpr(
+class ExternBlockExpr : public ExprBase<ExprKind::ExternBlock> {
+public:
+    ExternBlockExpr(Span span, ExprList<Expr> block) : ExprBase(span), m_block(move(block)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    const ExprList<Expr>& block() const { return m_block; }
+    
+private:
+    ExprList<Expr> m_block;
+};
+
+class IntegerExpr : public ExprBase<ExprKind::Integer> {
+public:
+    IntegerExpr(Span span, u64 value, u16 width) : ExprBase(span), m_value(value), m_width(width) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    u64 value() const { return m_value; }
+    u16 width() const { return m_width; }
+
+private:
+    u64 m_value;
+    u16 m_width;
+};
+
+class FloatExpr : public ExprBase<ExprKind::Float> {
+public:
+    FloatExpr(Span span, double value, bool is_double) : ExprBase(span), m_value(value), m_is_double(is_double) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    double value() const { return m_value; }
+    bool is_double() const { return m_is_double; }
+
+private:
+    double m_value;
+    bool m_is_double;
+};
+
+class StringExpr : public ExprBase<ExprKind::String> {
+public:
+    StringExpr(Span span, String value) : ExprBase(span), m_value(move(value)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& value() const { return m_value; }
+
+private:
+    String m_value;
+};
+
+class IdentifierExpr : public ExprBase<ExprKind::Identifier> {
+public:
+    IdentifierExpr(Span span, String name) : ExprBase(span), m_name(move(name)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& name() const { return m_name; }
+
+private:
+    String m_name;
+};
+
+class AssignmentExpr : public ExprBase<ExprKind::LetAssignment> {
+public:
+    AssignmentExpr(
         Span span,
-        std::vector<Ident> identifiers, 
+        Ident identifier,
         OwnPtr<TypeExpr> type, 
-        OwnPtr<Expr> value,
-        bool external = false
-    ) : ExprMixin(span), identifiers(std::move(identifiers)), type(std::move(type)), 
-        value(std::move(value)), external(external) {}
+        OwnPtr<Expr> value
+    ) : ExprBase(span), m_identifier(move(identifier)), m_type(move(type)), m_value(move(value)) {}
     
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    [[nodiscard]] bool has_multiple_variables() const { return this->identifiers.size() > 1; }
+    const Ident& identifier() const { return m_identifier; }
+
+    const TypeExpr* type() const { return m_type.get(); }
+    const Expr* value() const { return m_value.get(); }
+
+private:
+    Ident m_identifier;
+    OwnPtr<TypeExpr> m_type;
+    OwnPtr<Expr> m_value;
 };
 
-class ConstExpr : public ExprMixin<ExprKind::Const> {
+class TupleAssignmentExpr : public ExprBase<ExprKind::LetTupleAssignment> {
 public:
-    std::string name;
-    OwnPtr<TypeExpr> type;
-    OwnPtr<Expr> value;
+    TupleAssignmentExpr(
+        Span span, 
+        Vector<Ident> identifiers, 
+        OwnPtr<TypeExpr> type, 
+        OwnPtr<Expr> value
+    ) : ExprBase(span), m_identifiers(move(identifiers)), m_type(move(type)), m_value(move(value)) {}
 
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    const Vector<Ident>& identifiers() const { return m_identifiers; }
+
+    const TypeExpr* type() const { return m_type.get(); }
+    const Expr* value() const { return m_value.get(); }
+
+private:
+    Vector<Ident> m_identifiers;
+    OwnPtr<TypeExpr> m_type;
+    OwnPtr<Expr> m_value;
+};
+
+class ConstExpr : public ExprBase<ExprKind::Const> {
+public:
     ConstExpr(
-        Span span, std::string name, OwnPtr<TypeExpr> type, OwnPtr<Expr> value
-    ) : ExprMixin(span), name(std::move(name)), type(std::move(type)), value(std::move(value)) {}
+        Span span, String name, OwnPtr<TypeExpr> type, OwnPtr<Expr> value
+    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_value(move(value)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& name() const { return m_name; }
+
+    const TypeExpr* type() const { return m_type.get(); }
+    Expr const& value() const { return *m_value; }
+
+private:
+    String m_name;
+    OwnPtr<TypeExpr> m_type;
+    OwnPtr<Expr> m_value;
 };
 
-class ArrayExpr : public ExprMixin<ExprKind::Array> {
+class ArrayExpr : public ExprBase<ExprKind::Array> {
 public:
-    ExprList<Expr> elements;
+    ArrayExpr(Span span, ExprList<Expr> elements) : ExprBase(span), m_elements(move(elements)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    ArrayExpr(Span span, ExprList<Expr> elements) : ExprMixin(span), elements(std::move(elements)) {}
+    const ExprList<Expr>& elements() const { return m_elements; }
 
-    Value accept(Visitor& visitor) override;
+private:
+    ExprList<Expr> m_elements;
 };
 
-class UnaryOpExpr : public ExprMixin<ExprKind::UnaryOp> {
+class UnaryOpExpr : public ExprBase<ExprKind::UnaryOp> {
 public:
-    OwnPtr<Expr> value;
-    UnaryOp op;
+    UnaryOpExpr(Span span, OwnPtr<Expr> value, UnaryOp op) : ExprBase(span), m_value(move(value)), m_op(op) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    UnaryOpExpr(Span span, OwnPtr<Expr> value, UnaryOp op)
-        : ExprMixin(span), value(std::move(value)), op(op) {}
+    Expr const& value() const { return *m_value; }
 
-    Value accept(Visitor& visitor) override;
+    UnaryOp op() const { return m_op; }
+
+private:
+    OwnPtr<Expr> m_value;
+    UnaryOp m_op;
 };
 
-class ReferenceExpr : public ExprMixin<ExprKind::Reference> {
+class ReferenceExpr : public ExprBase<ExprKind::Reference> {
 public:
-    OwnPtr<Expr> value;
-    bool is_mutable;
+    ReferenceExpr(
+        Span span, OwnPtr<Expr> value, bool is_mutable
+    ) : ExprBase(span), m_value(move(value)), m_is_mutable(is_mutable) {}
 
-    ReferenceExpr(Span span, OwnPtr<Expr> value, bool is_mutable) :
-        ExprMixin(span), value(std::move(value)), is_mutable(is_mutable) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& value() const { return *m_value; }
+    bool is_mutable() const { return m_is_mutable; }
+
+private:
+    OwnPtr<Expr> m_value;
+    bool m_is_mutable;
 };
 
-class BinaryOpExpr : public ExprMixin<ExprKind::BinaryOp> {
+class BinaryOpExpr : public ExprBase<ExprKind::BinaryOp> {
 public:
-    OwnPtr<Expr> left, right;
-    BinaryOp op;
+    BinaryOpExpr(
+        Span span, BinaryOp op, OwnPtr<Expr> lhs, OwnPtr<Expr> rhs
+    ) : ExprBase(span), m_lhs(move(lhs)), m_rhs(move(rhs)), m_op(op) {}
 
-    BinaryOpExpr(Span span, BinaryOp op, OwnPtr<Expr> left, OwnPtr<Expr> right) :
-        ExprMixin(span), left(std::move(left)), right(std::move(right)), op(op) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& lhs() const { return *m_lhs; }
+    Expr const& rhs() const { return *m_rhs; }
+
+    BinaryOp op() const { return m_op; }
+
+private:
+    OwnPtr<Expr> m_lhs;
+    OwnPtr<Expr> m_rhs;
+    BinaryOp m_op;
 };
 
-class InplaceBinaryOpExpr : public ExprMixin<ExprKind::InplaceBinaryOp> {
+class InplaceBinaryOpExpr : public ExprBase<ExprKind::InplaceBinaryOp> {
 public:
-    OwnPtr<Expr> left, right;
-    BinaryOp op;
+    InplaceBinaryOpExpr(
+        Span span, BinaryOp op, OwnPtr<Expr> lhs, OwnPtr<Expr> rhs
+    ) : ExprBase(span), m_lhs(move(lhs)), m_rhs(move(rhs)), m_op(op) {}
 
-    InplaceBinaryOpExpr(Span span, BinaryOp op, OwnPtr<Expr> left, OwnPtr<Expr> right) :
-        ExprMixin(span), left(std::move(left)), right(std::move(right)), op(op) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& lhs() const { return *m_lhs; }
+    Expr const& rhs() const { return *m_rhs; }
+
+    BinaryOp op() const { return m_op; }
+
+private:
+    OwnPtr<Expr> m_lhs;
+    OwnPtr<Expr> m_rhs;
+    BinaryOp m_op;
 };
 
-class CallExpr : public ExprMixin<ExprKind::Call> {
+class CallExpr : public ExprBase<ExprKind::Call> {
 public:
-    OwnPtr<ast::Expr> callee;
-
-    ExprList<Expr> args;
-    std::map<std::string, OwnPtr<Expr>> kwargs;
-
     CallExpr(
         Span span, 
         OwnPtr<ast::Expr> callee, 
         ExprList<Expr> args,
-        std::map<std::string, OwnPtr<Expr>> kwargs
-    ) : ExprMixin(span), callee(std::move(callee)), args(std::move(args)), kwargs(std::move(kwargs)) {}
+        HashMap<String, OwnPtr<Expr>> kwargs
+    ) : ExprBase(span), m_callee(move(callee)), m_args(move(args)), m_kwargs(move(kwargs)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    OwnPtr<Expr>& get(u32 index) { return this->args[index]; }
-    OwnPtr<Expr>& get(const std::string& name) { return this->kwargs[name]; }
+    Expr const& callee() const { return *m_callee; }
+
+    const ExprList<Expr>& args() const { return m_args; }
+    const HashMap<String, OwnPtr<Expr>>& kwargs() const { return m_kwargs; }
+
+private:
+    OwnPtr<Expr> m_callee;
+
+    ExprList<Expr> m_args;
+    HashMap<String, OwnPtr<Expr>> m_kwargs;
 };
 
-class ReturnExpr : public ExprMixin<ExprKind::Return> {
+class ReturnExpr : public ExprBase<ExprKind::Return> {
 public:
-    OwnPtr<Expr> value;
+    ReturnExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), m_value(move(value)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    ReturnExpr(Span span, OwnPtr<Expr> value) : ExprMixin(span), value(std::move(value)) {}
-    Value accept(Visitor& visitor) override;
+    Expr const& value() const { return *m_value; }
+
+private:
+    OwnPtr<Expr> m_value;
 };
 
-class PrototypeExpr : public ExprMixin<ExprKind::Prototype> {
+class FunctionDeclExpr : public ExprBase<ExprKind::FunctionDecl> {
 public:
-    std::string name;
-    std::vector<Argument> args;
-    OwnPtr<TypeExpr> return_type;
+    FunctionDeclExpr(
+        Span span,
+        String name,
+        Vector<Parameter> parameters,
+        OwnPtr<TypeExpr> return_type,
+        LinkageSpecifier linkage
+    ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)), m_linkage(linkage) {}
 
-    bool is_c_variadic;
-    bool is_operator;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    ExternLinkageSpecifier linkage;
+    String const& name() const { return m_name; }
+    const Vector<Parameter>& parameters() const { return m_parameters; }
 
-    PrototypeExpr(
-        Span span, 
-        std::string name, 
-        std::vector<Argument> args, 
-        OwnPtr<TypeExpr> return_type, 
-        bool is_c_variadic,
-        bool is_operator,
-        ExternLinkageSpecifier linkage
-    ) : ExprMixin(span), name(std::move(name)), args(std::move(args)), return_type(std::move(return_type)), 
-        is_c_variadic(is_c_variadic), is_operator(is_operator), linkage(linkage) {}
+    const TypeExpr* return_type() const { return m_return_type.get(); }
 
-    Value accept(Visitor& visitor) override;
+    bool is_c_variadic() const { return m_is_c_variadic; }
+    LinkageSpecifier linkage() const { return m_linkage; }
+
+private:
+    String m_name;
+    Vector<Parameter> m_parameters;
+    OwnPtr<TypeExpr> m_return_type;
+
+    bool m_is_c_variadic = false;
+
+    LinkageSpecifier m_linkage;
 };
 
-class FunctionExpr : public ExprMixin<ExprKind::Function> {
+class FunctionExpr : public ExprBase<ExprKind::Function> {
 public:
-    OwnPtr<PrototypeExpr> prototype;
-    ExprList<Expr> body;
-    
-    FunctionExpr(Span span, OwnPtr<PrototypeExpr> prototype, std::vector<OwnPtr<Expr>> body) :
-        ExprMixin(span), prototype(std::move(prototype)), body(std::move(body)) {}
+    FunctionExpr(
+        Span span, OwnPtr<FunctionDeclExpr> decl, Vector<OwnPtr<Expr>> body
+    ) : ExprBase(span), m_decl(move(decl)), m_body(move(body)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    const FunctionDeclExpr& decl() const { return *m_decl; }
+    const Vector<OwnPtr<Expr>>& body() const { return m_body; }
+
+private:
+    OwnPtr<FunctionDeclExpr> m_decl;
+    Vector<OwnPtr<Expr>> m_body;
 };
 
-class DeferExpr : public ExprMixin<ExprKind::Defer> {
+class DeferExpr : public ExprBase<ExprKind::Defer> {
 public:
-    OwnPtr<Expr> expr;
+    DeferExpr(Span span, OwnPtr<Expr> expr) : ExprBase(span), m_expr(move(expr)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    DeferExpr(Span span, OwnPtr<Expr> expr) : ExprMixin(span), expr(std::move(expr)) {}
-    Value accept(Visitor& visitor) override;
+    Expr const& expr() const { return *m_expr; }
+
+public:
+    OwnPtr<Expr> m_expr;
 };
 
-class IfExpr : public ExprMixin<ExprKind::If> {
+class IfExpr : public ExprBase<ExprKind::If> {
 public:
-    OwnPtr<Expr> condition;
-    OwnPtr<Expr> body;
-    OwnPtr<Expr> else_body;
+    IfExpr(
+        Span span, OwnPtr<Expr> condition, OwnPtr<Expr> body, OwnPtr<Expr> else_body
+    ) : ExprBase(span), m_condition(move(condition)), m_body(move(body)), m_else_body(move(else_body)) {}
 
-    IfExpr(Span span, OwnPtr<Expr> condition, OwnPtr<Expr> body, OwnPtr<Expr> else_body) :
-        ExprMixin(span), condition(std::move(condition)), body(std::move(body)), else_body(std::move(else_body)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& condition() const { return *m_condition; }
+    Expr const& body() const { return *m_body; }
+    const Expr* else_body() const { return m_else_body.get(); }
+
+private:
+    OwnPtr<Expr> m_condition;
+    OwnPtr<Expr> m_body;
+    OwnPtr<Expr> m_else_body;
 };
 
-class WhileExpr : public ExprMixin<ExprKind::While> {
+class WhileExpr : public ExprBase<ExprKind::While> {
 public:
-    OwnPtr<Expr> condition;
-    OwnPtr<BlockExpr> body;
+    WhileExpr(
+        Span span, OwnPtr<Expr> condition, OwnPtr<BlockExpr> body
+    ) : ExprBase(span), m_condition(move(condition)), m_body(move(body)) {}
 
-    WhileExpr(Span span, OwnPtr<Expr> condition, OwnPtr<BlockExpr> body) :
-        ExprMixin(span), condition(std::move(condition)), body(std::move(body)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& condition() const { return *m_condition; }
+    const BlockExpr& body() const { return *m_body; }
+
+private:
+    OwnPtr<Expr> m_condition;
+    OwnPtr<BlockExpr> m_body;
 };
 
-class BreakExpr : public ExprMixin<ExprKind::Break> {
+class BreakExpr : public ExprBase<ExprKind::Break> {
 public:
-    BreakExpr(Span span) : ExprMixin(span) {}
-
-    Value accept(Visitor& visitor) override;  
+    BreakExpr(Span span) : ExprBase(span) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;  
 };
 
-class ContinueExpr : public ExprMixin<ExprKind::Continue> {
+class ContinueExpr : public ExprBase<ExprKind::Continue> {
 public:
-    ContinueExpr(Span span) : ExprMixin(span) {}
-    Value accept(Visitor& visitor) override;
+    ContinueExpr(Span span) : ExprBase(span) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 };
 
-class StructExpr : public ExprMixin<ExprKind::Struct> {
+class StructExpr : public ExprBase<ExprKind::Struct> {
 public:
-    std::string name;
-    bool opaque;
-    std::vector<StructField> fields;
-    std::vector<OwnPtr<Expr>> methods;
-
     StructExpr(
         Span span, 
-        std::string name,
+        String name,
         bool opaque,
-        std::vector<StructField> fields, 
-        std::vector<OwnPtr<Expr>> methods
-    ) : ExprMixin(span), name(std::move(name)), opaque(opaque), fields(std::move(fields)), methods(std::move(methods)) {}
+        Vector<StructField> fields, 
+        Vector<OwnPtr<Expr>> members
+    ) : ExprBase(span), m_name(move(name)), m_opaque(opaque), m_fields(move(fields)), m_members(move(members)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& name() const { return m_name; }
+    bool is_opaque() const { return m_opaque; }
+
+    const Vector<StructField>& fields() const { return m_fields; }
+    const Vector<OwnPtr<Expr>>& members() const { return m_members; }
+
+private:
+    String m_name;
+    bool m_opaque;
+    Vector<StructField> m_fields;
+    Vector<OwnPtr<Expr>> m_members;
 };
 
-class ConstructorExpr : public ExprMixin<ExprKind::Constructor> {
+class ConstructorExpr : public ExprBase<ExprKind::Constructor> {
 public:
-    OwnPtr<Expr> parent;
-    std::vector<ConstructorField> fields;
+    ConstructorExpr(Span span, OwnPtr<Expr> parent, Vector<ConstructorField> fields) :
+        ExprBase(span), m_parent(move(parent)), m_fields(move(fields)) {}
 
-    ConstructorExpr(Span span, OwnPtr<Expr> parent, std::vector<ConstructorField> fields) :
-        ExprMixin(span), parent(std::move(parent)), fields(std::move(fields)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& parent() const { return *m_parent; }
+    const Vector<ConstructorField>& fields() const { return m_fields; }
+
+private:
+    OwnPtr<Expr> m_parent;
+    Vector<ConstructorField> m_fields;
 };
 
-class EmptyConstructorExpr : public ExprMixin<ExprKind::EmptyConstructor> {
+class EmptyConstructorExpr : public ExprBase<ExprKind::EmptyConstructor> {
 public:
-    OwnPtr<Expr> parent;
+    EmptyConstructorExpr(Span span, OwnPtr<Expr> parent) : ExprBase(span), m_parent(move(parent)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    EmptyConstructorExpr(Span span, OwnPtr<Expr> parent) :
-        ExprMixin(span), parent(std::move(parent)) {}
+    Expr const& parent() const { return *m_parent; }
 
-    Value accept(Visitor& visitor) override;
+private:
+    OwnPtr<Expr> m_parent;
 };
 
-class AttributeExpr : public ExprMixin<ExprKind::Attribute> {
+class AttributeExpr : public ExprBase<ExprKind::Attribute> {
 public:
-    OwnPtr<Expr> parent;
-    std::string attribute;
+    AttributeExpr(
+        Span span, OwnPtr<Expr> parent, String attribute
+    ) : ExprBase(span), m_parent(move(parent)), m_attribute(move(attribute)) {}
 
-    AttributeExpr(Span span, OwnPtr<Expr> parent, std::string attribute) :
-        ExprMixin(span), parent(std::move(parent)), attribute(std::move(attribute)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& parent() const { return *m_parent; }
+    String const& attribute() const { return m_attribute; }
+
+private:
+    OwnPtr<Expr> m_parent;
+    String m_attribute;
 };
 
-class IndexExpr : public ExprMixin<ExprKind::Index> {
+class IndexExpr : public ExprBase<ExprKind::Index> {
 public:
-    OwnPtr<Expr> value;
-    OwnPtr<Expr> index;
+    IndexExpr(
+        Span span, OwnPtr<Expr> value, OwnPtr<Expr> index
+    ) : ExprBase(span), m_value(move(value)), m_index(move(index)) {}
 
-    IndexExpr(Span span, OwnPtr<Expr> value, OwnPtr<Expr> index) :
-        ExprMixin(span), value(std::move(value)), index(std::move(index)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& value() const { return *m_value; }
+    Expr const& index() const { return *m_index; }
+
+private:
+    OwnPtr<Expr> m_value;
+    OwnPtr<Expr> m_index;
 };
 
-class CastExpr : public ExprMixin<ExprKind::Cast> {
+class CastExpr : public ExprBase<ExprKind::Cast> {
 public:
-    OwnPtr<Expr> value;
-    OwnPtr<TypeExpr> to;
+    CastExpr(
+        Span span, OwnPtr<Expr> value, OwnPtr<TypeExpr> to
+    ) : ExprBase(span), m_value(move(value)), m_to(move(to)) {}
 
-    CastExpr(Span span, OwnPtr<Expr> value, OwnPtr<TypeExpr> to) :
-        ExprMixin(span), value(std::move(value)), to(std::move(to)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& value() const { return *m_value; }
+    const TypeExpr& to() const { return *m_to; }
+
+private:
+    OwnPtr<Expr> m_value;
+    OwnPtr<TypeExpr> m_to;
 };
 
-class SizeofExpr : public ExprMixin<ExprKind::Sizeof> {
+class SizeofExpr : public ExprBase<ExprKind::Sizeof> {
 public:
-    OwnPtr<Expr> value;
+    SizeofExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), m_value(move(value)) {}
 
-    SizeofExpr(Span span, OwnPtr<Expr> value = nullptr) : ExprMixin(span), value(std::move(value)) {}
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& value() const { return *m_value; }
+
+private:
+    OwnPtr<Expr> m_value;
 };
 
-class OffsetofExpr : public ExprMixin<ExprKind::Offsetof> {
+class OffsetofExpr : public ExprBase<ExprKind::Offsetof> {
 public:
-    OwnPtr<Expr> value;
-    std::string field;
+    OffsetofExpr(Span span, OwnPtr<Expr> value, String field) : ExprBase(span), m_value(move(value)), m_field(move(field)) {}
 
-    OffsetofExpr(Span span, OwnPtr<Expr> value, std::string field) :
-        ExprMixin(span), value(std::move(value)), field(std::move(field)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& value() const { return *m_value; }
+    String const& field() const { return m_field; }
+
+private:
+    OwnPtr<Expr> m_value;
+    String m_field;
 };
 
-class PathExpr : public ExprMixin<ExprKind::Path> {
+class PathExpr : public ExprBase<ExprKind::Path> {
 public:
-    OwnPtr<Expr> parent;
-    std::string name;
+    PathExpr(Span span, Path path) : ExprBase(span), m_path(move(path)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    PathExpr(Span span, OwnPtr<Expr> parent, std::string name) :
-        ExprMixin(span), parent(std::move(parent)), name(std::move(name)) {}
+    Path const& path() const { return m_path; }
 
-    Value accept(Visitor& visitor) override;
+private:
+    Path m_path;
 };
 
-class UsingExpr : public ExprMixin<ExprKind::Using> {
+class UsingExpr : public ExprBase<ExprKind::Using> {
 public:
-    std::vector<std::string> members;
-    OwnPtr<Expr> parent;
+    UsingExpr(Span span, OwnPtr<Expr> parent, Vector<String> symbols) : ExprBase(span), m_parent(move(parent)), m_symbols(move(symbols)) {}
 
-    UsingExpr(Span span, std::vector<std::string> members, OwnPtr<Expr> parent) :
-        ExprMixin(span), members(std::move(members)), parent(std::move(parent)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Expr const& parent() const { return *m_parent; }
+    Vector<String> const& symbols() const { return m_symbols; }
+
+private:
+    OwnPtr<Expr> m_parent;
+    Vector<String> m_symbols;
 };
 
-class TupleExpr : public ExprMixin<ExprKind::Tuple> {
+class TupleExpr : public ExprBase<ExprKind::Tuple> {
 public:
-    ExprList<Expr> elements;
+    TupleExpr(Span span, ExprList<Expr> elements) : ExprBase(span), m_elements(move(elements)) {}
+    
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    TupleExpr(Span span, ExprList<Expr> elements) : ExprMixin(span), elements(std::move(elements)) {}
-    Value accept(Visitor& visitor) override;
+    ExprList<Expr> const& elements() const { return m_elements; }
+
+private:
+    ExprList<Expr> m_elements;
 };
 
-class EnumExpr : public ExprMixin<ExprKind::Enum> {
+class EnumExpr : public ExprBase<ExprKind::Enum> {
 public:
-    std::string name;
-    OwnPtr<TypeExpr> type;
-    std::vector<EnumField> fields;
+    EnumExpr(
+        Span span, String name, OwnPtr<TypeExpr> type, Vector<EnumField> fields
+    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_fields(move(fields)) {}
 
-    EnumExpr(Span span, std::string name, OwnPtr<TypeExpr> type, std::vector<EnumField> fields) :
-        ExprMixin(span), name(std::move(name)), type(std::move(type)), fields(std::move(fields)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    String const& name() const { return m_name; }
+    TypeExpr const& type() const { return *m_type; }
+
+    Vector<EnumField> const& fields() const { return m_fields; }
+
+private:
+    String m_name;
+    OwnPtr<TypeExpr> m_type;
+    Vector<EnumField> m_fields;
 };
 
-class ImportExpr : public ExprMixin<ExprKind::Import> {
+class ImportExpr : public ExprBase<ExprKind::Import> {
 public:
-    std::string name;
-    bool is_wildcard;
-    bool is_relative;
-
     ImportExpr(
-        Span span, std::string name, bool is_wildcard, bool is_relative
-    ) : ExprMixin(span), name(std::move(name)), is_wildcard(is_wildcard), is_relative(is_relative) {}
+        Span span, Path path, bool is_wildcard, bool is_relative
+    ) : ExprBase(span), m_path(move(path)), m_is_wildcard(is_wildcard), m_is_relative(is_relative) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Path const& path() const { return m_path; }
+    
+    bool is_wildcard() const { return m_is_wildcard; }
+    bool is_relative() const { return m_is_relative; }
+
+private:
+    Path m_path;
+
+    bool m_is_wildcard;
+    bool m_is_relative;
 };
 
-class ModuleExpr : public ExprMixin<ExprKind::Module> {
+class ModuleExpr : public ExprBase<ExprKind::Module> {
 public:
-    std::string name;
-    std::vector<OwnPtr<Expr>> body;
+    ModuleExpr(Span span, String name, ExprList<Expr> body) : ExprBase(span), m_name(move(name)), m_body(move(body)) {}
 
-    ModuleExpr(Span span, std::string name, std::vector<OwnPtr<Expr>> body) :
-        ExprMixin(span), name(std::move(name)), body(std::move(body)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    String const& name() const { return m_name; }
+    ExprList<Expr> const& body() const { return m_body; }
+
+private:
+    String m_name;
+    ExprList<Expr> m_body;
 };
 
-class TernaryExpr : public ExprMixin<ExprKind::Ternary> {
+class TernaryExpr : public ExprBase<ExprKind::Ternary> {
 public:
-    OwnPtr<Expr> condition;
-    OwnPtr<Expr> true_expr;
-    OwnPtr<Expr> false_expr;
-
     TernaryExpr(
         Span span, OwnPtr<Expr> condition, OwnPtr<Expr> true_expr, OwnPtr<Expr> false_expr
-    ) : ExprMixin(span), condition(std::move(condition)), true_expr(std::move(true_expr)), false_expr(std::move(false_expr)) {}
+    ) : ExprBase(span), m_condition(move(condition)), m_true_expr(move(true_expr)), m_false_expr(move(false_expr)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& condition() const { return *m_condition; }
+    Expr const& true_expr() const { return *m_true_expr; }
+    Expr const& false_expr() const { return *m_false_expr; }
+
+private:
+    OwnPtr<Expr> m_condition;
+    OwnPtr<Expr> m_true_expr;
+    OwnPtr<Expr> m_false_expr;
 };
 
-class ForExpr : public ExprMixin<ExprKind::For> {
+class ForExpr : public ExprBase<ExprKind::For> {
 public:
-    Ident name;
-    OwnPtr<Expr> iterable;
-    OwnPtr<Expr> body;
+    ForExpr(
+        Span span, Ident identifier, OwnPtr<Expr> iterable, OwnPtr<Expr> body
+    ) : ExprBase(span), m_identifier(move(identifier)), m_iterable(move(iterable)), m_body(move(body)) {}
 
-    ForExpr(Span span, Ident name, OwnPtr<Expr> iterable, OwnPtr<Expr> body) :
-        ExprMixin(span), name(std::move(name)), iterable(std::move(iterable)), body(std::move(body)) {}
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Value accept(Visitor& visitor) override;
+    Ident const& identifier() const { return m_identifier; }
+
+    Expr const& iterable() const { return *m_iterable; }
+    Expr const& body() const { return *m_body; }
+
+private:
+    Ident m_identifier;
+    OwnPtr<Expr> m_iterable;
+    OwnPtr<Expr> m_body;
 };
 
-class RangeForExpr : public ExprMixin<ExprKind::RangeFor> {
+class RangeForExpr : public ExprBase<ExprKind::RangeFor> {
 public:
-    Ident name;
-    
-    OwnPtr<Expr> start;
-    OwnPtr<Expr> end;
-    OwnPtr<Expr> body;
-
     RangeForExpr(
-        Span span, Ident name, OwnPtr<Expr> start, OwnPtr<Expr> end, OwnPtr<Expr> body
-    ) : ExprMixin(span), name(std::move(name)), start(std::move(start)), end(std::move(end)), body(std::move(body)) {}
+        Span span, Ident identifier, OwnPtr<Expr> start, OwnPtr<Expr> end, OwnPtr<Expr> body
+    ) : ExprBase(span), m_identifier(move(identifier)), m_start(move(start)), m_end(move(end)), m_body(move(body)) {}
 
-    Value accept(Visitor& visitor) override;
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Ident const& identifier() const { return m_identifier; }
+
+    Expr const& start() const { return *m_start; }
+    Expr const& end() const { return *m_end; }
+
+    Expr const& body() const { return *m_body; }
+
+private:
+    Ident m_identifier;
+
+    OwnPtr<Expr> m_start;
+    OwnPtr<Expr> m_end;
+    OwnPtr<Expr> m_body;
+};
+
+class ArrayFillExpr : public ExprBase<ExprKind::ArrayFill> {
+public:
+    ArrayFillExpr(Span span, OwnPtr<Expr> value, OwnPtr<Expr> count) : ExprBase(span), m_value(move(value)), m_count(move(count)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& value() const { return *m_value; }
+    Expr const& count() const { return *m_count; }
+
+private:
+    OwnPtr<Expr> m_value;
+    OwnPtr<Expr> m_count;
+};
+
+class TypeAliasExpr : public ExprBase<ExprKind::TypeAlias> {
+public:
+    TypeAliasExpr(
+        Span span, String name, OwnPtr<TypeExpr> type, Vector<GenericParameter> parameters
+    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_parameters(move(parameters)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& name() const { return m_name; }
+    Vector<GenericParameter> const& parameters() const { return m_parameters; }
+
+    TypeExpr const& type() const { return *m_type; } 
+
+private:
+    String m_name;
+    OwnPtr<TypeExpr> m_type;
+
+    Vector<GenericParameter> m_parameters;
+};
+
+class StaticAssertExpr : public ExprBase<ExprKind::StaticAssert> {
+public:
+    StaticAssertExpr(Span span, OwnPtr<Expr> condition, String message) : ExprBase(span), m_condition(move(condition)), m_message(move(message)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& condition() const { return *m_condition; }
+    String const& message() const { return m_message; }
+
+private:
+    OwnPtr<Expr> m_condition;
+    String m_message;
+};
+
+class MaybeExpr : public ExprBase<ExprKind::Maybe> {
+public:
+    OwnPtr<Expr> value;
+
+    MaybeExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), value(move(value)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+};
+
+class ImplExpr : public ExprBase<ExprKind::Impl> {
+public:
+    OwnPtr<TypeExpr> type;
+    ExprList<Expr> body;
+
+    ImplExpr(Span span, OwnPtr<TypeExpr> type, ExprList<Expr> body) :
+        ExprBase(span), type(move(type)), body(move(body)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+};
+
+class MatchExpr : public ExprBase<ExprKind::Match> {
+public:
+    OwnPtr<Expr> value;
+    Vector<MatchArm> arms;
+
+    MatchExpr(Span span, OwnPtr<Expr> value, Vector<MatchArm> arms) :
+        ExprBase(span), value(move(value)), arms(move(arms)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 };
 
 class TypeExpr {
 public:
-    Span span;
-    TypeKind kind;
+    NO_COPY(TypeExpr)
+    DEFAULT_MOVE(TypeExpr)
 
-    TypeExpr(Span span, TypeKind kind) : span(span), kind(kind) {}
-
+    TypeExpr(Span span, TypeKind kind) : m_span(span), m_kind(kind) {}
     virtual ~TypeExpr() = default;
-    virtual Type* accept(Visitor& visitor) = 0;
+
+    TypeKind kind() const { return m_kind; }
+    Span span() const { return m_span; }
+
+    template<typename T> requires(std::is_base_of_v<TypeExpr, T>)
+    bool is() const {
+        return T::classof(this);
+    }
+
+    virtual ErrorOr<Type*> evaluate(State&) = 0;
+
+private:
+    Span m_span;
+    TypeKind m_kind;
 };
 
-class BuiltinTypeExpr : public TypeExpr {
+template<TypeKind Kind>
+class TypeExprBase : public TypeExpr {
 public:
-    BuiltinType value;
+    static bool classof(TypeExpr const* expr) { return expr->kind() == Kind; }
 
-    BuiltinTypeExpr(Span span, BuiltinType value) : TypeExpr(span, TypeKind::Builtin), value(value) {}
-    Type* accept(Visitor& visitor) override;
+    TypeExprBase(Span span) : TypeExpr(span, Kind) {}
 };
 
-class IntegerTypeExpr : public TypeExpr {
+class BuiltinTypeExpr : public TypeExprBase<TypeKind::Builtin> {
 public:
-    OwnPtr<Expr> size;
+    BuiltinTypeExpr(Span span, BuiltinType value) : TypeExprBase(span), m_value(value) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    IntegerTypeExpr(Span span, OwnPtr<Expr> size) : TypeExpr(span, TypeKind::Integer), size(std::move(size)) {}
-    Type* accept(Visitor& visitor) override;
+    BuiltinType value() const { return m_value; }
+
+private:
+    BuiltinType m_value;
 };
 
-class NamedTypeExpr : public TypeExpr {
+class IntegerTypeExpr : public TypeExprBase<TypeKind::Integer> {
 public:
-    std::string name;
-    std::deque<std::string> parents;
+    IntegerTypeExpr(Span span, OwnPtr<Expr> size) : TypeExprBase(span), m_size(move(size)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    NamedTypeExpr(Span span, std::string name, std::deque<std::string> parents) : 
-        TypeExpr(span, TypeKind::Named), name(std::move(name)), parents(std::move(parents)) {}
+    Expr const& size() const { return *m_size; }
 
-    Type* accept(Visitor& visitor) override;
+private:
+    OwnPtr<Expr> m_size;
 };
 
-class TupleTypeExpr : public TypeExpr {
+class NamedTypeExpr : public TypeExprBase<TypeKind::Named> {
 public:
-    ExprList<TypeExpr> types;
+    NamedTypeExpr(Span span, Path path) : TypeExprBase(span), m_path(move(path)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    TupleTypeExpr(Span span, ExprList<TypeExpr> types) : TypeExpr(span, TypeKind::Tuple), types(std::move(types)) {}
-    Type* accept(Visitor& visitor) override;
+    Path const& path() const { return m_path; }
+    
+private:
+    Path m_path;
 };
 
-class ArrayTypeExpr : public TypeExpr {
+class TupleTypeExpr : public TypeExprBase<TypeKind::Tuple> {
 public:
-    OwnPtr<TypeExpr> type;
-    OwnPtr<Expr> size;
+    TupleTypeExpr(Span span, ExprList<TypeExpr> types) : TypeExprBase(span), m_types(move(types)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    ArrayTypeExpr(Span span, OwnPtr<TypeExpr> type, OwnPtr<Expr> size) :
-        TypeExpr(span, TypeKind::Array), type(std::move(type)), size(std::move(size)) {}
+    ExprList<TypeExpr> const& types() const { return m_types; }
 
-    Type* accept(Visitor& visitor) override;
+private:
+    ExprList<TypeExpr> m_types;
 };
 
-class PointerTypeExpr : public TypeExpr {
+class ArrayTypeExpr : public TypeExprBase<TypeKind::Array> {
 public:
-    OwnPtr<TypeExpr> type;
-    bool is_mutable;
+    ArrayTypeExpr(Span span, OwnPtr<TypeExpr> type, OwnPtr<Expr> size) : TypeExprBase(span), m_type(move(type)), m_size(move(size)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    PointerTypeExpr(Span span, OwnPtr<TypeExpr> type, bool is_mutable) :
-        TypeExpr(span, TypeKind::Pointer), type(std::move(type)), is_mutable(is_mutable) {}
+    TypeExpr const& type() const { return *m_type; }
+    Expr const& size() const { return *m_size; }
 
-    Type* accept(Visitor& visitor) override;
+private:
+    OwnPtr<TypeExpr> m_type;
+    OwnPtr<Expr> m_size;
 };
 
-class FunctionTypeExpr : public TypeExpr {
+class PointerTypeExpr : public TypeExprBase<TypeKind::Pointer> {
 public:
-    std::vector<OwnPtr<TypeExpr>> args;
-    OwnPtr<TypeExpr> ret;
+    PointerTypeExpr(Span span, OwnPtr<TypeExpr> pointee, bool is_mutable) : TypeExprBase(span), m_pointee(move(pointee)), m_is_mutable(is_mutable) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    FunctionTypeExpr(Span span, std::vector<OwnPtr<TypeExpr>> args, OwnPtr<TypeExpr> ret) :
-        TypeExpr(span, TypeKind::Function), args(std::move(args)), ret(std::move(ret)) {}
+    TypeExpr const& pointee() const { return *m_pointee; }
+    bool is_mutable() const { return m_is_mutable; }
 
-    Type* accept(Visitor& visitor) override;
+private:
+    OwnPtr<TypeExpr> m_pointee;
+    bool m_is_mutable;
 };
 
-class ReferenceTypeExpr : public TypeExpr {
+class ReferenceTypeExpr : public TypeExprBase<TypeKind::Reference> {
 public:
-    OwnPtr<TypeExpr> type;
-    bool is_mutable;
+    ReferenceTypeExpr(Span span, OwnPtr<TypeExpr> type, bool is_mutable) : TypeExprBase(span), m_type(move(type)), m_is_mutable(is_mutable) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    ReferenceTypeExpr(Span span, OwnPtr<TypeExpr> type, bool is_mutable) :
-        TypeExpr(span, TypeKind::Reference), type(std::move(type)), is_mutable(is_mutable) {}
+    TypeExpr const& type() const { return *m_type; }
+    bool is_mutable() const { return m_is_mutable; }
 
-    Type* accept(Visitor& visitor) override;
+private:
+    OwnPtr<TypeExpr> m_type;
+    bool m_is_mutable;
 };
 
-class GenericTypeExpr : public TypeExpr {
+class FunctionTypeExpr : public TypeExprBase<TypeKind::Function> {
 public:
-    OwnPtr<NamedTypeExpr> parent;
-    ExprList<TypeExpr> args;
+    FunctionTypeExpr(
+        Span span, ExprList<TypeExpr> parameters, OwnPtr<TypeExpr> return_type
+    ) : TypeExprBase(span), m_parameters(move(parameters)), m_return_type(move(return_type)) {}
 
-    GenericTypeExpr(Span span, OwnPtr<NamedTypeExpr> parent, ExprList<TypeExpr> args) :
-        TypeExpr(span, TypeKind::Generic), parent(std::move(parent)), args(std::move(args)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    Type* accept(Visitor& visitor) override;
+    ExprList<TypeExpr> const& parameters() const { return m_parameters; }
+    TypeExpr const& return_type() const { return *m_return_type; }
+
+private:
+    ExprList<TypeExpr> m_parameters;
+    OwnPtr<TypeExpr> m_return_type;
 };
 
-class ArrayFillExpr : public ExprMixin<ExprKind::ArrayFill> {
+class GenericTypeExpr : public TypeExprBase<TypeKind::Generic> {
 public:
-    OwnPtr<Expr> element;
-    OwnPtr<Expr> count;
+    GenericTypeExpr(
+        Span span, OwnPtr<NamedTypeExpr> parent, ExprList<TypeExpr> args
+    ) : TypeExprBase(span), m_parent(move(parent)), m_args(move(args)) {}
 
-    ArrayFillExpr(Span span, OwnPtr<Expr> element, OwnPtr<Expr> count) :
-        ExprMixin(span), element(std::move(element)), count(std::move(count)) {}
+    ErrorOr<Type*> evaluate(State&) override;
 
-    Value accept(Visitor& visitor) override;
-};
+    NamedTypeExpr const& parent() const { return *m_parent; }
+    ExprList<TypeExpr> const& args() const { return m_args; }
 
-class TypeAliasExpr : public ExprMixin<ExprKind::TypeAlias> {
-public:
-    std::string name;
-    OwnPtr<TypeExpr> type;
-
-    std::vector<GenericParameter> parameters;
-
-    TypeAliasExpr(
-        Span span, std::string name, OwnPtr<TypeExpr> type, std::vector<GenericParameter> parameters
-    ) : ExprMixin(span), name(std::move(name)), type(std::move(type)), parameters(std::move(parameters)) {}
-
-    Value accept(Visitor& visitor) override;
-
-    [[nodiscard]] bool is_generic_alias() const { return !this->parameters.empty(); }
-};
-
-class StaticAssertExpr : public ExprMixin<ExprKind::StaticAssert> {
-public:
-    OwnPtr<Expr> condition;
-    std::string message;
-
-    StaticAssertExpr(Span span, OwnPtr<Expr> condition, std::string message)
-        : ExprMixin(span), condition(std::move(condition)), message(std::move(message)) {}
-
-    Value accept(Visitor& visitor) override;
-};
-
-class MaybeExpr : public ExprMixin<ExprKind::Maybe> {
-public:
-    OwnPtr<Expr> value;
-
-    MaybeExpr(Span span, OwnPtr<Expr> value) : ExprMixin(span), value(std::move(value)) {}
-
-    Value accept(Visitor& visitor) override;
-};
-
-class ImplExpr : public ExprMixin<ExprKind::Impl> {
-public:
-    OwnPtr<TypeExpr> type;
-    ExprList<FunctionExpr> body;
-
-    ImplExpr(Span span, OwnPtr<TypeExpr> type, ExprList<FunctionExpr> body) :
-        ExprMixin(span), type(std::move(type)), body(std::move(body)) {}
-
-    Value accept(Visitor& visitor) override;
-};
-
-class MatchExpr : public ExprMixin<ExprKind::Match> {
-public:
-    OwnPtr<Expr> value;
-    std::vector<MatchArm> arms;
-
-    MatchExpr(Span span, OwnPtr<Expr> value, std::vector<MatchArm> arms) :
-        ExprMixin(span), value(std::move(value)), arms(std::move(arms)) {}
-
-    Value accept(Visitor& visitor) override;
+private:
+    OwnPtr<NamedTypeExpr> m_parent;
+    ExprList<TypeExpr> m_args;
 };
 
 };

@@ -1,19 +1,21 @@
 #include <quart/lexer/tokens.h>
 
-using namespace quart;
+namespace quart {
 
-bool quart::is_keyword(llvm::StringRef word) {
+bool is_keyword(StringView word) {
     return KEYWORDS.find(word) != KEYWORDS.end();
 }
 
-TokenKind quart::get_keyword_kind(llvm::StringRef word) {
+TokenKind get_keyword_kind(StringView word) {
     auto it = KEYWORDS.find(word);
-    if (it == KEYWORDS.end()) return TokenKind::EOS;
+    if (it == KEYWORDS.end()) {
+        return TokenKind::EOS;
+    }
 
     return it->second;
 }
 
-llvm::StringRef quart::get_unary_op_value(UnaryOp type) {
+llvm::StringRef get_unary_op_value(UnaryOp type) {
     switch (type) {
         case UnaryOp::Inc: return "++";
         case UnaryOp::Dec: return "--";
@@ -24,11 +26,9 @@ llvm::StringRef quart::get_unary_op_value(UnaryOp type) {
         case UnaryOp::BinaryAnd: return "&";
         case UnaryOp::Mul: return "*";
     }
-
-    return "";
 }
 
-llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
+llvm::StringRef get_binary_op_value(BinaryOp type) {
     switch (type) {
         case BinaryOp::Add: return "+";
         case BinaryOp::Sub: return "-";
@@ -49,28 +49,69 @@ llvm::StringRef quart::get_binary_op_value(BinaryOp type) {
         case BinaryOp::Gte: return ">=";
         case BinaryOp::Lte: return "<=";
         case BinaryOp::Assign: return "=";
-        default: return "";
     }
 }
 
-llvm::StringRef Token::get_type_value(TokenKind type) {
-    switch (type) {
-        case TokenKind::Inc: return "++";
-        case TokenKind::Dec: return "--";
+StringView token_kind_to_str(TokenKind kind) {
+    switch (kind) {
+        case TokenKind::Identifier: return "identifier";
+        case TokenKind::Integer: return "integer";
+        case TokenKind::Float: return "float";
+        case TokenKind::String: return "string";
+        case TokenKind::Char: return "char";
+        case TokenKind::Extern: return "extern";
+        case TokenKind::Func: return "func";
+        case TokenKind::Return: return "return";
+        case TokenKind::If: return "if";
+        case TokenKind::Else: return "else";
+        case TokenKind::While: return "while";
+        case TokenKind::For: return "for";
+        case TokenKind::Break: return "break";
+        case TokenKind::Continue: return "continue";
+        case TokenKind::Let: return "let";
+        case TokenKind::Const: return "const";
+        case TokenKind::Struct: return "struct";
+        case TokenKind::Namespace: return "namespace";
+        case TokenKind::Enum: return "enum";
+        case TokenKind::Module: return "module";
+        case TokenKind::Import: return "import";
+        case TokenKind::As: return "as";
+        case TokenKind::Type: return "type";
+        case TokenKind::Sizeof: return "sizeof";
+        case TokenKind::Offsetof: return "offsetof";
+        case TokenKind::Typeof: return "typeof";
+        case TokenKind::Using: return "using";
+        case TokenKind::From: return "from";
+        case TokenKind::Defer: return "defer";
+        case TokenKind::Private: return "private";
+        case TokenKind::Foreach: return "foreach";
+        case TokenKind::In: return "in";
+        case TokenKind::StaticAssert: return "static_assert";
+        case TokenKind::Mut: return "mut";
+        case TokenKind::Readonly: return "readonly";
+        case TokenKind::Operator: return "operator";
+        case TokenKind::Impl: return "impl";
+        case TokenKind::Match: return "match";
         case TokenKind::Add: return "+";
-        case TokenKind::Minus: return "-";
+        case TokenKind::Sub: return "-";
         case TokenKind::Mul: return "*";
         case TokenKind::Div: return "/";
         case TokenKind::Mod: return "%";
         case TokenKind::Not: return "!";
-        case TokenKind::Or: return "|";
-        case TokenKind::And: return "&";
-        case TokenKind::BinaryOr: return "||";
-        case TokenKind::BinaryAnd: return "&&";
-        case TokenKind::BinaryNot: return "!";
+        case TokenKind::Or: return "||";
+        case TokenKind::And: return "&&";
+        case TokenKind::Inc: return "++";
+        case TokenKind::Dec: return "--";
+        case TokenKind::BinaryOr: return "|";
+        case TokenKind::BinaryAnd: return "&";
+        case TokenKind::BinaryNot: return "~";
         case TokenKind::Xor: return "^";
         case TokenKind::Rsh: return ">>";
         case TokenKind::Lsh: return "<<";
+        case TokenKind::IAdd: return "+=";
+        case TokenKind::ISub: return "-=";
+        case TokenKind::IMul: return "*=";
+        case TokenKind::IDiv: return "/=";
         case TokenKind::Eq: return "==";
         case TokenKind::Neq: return "!=";
         case TokenKind::Gt: return ">";
@@ -78,26 +119,34 @@ llvm::StringRef Token::get_type_value(TokenKind type) {
         case TokenKind::Gte: return ">=";
         case TokenKind::Lte: return "<=";
         case TokenKind::Assign: return "=";
-        default: return "";
+        case TokenKind::LParen: return "(";
+        case TokenKind::RParen: return ")";
+        case TokenKind::LBrace: return "{";
+        case TokenKind::RBrace: return "}";
+        case TokenKind::LBracket: return "[";
+        case TokenKind::RBracket: return "]";
+        case TokenKind::Comma: return ",";
+        case TokenKind::SemiColon: return ";";
+        case TokenKind::Colon: return ":";
+        case TokenKind::Dot: return ".";
+        case TokenKind::DoubleColon: return "::";
+        case TokenKind::Arrow: return "->";
+        case TokenKind::FatArrow: return "=>";
+        case TokenKind::Ellipsis: return "...";
+        case TokenKind::Newline: return "newline";
+        case TokenKind::Maybe: return "?";
+        case TokenKind::DoubleDot: return "..";
+        case TokenKind::EOS: return "EOS";
     }
 }
 
 i8 Token::precedence() const {
-    auto iterator = PRECEDENCES.find(this->type);
-    if (iterator == PRECEDENCES.end()) return -1;
+    auto iterator = PRECEDENCES.find(m_kind);
+    if (iterator == PRECEDENCES.end()) {
+        return -1;
+    }
 
     return static_cast<i8>(iterator->second);
 }
 
-bool Token::operator==(TokenKind type) const {
-    return this->type == type;
 }
-
-bool Token::operator==(const Token& token) const {
-    return this->type == token.type && this->value == token.value;
-}
-
-bool Token::operator!=(TokenKind type) const {
-    return this->type != type;
-}
-

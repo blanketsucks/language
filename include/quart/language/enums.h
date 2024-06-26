@@ -1,7 +1,7 @@
 #pragma once
 
 #include <quart/language/types.h>
-#include <quart/lexer/location.h>
+#include <quart/language/symbol.h>
 
 #include <llvm/IR/Value.h>
 
@@ -9,29 +9,44 @@
 
 namespace quart {
 
-struct Scope;
+class Scope;
 
-struct Enumerator {
-    std::string name;
+class Enum : public Symbol {
+public:
+    quart::Type* underlying_type() const { return m_underlying_type; }
+    Scope* scope() const { return m_scope; }
 
-    llvm::Constant* value;
-    quart::Type* type;
+private:
+    Enum(
+        String name, quart::Type* underlying_type, Scope* scope
+    ) : Symbol(move(name), Symbol::Enum), m_underlying_type(underlying_type), m_scope(scope) {}
+
+
+    quart::Type* m_underlying_type;
+    Scope* m_scope;
 };
 
-struct Enum {
-    std::string name;
-    quart::Type* type;
+// struct Enumerator {
+//     std::string name;
 
-    Scope* scope;
+//     llvm::Constant* value;
+//     quart::Type* type;
+// };
 
-    std::map<std::string, Enumerator> enumerators;
+// struct Enum {
+//     std::string name;
+//     quart::Type* type;
 
-    Enum(const std::string& name, quart::Type* type);
+//     Scope* scope;
 
-    void add_enumerator(const std::string& name, llvm::Constant* value, const Span& span);
-    bool has_enumerator(const std::string& name);
+//     std::map<std::string, Enumerator> enumerators;
 
-    Enumerator* get_enumerator(const std::string& name);
-};
+//     Enum(const std::string& name, quart::Type* type);
+
+//     void add_enumerator(const std::string& name, llvm::Constant* value, const Span& span);
+//     bool has_enumerator(const std::string& name);
+
+//     Enumerator* get_enumerator(const std::string& name);
+// };
 
 }

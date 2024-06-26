@@ -1,75 +1,77 @@
 #pragma once
 
-#include <quart/llvm.h>
-#include <quart/compiler.h>
+// #include <stdint.h>
 
-namespace quart {
+// #include <quart/llvm.h>
+// #include <quart/compiler.h>
 
-namespace jit {
+// namespace quart {
 
-struct StaticLibrary {
-    std::string name;
-};
+// namespace jit {
 
-void checkError(llvm::Error error);
+// struct StaticLibrary {
+//     std::string name;
+// };
 
-void ExitOnError(llvm::Error error);
-template<typename T> T ExitOnError(llvm::Expected<T> &&error) {
-    jit::checkError(error.takeError());
-    return std::move(*error);
-}
+// void checkError(llvm::Error error);
 
-template<typename T> T ExitOnError(llvm::Expected<T&> &&error) {
-    jit::checkError(error.takeError());
-    return *error;
-}
+// void ExitOnError(llvm::Error error);
+// template<typename T> T ExitOnError(llvm::Expected<T> &&error) {
+//     jit::checkError(error.takeError());
+//     return std::move(*error);
+// }
 
-class QuartJIT {
-public:
-    typedef int EntryFunction(int, char**);
-    typedef void CtorFunction(void);
-    typedef void ErrorReporter(llvm::Error);
+// template<typename T> T ExitOnError(llvm::Expected<T&> &&error) {
+//     jit::checkError(error.takeError());
+//     return *error;
+// }
 
-    template<typename T> static llvm::JITEvaluatedSymbol create_symbol_from_pointer(T* ptr) {
-        return llvm::JITEvaluatedSymbol(llvm::pointerToJITTargetAddress(ptr), llvm::JITSymbolFlags());
-    }
+// class QuartJIT {
+// public:
+//     typedef int EntryFunction(int, char**);
+//     typedef void CtorFunction(void);
+//     typedef void ErrorReporter(llvm::Error);
 
-    QuartJIT(
-        const std::string& filename,
-        const std::string& entry,
-        OwnPtr<llvm::Module> module, 
-        OwnPtr<llvm::LLVMContext> context
-    );
+//     template<typename T> static llvm::JITEvaluatedSymbol create_symbol_from_pointer(T* ptr) {
+//         return llvm::JITEvaluatedSymbol(llvm::pointerToJITTargetAddress(ptr), llvm::JITSymbolFlags());
+//     }
 
-    llvm::orc::JITDylib& dylib() const;
-    llvm::orc::SymbolStringPtr mangle(const std::string& name);
+//     QuartJIT(
+//         const std::string& filename,
+//         const std::string& entry,
+//         OwnPtr<llvm::Module> module, 
+//         OwnPtr<llvm::LLVMContext> context
+//     );
 
-    void set_error_reporter(ErrorReporter* callback);
+//     llvm::orc::JITDylib& dylib() const;
+//     llvm::orc::SymbolStringPtr mangle(const std::string& name);
 
-    llvm::orc::SymbolMap get_symbol_map() const;
+//     void set_error_reporter(ErrorReporter* callback);
 
-    template<typename T> void define(const std::string& name, T* ptr) {
-        this->symbols[this->mangle(name)] = QuartJIT::create_symbol_from_pointer<T>(ptr);
-    }
+//     llvm::orc::SymbolMap get_symbol_map() const;
 
-    template<typename T> T lookup(const std::string& name) {
-        auto symbol = jit::ExitOnError(this->jit->lookup(name));
-        return (T)symbol.getAddress();
-    }
+//     template<typename T> void define(const std::string& name, T* ptr) {
+//         this->symbols[this->mangle(name)] = QuartJIT::create_symbol_from_pointer<T>(ptr);
+//     }
 
-    void dump() const;
+//     template<typename T> T lookup(const std::string& name) {
+//         auto symbol = jit::ExitOnError(this->jit->lookup(name));
+//         return (T)symbol.getValue();
+//     }
 
-    int run(int argc = 0, char** argv = nullptr);
-private:
-    std::string filename;
-    std::string entry;
+//     void dump() const;
 
-    OwnPtr<llvm::orc::LLJIT> jit;
-    llvm::orc::ThreadSafeModule module;
+//     int run(int argc = 0, char** argv = nullptr);
+// private:
+//     std::string filename;
+//     std::string entry;
 
-    llvm::orc::SymbolMap symbols;
-};
+//     OwnPtr<llvm::orc::LLJIT> jit;
+//     llvm::orc::ThreadSafeModule module;
 
-}
+//     llvm::orc::SymbolMap symbols;
+// };
 
-}
+// }
+
+// }

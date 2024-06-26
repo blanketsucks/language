@@ -2,9 +2,11 @@ project(quart)
 
 cmake_minimum_required(VERSION 3.10)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 
-find_package(LLVM REQUIRED CONFIG)
+set(LLVM_VERSION 17)
+
+find_package(LLVM ${LLVM_VERSION} REQUIRED CONFIG)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 
@@ -20,9 +22,9 @@ file(GLOB_RECURSE SOURCES src/*.cpp)
 include_directories(include)
 
 add_compile_options(-Wall -Wextra -Wno-redundant-move -Wno-unused-variable -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs)
-add_compile_options(-O3 -fno-exceptions)
+add_compile_options(-O3 -fno-exceptions -g)
 
-add_link_options(-O3)
+add_link_options(-O3 -g)
 
 add_compile_definitions(QUART_PATH="${CMAKE_SOURCE_DIR}/lib")
 

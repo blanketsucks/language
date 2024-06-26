@@ -1,5 +1,6 @@
 Checks: modernize-*, clang-analyzer-*, performance-*, cppcoreguidelines-*, bugprone-*, -readability-*,
       -modernize-use-trailing-return-type, -modernize-use-nodiscard, -cppcoreguidelines-avoid-magic-numbers
+      -bugprone-easily-swappable-parameters
 
 CheckOptions:
   - key: cppcoreguidelines-avoid-do-while.IgnoreMacros

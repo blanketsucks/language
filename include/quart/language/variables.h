@@ -1,66 +1,88 @@
 #pragma once
 
-#include <quart/lexer/location.h>
 #include <quart/language/types.h>
+#include <quart/language/symbol.h>
 #include <quart/common.h>
-
-#include <llvm/IR/Value.h>
-#include <llvm/IR/Type.h>
-#include <llvm/IR/Instructions.h>
 
 namespace quart {
 
-struct Variable {
+class Variable : public Symbol {
+public:
+    static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Variable; }
+
     enum Flags : u8 {
         None,
-        StackAllocated = 1 << 0,
-        Reference      = 1 << 1,
-        Mutable        = 1 << 2,
-        Used           = 1 << 3,
-        Mutated        = 1 << 4,
+        Reference = 1 << 0,
+        Mutable   = 1 << 1,
+        Used      = 1 << 2,
+        Mutated   = 1 << 3,
     };
 
-    std::string name;
-    quart::Type* type;
+    Variable(String name, size_t local_index, Type* type) : Symbol(move(name), Symbol::Variable), m_local_index(local_index), m_type(type) {}
 
-    llvm::Value* value;
-    llvm::Constant* constant;
+    u8 flags() const { return m_flags; }
 
-    u8 flags;
+    size_t local_index() const { return m_local_index; }
+    Type* value_type() const { return m_type; }
 
-    Span span;
+    bool is_reference() const { return m_flags & Reference; }
+    bool is_mutable() const { return m_flags & Mutable; }
 
-    static Variable from_alloca(
-        const std::string& name,
-        llvm::AllocaInst* alloca,
-        quart::Type* type,
-        u8 flags,
-        const Span& span
-    );
+    bool is_used() const { return m_flags & Used; }
+    bool is_mutated() const { return m_flags & Mutated; }
 
-    static Variable from_value(
-        const std::string& name,
-        llvm::Value* value,
-        quart::Type* type,
-        u8 flags,
-        const Span& span
-    );
+private:
+    void set_used(bool used) { m_flags = used ? m_flags | Used : m_flags & ~Used; }
+    void set_mutated(bool mutated) { m_flags = mutated ? m_flags | Mutated : m_flags & ~Mutated; }
+    
+    size_t m_local_index;
+    Type* m_type;
 
-    bool is_used() const { return this->flags & Variable::Used; }
-    bool is_mutated() const { return this->flags & Variable::Mutated; }
-    bool is_mutable() const { return this->flags & Variable::Mutable; }
-
-    bool can_ignore_usage() const { return this->name[0] == '_'; }
+    u8 m_flags = None;
 };
 
-struct Constant {
-    std::string name;
-    quart::Type* type;
+// struct Variable {
+//     enum Flags : u8 {
+//         None,
+//         StackAllocated = 1 << 0,
+//         Reference      = 1 << 1,
+//         Mutable        = 1 << 2,
+//         Used           = 1 << 3,
+//         Mutated        = 1 << 4,
+//     };
 
-    llvm::Value* store;
-    llvm::Constant* value;
+//     std::string name;
+//     quart::Type* type;
 
-    Span span;
-};
+//     llvm::Value* value;
+//     llvm::Constant* constant;
+
+//     u8 flags;
+
+//     Span span;
+
+//     static Variable from_alloca(
+//         const std::string& name,
+//         llvm::AllocaInst* alloca,
+//         quart::Type* type,
+//         u8 flags,
+//         const Span& span
+//     );
+
+//     static Variable from_value(
+//         const std::string& name,
+//         llvm::Value* value,
+//         quart::Type* type,
+//         u8 flags,
+//         const Span& span
+//     );
+
+//     bool is_used() const { return this->flags & Variable::Used; }
+//     bool is_mutated() const { return this->flags & Variable::Mutated; }
+//     bool is_mutable() const { return this->flags & Variable::Mutable; }
+
+//     bool can_ignore_usage() const { return this->name[0] == '_'; }
+// };
+
 
 }

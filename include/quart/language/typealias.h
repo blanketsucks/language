@@ -1,56 +1,51 @@
 #pragma once
 
 #include <quart/language/types.h>
-#include <quart/lexer/location.h>
+#include <quart/language/symbol.h>
 #include <quart/parser/ast.h>
 
 namespace quart {
 
-struct GenericTypeParameter {
-    std::string name;
+using GenericCache = HashMap<Vector<Type*>, Type*>;
 
-    std::vector<quart::Type*> constraints;
-    quart::Type* default_type;
+struct GenericTypeParameter {
+    String name;
+
+    Vector<Type*> constraints;
+    Type* default_type;
 
     Span span;
 
-    [[nodiscard]] bool is_optional() const { return this->default_type != nullptr; }  
+    bool is_optional() const { return default_type != nullptr; }  
 };
 
-// Cache for generic types so we don't have to re-instantiate them every time.
-// Probably needs to be moved elsewhere.
-using GenericCache = std::map<std::vector<quart::Type*>, quart::Type*>;
+class TypeAlias : public Symbol {
+public:
+    Type* underlying_type() const { return m_underlying_type; }
 
-struct TypeAlias {
-    std::string name;
-    quart::Type* type = nullptr;
+    Vector<GenericTypeParameter> const& parameters() const { return m_parameters; }
+    ast::TypeExpr const& expr() const { return *m_expr; }
 
-    std::vector<GenericTypeParameter> parameters;
-    OwnPtr<ast::TypeExpr> expr;
+    GenericCache const& cache() const { return m_cache; }
 
-    GenericCache cache;
+    bool is_generic() const { return m_underlying_type == nullptr; }
+    bool all_parameters_have_default() const; // FIXME: Find a better name for this
 
-    Span span;
+    Type* evaluate(State&);
+    Type* evaluate(State&, const Vector<Type*>& args);
 
-    TypeAlias() = default;
+private:
+    TypeAlias(String name, Type* type) : Symbol(move(name), Symbol::TypeAlias), m_underlying_type(type) {}
     TypeAlias(
-        const std::string& name,
-        quart::Type* type,
-        const Span& span
-    ) : name(name), type(type), span(span) {}
-    TypeAlias(
-        const std::string& name,
-        std::vector<GenericTypeParameter> parameters,
-        OwnPtr<ast::TypeExpr> expr,
-        const Span& span
-    ) : name(name), parameters(std::move(parameters)), expr(std::move(expr)), span(span) {}
+        String name, Vector<GenericTypeParameter> parameters, OwnPtr<ast::TypeExpr> expr
+    ) : Symbol(move(name), Symbol::TypeAlias), m_parameters(move(parameters)), m_expr(move(expr)) {}
 
-    bool is_generic() const { return this->type == nullptr; }
+    Type* m_underlying_type = nullptr;
 
-    bool is_instantiable_without_args() const;
+    Vector<GenericTypeParameter> m_parameters;
+    OwnPtr<ast::TypeExpr> m_expr;
 
-    quart::Type* instantiate(Visitor&);
-    quart::Type* instantiate(Visitor&, const std::vector<quart::Type*>& args);
+    GenericCache m_cache;
 };
 
 }

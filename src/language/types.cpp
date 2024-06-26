@@ -1,14 +1,13 @@
 #include <quart/language/types.h>
-#include <quart/language/registry.h>
-#include <quart/logging.h>
+#include <quart/language/type_registry.h>
 
 #include <iostream>
 
 using namespace quart;
 
-TypeKind Type::kind() const { return this->_kind; }
+bool Type::can_safely_cast_to(Type* to) {
+    Type* from = this;
 
-bool Type::can_safely_cast_to(Type* from, Type* to) {
     if (from == to) {
         return true;
     }
@@ -31,7 +30,7 @@ bool Type::can_safely_cast_to(Type* from, Type* to) {
             return is_match_mutable;
         }
 
-        return is_match_mutable && Type::can_safely_cast_to(from, to);
+        return is_match_mutable && from->can_safely_cast_to(to);
     } else if (from->is_reference() && to->is_pointer()) {
         bool is_match_mutable = false;
         if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
@@ -42,7 +41,7 @@ bool Type::can_safely_cast_to(Type* from, Type* to) {
         to = to->get_pointee_type();
 
         if (to->is_void()) return is_match_mutable;
-        return is_match_mutable && Type::can_safely_cast_to(from, to);
+        return is_match_mutable && from->can_safely_cast_to(to);
     } else if (from->is_reference() && to->is_reference()) {
         bool is_match_mutable = false;
         if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
@@ -57,8 +56,11 @@ bool Type::can_safely_cast_to(Type* from, Type* to) {
         if (to->get_array_size() != from->get_array_size()) {
             return false;
         }
+    
+        from = from->get_array_element_type();
+        to = to->get_array_element_type();
 
-        return Type::can_safely_cast_to(from->get_array_element_type(), to->get_array_element_type());
+        return from == to;
     } else if (from->is_struct() && to->is_struct()) {
         return to->get_struct_name() == from->get_struct_name();
     } else if (from->is_int() && to->is_int()) {
@@ -84,18 +86,16 @@ bool Type::is_mutable() const {
     }
 }
 
-TypeRegistry* Type::get_type_registry() const { return this->registry; }
-
 PointerType* Type::get_pointer_to(bool is_mutable) {
-    return this->registry->create_pointer_type(this, is_mutable);
+    return m_type_registry->create_pointer_type(this, is_mutable);
 }
 
 ReferenceType* Type::get_reference_to(bool is_mutable) {
-    return this->registry->create_reference_type(this, is_mutable);
+    return m_type_registry->create_reference_type(this, is_mutable);
 }
 
 u32 Type::get_int_bit_width() const {
-    return this->as<IntType>()->get_bit_width();
+    return this->as<IntType>()->bit_width();
 }
 
 bool Type::is_int_unsigned() const {
@@ -103,11 +103,11 @@ bool Type::is_int_unsigned() const {
 }
 
 Type* Type::get_pointee_type() const {
-    return this->as<PointerType>()->get_pointee_type();
+    return this->as<PointerType>()->pointee();
 }
 
 Type* Type::get_reference_type() const {
-    return this->as<ReferenceType>()->get_reference_type();
+    return this->as<ReferenceType>()->reference_type();
 }
 
 size_t Type::get_pointer_depth() const {
@@ -122,30 +122,32 @@ size_t Type::get_pointer_depth() const {
     return depth;
 }
 
-std::vector<Type*> Type::get_struct_fields() const {
-    return this->as<StructType>()->get_fields();
+Vector<Type*> const& Type::get_struct_fields() const {
+    return this->as<StructType>()->fields();
 }
 
 Type* Type::get_struct_field_at(size_t index) const {
     return this->as<StructType>()->get_field_at(index);
 }
 
-std::string Type::get_struct_name() const { return this->as<StructType>()->get_name(); }
+String const& Type::get_struct_name() const {
+    return this->as<StructType>()->name();
+}
 
 Type* Type::get_array_element_type() const {
-    return this->as<ArrayType>()->get_element_type();
+    return this->as<ArrayType>()->element_type();
 }
 
 size_t Type::get_array_size() const {
-    return this->as<ArrayType>()->get_size();
+    return this->as<ArrayType>()->size();
 }
 
-std::vector<Type*> Type::get_tuple_types() const {
-    return this->as<TupleType>()->get_types();
+Vector<Type*> const& Type::get_tuple_types() const {
+    return this->as<TupleType>()->types();
 }
 
 size_t Type::get_tuple_size() const {
-    return this->as<TupleType>()->get_size();
+    return this->as<TupleType>()->size();
 }
 
 Type* Type::get_tuple_element(size_t index) const {
@@ -153,26 +155,26 @@ Type* Type::get_tuple_element(size_t index) const {
 }
 
 Type* Type::get_inner_enum_type() const {
-    return this->as<EnumType>()->get_inner_type();
+    return this->as<EnumType>()->inner();
 }
 
-std::string Type::get_enum_name() const {
-    return this->as<EnumType>()->get_name();
+String const& Type::get_enum_name() const {
+    return this->as<EnumType>()->name();
 }
 
 Type* Type::get_function_return_type() const {
-    return this->as<FunctionType>()->get_return_type();
+    return this->as<FunctionType>()->return_type();
 }
 
-std::vector<Type*> Type::get_function_params() const {
-    return this->as<FunctionType>()->get_parameter_types();
+Vector<Type*> const& Type::get_function_params() const {
+    return this->as<FunctionType>()->parameters();
 }
 
 Type* Type::get_function_param(size_t index) const {
     return this->as<FunctionType>()->get_parameter_at(index);
 }
 
-std::string Type::get_as_string() const {
+String Type::get_as_string() const {
     switch (this->kind()) {
         case TypeKind::Void: return "void";
         case TypeKind::Float: return "f32";
@@ -181,57 +183,60 @@ std::string Type::get_as_string() const {
             bool is_unsigned = this->is_int_unsigned();
             u32 bits = this->get_int_bit_width();
 
-            if (bits == 1) return "bool";
+            if (bits == 1) {
+                return "bool";
+            }
 
-            return FORMAT("{0}{1}", is_unsigned ? "u" : "i", bits);
+            return format("{0}{1}", is_unsigned ? "u" : "i", bits);
         }
         case TypeKind::Enum: return this->get_enum_name();
         case TypeKind::Struct: return this->get_struct_name();
         case TypeKind::Array: {
-            std::string element = this->get_array_element_type()->get_as_string();
+            String element = this->get_array_element_type()->get_as_string();
             size_t size = this->get_array_size();
 
-            return FORMAT("[{0}; {1}]", element, size);
+            return format("[{0}; {1}]", element, size);
         }
         case TypeKind::Tuple: {
-            std::vector<std::string> types;
+            Vector<String> types;
             for (auto& type : this->get_tuple_types()) {
                 types.push_back(type->get_as_string());
             }
 
-            return FORMAT("({0})", llvm::make_range(types.begin(), types.end()));
+            return format("({0})", llvm::make_range(types.begin(), types.end()));
         }
         case TypeKind::Pointer: {
-            std::string pointee = this->get_pointee_type()->get_as_string();
+            String pointee = this->get_pointee_type()->get_as_string();
             bool is_mutable = this->is_mutable();
 
-            return FORMAT("*{0}{1}", is_mutable ? "mut " : "", pointee);
+            return format("*{0}{1}", is_mutable ? "mut " : "", pointee);
         }
         case TypeKind::Reference: {
-            std::string type = this->get_reference_type()->get_as_string();
+            String type = this->get_reference_type()->get_as_string();
             bool is_mutable = this->is_mutable();
 
-            return FORMAT("&{0}{1}", is_mutable ? "mut " : "", type);
+            return format("&{0}{1}", is_mutable ? "mut " : "", type);
         }
         case TypeKind::Function: {
-            std::string return_type = this->get_function_return_type()->get_as_string();
+            String return_type = this->get_function_return_type()->get_as_string();
 
-            std::vector<std::string> params;
+            Vector<String> params;
             for (auto& param : this->get_function_params()) {
                 params.push_back(param->get_as_string());
             }
 
-            return FORMAT("func({0}) -> {1}", llvm::make_range(params.begin(), params.end()), return_type);
+            return format("func({0}) -> {1}", llvm::make_range(params.begin(), params.end()), return_type);
         }
     }
 
     return "";
 }
 
-void Type::print() const { std::cout << this->get_as_string() << std::endl; }
+void Type::print() const {
+    std::cout << this->get_as_string() << std::endl;
+}
 
-llvm::Type* Type::to_llvm_type() const {
-    llvm::LLVMContext& context = this->registry->get_context();
+llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
     switch (this->kind()) {
         case TypeKind::Void: return llvm::Type::getVoidTy(context);
         case TypeKind::Float: return llvm::Type::getFloatTy(context);
@@ -241,17 +246,17 @@ llvm::Type* Type::to_llvm_type() const {
             return llvm::Type::getIntNTy(context, bits);
         }
         case TypeKind::Enum: {
-            return this->get_inner_enum_type()->to_llvm_type();
+            return this->get_inner_enum_type()->to_llvm_type(context);
         }
         case TypeKind::Struct: {
             const auto* type = this->as<StructType>();
             llvm::StructType* structure = type->get_llvm_struct_type();
 
             if (structure) return structure;
-            std::vector<llvm::Type*> fields;
+            Vector<llvm::Type*> fields;
 
-            for (auto& field : type->get_fields()) {
-                fields.push_back(field->to_llvm_type());
+            for (auto& field : type->fields()) {
+                fields.push_back(field->to_llvm_type(context));
             }
 
             return llvm::StructType::get(context, fields);
@@ -259,17 +264,17 @@ llvm::Type* Type::to_llvm_type() const {
         case TypeKind::Array: {
             const auto* type = this->as<ArrayType>();
 
-            llvm::Type* element = type->get_element_type()->to_llvm_type();
-            size_t size = type->get_size();
+            llvm::Type* element = type->element_type()->to_llvm_type(context);
+            size_t size = type->size();
 
             return llvm::ArrayType::get(element, size);
         }
         case TypeKind::Tuple: {
             const auto* type = this->as<TupleType>();
 
-            std::vector<llvm::Type*> types;
-            for (auto& type : type->get_types()) {
-                types.push_back(type->to_llvm_type());
+            Vector<llvm::Type*> types;
+            for (auto& ty : type->types()) {
+                types.push_back(ty->to_llvm_type(context));
             }
 
             return llvm::StructType::get(context, types);
@@ -277,22 +282,22 @@ llvm::Type* Type::to_llvm_type() const {
         case TypeKind::Pointer: {
             const auto* type = this->as<PointerType>();
 
-            llvm::Type* pointee = type->get_pointee_type()->to_llvm_type();
+            llvm::Type* pointee = type->get_pointee_type()->to_llvm_type(context);
             return llvm::PointerType::get(pointee, 0);
         }
         case TypeKind::Reference: {
             const auto* type = this->as<ReferenceType>();
 
-            llvm::Type* reference = type->get_reference_type()->to_llvm_type();
+            llvm::Type* reference = type->get_reference_type()->to_llvm_type(context);
             return llvm::PointerType::get(reference, 0);
         }
         case TypeKind::Function: {
             const auto* type = this->as<FunctionType>();
-            llvm::Type* return_type = type->get_return_type()->to_llvm_type();
+            llvm::Type* return_type = type->return_type()->to_llvm_type(context);
 
-            std::vector<llvm::Type*> params;
-            for (auto& param : type->get_parameter_types()) {
-                params.push_back(param->to_llvm_type());
+            Vector<llvm::Type*> params;
+            for (auto& param : type->parameters()) {
+                params.push_back(param->to_llvm_type(context));
             }
 
             return llvm::FunctionType::get(return_type, params, false);
@@ -302,88 +307,38 @@ llvm::Type* Type::to_llvm_type() const {
     }
 }
 
-bool IntType::is_boolean_type() const { return this->bits == 1; }
-u32 IntType::get_bit_width() const { return this->bits; }
-bool IntType::is_unsigned() const { return !this->is_signed; }
-
-std::vector<Type*> StructType::get_fields() const { return this->fields; }
-std::string StructType::get_name() const { return this->name; }
-llvm::StructType* StructType::get_llvm_struct_type() const { return this->type; }
-
-Type* StructType::get_field_at(size_t index) const {
-    if (index >= this->fields.size()) {
-        return nullptr;
-    }
-
-    return this->fields[index];
+void StructType::set_fields(const Vector<Type*>& fields) {
+    m_fields = fields;
 }
 
-void StructType::set_fields(const std::vector<Type*>& fields) {
-    this->fields = fields;
-}
-
-Type* ArrayType::get_element_type() const { return this->element; }
-size_t ArrayType::get_size() const { return this->size; }
-
-std::vector<Type*> TupleType::get_types() const { return this->types; }
-size_t TupleType::get_size() const { return this->types.size(); }
-
-Type* TupleType::get_type_at(size_t index) const {
-    if (index >= this->types.size()) {
-        return nullptr;
-    }
-
-    return this->types[index];
-}
-
-Type* PointerType::get_pointee_type() const { return this->pointee; }
-bool PointerType::is_mutable() const { return !this->is_immutable; }
-
-PointerType* PointerType::get_as_const() {
+PointerType* PointerType::as_const() {
     if (!this->is_mutable()) {
         return this;
     }
 
-    return this->registry->create_pointer_type(this->pointee, false);
+    return m_type_registry->create_pointer_type(m_pointee, false);
 }
 
-PointerType* PointerType::get_as_mutable() {
+PointerType* PointerType::as_mutable() {
     if (this->is_mutable()) {
         return this;
     }
 
-    return this->registry->create_pointer_type(this->pointee, true);
+    return m_type_registry->create_pointer_type(m_pointee, true);
 }
 
-Type* ReferenceType::get_reference_type() const { return this->type; }
-bool ReferenceType::is_mutable() const { return !this->is_immutable; }
-
-ReferenceType* ReferenceType::get_as_const() {
+ReferenceType* ReferenceType::as_const() {
     if (!this->is_mutable()) {
         return this;
     }
 
-    return this->registry->create_reference_type(this->type, false);
+    return m_type_registry->create_reference_type(m_type, false);
 }
 
-ReferenceType* ReferenceType::get_as_mutable() {
+ReferenceType* ReferenceType::as_mutable() {
     if (this->is_mutable()) {
         return this;
     }
 
-    return this->registry->create_reference_type(this->type, true);
-}
-
-Type* EnumType::get_inner_type() const { return this->inner; }
-std::string EnumType::get_name() const { return this->name; }
-
-Type* FunctionType::get_return_type() const { return this->return_type; }
-std::vector<Type*> FunctionType::get_parameter_types() const { return this->params; }
-
-Type* FunctionType::get_parameter_at(size_t index) const {
-    if (index >= this->params.size()) {
-        return nullptr;
-    }
-
-    return this->params[index];
+    return m_type_registry->create_reference_type(m_type, true);
 }

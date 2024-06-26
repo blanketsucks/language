@@ -1,12 +1,8 @@
 #include <quart/lexer/lexer.h>
-#include <quart/logging.h>
 
 #include <cctype>
-#include <ios>
-#include <iterator>
-#include <string>
 
-using namespace quart;
+namespace quart {
 
 static const std::map<char, TokenKind> SINGLE_CHAR_TOKENS = {
     {'~', TokenKind::BinaryNot},
@@ -22,41 +18,30 @@ static const std::map<char, TokenKind> SINGLE_CHAR_TOKENS = {
     {'%', TokenKind::Mod}
 };
 
-Token Lexer::create_token(TokenKind type, const std::string& value) {
-    return {type, value, this->make_span()};
+Lexer::Lexer(SourceCode& source_code) {
+    m_code = source_code.code();
+    auto _ = this->next();
 }
 
-Token Lexer::create_token(TokenKind type, const Location& start, const std::string& value) {
-    return {type, value, this->make_span(start, this->current_location())};
+Token Lexer::create_token(TokenKind type, String value) {
+    return { type, move(value), { m_offset, m_offset } };
 }
 
-Location Lexer::current_location() {
-    return Location {
-        this->line,
-        this->column,
-        this->index
-    };
+Token Lexer::create_token(TokenKind type, String value, Span span) {
+    return { type, move(value), span };
 }
 
-Span Lexer::make_span() {
-    return this->make_span(this->current_location(), this->current_location());
+ErrorOr<char> Lexer::espace_next() {
+    return this->escape(TRY(this->next()));
 }
 
-Span Lexer::make_span(const Location& start, const Location& end) {
-    return Span {
-        start,
-        end,
-        this->filename,
-        this->get_line_for(start)
-    };
-}
-
-char Lexer::escape(char current) {
+ErrorOr<char> Lexer::escape(char current) {
     if (current != '\\') {
         return current;
     }
 
-    switch (this->next()) {
+    char c = TRY(this->next());
+    switch (c) {
         case 'n':
             return '\n';
         case 't':
@@ -72,69 +57,19 @@ char Lexer::escape(char current) {
         case '"':
             return '"';
         default:
-            ERROR(this->make_span(), "Invalid escape sequence");
+            return err({ m_offset, m_offset }, "Invalid espace sequence");
     }
 }
 
-bool Lexer::is_valid_identifier(u8 c) {
-    if (std::isalnum(c) || c == '_') {
-        return true;
-    } else if (c < 128) {
-        return false;
-    }
-
-    u32 expected = 0;
-    if (c < 0x80) {
-        return true;
-    } else if (c < 0xE0) {
-        expected = 1;
-    } else if (c < 0xF0) {
-        expected = 2;
-    } else if (c < 0xF8) {
-        expected = 3;
-    } else {
-        return false;
-    }
-
-    for (u32 i = 0; i < expected; i++) {
-        u8 next = this->peek(i);
-        if ((next & 0xC0) != 0x80) {
-            return false;
-        }
-    }
-
-    return true;
+bool Lexer::is_valid_identifier(char c) {
+    return std::isalnum(c) || c == '_';
 }
 
-u8 Lexer::parse_unicode_identifier(std::string& buffer, u8 current) {  
-    u8 expected = 0;
-    buffer.push_back(static_cast<i8>(current));
-
-    if (current < 0x80) {
-        return 0;
-    } else if (current < 0xE0) {
-        expected = 1;
-    } else if (current < 0xF0) {
-        expected = 2;
-    } else if (current < 0xF8) {
-        expected = 3;
-    }
-
-    for (u8 i = 0; i < expected; i++) {
-        buffer.push_back(this->next());
-    }
-
-    return expected;
-}
-
-size_t Lexer::lex_while(
-    std::string& buffer,
-    const std::function<bool(char)>& predicate
-) {
+ErrorOr<size_t> Lexer::lex_while(String& buffer, const std::function<bool(char)>& predicate) {
     size_t n = 0;
-    while (predicate(this->current)) {
-        buffer.push_back(this->current);
-        this->next();
+    while (predicate(m_current)) {
+        buffer.push_back(m_current);
+        TRY(this->next());
 
         n++;
     }
@@ -142,464 +77,312 @@ size_t Lexer::lex_while(
     return n;
 }
 
-Token Lexer::lex_identifier(bool accept_keywords) {
-    std::string value;
-    Location start = this->current_location();
+ErrorOr<Token> Lexer::lex_identifier(bool allow_keywords) {
+    String value;
+    size_t start = m_offset;
 
-    this->parse_unicode_identifier(value, this->current);
-    char next = this->next();
+    TRY(this->lex_while(value, [this](char c) {
+        return this->is_valid_identifier(c);
+    }));
 
-    while (this->is_valid_identifier(next)) {
-        this->parse_unicode_identifier(value, next);
-        next = this->next();
+    Span span = { start, m_offset };
+    if (is_keyword(value) && allow_keywords) {
+        return Token { get_keyword_kind(value), move(value), span };
     }
 
-    if (quart::is_keyword(value) && accept_keywords) {
-        return this->create_token(quart::get_keyword_kind(value), start, value);
-    } else {
-        return this->create_token(TokenKind::Identifier, start, value);
-    }
+    return Token { TokenKind::Identifier, move(value), span };
 }
 
-Token Lexer::lex_string() {
-    std::string value;
-    Location start = this->current_location();
+ErrorOr<Token> Lexer::lex_string() {
+    String value;
+    size_t start = m_offset;
 
-    if (this->current == '\'') {
-        char character = this->escape(this->next());
-        this->next(); this->next();
+    if (m_current == '\'') {
+        char c = TRY(this->espace_next());
+        TRY(this->skip(2));
 
-        std::string value(1, character);
-        return this->create_token(TokenKind::Char, start, value);
+        value.push_back(c);
+        return Token { TokenKind::Char, move(value), { start, m_offset } };
     }
 
-    char next = this->next();
+    char next = TRY(this->next());
     while (next && next != '"') {
-        char escaped = this->escape(this->current);
-        value.push_back(escaped);
-
-        next = this->next();
+        value.push_back(TRY(this->escape(m_current)));
+        next = TRY(this->next());
     }
 
-    if (this->current != '"') {
-        NOTE(this->make_span(start, start), "Unterminated string literal.");
-        ERROR(this->make_span(), "Expected end of string.");
+    if (m_current != '"') {
+        return err({ m_offset, m_offset }, "Expected end of string");
     }
-    
-    Token token = this->create_token(TokenKind::String, start, value); this->next();
-    return token;
+
+    return Token { TokenKind::String, move(value), { start, m_offset } };
 }
 
-Token Lexer::lex_number() {
-    std::string value;
-    Location start = this->current_location();
+ErrorOr<Token> Lexer::lex_number() {
+    String value;
+    size_t start = m_offset;
 
-    value.push_back(this->current);
+    value.push_back(m_current);
 
-    char next = this->next();
-    bool dot = false;
+    char next = TRY(this->next());
+    bool is_float = false;
 
     if (value == "0") {
         if (next == 'x' || next == 'b') {
             value.push_back(next);
-            this->next();
+            TRY(this->next());
 
             if (next == 'x') {
-                this->lex_while(value, isxdigit);
+                TRY(this->lex_while(value, isxdigit));
             } else {
-                this->lex_while(value, [](char c) { return c == '0' || c == '1'; });
+                TRY(this->lex_while(value, [](char c) { return c == '0' || c == '1'; }));
             }
 
-            return this->create_token(TokenKind::Integer, start, value);
+            return Token { TokenKind::Integer, move(value), { start, m_offset } };
         }
     
-        if (this->current != '.') {
+        if (m_current != '.') {
             if (std::isdigit(this->peek()) ) {
-                ERROR(this->make_span(start, this->current_location()), "Leading zeros on integer constants are not allowed");
+                return err({ start, m_offset }, "Leading zeros on integer literals are not allowed");
             }
 
-            return this->create_token(TokenKind::Integer, start, "0");
+            return Token { TokenKind::Integer, move(value), { start, m_offset } };
         }
 
-        dot = true;
-        next = this->next();
+        is_float = true;
+        next = TRY(this->next());
 
-        if (this->current == '.') {
+        if (m_current == '.') {
             this->rewind(2);
-            return this->create_token(TokenKind::Integer, start, "0");
+            return Token { TokenKind::Integer, move(value), { start, m_offset } };
         }
     }
 
     while (std::isdigit(next) || next == '.' || next == '_') {
         if (next == '.') {
-            if (dot) {
+            if (is_float) {
                 break;
             }
 
-            dot = true;
+            is_float = true;
         } else if (next == '_') {
             if (this->peek() == '_') {
-                ERROR(this->make_span(start, this->current_location()), "Invalid number literal");
+                return err({ start, m_offset}, "Invalid integer literal");
             }
 
-            next = this->next();
+            next = TRY(this->next());
             continue;
         }
 
         value.push_back(next);
-        next = this->next();
+        next = TRY(this->next());
     }
 
-    if (value.back() == '.' && this->current == '.') {
+    if (value.back() == '.' && m_current == '.') {
         this->rewind(2);
         value.pop_back();
 
-        dot = false;
+        is_float = false;
     }
 
-    if (dot) {
-        return this->create_token(TokenKind::Float, start, value);
+    if (is_float) {
+        return Token { TokenKind::Float, move(value), { start, m_offset } }; 
     } else {
-        return this->create_token(TokenKind::Integer, start, value);
+        return Token { TokenKind::Integer, move(value), { start, m_offset } }; 
     }
 }
 
-Token Lexer::once() {
-    char current = this->current;
-    Location start = this->current_location();
-
-    if (std::isdigit(current)) {
-        return this->lex_number();
-    } else if (this->is_valid_identifier(current)) {
-        return this->lex_identifier();
-    } else if (SINGLE_CHAR_TOKENS.find(current) != SINGLE_CHAR_TOKENS.end()) {
-        TokenKind kind = SINGLE_CHAR_TOKENS.at(current);
-        this->next();
-
-        return this->create_token(kind, start, std::string(1, current));
+Optional<Token> Lexer::expect(char prev, ExpectedToken expected) {
+    if (m_current != expected.c) {
+        return {};
     }
 
-    switch (current) {
-        case '`': {
-            this->next();
-            Token token = this->lex_identifier(false);
+    auto _ = this->next(); // FIXME: Handle the Error
 
-            if (this->current != '`') {
-                ERROR(this->make_span(start, this->current_location()), "Expected end of identifier.");
+    String value;
+
+    value.push_back(prev);
+    value.push_back(expected.c);
+
+    return Token { expected.kind, move(value), { m_offset, m_offset } };
+}
+
+ErrorOr<Token> Lexer::once() {
+    size_t start = m_offset;
+
+    if (std::isdigit(m_current)) {
+        return this->lex_number();
+    } else if (this->is_valid_identifier(m_current)) {
+        return this->lex_identifier();
+    } else if (SINGLE_CHAR_TOKENS.find(m_current) != SINGLE_CHAR_TOKENS.end()) {
+        TokenKind kind = SINGLE_CHAR_TOKENS.at(m_current);
+        char c = m_current;
+        
+        TRY(this->next());
+        return Token { kind, String(1, c), { start, start } };
+    }
+
+    switch (m_current) {
+        case '`': {
+            TRY(this->next());
+            auto token = TRY(this->lex_identifier(false));
+
+            if (m_current != '`') {
+                return err({ start, m_offset }, "Expected end of identifier");
             }
 
-            this->next();
+            TRY(this->next());
             return token;
         }
         case '+': {
-            char next = this->next();
-            if (next == '+') {
-                this->next();
-                return this->create_token(TokenKind::Inc, start, "++");
-            } else if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::IAdd, start, "+=");
-            }
+            TRY(this->next());
+            Optional<Token> option = this->expect('+',
+                ExpectedToken { TokenKind::Inc, '+'}, 
+                ExpectedToken { TokenKind::IAdd, '='}
+            );
 
-            return this->create_token(TokenKind::Add, start, "+");
+            return option.value_or(Token { TokenKind::Add, "+", { start, m_offset } });
         } case '-': {
-            char next = this->next();
-            if (next == '>') {
-                this->next();
-                return this->create_token(TokenKind::Arrow, start, "->");
-            } else if (next == '-') {
-                this->next();
-                return this->create_token(TokenKind::Dec, start, "--");
-            } else if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::IMinus, start, "-=");
-            }
-            
-            return this->create_token(TokenKind::Minus, "-");
+            TRY(this->next());
+            Optional<Token> option = this->expect('-',
+                ExpectedToken { TokenKind::Arrow, '>' },
+                ExpectedToken { TokenKind::Dec, '-' },
+                ExpectedToken { TokenKind::ISub, '=' }
+            );
+
+            return option.value_or(Token { TokenKind::Sub, "-", { start, m_offset } });
         } case '*': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::IMul, start, "*=");
-            }
-                
-            return this->create_token(TokenKind::Mul, "*");
+            TRY(this->next());
+
+            Optional<Token> option = this->expect('*', { TokenKind::IMul, '=' });
+            return option.value_or(Token { TokenKind::Mul, "*", { start, m_offset } });
         } case '/': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::IDiv, start, "/=");
-            }
-                
-            return this->create_token(TokenKind::Div, "/");
+            TRY(this->next());
+
+            Optional<Token> option = this->expect('/', { TokenKind::IDiv, '=' });
+            return option.value_or(Token { TokenKind::Mul, "*", { start, m_offset } });
         } case '=': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::Eq, start, "==");
-            } else if (next == '>') {
-                this->next();
-                return this->create_token(TokenKind::DoubleArrow, start, "=>");
-            }
+            TRY(this->next());
+            Optional<Token> option = this->expect('=',
+                ExpectedToken { TokenKind::Eq, '=' },
+                ExpectedToken { TokenKind::FatArrow, '>' }
+            );
 
-            return this->create_token(TokenKind::Assign, "=");
+            return option.value_or(Token { TokenKind::Assign, "=", { start, m_offset } });
         } case '>': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::Gte, start, ">=");
-            } 
-
-            return this->create_token(TokenKind::Gt, start, ">");
+            TRY(this->next());
+            
+            Optional<Token> option = this->expect('>', { TokenKind::Gte, '=' });
+            return option.value_or(Token { TokenKind::Gt, ">", { start, m_offset } });
         } case '<': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::Lte, start, "<=");
-            } else if (next == '<') {
-                this->next();
-                return this->create_token(TokenKind::Lsh, start, "<<");
-            }
-                
-            return this->create_token(TokenKind::Lt, start, "<");
+            TRY(this->next());
+            Optional<Token> option = this->expect('<',
+                ExpectedToken { TokenKind::Lte, '=' },
+                ExpectedToken { TokenKind::Lsh, '<' }
+            );
+
+            return option.value_or(Token { TokenKind::Lt, "<", { start, m_offset } });
         } case '!': {
-            char next = this->next();
-            if (next == '=') {
-                this->next();
-                return this->create_token(TokenKind::Neq, start, "!=");
-            }
+            TRY(this->next());
             
-            return this->create_token(TokenKind::Not, start, "!");
+            Optional<Token> option = this->expect('!', { TokenKind::Neq, '!' });
+            return option.value_or(Token { TokenKind::Not, "!", { start, m_offset } });
         } case '|': {
-            char next = this->next();
-            if (next == '|') {
-                this->next();
-                return this->create_token(TokenKind::Or, start, "||");
-            }
-                
-            return this->create_token(TokenKind::BinaryOr, start, "|");
+            TRY(this->next());
+            
+            Optional<Token> option = this->expect('|', { TokenKind::Or, '|' });
+            return option.value_or(Token { TokenKind::BinaryOr, "|", { start, m_offset } });
         } case '&': {
-            char next = this->next();
-            if (next == '&') {
-                this->next();
-                return this->create_token(TokenKind::And, start, "&&");
-            }
+            TRY(this->next());
             
-            return this->create_token(TokenKind::BinaryAnd, start, "&");
+            Optional<Token> option = this->expect('&', { TokenKind::And, '&' });
+            return option.value_or(Token { TokenKind::BinaryAnd, "&", { start, m_offset } });
         } case '.': {
-            char next = this->next();
-            if (next == '.' && this->peek() == '.') {
-                this->next(); this->next();
-                return this->create_token(TokenKind::Ellipsis, start, "...");
-            } else if (next == '.') {
-                this->next();
-                return this->create_token(TokenKind::DoubleDot, start, "..");
+            TRY(this->next());
+            if (m_current == '.' && this->peek() == '.') {
+                return Token { TokenKind::Ellipsis, "...", { start, m_offset } };
             }
-            
-            return this->create_token(TokenKind::Dot, ".");
+
+            Optional<Token> option = this->expect('.', { TokenKind::DoubleDot, '.' });
+            return option.value_or(Token { TokenKind::Dot, ".", { start, m_offset } });
         } case ':': {
-            char next = this->next();
-            if (next == ':') {
-                this->next();
-                return this->create_token(TokenKind::DoubleColon, start, "::");
-            }
-            
-            return this->create_token(TokenKind::Colon, ":");
+            TRY(this->next());
+
+            Optional<Token> option = this->expect(':', { TokenKind::DoubleColon, ':' });
+            return option.value_or(Token { TokenKind::Colon, ":", { start, m_offset } });
         } 
-        case '"': case '\'': return this->lex_string();
+        case '"': case '\'': {
+            return this->lex_string();
+        }
         default:
-            ERROR(this->make_span(), "Unexpected character '{0}'", this->current);
+            return err({ start, m_offset }, "Unexpected character '{0}'", m_current);
     }
 }
 
-std::vector<Token> Lexer::lex() {
-    std::vector<Token> tokens;
+ErrorOr<Vector<Token>> Lexer::lex() {
+    Vector<Token> tokens;
+    while (!m_eof) {
+        if (m_current == '\0') {
+            break;
+        }
 
-    while (!this->eof) {
-        if (this->current == '\n') {
-            if (this->line == UINT32_MAX) {
-                ERROR(this->make_span(), "Lexer line overflow. Too many lines in file.");
-            }
-
-            this->line++;
-            this->column = 0;
-
-            this->next();
+        if (std::isspace(m_current)) {
+            TRY(this->next());
             continue;
-        } else if (std::isspace(this->current)) {
-            this->next();
-            if (this->current == '\t') {
-                this->column += 3;
-            }
-
-            continue;
-        } else if (this->current == '#') {
-            while (this->current != '\n' && this->current != 0) {
-                this->next();
+        } else if (m_current == '#') {
+            while (m_current != '\n' && m_current != 0) {
+                TRY(this->next());
             }
 
             continue;
         }
 
-        tokens.push_back(this->once());
+        tokens.push_back(TRY(this->once()));
     }
 
-    Token eof = {TokenKind::EOS, "\0", this->make_span()};
+    Token eof = { TokenKind::EOS, "", { m_offset, m_offset } };
     tokens.push_back(eof);
 
     return tokens;
 }
 
-
-MemoryLexer::MemoryLexer(std::string source, const std::string& filename) : source(std::move(source)) {
-    this->filename = filename;
-
-    this->reset();
-    this->next();
-}
-
-MemoryLexer::MemoryLexer(fs::Path path) {
-    this->filename = path;
-    this->source = path.read().str();
-    
-    this->reset();
-    this->next();
-}
-
-char MemoryLexer::next() {
-    if (this->index == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer index overflow.");
+ErrorOr<char> Lexer::next() {
+    if (m_offset == SIZE_MAX) {
+        return err({ m_offset, m_offset }, "Lexer offset overflow");
     }
 
-    this->current = this->source[this->index];
-    this->index++;
-
-    if (this->current == 0) {
-        this->eof = true;
-        return this->current;
+    if (m_offset > m_code.size()) {
+        m_eof = true;
+        return '\0';
     }
 
-    this->column++;
-    if (this->column == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer column overflow.");
+    m_current = m_code[m_offset];
+    m_offset++;
+
+    return m_current;
+}
+
+ErrorOr<void> Lexer::skip(size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        TRY(this->next());
     }
 
-    return this->current;
+    return {};
 }
 
-char MemoryLexer::peek(u32 offset) { 
-    return this->source[this->index + offset]; 
+char Lexer::peek(u32 offset) { 
+    return m_code[m_offset + offset]; 
 }
 
-char MemoryLexer::prev() { 
-    return this->source[this->index - 1]; 
+char Lexer::prev() { 
+    return m_code[m_offset - 1]; 
 }
 
-char MemoryLexer::rewind(u32 offset) {
-    this->index -= offset - 1;
-    this->column -= offset;
+char Lexer::rewind(u32 offset) {
+    m_offset -= offset - 1;
 
-    this->current = this->source[this->index - 1];
-    return this->current;
+    m_current = m_code[m_offset - 1];
+    return m_current;
 }
 
-void MemoryLexer::reset() {
-    this->index = 0;
-    this->line = 1;
-    this->column = 0;
-    this->eof = false;
-}
-
-llvm::StringRef MemoryLexer::get_line_for(const Location& location) {
-    if (this->lines.find(location.line) == this->lines.end()) {
-        size_t offset = location.index - location.column;
-        std::string line;
-
-        if (offset < this->source.size()) {
-            line = this->source.substr(offset);
-            line = line.substr(0, line.find('\n'));
-        }
-
-        this->lines[location.line] = line;
-    }
-
-    return this->lines[location.line];
-}
-
-StreamLexer::StreamLexer(std::ifstream& stream, const std::string& filename) : stream(stream) {
-    this->filename = filename;
-
-    this->reset();
-    this->next();
-}
-
-char StreamLexer::next() {
-    if (this->index == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer index overflow.");
-    }
-
-    this->current = static_cast<i8>(this->stream.get());
-    this->index++;
-
-    if (!this->stream.good()) {
-        this->eof = true;
-        return this->current;
-    }
-
-    this->column++;
-    if (this->column == UINT32_MAX) {
-        ERROR(this->make_span(), "Lexer column overflow.");
-    }
-
-    return this->current;
-}
-
-char StreamLexer::peek(u32 offset) { 
-    return static_cast<i8>(this->stream.get()); 
-}
-
-char StreamLexer::prev() {
-    i64 index = static_cast<i64>(this->index);
-
-    this->stream.seekg(index - 1, std::ifstream::beg);
-    char c = static_cast<i8>(this->stream.get());
-
-    this->stream.seekg(index, std::ifstream::beg);
-    return c;
-}
-
-char StreamLexer::rewind(u32 offset) {
-    this->index -= offset - 1;
-    this->column -= offset;
-
-    i64 index = static_cast<i64>(this->index);
-
-    this->stream.seekg(index - 1, std::ifstream::beg);
-    this->current = static_cast<i8>(this->stream.get());
-
-    this->stream.seekg(index, std::ifstream::beg);
-    return this->current;
-}
-
-void StreamLexer::reset() {
-    this->index = 0;
-    this->line = 1;
-    this->column = 0;
-    this->eof = false;
-}
-
-llvm::StringRef StreamLexer::get_line_for(const Location& location) {
-    auto iterator = this->lines.find(location.line);
-    if (iterator == this->lines.end()) {
-        i64 offset = static_cast<i64>(location.index - location.column);
-        this->stream.seekg(offset, std::ifstream::beg);
-
-        std::string line;
-        std::getline(this->stream, line);
-
-        this->stream.seekg(static_cast<i64>(this->index), std::ifstream::beg);
-        this->lines[location.line] = line;
-    }
-
-    return iterator->second;
 }
