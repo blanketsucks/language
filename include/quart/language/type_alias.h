@@ -21,6 +21,15 @@ struct GenericTypeParameter {
 
 class TypeAlias : public Symbol {
 public:
+
+    static RefPtr<TypeAlias> create(String name, Type* type) {
+        return RefPtr<TypeAlias>(new TypeAlias(move(name), type));
+    }
+
+    static RefPtr<TypeAlias> create(String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr) {
+        return RefPtr<TypeAlias>(new TypeAlias(move(name), move(parameters), expr));
+    }
+
     Type* underlying_type() const { return m_underlying_type; }
 
     Vector<GenericTypeParameter> const& parameters() const { return m_parameters; }
@@ -37,13 +46,13 @@ public:
 private:
     TypeAlias(String name, Type* type) : Symbol(move(name), Symbol::TypeAlias), m_underlying_type(type) {}
     TypeAlias(
-        String name, Vector<GenericTypeParameter> parameters, OwnPtr<ast::TypeExpr> expr
-    ) : Symbol(move(name), Symbol::TypeAlias), m_parameters(move(parameters)), m_expr(move(expr)) {}
+        String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr
+    ) : Symbol(move(name), Symbol::TypeAlias), m_parameters(move(parameters)), m_expr(expr) {}
 
     Type* m_underlying_type = nullptr;
 
     Vector<GenericTypeParameter> m_parameters;
-    OwnPtr<ast::TypeExpr> m_expr;
+    ast::TypeExpr* m_expr = nullptr;
 
     GenericCache m_cache;
 };

@@ -11,6 +11,26 @@
 #include <map>
 #include <algorithm>
 
+#define ENUMERATE_BINARY_OPS(OP) \
+    OP(Add)                      \
+    OP(Sub)                      \
+    OP(Mul)                      \
+    OP(Div)                      \
+    OP(Mod)                      \
+    OP(Or)                       \
+    OP(And)                      \
+    OP(BinaryOr)                 \
+    OP(BinaryAnd)                \
+    OP(Xor)                      \
+    OP(Rsh)                      \
+    OP(Lsh)                      \
+    OP(Eq)                       \
+    OP(Neq)                      \
+    OP(Gt)                       \
+    OP(Lt)                       \
+    OP(Gte)                      \
+    OP(Lte)                      \
+
 namespace quart {
 
 enum class TokenKind;

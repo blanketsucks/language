@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-
 namespace quart::bytecode {
 
 class Instruction;
@@ -21,7 +20,7 @@ public:
     Vector<Instruction*>& instructions() { return m_instructions; }
     Vector<Instruction*> const& instructions() const { return m_instructions; }
 
-    void add_instruction(Instruction* inst) { m_instructions.push_back(inst); }
+    void add_instruction(Instruction*);
 
     bool is_terminated() const { return m_terminated; }
     void terminate() { m_terminated = true; }

@@ -4,7 +4,7 @@
 #include <quart/language/functions.h>
 #include <quart/language/structs.h>
 #include <quart/language/enums.h>
-#include <quart/language/typealias.h>
+#include <quart/language/type_alias.h>
 #include <quart/language/modules.h>
 #include <quart/language/types.h>
 #include <quart/language/variables.h>
@@ -67,7 +67,7 @@ public:
     Scope* parent() const { return m_parent; }
     Vector<Scope*> const& children() const { return m_children; }
 
-    void* data() const { return m_data; }
+    HashMap<String, RefPtr<Symbol>> const& symbols() const { return m_symbols; }
 
     Symbol* resolve(const String& name);
     template<typename T> T* resolve(const String& name) {
@@ -79,10 +79,9 @@ public:
         return symbol->as<T>();
     }
 
-    template<typename T> T* as() const;
-    template<typename T> bool is() const;
-
-    // ScopeLocal get_local(const std::string& name, bool use_store_value = true);
+    void add_symbol(RefPtr<Symbol> symbol) {
+        m_symbols[symbol->name()] = move(symbol);
+    }
 
     void finalize(bool eliminate_dead_functions = true);
 
@@ -99,7 +98,6 @@ private:
     
     Vector<ast::Expr*> m_defers;
 
-    void* m_data = nullptr;
 };
 
 }

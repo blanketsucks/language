@@ -37,6 +37,9 @@ void outln(const char* fmt, Args... args) {
     llvm::outs() << '\n';
 }
 
+void outln(const char*);
+void outln();
+
 template<typename ...Args> requires(Formatable_v<Args...>)
 void err(const char* fmt, Args... args) {
     auto format = llvm::formatv(fmt, std::forward<Args>(args)...);

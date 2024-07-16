@@ -1,42 +1,17 @@
 #pragma once
 
-#include <quart/parser/ast.h>
 #include <quart/language/types.h>
 #include <quart/llvm.h>
 #include <quart/common.h>
-
 #include <quart/language/symbol.h>
+#include <quart/bytecode/basic_block.h>
 
 namespace quart {
 
 class Scope;
 struct Struct;
 
-// struct EarlyFunctionCall {
-//     llvm::Function* function;
-//     std::vector<llvm::Value*> args;
-
-//     const quart::FunctionType* type;
-
-//     llvm::Value* self;
-//     llvm::Value* store;
-// };
-
-// struct FunctionReturn {
-//     quart::Type* type;
-//     llvm::AllocaInst* value;
-
-//     llvm::BasicBlock* block;
-
-//     FunctionReturn() : type(nullptr), value(nullptr), block(nullptr) {}
-//     FunctionReturn(
-//         quart::Type* type, llvm::AllocaInst* value, llvm::BasicBlock* block
-//     ) : type(type), value(value), block(block) {}
-
-//     quart::Type* operator->() const { return this->type; }
-// };
-
-struct Parameter {
+struct FunctionParameter {
     enum Flags : u8 {
         None,
         Keyword  = 1 << 0,
@@ -45,10 +20,9 @@ struct Parameter {
         Variadic = 1 << 3
     };
 
-    std::string name;
+    String name;
     quart::Type* type;
 
-    llvm::Value* default_value = nullptr;
     u8 flags;
 
     u32 index;
@@ -56,41 +30,82 @@ struct Parameter {
 
     bool is_reference() const { return this->type->is_reference(); }
     bool is_mutable() const { return this->flags & Flags::Mutable; }
-    bool has_default_value() const { return this->default_value != nullptr; }
 };
 
-// struct Loop {
-//     llvm::BasicBlock* start = nullptr;
-//     llvm::BasicBlock* end = nullptr;
-// };
+struct Loop {
+    bytecode::BasicBlock* start;
+    bytecode::BasicBlock* end;
+};
 
 class Function : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Function; }
 
-    RefPtr<Function> create(String name, Type* underlying_type, Scope*);
+    static RefPtr<Function> create(String name, Vector<FunctionParameter> parameters, FunctionType* underlying_type, Scope*);
 
     FunctionType* underlying_type() const { return m_underlying_type; }
     Type* return_type() const { return m_underlying_type->return_type(); }
+
+    Vector<FunctionParameter> const& parameters() const { return m_parameters; }
 
     String const& qualified_name() const { return m_qualified_name; }
 
     Scope* scope() const { return m_scope; }
 
+    size_t local_count() const { return m_locals.size(); }
+    
+    size_t allocate_local() {
+        m_locals.push_back(nullptr);
+        return m_locals.size() - 1;
+    }
+
+    void set_local_type(size_t index, Type* type) { m_locals[index] = type; }
+    Vector<Type*> const& locals() const { return m_locals; }
+
+    bytecode::BasicBlock* entry_block() { return m_entry_block; }
+    bytecode::BasicBlock* current_block() { return m_current_block; }
+
+    Vector<bytecode::BasicBlock*> const& basic_blocks() const { return m_basic_blocks; }
+
+    void set_current_block(bytecode::BasicBlock* block) { m_current_block = block; }
+    void set_entry_block(bytecode::BasicBlock* block) {
+        m_basic_blocks.push_back(block);
+        m_entry_block = block;
+    }
+
+    void insert_block(bytecode::BasicBlock* block) { m_basic_blocks.push_back(block); }
+
+    Loop const& current_loop() const { return m_loop; }
+    Loop& current_loop() { return m_loop; }
+
+    void set_current_loop(Loop loop) { m_loop = loop; }
+
 private:
     void set_qualified_name();
 
     Function(
-        String name, 
+        String name,
+        Vector<FunctionParameter> parameters,
         FunctionType* underlying_type,
         Scope* scope
-    ) : Symbol(move(name), Symbol::Function), m_underlying_type(underlying_type), m_scope(scope) {
+    ) : Symbol(move(name), Symbol::Function), m_underlying_type(underlying_type), m_parameters(move(parameters)), m_scope(scope) {
         this->set_qualified_name();
     }
 
     FunctionType* m_underlying_type;
     String m_qualified_name;
 
+    Vector<FunctionParameter> m_parameters;
+
+    bytecode::BasicBlock* m_current_block = nullptr;
+
+    bytecode::BasicBlock* m_entry_block = nullptr;
+    Vector<bytecode::BasicBlock*> m_basic_blocks;
+
+    Vector<Type*> m_locals;
+
+    Loop m_loop = {};
+    
     Scope* m_scope = nullptr;
 };
 

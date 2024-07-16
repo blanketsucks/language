@@ -2,6 +2,8 @@
 
 #include <quart/common.h>
 
+#include <llvm/Support/FormatVariadic.h>
+
 namespace quart {
 
 class Scope;

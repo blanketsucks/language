@@ -12,10 +12,10 @@ SIMPLE_ATTRIBUTE(noreturn, Attribute::Noreturn)
 SIMPLE_ATTRIBUTE(packed, Attribute::Packed)
 
 ATTRIBUTE(llvm_intrinsic) {
-    TRY(parser.expect(TokenKind::LParen, "("));
+    TRY(parser.expect(TokenKind::LParen));
 
     String name = TRY(parser.expect(TokenKind::String)).value();
-    TRY(parser.expect(TokenKind::RParen, ")"));
+    TRY(parser.expect(TokenKind::RParen));
 
     return Attribute { Attribute::LLVMIntrinsic, name };
 }
@@ -25,7 +25,7 @@ ATTRIBUTE(link) {
         "name", "export", "arch", "section", "platform"
     };
     
-    TRY(parser.expect(TokenKind::LParen, "("));
+    TRY(parser.expect(TokenKind::LParen));
     HashMap<String, String> args;
 
     while (true) {
@@ -53,7 +53,7 @@ ATTRIBUTE(link) {
         }
     }
 
-    TRY(parser.expect(TokenKind::RParen, ")"));
+    TRY(parser.expect(TokenKind::RParen));
     return Attribute { Attribute::Link, args };
 }
 

@@ -1,7 +1,9 @@
 #include <quart/compiler.h>
 #include <quart/lexer/lexer.h>
 #include <quart/parser/parser.h>
-#include <quart/jit.h>
+#include <quart/language/state.h>
+#include <quart/language/symbol.h>
+#include <quart/codegen/llvm.h>
 
 #include <llvm/Passes/PassBuilder.h>
 
@@ -198,6 +200,23 @@ int Compiler::compile() const {
         return 1;
     }
 
+    State state;
+    for (auto& expr : ast.release_value()) {
+        auto result = expr->generate(state);
+        if (result.is_err()) {
+            auto& error = result.error();
+            errln("{0}", code.format_error(error));
+
+            return 1;
+        }
+    }
+
+    codegen::LLVMCodeGen codegen(state, m_options.input.filename());
+    codegen.generate();
+
+    auto& module = codegen.module();
+    module.print(llvm::errs(), nullptr);
+    
     return 0;
 }
 

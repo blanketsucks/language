@@ -18,7 +18,7 @@ using FunctionTypeStorageKey = std::pair<Type*, Vector<Type*>>;
 
 class TypeRegistry {
 public:
-    template<typename K, typename V> using TypeMap = std::map<K, V, std::equal_to<K>>;
+    template<typename K, typename V> using TypeMap = std::map<K, V>;
 
     static OwnPtr<TypeRegistry> create();
 

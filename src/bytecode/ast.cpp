@@ -1,10 +1,20 @@
 #include <quart/language/state.h>
 #include <quart/parser/ast.h>
+#include <quart/temporary_change.h>
 
 namespace quart::ast {
 
 static inline bytecode::Register select_dst(State& state, Optional<bytecode::Register> dst) {
     return dst.value_or(state.allocate_register());
+}
+
+static inline ErrorOr<bytecode::Operand> ensure(State& state, Expr const& expr, Optional<bytecode::Register> dst) {
+    auto option = TRY(expr.generate(state, dst));
+    if (!option.has_value()) {
+        return err(expr.span(), "Expected an expression");
+    }
+
+    return option.value();
 }
 
 BytecodeResult BlockExpr::generate(State& state, Optional<bytecode::Register>) const {
@@ -52,12 +62,7 @@ BytecodeResult ArrayExpr::generate(State& state, Optional<bytecode::Register> ds
 
     quart::Type* array_element_type = nullptr;
     for (auto& expr : m_elements) {
-        auto option = TRY(expr->generate(state, {}));
-        if (!option.has_value()) {
-            return err(expr->span(), "Expected an expression");
-        }
-
-        bytecode::Operand operand = option.value();
+        auto operand = TRY(ensure(state, *expr, {}));
         if (ops.empty()) {
             ops.push_back(operand);
             array_element_type = state.type(operand);
@@ -107,8 +112,7 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
             auto* function = symbol->as<Function>();
             auto reg = select_dst(state, dst);
 
-            // FIXME: Maybe it would be better to address functions by an index rather than name since both can be unique.
-            state.emit<bytecode::GetFunction>(reg, function->qualified_name());
+            state.emit<bytecode::GetFunction>(reg, function);
             state.set_register_type(reg, function->underlying_type()->get_pointer_to());
 
             return bytecode::Operand(reg);
@@ -119,162 +123,437 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
 }
 
 BytecodeResult FloatExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult AssignmentExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Optional<bytecode::Operand> value;
+    Function* current_function = state.function();
+
+    if (m_value) {
+        value = TRY(ensure(state, *m_value, {}));
+    }
+
+    Type* type = m_type ? TRY(m_type->evaluate(state)) : nullptr;
+    if (value.has_value() && type) {
+        value = TRY(state.type_check_and_cast(span(), *value, type, "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+    } else if (value.has_value()) {
+        type = state.type(*value);
+    }
+
+    size_t local_index = current_function->allocate_local();
+    current_function->set_local_type(local_index, type);
+
+    auto variable = Variable::create(m_identifier.value, local_index, type);
+    state.emit<bytecode::SetLocal>(local_index, value.value_or(bytecode::Operand()));
+
+    state.scope()->add_symbol(variable);
     return {};
 }
 
 BytecodeResult TupleAssignmentExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult ConstExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult ConstExpr::generate(State& state, Optional<bytecode::Register>) const {
+    bytecode::Operand value = TRY(ensure(state, *m_value, {}));
+
+    size_t global_index = state.allocate_global();
+    auto variable = Variable::create(m_name, global_index, state.type(value));
+
+    state.emit<bytecode::SetGlobal>(global_index, value);
+    state.scope()->add_symbol(variable);
+
     return {};
 }
 
 BytecodeResult UnaryOpExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult BinaryOpExpr::generate(State&, Optional<bytecode::Register>) const {
-    return {};
+BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    if (m_op == BinaryOp::Assign) {
+        auto lhs = TRY(state.resolve_reference(*m_lhs));
+        auto rhs = TRY(ensure(state, *m_rhs, {}));
+
+        Type* lhs_type = state.type(lhs)->get_reference_type();
+        rhs = TRY(state.type_check_and_cast(span(), rhs, lhs_type, "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+
+        state.emit<bytecode::Write>(lhs, rhs);
+        return {};
+    }
+
+    bytecode::Operand lhs = TRY(ensure(state, *m_lhs, {}));
+    bytecode::Operand rhs = TRY(ensure(state, *m_rhs, {}));
+
+    Type* lhs_type = state.type(lhs);
+    rhs = TRY(state.type_check_and_cast(span(), rhs, lhs_type, "Cannot perform binary operation on operands of type '{0}' and '{1}'"));
+
+    auto reg = select_dst(state, dst);
+    switch (m_op) {
+        // NOLINTNEXTLINE
+        #define Op(x) case BinaryOp::x: state.emit<bytecode::x>(reg, lhs, rhs); break;
+            ENUMERATE_BINARY_OPS(Op)
+        #undef Op
+
+        default:
+            return err(span(), "Unknown binary operator");
+    }
+
+    state.set_register_type(reg, lhs_type);
+    return bytecode::Operand(reg);
 }
 
 BytecodeResult InplaceBinaryOpExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ReferenceExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult CallExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    bytecode::Operand callee = TRY(ensure(state, *m_callee, {}));
+    Type* type = state.type(callee);
+
+    FunctionType const* function_type = nullptr;
+    if (type->is_pointer()) {
+        Type* pointee = type->get_pointee_type();
+        if (!pointee->is_function()) {
+            return err(span(), "Cannot call a value of type '{0}'", type->str());
+        }
+
+        function_type = pointee->as<FunctionType>();
+    } else if (type->is_function()) {
+        function_type = type->as<FunctionType>();
+    } else {
+        return err(span(), "Cannot call a value of type '{0}'", type->str());
+    }
+
+    if (m_args.size() != function_type->parameters().size()) {
+        return err(span(), "Expected {0} arguments but got {1}", function_type->parameters().size(), m_args.size());
+    }
+
+    Vector<bytecode::Operand> arguments;
+    for (auto [index, arg] : llvm::enumerate(m_args)) {
+        auto operand = TRY(ensure(state, *arg, {}));
+        Type* parameter_type = function_type->get_parameter_at(index);
+
+        operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter_type, "Cannot pass a value of type '{0}' to a function that expects '{1}'"));
+        arguments.push_back(operand);
+    }
+
+    auto reg = select_dst(state, dst);
+    state.emit<bytecode::Call>(reg, callee, function_type, arguments);
+
+    state.set_register_type(reg, function_type->return_type());
+    return bytecode::Operand(reg);
+}
+
+BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+
+    Type* return_type = current_function->return_type();
+    if (m_value) {
+        if (return_type->is_void()) {
+            return err(span(), "Cannot return a value from a function that expects void");
+        }
+
+        auto operand = TRY(ensure(state, *m_value, {}));
+        operand = TRY(state.type_check_and_cast(span(), operand, return_type, "Cannot return a value of type '{0}' from a function that expects '{1}'"));
+
+        state.emit<bytecode::Return>(operand);
+    } else {
+        if (!return_type->is_void()) {
+            return err(span(), "Cannot return void from a function that expects '{0}'", return_type->str());
+        }
+
+        state.emit<bytecode::Return>();
+    }
+
     return {};
 }
 
-BytecodeResult ReturnExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Vector<FunctionParameter> parameters;
+    for (auto [index, param] : llvm::enumerate(m_parameters)) {
+        Type* type = TRY(param.type->evaluate(state));
+
+        parameters.push_back({ param.name, type, param.flags, static_cast<u32>(index), param.span });
+    }
+
+    Type* return_type = state.types().void_type();
+    if (m_return_type) {
+        return_type = TRY(m_return_type->evaluate(state));
+    }
+
+    auto range = llvm::map_range(parameters, [](auto& param) { return param.type; });
+    auto* underlying_type = state.types().create_function_type(return_type, Vector<Type*>(range.begin(), range.end()));
+
+    auto* scope = Scope::create(m_name, ScopeType::Function, state.scope());
+    auto function = Function::create(m_name, parameters, underlying_type, scope);
+
+    state.scope()->add_symbol(function);
+    state.add_global_function(function);
+
+    state.emit<bytecode::NewFunction>(&*function);
     return {};
 }
 
-BytecodeResult FunctionDeclExpr::generate(State&, Optional<bytecode::Register>) const {
-    return {};
-}
+BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>) const {
+    TRY(m_decl->generate(state, {}));
+    auto* function = state.scope()->resolve<Function>(m_decl->name());
 
-BytecodeResult FunctionExpr::generate(State&, Optional<bytecode::Register>) const {
+    auto* entry_block = state.create_block();
+    function->set_entry_block(entry_block);
+    
+    auto* previous_block = state.current_block();
+    state.switch_to(entry_block);
+
+    Scope* previous_scope = state.scope();
+    for (auto& param : function->parameters()) {
+        size_t index = function->allocate_local();
+        function->set_local_type(index, param.type);
+
+        auto variable = Variable::create(param.name, index, param.type);
+        function->scope()->add_symbol(variable);
+    }
+    
+    state.set_current_scope(function->scope());
+    state.set_current_function(function);
+
+    state.emit<bytecode::NewLocalScope>(function);
+    for (auto& expr : m_body) {
+        TRY(expr->generate(state, {}));
+    }
+
+    state.switch_to(previous_block);
+    state.set_current_scope(previous_scope);
+
     return {};
 }
 
 BytecodeResult DeferExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult IfExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult IfExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+
+    auto* then_block = state.create_block();
+    auto* else_block = state.create_block();
+
+    auto operand = TRY(ensure(state, *m_condition, {}));
+    state.emit<bytecode::JumpIf>(operand, then_block, else_block);
+
+    current_function->insert_block(then_block);
+    current_function->insert_block(else_block);
+
+    state.switch_to(then_block);
+    TRY(m_body->generate(state, {}));
+
+    if (m_else_body) {
+        bytecode::BasicBlock* end_block = nullptr;
+        if (!then_block->is_terminated()) {
+            end_block = state.create_block();
+            state.emit<bytecode::Jump>(end_block);
+        }
+
+        state.switch_to(else_block);
+        TRY(m_else_body->generate(state, {}));
+
+        if (end_block) {
+            state.switch_to(end_block);
+            current_function->insert_block(end_block);
+        }
+    } else {
+        state.switch_to(else_block);
+    }
+
     return {};
 }
 
-BytecodeResult WhileExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult WhileExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+    auto operand = TRY(ensure(state, *m_condition, {}));
+
+    auto* while_block = state.create_block();
+    auto* end_block = state.create_block();
+
+    TemporaryChange<Loop> change(current_function->current_loop(), { while_block, end_block });
+
+    state.emit<bytecode::JumpIf>(operand, while_block, end_block);
+    current_function->insert_block(while_block);
+
+    state.switch_to(while_block);
+    TRY(m_body->generate(state, {}));
+
+    operand = TRY(ensure(state, *m_condition, {}));
+    state.emit<bytecode::JumpIf>(operand, while_block, end_block);
+
+    current_function->insert_block(end_block);
+    state.switch_to(end_block);
+
     return {};
 }
 
-BytecodeResult BreakExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult BreakExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+    auto& current_loop = current_function->current_loop();
+
+    state.emit<bytecode::Jump>(current_loop.end);
     return {};
 }
 
-BytecodeResult ContinueExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult ContinueExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+    auto& current_loop = current_function->current_loop();
+
+    state.emit<bytecode::Jump>(current_loop.start);
     return {};
 }
 
 BytecodeResult StructExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ConstructorExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult EmptyConstructorExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult AttributeExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult IndexExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult CastExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult SizeofExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult OffsetofExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult PathExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult TupleExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult EnumExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ImportExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult UsingExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ModuleExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult TernaryExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ForExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult RangeForExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ArrayFillExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
-BytecodeResult TypeAliasExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult TypeAliasExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Vector<GenericTypeParameter> parameters;
+    bool is_generic = !m_parameters.empty();
+    
+    for (auto& param : m_parameters) {
+        Vector<Type*> constraints;
+        for (auto& constraint : param.constraints) {
+            constraints.push_back(TRY(constraint->evaluate(state)));
+        }
+
+        Type* default_type = param.default_type ? TRY(param.default_type->evaluate(state)) : nullptr;
+        parameters.push_back({ param.name, constraints, default_type, param.span });
+    }
+
+    if (is_generic) {
+        auto alias = TypeAlias::create(m_name, parameters, &*m_type);
+        state.scope()->add_symbol(alias);
+
+        return {};
+    }
+
+    Type* underlying_type = TRY(m_type->evaluate(state));
+    auto alias = TypeAlias::create(m_name, underlying_type);
+
+    state.scope()->add_symbol(alias);
     return {};
 }
 
 BytecodeResult StaticAssertExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult MaybeExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult MatchExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 
 BytecodeResult ImplExpr::generate(State&, Optional<bytecode::Register>) const {
+    ASSERT(false && "Not implemented");
     return {};
 }
 

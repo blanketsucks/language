@@ -69,6 +69,9 @@ public:
 
     bool is_sized_type() const { return !this->is_void() && !this->is_function(); }
 
+    // Checks whether either the pointee type or the inner reference type is `kind`
+    bool is_underlying_type_of(TypeKind kind) const;
+
     bool is_mutable() const;
 
     bool can_safely_cast_to(Type* to);
@@ -102,7 +105,7 @@ public:
     Vector<Type*> const& get_function_params() const;
     Type* get_function_param(size_t index) const;
 
-    String get_as_string() const;
+    String str() const;
 
     void print() const;
 

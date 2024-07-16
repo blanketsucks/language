@@ -12,9 +12,13 @@
     Op(Move)                                        \
     Op(NewString)                                   \
     Op(NewArray)                                    \
+    Op(NewLocalScope)                               \
     Op(GetLocal)                                    \
     Op(GetLocalRef)                                 \
     Op(SetLocal)                                    \
+    Op(GetGlobal)                                   \
+    Op(GetGlobalRef)                                \
+    Op(SetGlobal)                                   \
     Op(Read)                                        \
     Op(Write)                                       \
     Op(Add)                                         \
@@ -22,11 +26,30 @@
     Op(Mul)                                         \
     Op(Div)                                         \
     Op(Mod)                                         \
+    Op(Or)                                          \
+    Op(And)                                         \
+    Op(BinaryOr)                                    \
+    Op(BinaryAnd)                                   \
+    Op(Xor)                                         \
+    Op(Rsh)                                         \
+    Op(Lsh)                                         \
+    Op(Eq)                                          \
+    Op(Neq)                                         \
+    Op(Gt)                                          \
+    Op(Lt)                                          \
+    Op(Gte)                                         \
+    Op(Lte)                                         \
     Op(NewFunction)                                 \
     Op(GetFunction)                                 \
+    Op(Return)                                      \
+    Op(Call)                                        \
     Op(Jump)                                        \
     Op(JumpIf)                                      \
     Op(Cast)
+
+namespace quart {
+    class Function;
+}
 
 namespace quart::bytecode {
 
@@ -59,6 +82,20 @@ public:
         return T::classof(this) ? static_cast<T const*>(this) : nullptr;
     }
 
+    virtual bool is_terminator() const { return false; }
+
+    StringView type_name() const {
+        switch (m_type) {
+        #define Op(x) case x: return #x; // NOLINT
+            ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
+        #undef Op
+        }
+
+        return {};
+    }
+
+    virtual void dump() const = 0;
+
 protected:
     Instruction(InstructionType type) : m_type(type) {}
 
@@ -81,6 +118,8 @@ public:
     Register dst() const { return m_dst; }
     Operand src() const { return m_src; }
 
+    void dump() const override;
+
 private:
     Register m_dst;
     Operand m_src;
@@ -93,6 +132,8 @@ public:
 
     Register dst() const { return m_dst; }
     String const& value() const { return m_value; }
+
+    void dump() const override;
 
 private:
     Register m_dst;
@@ -107,9 +148,23 @@ public:
     Register dst() const { return m_dst; }
     Vector<Operand> const& elements() const { return m_elements; }
 
+    void dump() const override;
+
 private:
     Register m_dst;
     Vector<Operand> m_elements;
+};
+
+class NewLocalScope : public InstructionBase<Instruction::NewLocalScope> {
+public:
+    NewLocalScope(Function* function) : m_function(function) {}
+
+    Function* function() const { return m_function; }
+
+    void dump() const override;
+
+private:
+    Function* m_function;
 };
 
 // `dst = locals[index]`
@@ -119,6 +174,8 @@ public:
 
     Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
+
+    void dump() const override;
 
 private:
     Register m_dst;
@@ -133,6 +190,8 @@ public:
     Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
 
+    void dump() const override;
+
 private:
     Register m_dst;
     u32 m_index;
@@ -145,6 +204,53 @@ public:
 
     u32 index() const { return m_index; }
     Operand src() const { return m_src; }
+
+    void dump() const override;
+
+private:
+    u32 m_index;
+    Operand m_src;
+};
+
+// `dst = locals[index]`
+class GetGlobal : public InstructionBase<Instruction::GetGlobal> {
+public:
+    GetGlobal(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+
+    Register dst() const { return m_dst; }
+    u32 index() const { return m_index; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    u32 m_index;
+};
+
+// `dst = &locals[index]`
+class GetGlobalRef : public InstructionBase<Instruction::GetGlobalRef> {
+public:
+    GetGlobalRef(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+
+    Register dst() const { return m_dst; }
+    u32 index() const { return m_index; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    u32 m_index;
+};
+
+// `locals[index] = src`
+class SetGlobal : public InstructionBase<Instruction::SetGlobal> {
+public:
+    SetGlobal(u32 index, Operand src) : m_index(index), m_src(src) {}
+
+    u32 index() const { return m_index; }
+    Operand src() const { return m_src; }
+
+    void dump() const override;
 
 private:
     u32 m_index;
@@ -159,6 +265,8 @@ public:
     Register dst() const { return m_dst; }
     Register src() const { return m_src; }
 
+    void dump() const override;
+
 private:
     Register m_dst;
     Register m_src;
@@ -171,6 +279,8 @@ public:
 
     Register dst() const { return m_dst; }
     Operand src() const { return m_src; }
+
+    void dump() const override;
 
 private:
     Register m_dst;
@@ -188,17 +298,16 @@ private:
         Operand lhs() const { return m_lhs; }                                                                           \
         Operand rhs() const { return m_rhs; }                                                                           \
                                                                                                                         \
+        void dump() const override;                                                                                     \
     private:                                                                                                            \
         Register m_dst;                                                                                                 \
         Operand m_lhs;                                                                                                  \
         Operand m_rhs;                                                                                                  \
     };
 
-DEFINE_ARITHMETIC_INSTRUCTION(Add)
-DEFINE_ARITHMETIC_INSTRUCTION(Sub)
-DEFINE_ARITHMETIC_INSTRUCTION(Mul)
-DEFINE_ARITHMETIC_INSTRUCTION(Div)
-DEFINE_ARITHMETIC_INSTRUCTION(Mod)
+ENUMERATE_BINARY_OPS(DEFINE_ARITHMETIC_INSTRUCTION)
+
+#undef DEFINE_ARITHMETIC_INSTRUCTION
 
 // `goto target`
 class Jump : public InstructionBase<Instruction::Jump> {
@@ -206,6 +315,9 @@ public:
     Jump(BasicBlock* target) : m_target(target) {}
 
     BasicBlock* target() const { return m_target; }
+
+    bool is_terminator() const override { return true; }
+    void dump() const override;
 
 private:
     BasicBlock* m_target;
@@ -223,6 +335,9 @@ public:
     BasicBlock* true_target() const { return m_true_target; }
     BasicBlock* false_target() const { return m_false_target; }
 
+    bool is_terminator() const override { return true; }
+    void dump() const override;
+
 private:
     Operand m_condition;
     
@@ -232,26 +347,61 @@ private:
 
 class NewFunction : public InstructionBase<Instruction::NewFunction> {
 public:
-    NewFunction(String name, BasicBlock* entry) : m_name(move(name)), m_entry(entry) {}
+    NewFunction(Function* function) : m_function(function) {}
 
-    String const& name() const { return m_name; }
-    BasicBlock* entry() const { return m_entry; }
+    Function* function() const { return m_function; }
+
+    void dump() const override;
 
 private:
-    String m_name;
-    BasicBlock* m_entry;
+    Function* m_function;
 };
 
 class GetFunction : public InstructionBase<Instruction::GetFunction> {
 public:
-    GetFunction(Register dst, String name) : m_dst(dst), m_name(move(name)) {}
+    GetFunction(Register dst, Function* function) : m_dst(dst), m_function(function) {}
 
     Register dst() const { return m_dst; }
-    String const& name() const { return m_name; }
+    Function* function() const { return m_function; }
+
+    void dump() const override;
 
 private:
     Register m_dst;
-    String m_name;
+    Function* m_function;
+};
+
+class Return : public InstructionBase<Instruction::Return> {
+public:
+    Return(Optional<Operand> value = {}) : m_value(value) {}
+
+    Optional<Operand> value() const { return m_value; }
+
+    bool is_terminator() const override { return true; }
+    void dump() const override;
+
+private:
+    Optional<Operand> m_value;
+};
+
+class Call : public InstructionBase<Instruction::Call> {
+public:
+    Call(
+        Register dst, Operand function, FunctionType const* function_type, Vector<Operand> arguments
+    ) : m_dst(dst), m_function(function), m_function_type(function_type), m_arguments(move(arguments)) {}
+
+    Register dst() const { return m_dst; }
+    Operand function() const { return m_function; }
+    FunctionType const* function_type() const { return m_function_type; }
+    Vector<Operand> const& arguments() const { return m_arguments; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    Operand m_function;
+    FunctionType const* m_function_type;
+    Vector<Operand> m_arguments;
 };
 
 class Cast : public InstructionBase<Instruction::Cast> {
@@ -261,6 +411,8 @@ public:
     Register dst() const { return m_dst; }
     Operand src() const { return m_src; }
     Type* type() const { return m_type; }
+
+    void dump() const override;
 
 private:
     Register m_dst;

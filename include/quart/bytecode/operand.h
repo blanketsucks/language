@@ -8,9 +8,12 @@ namespace quart::bytecode {
 class Operand {
 public:
     enum Type {
+        None = 0,
         Register,
         Immediate
     };
+
+    Operand() = default;
 
     explicit Operand(u64 value, quart::Type* type) : m_type(Immediate), m_value(value), m_value_type(type) {}
     explicit Operand(class Register reg);
@@ -24,10 +27,10 @@ public:
     u64 value() const { return m_value; }
 
 private:
-    Type m_type;
-    u64 m_value;
+    Type m_type = None;
+    u64 m_value = 0;
 
-    quart::Type* m_value_type;
+    quart::Type* m_value_type = nullptr;
 };
 
 }

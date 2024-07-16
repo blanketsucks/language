@@ -399,7 +399,7 @@ ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
             } break;
             case TokenKind::Mut: {
                 this->next();
-                flags |= ast::Parameter::Mutable;
+                flags |= FunctionParameter::Mutable;
 
                 Token token = TRY(this->expect(TokenKind::Identifier));
 
@@ -418,12 +418,10 @@ ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
         
         // FIXME: A function only has one `self` parameter
         if (name == "self" && m_self_allowed) {
-            flags |= ast::Parameter::Self;
+            flags |= FunctionParameter::Self;
             this->next();
         } else {
-            this->next();
             TRY(this->expect(TokenKind::Colon));
-
             type = TRY(this->parse_type());
         }
 
@@ -1484,9 +1482,7 @@ ParseResult<ast::Expr> Parser::primary() {
                 value = value.substr(2);
             }
 
-            u64 result = 0;
-            std::stoull(value, &result, base);
-
+            u64 result = std::strtoull(value.c_str(), nullptr, base);
             return { make<ast::IntegerExpr>(start, result, width) };
         }
         case TokenKind::Char: {

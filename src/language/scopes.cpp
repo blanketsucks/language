@@ -24,48 +24,6 @@ Symbol* Scope::resolve(const String& name) {
     return iterator->second.get();
 }
 
-template<typename T> T* Scope::as() const {
-    if (!m_data || !is<T>()) {
-        return nullptr;
-    }
-
-    return static_cast<T*>(m_data);
-}
-
-template<typename T> bool Scope::is() const {
-    switch (m_type) {
-        case ScopeType::Function:
-            return std::is_same_v<T, Function>;
-        case ScopeType::Struct:
-            return std::is_same_v<T, Struct>;
-        case ScopeType::Module:
-            return std::is_same_v<T, Module>;
-        default:
-            return false;
-    }
-}
-
-// static void finalize(Function& func) {
-//     if (func.flags & Function::Finalized) return;
-
-//     llvm::Function* function = func.value;
-//     if (function->use_empty() && !func.is_entry()) {
-//         if (function->getParent()) {
-//             function->eraseFromParent();
-//         }
-
-//         for (auto& call : func.calls) {
-//             if (!call->use_empty() || !call->getParent()) {
-//                 continue;
-//             }
-
-//             call->eraseFromParent();
-//         }
-//     }
-
-//     func.flags |= Function::Finalized;
-// }
-
 void Scope::finalize(bool) {}
 
 }

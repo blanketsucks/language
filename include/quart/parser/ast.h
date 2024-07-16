@@ -7,6 +7,8 @@
 #include <quart/bytecode/operand.h>
 #include <quart/bytecode/register.h>
 
+#include <quart/language/functions.h>
+
 #include <memory>
 #include <vector>
 #include <deque>
@@ -17,7 +19,7 @@ class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
 public:
     BytecodeResult() = default;
 
-    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(move(error)) {}
+    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(error) {}
 
     BytecodeResult(bytecode::Operand value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
     BytecodeResult(Optional<bytecode::Operand> value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
@@ -150,13 +152,6 @@ struct Ident {
 };
 
 struct Parameter {
-    enum Flags {
-        Self     = 1 << 0,
-        Keyword  = 1 << 1,
-        Mutable  = 1 << 2,
-        Variadic = 1 << 3,
-    };
-
     String name;
 
     OwnPtr<TypeExpr> type;
@@ -165,11 +160,6 @@ struct Parameter {
     u8 flags;
 
     Span span;
-
-    bool is_self() const { return flags & Self; }
-    bool is_keyword() const { return flags & Keyword; }
-    bool is_mutable() const { return flags & Mutable; }
-    bool is_variadic() const { return flags & Variadic; }
 };
 
 struct StructField {

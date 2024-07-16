@@ -3,7 +3,17 @@
 
 #include <iostream>
 
-using namespace quart;
+namespace quart {
+
+bool Type::is_underlying_type_of(TypeKind kind) const {
+    if (this->is_pointer()) {
+        return this->get_pointee_type()->kind() == kind;
+    } else if (this->is_reference()) {
+        return this->get_reference_type()->kind() == kind;
+    } else {
+        return this->kind() == kind;
+    }
+}
 
 bool Type::can_safely_cast_to(Type* to) {
     Type* from = this;
@@ -174,7 +184,7 @@ Type* Type::get_function_param(size_t index) const {
     return this->as<FunctionType>()->get_parameter_at(index);
 }
 
-String Type::get_as_string() const {
+String Type::str() const {
     switch (this->kind()) {
         case TypeKind::Void: return "void";
         case TypeKind::Float: return "f32";
@@ -192,7 +202,7 @@ String Type::get_as_string() const {
         case TypeKind::Enum: return this->get_enum_name();
         case TypeKind::Struct: return this->get_struct_name();
         case TypeKind::Array: {
-            String element = this->get_array_element_type()->get_as_string();
+            String element = this->get_array_element_type()->str();
             size_t size = this->get_array_size();
 
             return format("[{0}; {1}]", element, size);
@@ -200,29 +210,29 @@ String Type::get_as_string() const {
         case TypeKind::Tuple: {
             Vector<String> types;
             for (auto& type : this->get_tuple_types()) {
-                types.push_back(type->get_as_string());
+                types.push_back(type->str());
             }
 
             return format("({0})", llvm::make_range(types.begin(), types.end()));
         }
         case TypeKind::Pointer: {
-            String pointee = this->get_pointee_type()->get_as_string();
+            String pointee = this->get_pointee_type()->str();
             bool is_mutable = this->is_mutable();
 
             return format("*{0}{1}", is_mutable ? "mut " : "", pointee);
         }
         case TypeKind::Reference: {
-            String type = this->get_reference_type()->get_as_string();
+            String type = this->get_reference_type()->str();
             bool is_mutable = this->is_mutable();
 
             return format("&{0}{1}", is_mutable ? "mut " : "", type);
         }
         case TypeKind::Function: {
-            String return_type = this->get_function_return_type()->get_as_string();
+            String return_type = this->get_function_return_type()->str();
 
             Vector<String> params;
             for (auto& param : this->get_function_params()) {
-                params.push_back(param->get_as_string());
+                params.push_back(param->str());
             }
 
             return format("func({0}) -> {1}", llvm::make_range(params.begin(), params.end()), return_type);
@@ -233,7 +243,7 @@ String Type::get_as_string() const {
 }
 
 void Type::print() const {
-    std::cout << this->get_as_string() << std::endl;
+    std::cout << this->str() << std::endl;
 }
 
 llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
@@ -341,4 +351,6 @@ ReferenceType* ReferenceType::as_mutable() {
     }
 
     return m_type_registry->create_reference_type(m_type, true);
+}
+
 }

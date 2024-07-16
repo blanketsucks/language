@@ -98,7 +98,7 @@ ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) {
     }
 
     Type* return_type = TRY(m_return_type->evaluate(state));
-    return state.types().create_function_type(return_type, parameters);
+    return state.types().create_function_type(return_type, parameters)->get_pointer_to();
 }
 
 ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) {
