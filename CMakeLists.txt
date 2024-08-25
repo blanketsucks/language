@@ -17,9 +17,9 @@ add_definitions(${LLVM_DEFINITIONS})
 
 llvm_map_components_to_libnames(libraries core)
 
-file(GLOB_RECURSE SOURCES src/*.cpp)
+file(GLOB_RECURSE SOURCES quart/*.cpp)
 
-include_directories(include)
+include_directories(.)
 
 add_compile_options(-Wall -Wextra -Wno-redundant-move -Wno-unused-variable -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs)
 add_compile_options(-O3 -fno-exceptions -g)
