@@ -60,19 +60,27 @@ ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path) {
     return scope;
 }
 
-ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, const String& name, bool is_mutable) {
+ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, const String& name, bool is_mutable, Optional<bytecode::Register> dst) {
     auto* symbol = scope->resolve(name);
     if (!symbol) {
         return err(span, "Unknown identifier '{0}'", name);
     }
 
-    auto reg = this->allocate_register();
+    bytecode::Register reg;
+    if (dst.has_value()) {
+        reg = *dst;
+    } else {
+        reg = this->allocate_register();
+    }
+
     switch (symbol->type()) {
         case Symbol::Variable: {
             auto* variable = symbol->as<Variable>();
             this->emit<bytecode::GetLocalRef>(reg, variable->local_index());
 
-            // FIXME: Check if the variable has been marked as mutable and compare with `is_mutable`
+            if (!variable->is_mutable() && is_mutable) {
+                return err(span, "Cannot take a mutable reference to an immutable variable");
+            }
 
             Type* type = variable->value_type();
             this->set_register_type(reg, type->get_reference_to(is_mutable));
@@ -84,22 +92,26 @@ ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, co
     }
 }
 
-ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool is_mutable) {
+ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool is_mutable, Optional<bytecode::Register> dst) {
     using ast::ExprKind;
     
     switch (expr.kind()) {
         case ExprKind::Identifier: {
             auto* ident = expr.as<ast::IdentifierExpr>();
-            return this->resolve_reference(m_current_scope, expr.span(), ident->name(), is_mutable);
+            return this->resolve_reference(m_current_scope, expr.span(), ident->name(), is_mutable, dst);
         }
         case ExprKind::Path: {
             auto& path = expr.as<ast::PathExpr>()->path();
             Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
 
-            return this->resolve_reference(scope, expr.span(), path.name, is_mutable);
+            return this->resolve_reference(scope, expr.span(), path.name, is_mutable, dst);
         }
         case ExprKind::Attribute: {
-            break;
+            auto* attribute = expr.as<ast::AttributeExpr>();
+            auto operand = TRY(this->generate_attribute_access(*attribute, true, dst, is_mutable));
+
+            ASSERT(operand.is_register());
+            return bytecode::Register(operand.value());
         }
         case ExprKind::Index: {
             break;
@@ -125,19 +137,128 @@ ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool
     return {};
 }
 
+ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
+    using ast::ExprKind;
+    
+    switch (expr.kind()) {
+        case ExprKind::Identifier: {
+            auto* identifier = expr.as<ast::IdentifierExpr>();
+            auto* symbol = m_current_scope->resolve(identifier->name());
+
+            if (!symbol) {
+                return err(expr.span(), "Unknown identifier '{0}'", identifier->name());
+            }
+
+            return symbol;
+        }
+        case ExprKind::Path: {
+            auto& path = expr.as<ast::PathExpr>()->path();
+            Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
+
+            auto* symbol = scope->resolve(path.name);
+            if (!symbol) {
+                return err(expr.span(), "Unknown identifier '{0}'", path.name);
+            }
+
+            return symbol;
+        }
+        default:
+            return err(expr.span(), "Expected an identifier");
+    }
+}
+
+ErrorOr<Struct*> State::resolve_struct(ast::Expr const& expr) {
+    auto* symbol = TRY(this->resolve_symbol(expr));
+    if (!symbol->is<Struct>()) {
+        return err(expr.span(), "'{0}' does not name a struct", symbol->name());
+    }
+
+    return symbol->as<Struct>();
+}
+
 ErrorOr<bytecode::Operand> State::type_check_and_cast(Span span, bytecode::Operand operand, Type* target, StringView error_message) {
     Type* type = this->type(operand);
     if (!type->can_safely_cast_to(target)) {
         return err(span, error_message.data(), type->str(), target->str());
-    } else if (type != target) {
-        auto reg = this->allocate_register();
-        this->emit<bytecode::Cast>(reg, operand, target);
-
-        this->set_register_type(reg, target);
-        operand = bytecode::Operand(reg);
+    } else if (type == target) {
+        return operand;
     }
 
-    return operand;
+    // If the only difference between these two types is the mutability we don't need to emit a Cast instruction as the underlying code generators
+    // don't care about that.
+    if ((type->is_pointer() || type->is_reference()) && (target->is_pointer() || target->is_reference())) {
+        if (type->underlying_type() == target->underlying_type()) {
+            return operand;
+        }
+    }
+
+    auto reg = this->allocate_register();
+    this->emit<bytecode::Cast>(reg, operand, target);
+
+    this->set_register_type(reg, target);
+    return bytecode::Operand(reg);
+}
+
+ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr const& expr, bool as_reference, Optional<bytecode::Register> dst, bool as_mutable) {
+    ast::Expr const& parent = expr.parent();
+    auto result = this->resolve_symbol(parent);
+
+    if (result.is_err()) {
+        // FIXME: 
+        return result.error();
+    }
+
+    auto* symbol = result.value();
+    if (!symbol->is<Variable>()) {
+        return err(parent.span(), "Attribute access is only allowed on variables");
+    }
+
+    auto* variable = symbol->as<Variable>();
+
+    Type* value_type = variable->value_type();
+    bool is_pointer_type = false;
+
+    if (value_type->is_pointer()) {
+        value_type = value_type->get_pointee_type();
+        is_pointer_type = true;
+    }
+
+    auto* structure = this->get_global_struct(value_type);
+    if (!structure) {
+        return err(parent.span(), "Cannot access attributes of type '{0}'", value_type->str());
+    }
+
+    auto* field = structure->find(expr.attribute());
+    if (!field) {
+        return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", expr.attribute(), structure->name());
+    }
+
+    if (as_reference && as_mutable && !variable->is_mutable()) {
+        return err(parent.span(), "Cannot take a mutable reference to an immutable variable");
+    }
+
+    auto reg = this->allocate_register();
+    this->set_register_type(reg, variable->value_type()->get_pointer_to());
+
+    this->emit<bytecode::GetLocalRef>(reg, variable->local_index());
+    if (is_pointer_type) {
+        this->emit<bytecode::Read>(reg, reg);
+        this->set_register_type(reg, variable->value_type());
+    }
+
+    if (!dst.has_value()) {
+        dst = this->allocate_register();
+    }
+
+    if (as_reference) {
+        this->emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), field->index);
+        this->set_register_type(*dst, field->type->get_reference_to(as_mutable));
+    } else {
+        this->emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), field->index);
+        this->set_register_type(*dst, field->type);
+    }
+
+    return bytecode::Operand(*dst);
 }
 
 }

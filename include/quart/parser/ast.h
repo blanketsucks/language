@@ -19,16 +19,13 @@ class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
 public:
     BytecodeResult() = default;
 
-    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(error) {}
+    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(move(error)) {}
 
     BytecodeResult(bytecode::Operand value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
     BytecodeResult(Optional<bytecode::Operand> value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
 };
 
 class State;
-
-class Visitor;
-struct Value;
 class Type;
 
 struct Path {
@@ -162,19 +159,24 @@ struct Parameter {
     Span span;
 };
 
+struct FunctionParameters {
+    Vector<Parameter> parameters;
+    bool is_c_variadic;
+};
+
 struct StructField {
     String name;
     OwnPtr<TypeExpr> type;
 
     u32 index;
-
-    bool is_private;
-    bool is_readonly;
+    u8 flags;
 };
 
-struct ConstructorField {
+struct ConstructorArgument {
     String name;
     OwnPtr<Expr> value;
+
+    Span span;
 };
 
 struct EnumField {
@@ -510,8 +512,9 @@ public:
         String name,
         Vector<Parameter> parameters,
         OwnPtr<TypeExpr> return_type,
-        LinkageSpecifier linkage
-    ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)), m_linkage(linkage) {}
+        LinkageSpecifier linkage,
+        bool is_c_variadic
+    ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)), m_linkage(linkage), m_is_c_variadic(is_c_variadic) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -633,17 +636,17 @@ private:
 
 class ConstructorExpr : public ExprBase<ExprKind::Constructor> {
 public:
-    ConstructorExpr(Span span, OwnPtr<Expr> parent, Vector<ConstructorField> fields) :
-        ExprBase(span), m_parent(move(parent)), m_fields(move(fields)) {}
+    ConstructorExpr(Span span, OwnPtr<Expr> parent, Vector<ConstructorArgument> arguments) :
+        ExprBase(span), m_parent(move(parent)), m_arguments(move(arguments)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     Expr const& parent() const { return *m_parent; }
-    const Vector<ConstructorField>& fields() const { return m_fields; }
+    Vector<ConstructorArgument> const& arguments() const { return m_arguments; }
 
 private:
     OwnPtr<Expr> m_parent;
-    Vector<ConstructorField> m_fields;
+    Vector<ConstructorArgument> m_arguments;
 };
 
 class EmptyConstructorExpr : public ExprBase<ExprKind::EmptyConstructor> {

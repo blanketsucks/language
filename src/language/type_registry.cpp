@@ -111,13 +111,13 @@ ReferenceType* TypeRegistry::create_reference_type(Type* inner, bool is_mutable)
     return type;
 }
 
-FunctionType* TypeRegistry::create_function_type(Type* return_type, const Vector<Type*>& parameters) {
+FunctionType* TypeRegistry::create_function_type(Type* return_type, const Vector<Type*>& parameters, bool is_var_arg) {
     auto iterator = m_functions.find({ return_type, parameters });
     if (iterator != m_functions.end()) {
         return &*iterator->second;
     }
 
-    auto* type = new FunctionType(this, return_type, parameters);
+    auto* type = new FunctionType(this, return_type, parameters, is_var_arg);
     m_functions[{ return_type, parameters }] = OwnPtr<FunctionType>(type);
 
     return type;

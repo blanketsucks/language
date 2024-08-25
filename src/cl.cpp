@@ -21,8 +21,8 @@ const llvm::cl::opt<bool> optimize(
     llvm::cl::cat(category)
 );
 
-const llvm::cl::opt<bool> standalone(
-    "standalone",
+const llvm::cl::opt<bool> no_libc(
+    "no-libc",
     llvm::cl::desc("When provided libc doesn't get linked with the final executable"),
     llvm::cl::init(false),
     llvm::cl::cat(category)
@@ -116,7 +116,7 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
     llvm::cl::ParseCommandLineOptions(argc, argv);
 
     if (files.empty() && !print_all_targets) {
-        return err(Span {}, "No input files provided");
+        return err("No input files provided");
     }
 
     if (print_all_targets) {
@@ -126,18 +126,18 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
 
     args.file = files.front(); 
     if (!args.file.exists()) {
-        return err(Span {}, "File '{0}' does not exist", args.file);
+        return err("File '{0}' does not exist", args.file);
     } else if (!args.file.is_regular_file()) {
-        return err(Span {}, "'{0}' is not a regular file", args.file);
+        return err("'{0}' is not a regular file", args.file);
     }
 
-    args.entry = move(entry);   
+    args.entry = entry.getValue(); 
     args.format = format;
     args.optimize = optimize;
     args.verbose = verbose;
     args.imports = Vector<String>(imports.begin(), imports.end());
-    args.standalone = standalone;
-    args.target = target;
+    args.no_libc = no_libc;
+    args.target = target.getValue();
     args.mangle_style = mangle_style;
     args.jit = jit;
 
@@ -147,7 +147,7 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
         llvm::StringRef extension = OUTPUT_FORMATS_TO_EXT.at(args.format);
         args.output = args.file.with_extension(extension.str());
     } else {
-        args.output = output;
+        args.output = output.getValue();
     }
 
     return args;

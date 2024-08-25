@@ -29,7 +29,7 @@ public:
     TupleType* create_tuple_type(const Vector<Type*>& types);
     PointerType* create_pointer_type(Type* pointee, bool is_mutable);
     ReferenceType* create_reference_type(Type* type, bool is_mutable);
-    FunctionType* create_function_type(Type* return_type, const Vector<Type*>& parameters);
+    FunctionType* create_function_type(Type* return_type, const Vector<Type*>& parameters, bool is_var_arg = false);
 
     Type* void_type() { return &m_void_type; }
 

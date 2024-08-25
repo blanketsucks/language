@@ -79,7 +79,7 @@ public:
 
     ParseResult<ast::BlockExpr> parse_block();
 
-    ErrorOr<Vector<ast::Parameter>> parse_function_parameters();
+    ErrorOr<ast::FunctionParameters> parse_function_parameters();
     ParseResult<ast::FunctionDeclExpr> parse_function_decl(ast::LinkageSpecifier linkage, bool with_name = true);
     ParseResult<ast::Expr> parse_function(ast::LinkageSpecifier linkage = ast::LinkageSpecifier::None);
 

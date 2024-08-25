@@ -22,33 +22,49 @@ struct StructField {
         Mutable  = 1 << 2,
     };
 
-    std::string name;
-    quart::Type* type;
+    String name;
+    Type* type;
     
     u8 flags;
 
     u32 index;
-    u32 offset;
 
-    inline bool is_private() const { return this->flags & Flags::Private; }
-    inline bool is_readonly() const { return this->flags & Flags::Readonly; }
-    inline bool is_mutable() const { return this->flags & Flags::Mutable; }
+    inline bool is_private() const { return flags & Flags::Private; }
+    inline bool is_readonly() const { return flags & Flags::Readonly; }
+    inline bool is_mutable() const { return flags & Flags::Mutable; }
 };
 
 class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
+    static RefPtr<Struct> create(String name, StructType* underlying_type) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type));
+    }
+
+    static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope));
+    }
+
     StructType* underlying_type() const { return m_underlying_type; }
 
     HashMap<String, StructField> const& fields() const { return m_fields; }
     Scope* scope() const { return m_scope; }
 
+    StructField const* find(const String& name) const;
+    bool has_method(const String& name) const;
+
+    bool opaque() const { return m_opaque; }
+
 private:
-    Struct(String name, StructType* underlying_type) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type) {}
+    Struct(String name, StructType* underlying_type) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(true) {}
+    Struct(
+        String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope
+    ) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {}
     
-    String m_name;
     StructType* m_underlying_type;
+
+    bool m_opaque;
 
     HashMap<String, StructField> m_fields;
     Scope* m_scope = nullptr;

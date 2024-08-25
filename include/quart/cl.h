@@ -25,7 +25,7 @@ struct Arguments {
     
     bool optimize = false;
     bool verbose = false;
-    bool standalone = false;
+    bool no_libc = false;
     bool print_all_targets = false;
 
     bool jit = false;

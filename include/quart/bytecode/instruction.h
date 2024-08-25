@@ -19,6 +19,9 @@
     Op(GetGlobal)                                   \
     Op(GetGlobalRef)                                \
     Op(SetGlobal)                                   \
+    Op(GetMember)                                    \
+    Op(SetMember)                                    \
+    Op(GetMemberRef)                                 \
     Op(Read)                                        \
     Op(Write)                                       \
     Op(Add)                                         \
@@ -45,10 +48,13 @@
     Op(Call)                                        \
     Op(Jump)                                        \
     Op(JumpIf)                                      \
-    Op(Cast)
+    Op(Cast)                                        \
+    Op(NewStruct)                                   \
+    Op(Construct)                                   \
 
 namespace quart {
     class Function;
+    class Struct;
 }
 
 namespace quart::bytecode {
@@ -153,6 +159,54 @@ public:
 private:
     Register m_dst;
     Vector<Operand> m_elements;
+};
+
+class GetMember : public InstructionBase<Instruction::GetMember> {
+public:
+    GetMember(Register dst, Operand src, u32 index) : m_dst(dst), m_src(src), m_index(index) {}
+
+    Register dst() const { return m_dst; }
+    Operand src() const { return m_src; }
+    u32 index() const { return m_index; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    Operand m_src;
+    u32 m_index;
+};
+
+class SetMember : public InstructionBase<Instruction::SetMember> {
+public:
+    SetMember(Operand dst, u32 index, Operand src) : m_dst(dst), m_index(index), m_src(src) {}
+
+    Operand dst() const { return m_dst; }
+    u32 index() const { return m_index; }
+    Operand src() const { return m_src; }
+
+    void dump() const override;
+
+private:
+    Operand m_dst;
+    u32 m_index;
+    Operand m_src;
+};
+
+class GetMemberRef : public InstructionBase<Instruction::GetMemberRef> {
+public:
+    GetMemberRef(Register dst, Operand src, u32 index) : m_dst(dst), m_src(src), m_index(index) {}
+
+    Register dst() const { return m_dst; }
+    Operand src() const { return m_src; }
+    u32 index() const { return m_index; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    Operand m_src;
+    u32 m_index;
 };
 
 class NewLocalScope : public InstructionBase<Instruction::NewLocalScope> {
@@ -419,6 +473,34 @@ private:
     Operand m_src;
     
     Type* m_type;
+};
+
+class NewStruct : public InstructionBase<Instruction::NewStruct> {
+public:
+    NewStruct(Struct* structure) : m_structure(structure) {}
+
+    Struct* structure() const { return m_structure; }
+
+    void dump() const override;
+
+private:
+    Struct* m_structure;
+};
+
+class Construct : public InstructionBase<Instruction::Construct> {
+public:
+    Construct(Register dst, Struct* structure, Vector<Operand> arguments) : m_dst(dst), m_structure(structure), m_arguments(move(arguments)) {}
+
+    Register dst() const { return m_dst; }
+    Struct* structure() const { return m_structure; }
+    Vector<Operand> const& arguments() const { return m_arguments; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    Struct* m_structure;
+    Vector<Operand> m_arguments;
 };
 
 }

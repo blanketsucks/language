@@ -71,6 +71,7 @@ public:
 
     // Checks whether either the pointee type or the inner reference type is `kind`
     bool is_underlying_type_of(TypeKind kind) const;
+    Type* underlying_type();
 
     bool is_mutable() const;
 
@@ -163,13 +164,8 @@ public:
 
     void set_fields(const Vector<Type*>& fields);
 
-    llvm::StructType* get_llvm_struct_type() const {
-        return m_type;
-    }
-    
-    void set_llvm_struct_type(llvm::StructType* type) {
-        m_type = type;
-    }
+    llvm::StructType* get_llvm_struct_type() const { return m_type; }
+    void set_llvm_struct_type(llvm::StructType* type) { m_type = type; }
 
     friend TypeRegistry;
 private:
@@ -299,14 +295,18 @@ public:
         return m_params[index];
     }
 
+    bool is_var_arg() const { return m_is_var_arg; }
+
     friend TypeRegistry;
 private:
     FunctionType(
-        TypeRegistry* type_registry, Type* return_type, const Vector<Type*>& params
-    ) : Type(type_registry, TypeKind::Function), m_return_type(return_type), m_params(params) {}
+        TypeRegistry* type_registry, Type* return_type, const Vector<Type*>& params,  bool is_var_arg
+    ) : Type(type_registry, TypeKind::Function), m_return_type(return_type), m_params(params), m_is_var_arg(is_var_arg) {}
 
     Type* m_return_type;
     Vector<Type*> m_params;
+
+    bool m_is_var_arg;
 };
 
 // Returns true if `type` is a struct or a pointer to a struct

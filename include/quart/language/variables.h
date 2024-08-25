@@ -18,10 +18,9 @@ public:
         Mutated   = 1 << 3,
     };
 
-    static RefPtr<Variable> create(String name, size_t local_index, Type* type) {
-        return RefPtr<Variable>(new Variable(move(name), local_index, type));
+    static RefPtr<Variable> create(String name, size_t local_index, Type* type, u8 flags = None) {
+        return RefPtr<Variable>(new Variable(move(name), local_index, type, flags));
     }
-
 
     u8 flags() const { return m_flags; }
 
@@ -35,7 +34,9 @@ public:
     bool is_mutated() const { return m_flags & Mutated; }
 
 private:
-    Variable(String name, size_t local_index, Type* type) : Symbol(move(name), Symbol::Variable), m_local_index(local_index), m_type(type) {}
+    Variable(
+        String name, size_t local_index, Type* type, u8 flags = None
+    ) : Symbol(move(name), Symbol::Variable), m_local_index(local_index), m_type(type), m_flags(flags) {}
 
     void set_used(bool used) { m_flags = used ? m_flags | Used : m_flags & ~Used; }
     void set_mutated(bool mutated) { m_flags = mutated ? m_flags | Mutated : m_flags & ~Mutated; }

@@ -1,8 +1,6 @@
 #include <quart/language/types.h>
 #include <quart/language/type_registry.h>
 
-#include <iostream>
-
 namespace quart {
 
 bool Type::is_underlying_type_of(TypeKind kind) const {
@@ -13,6 +11,16 @@ bool Type::is_underlying_type_of(TypeKind kind) const {
     } else {
         return this->kind() == kind;
     }
+}
+
+Type* Type::underlying_type() {
+    if (this->is_pointer()) {
+        return this->get_pointee_type();
+    } else if (this->is_reference()) {
+        return this->get_reference_type();
+    }
+
+    return nullptr;
 }
 
 bool Type::can_safely_cast_to(Type* to) {
@@ -260,9 +268,12 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
         }
         case TypeKind::Struct: {
             const auto* type = this->as<StructType>();
-            llvm::StructType* structure = type->get_llvm_struct_type();
 
-            if (structure) return structure;
+            llvm::StructType* structure = type->get_llvm_struct_type();
+            if (structure) {
+                return structure;
+            }
+
             Vector<llvm::Type*> fields;
 
             for (auto& field : type->fields()) {
@@ -310,7 +321,7 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
                 params.push_back(param->to_llvm_type(context));
             }
 
-            return llvm::FunctionType::get(return_type, params, false);
+            return llvm::FunctionType::get(return_type, params, type->is_var_arg());
         }
         default:
             return nullptr;

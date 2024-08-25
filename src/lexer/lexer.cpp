@@ -115,6 +115,7 @@ ErrorOr<Token> Lexer::lex_string() {
         return err({ m_offset, m_offset }, "Expected end of string");
     }
 
+    TRY(this->next());
     return Token { TokenKind::String, move(value), { start, m_offset } };
 }
 
@@ -300,6 +301,7 @@ ErrorOr<Token> Lexer::once() {
         } case '.': {
             TRY(this->next());
             if (m_current == '.' && this->peek() == '.') {
+                TRY(this->skip(2));
                 return Token { TokenKind::Ellipsis, "...", { start, m_offset } };
             }
 

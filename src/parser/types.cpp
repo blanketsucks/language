@@ -23,6 +23,9 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
         MATCH_TYPE(u32, create_int_type, 32, false);
         MATCH_TYPE(u64, create_int_type, 64, false);
         MATCH_TYPE(u128, create_int_type, 128, false);
+
+        default:
+            return err(span(), "Unknown builtin type");
     }
 }
 

@@ -91,7 +91,7 @@ struct CompilerOptions {
     OptimizationOptions opts;
 
     bool verbose = false;
-    bool standalone = false;
+    bool no_libc = false;
 
     Vector<String> object_files;
     Vector<Extra> extras;

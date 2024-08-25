@@ -15,9 +15,11 @@ public:
 
     Scope* scope() const { return m_current_scope; }
     Function* function() const { return m_current_function; }
+    Struct* structure() const { return m_current_struct; }
 
     void set_current_scope(Scope* scope) { m_current_scope = scope; }
     void set_current_function(Function* function) { m_current_function = function; }
+    void set_current_struct(Struct* structure) { m_current_struct = structure; }
 
     ErrorOr<Scope*> resolve_scope_path(Span, const Path&);
     
@@ -52,10 +54,27 @@ public:
         return *m_all_functions.at(name);
     }
 
-    ErrorOr<bytecode::Register> resolve_reference(ast::Expr const&, bool is_mutable = false);
-    ErrorOr<bytecode::Register> resolve_reference(Scope*, Span, const String& name, bool is_mutable);
+    void add_global_struct(RefPtr<Struct> structure) {
+        m_all_structs[structure->underlying_type()] = structure;
+    }
+
+    Struct const* get_global_struct(Type* type) const {
+        if (auto iterator = m_all_structs.find(type); iterator != m_all_structs.end()) {
+            return iterator->second.get();
+        }
+
+        return nullptr;
+    }
+
+    ErrorOr<bytecode::Register> resolve_reference(ast::Expr const&, bool is_mutable = false, Optional<bytecode::Register> dst = {});
+    ErrorOr<bytecode::Register> resolve_reference(Scope*, Span, const String& name, bool is_mutable, Optional<bytecode::Register> dst = {});
+
+    ErrorOr<Symbol*> resolve_symbol(ast::Expr const&);
+    ErrorOr<Struct*> resolve_struct(ast::Expr const&);
 
     ErrorOr<bytecode::Operand> type_check_and_cast(Span, bytecode::Operand, Type* target, StringView error_message);
+
+    ErrorOr<bytecode::Operand> generate_attribute_access(ast::AttributeExpr const&, bool as_reference, Optional<bytecode::Register> dst = {}, bool as_mutable = false);
 
 private:
     bytecode::Generator m_generator;
@@ -67,6 +86,7 @@ private:
 
     Scope* m_current_scope = nullptr;
     Function* m_current_function = nullptr;
+    Struct* m_current_struct = nullptr;
 
     HashMap<Type*, RefPtr<Struct>> m_all_structs;
     HashMap<String, RefPtr<Function>> m_all_functions;

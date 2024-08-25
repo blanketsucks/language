@@ -1,6 +1,7 @@
 #include <quart/parser/parser.h>
 #include <quart/parser/attrs.h>
 #include <quart/parser/ast.h>
+#include <quart/language/structs.h>
 
 #include <llvm/ADT/StringRef.h>
 
@@ -290,7 +291,7 @@ ParseResult<ast::BlockExpr> Parser::parse_block() {
 ErrorOr<Vector<ast::GenericParameter>> Parser::parse_generic_parameters() {
     Vector<ast::GenericParameter> parameters;
 
-    TRY(this->expect(TokenKind::Lt, "<"));
+    TRY(this->expect(TokenKind::Lt));
     while (!m_current.is(TokenKind::Gt)) {
         Token token = TRY(this->expect(TokenKind::Identifier));
 
@@ -375,7 +376,7 @@ ParseResult<ast::TypeAliasExpr> Parser::parse_type_alias() {
     return { make<ast::TypeAliasExpr>(span, move(name), move(type), move(parameters)) };
 }
 
-ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
+ErrorOr<ast::FunctionParameters> Parser::parse_function_parameters() {
     Vector<ast::Parameter> params;
 
     bool has_kwargs = false;
@@ -396,6 +397,8 @@ ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
             case TokenKind::Ellipsis: {
                 is_c_variadic = true;
                 this->next();
+
+                goto end;
             } break;
             case TokenKind::Mut: {
                 this->next();
@@ -449,8 +452,9 @@ ErrorOr<Vector<ast::Parameter>> Parser::parse_function_parameters() {
         this->next();
     }
 
+end:
     TRY(this->expect(TokenKind::RParen));
-    return params;
+    return ast::FunctionParameters { move(params), is_c_variadic };
 }
 
 ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpecifier linkage, bool with_name) {
@@ -462,7 +466,7 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpeci
         TRY(this->expect(TokenKind::LParen));
     }
 
-    Vector<ast::Parameter> params = TRY(this->parse_function_parameters());
+    auto [params, is_c_variadic] = TRY(this->parse_function_parameters());
 
     Span end = m_current.span();
     OwnPtr<ast::TypeExpr> return_type = nullptr;
@@ -473,7 +477,7 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpeci
     }
 
     Span span { start, end };
-    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage) };
+    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic) };
 }
 
 ParseResult<ast::Expr> Parser::parse_function(ast::LinkageSpecifier linkage) {
@@ -580,12 +584,16 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
     while (!m_current.is(TokenKind::RBrace)) {
         ast::Attributes attrs = TRY(this->parse_attributes());
 
-        bool is_private = false;
-        bool is_readonly = false;
-
+        u8 flags = StructField::None;
         switch (m_current.kind()) {
-            case TokenKind::Private: is_private = true; this->next(); break;
-            case TokenKind::Readonly: is_readonly = true; this->next(); break;
+            case TokenKind::Private: {
+                flags |= StructField::Private;
+                this->next();
+            } break;
+            case TokenKind::Readonly: {
+                flags |= StructField::Readonly;
+                this->next();
+            }
             default: break;
         }
 
@@ -614,8 +622,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
                     move(name), 
                     TRY(this->parse_type()), 
                     index,
-                    is_private, 
-                    is_readonly
+                    flags
                 });
 
                 TRY(this->expect(TokenKind::SemiColon));
@@ -836,7 +843,7 @@ ParseResult<ast::EnumExpr> Parser::parse_enum() {
 }
 
 ParseResult<ast::Expr> Parser::parse_anonymous_function() {
-    Vector<ast::Parameter> params = TRY(this->parse_function_parameters());
+    auto [params, _] = TRY(this->parse_function_parameters());
     OwnPtr<ast::TypeExpr> return_type = nullptr;
 
     if (m_current.is(TokenKind::Colon)) {
@@ -853,7 +860,7 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
     Span end = params.back().span;
 
     Span span = { start, end };
-    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), ast::LinkageSpecifier::None);
+    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), ast::LinkageSpecifier::None, false);
 
     return { make<ast::FunctionExpr>(span, move(decl), move(body)) };
 }
@@ -1383,18 +1390,18 @@ ParseResult<ast::Expr> Parser::call() {
     } else if (this->is_upcoming_constructor(*expr)) {
         this->next();
 
-        Vector<ast::ConstructorField> fields;
+        Vector<ast::ConstructorArgument> arguments;
         if (m_current.is(TokenKind::RBrace)) {
             this->next();
             return { make<ast::EmptyConstructorExpr>(expr->span(), move(expr)) };
         }
 
         while (!m_current.is(TokenKind::RBrace)) {
-            String name = TRY(this->expect(TokenKind::Identifier)).value();
+            Token token = TRY(this->expect(TokenKind::Identifier));
             TRY(this->expect(TokenKind::Colon));
 
             auto value = TRY(this->expr(false));
-            fields.push_back({ name, move(value) });
+            arguments.push_back({ token.value(), move(value), token.span() });
 
             if (!m_current.is(TokenKind::Comma)) {
                 break;
@@ -1404,7 +1411,7 @@ ParseResult<ast::Expr> Parser::call() {
         }
 
         TRY(this->expect(TokenKind::RBrace));
-        expr = make<ast::ConstructorExpr>(expr->span(), move(expr), move(fields));
+        expr = make<ast::ConstructorExpr>(expr->span(), move(expr), move(arguments));
     }
 
 

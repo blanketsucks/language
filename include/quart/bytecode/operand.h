@@ -18,6 +18,7 @@ public:
     explicit Operand(u64 value, quart::Type* type) : m_type(Immediate), m_value(value), m_value_type(type) {}
     explicit Operand(class Register reg);
 
+    bool is_none() const { return m_type == None; }
     bool is_immediate() const { return m_type == Immediate; }
     bool is_register() const { return m_type == Register; }
 

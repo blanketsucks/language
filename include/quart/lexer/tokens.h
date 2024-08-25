@@ -138,10 +138,10 @@ enum class TokenKind {
 enum class UnaryOp {
     Not,
     Add,
-    Sub,
-    BinaryNot,
-    BinaryAnd,
-    Mul,
+    Neg,
+    BinaryNeg,
+    Ref,
+    DeRef,
     Inc,
     Dec
 };
@@ -204,7 +204,6 @@ private:
 };
 
 static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
-    // Keywords
     {"extern", TokenKind::Extern},
     {"func", TokenKind::Func},
     {"return", TokenKind::Return},
@@ -273,10 +272,10 @@ static const std::map<TokenKind, u8> PRECEDENCES = {
 static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
     {TokenKind::Not, UnaryOp::Not},
     {TokenKind::Add, UnaryOp::Add},
-    {TokenKind::Sub, UnaryOp::Sub},
-    {TokenKind::BinaryNot, UnaryOp::BinaryNot},
-    {TokenKind::BinaryAnd, UnaryOp::BinaryAnd},
-    {TokenKind::Mul, UnaryOp::Mul},
+    {TokenKind::Sub, UnaryOp::Neg},
+    {TokenKind::BinaryNot, UnaryOp::BinaryNeg},
+    {TokenKind::BinaryAnd, UnaryOp::Ref},
+    {TokenKind::Mul, UnaryOp::DeRef},
     {TokenKind::Inc, UnaryOp::Inc},
     {TokenKind::Dec, UnaryOp::Dec}
 };

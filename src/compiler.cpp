@@ -6,9 +6,12 @@
 #include <quart/codegen/llvm.h>
 
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Support/Program.h>
+#include <llvm/ADT/StringExtras.h>
 
-#include <ratio>
 #include <sstream>
+
+#include <sys/wait.h>
 
 #define PANIC_OBJ_FILE QUART_PATH "/panic.o"
 
@@ -22,38 +25,9 @@ CompilerError CompilerError::ok() {
     return { 0, "Success" };
 }
 
-// void CompilerError::unwrap() {
-//     if (this->code != 0) {
-//         Compiler::error(this->message);
-//         exit(static_cast<i32>(this->code));
-//     }
-// }
-
 Compiler::TimePoint Compiler::now() {
     return std::chrono::high_resolution_clock::now();
 }
-
-double Compiler::duration(Compiler::TimePoint start, Compiler::TimePoint end) {
-    std::chrono::duration<double, std::milli> duration = end - start;
-    return duration.count();
-}
-
-void Compiler::debug(const char* message, Compiler::TimePoint start) {
-    double duration = Compiler::duration(start, Compiler::now());
-    if (duration < 1000) {
-        std::cout << message << " took " << duration << " milliseconds.\n";
-    } else {
-        std::cout << message << " took " << duration / 1000 << " seconds.\n";
-    }
-}
-
-// void Compiler::init() {
-//     llvm::InitializeAllTargetInfos();
-//     llvm::InitializeAllTargets();
-//     llvm::InitializeAllTargetMCs();
-//     llvm::InitializeAllAsmParsers();
-//     llvm::InitializeAllAsmPrinters();
-// }
 
 void Compiler::shutdown() {
     llvm::llvm_shutdown();
@@ -150,32 +124,6 @@ Vector<String> Compiler::get_linker_arguments() const {
     return args;
 }
 
-// const llvm::Target* Compiler::create_target(
-//     String& error, String& triple
-// ) {
-//     triple = m_options.has_target() ? m_options.target : llvm::sys::getDefaultTargetTriple();
-//     return llvm::TargetRegistry::lookupTarget(triple, error);
-// }
-
-// OwnPtr<llvm::TargetMachine> Compiler::create_target_machine(
-//     llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
-// ) {
-//     llvm::TargetOptions options;
-//     auto reloc = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
-
-//     OwnPtr<llvm::TargetMachine> machine(
-//         target->createTargetMachine(triple, "generic", "", options, reloc)
-//     );
-
-//     module.setDataLayout(machine->createDataLayout());
-//     module.setTargetTriple(triple);
-
-//     module.setPICLevel(llvm::PICLevel::BigPIC);
-//     module.setPIELevel(llvm::PIELevel::Large);
-
-//     return machine;
-// }
-
 int Compiler::compile() const {
     SourceCode code = SourceCode::from_path(m_options.input);
 
@@ -190,7 +138,7 @@ int Compiler::compile() const {
     }
 
     auto tokens = result.release_value();
-    Parser parser(tokens);
+    Parser parser(move(tokens));
 
     auto ast = parser.parse();
     if (ast.is_err()) {
@@ -212,12 +160,18 @@ int Compiler::compile() const {
     }
 
     codegen::LLVMCodeGen codegen(state, m_options.input.filename());
-    codegen.generate();
+    auto res = codegen.generate(m_options);
 
-    auto& module = codegen.module();
-    module.print(llvm::errs(), nullptr);
-    
-    return 0;
+    if (res.is_err()) {
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", res.error().message());
+        return 1;
+    }
+
+    Vector<String> arguments = this->get_linker_arguments();
+    String command = llvm::join(arguments, " ");
+
+    int retcode = std::system(command.c_str());
+    return retcode;
 }
 
 }

@@ -34,6 +34,11 @@ Error err(Span span, const char* fmt, Args... args) {
     return { span, format(fmt, std::forward<Args>(args)...) };
 }
 
+template<typename ...Args> requires(std::conjunction_v<has_format_provider<Args>...>)
+Error err(const char* fmt, Args... args) {
+    return { Span {}, format(fmt, std::forward<Args>(args)...) };
+}
+
 template<typename T, typename E>
 class Result {
 public:
@@ -95,8 +100,13 @@ template<typename T>
 using ErrorOr = Result<T, Error>;
 
 template<typename T>
-Result<T, Error> Ok(const T& value) {
+ErrorOr<T> Ok(const T& value) {
     return { value };
+}
+
+template<typename T>
+ErrorOr<T> Ok(T&& value) {
+    return { std::forward(value) };
 }
 
 }

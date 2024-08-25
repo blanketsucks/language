@@ -6,6 +6,10 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
 
+namespace quart {
+    struct CompilerOptions;
+}
+
 namespace quart::codegen {
 
 struct LocalScope {
@@ -32,16 +36,23 @@ class LLVMCodeGen {
 public:
     LLVMCodeGen(State&, String module_name);
     
-    void generate();
+    ErrorOr<void> generate(CompilerOptions const&);
     void generate(bytecode::Instruction*);
 
     llvm::Module& module() { return *m_module; }
 
 private:
+    struct GEPResult {
+        llvm::Value* value;
+        llvm::Type* underlying_type;
+    };
+
     llvm::Value* valueof(bytecode::Register);
     llvm::Value* valueof(bytecode::Operand);
 
     llvm::BasicBlock* create_block_from(bytecode::BasicBlock*);
+
+    GEPResult create_gep(bytecode::Operand src, u32 index);
     
     void set_register(bytecode::Register, llvm::Value*);
 
@@ -62,6 +73,7 @@ private:
 
     HashMap<bytecode::BasicBlock*, llvm::BasicBlock*> m_basic_blocks;
     HashMap<Function*, llvm::Function*> m_functions;
+    HashMap<Struct*, llvm::StructType*> m_structs;
 };
 
 }

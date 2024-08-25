@@ -16,6 +16,8 @@ static inline String format_operand(const Operand& operand) {
         case Operand::Immediate:
             return format("{0}", operand.value());
     }
+
+    return "{ unknown operand type }";
 }
 
 void Move::dump() const {
@@ -56,6 +58,18 @@ void GetGlobalRef::dump() const {
 
 void SetGlobal::dump() const {
     outln("SetGlobal { src: {0}, index: {1} }", format_operand(m_src), m_index);
+}
+
+void GetMember::dump() const {
+    outln("GetMember { dst: {0}, src: {1}, index: {2} }", format_operand(m_dst), format_operand(m_src), m_index);
+}
+
+void GetMemberRef::dump() const {
+    outln("GetMemberRef { dst: {0}, src: {1}, index: {2} }", format_operand(m_dst), format_operand(m_src), m_index);
+}
+
+void SetMember::dump() const {
+    outln("SetMember { src: {0}, dst: {1}, index: {2} }", format_operand(m_src), format_operand(m_dst), m_index);
 }
 
 void Read::dump() const {
@@ -106,6 +120,14 @@ void Call::dump() const {
 
 void Cast::dump() const {
     outln("Cast { dst: {0}, src: {1}, type: {2} }", format_operand(m_dst), format_operand(m_src), m_type->str());
+}
+
+void NewStruct::dump() const {
+    outln("NewStruct { struct: {0} }", m_structure);
+}
+
+void Construct::dump() const {
+    outln("Construct { dst: {0}, struct: {1}, args: {2} }", format_operand(m_dst), m_structure, m_arguments.size());
 }
 
 }

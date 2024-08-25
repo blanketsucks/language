@@ -1,8 +1,17 @@
-#include <llvm-17/llvm/IR/PassManager.h>
+#include <llvm-17/llvm/IR/Constants.h>
+#include <llvm-17/llvm/Pass.h>
 #include <quart/codegen/llvm.h>
+#include <quart/compiler.h>
 
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/PassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/Support/TargetSelect.h>
 
 namespace quart::codegen {
 
@@ -11,7 +20,7 @@ LLVMCodeGen::LLVMCodeGen(State& state, String module_name) : m_state(state) {
     m_module = make<llvm::Module>(move(module_name), *m_context);
     m_ir_builder = make<llvm::IRBuilder<>>(*m_context);
 
-    m_registers.reserve(m_state.register_count());
+    m_registers.resize(m_state.register_count());
 }
 
 void LLVMCodeGen::generate(bytecode::Move* inst) {
@@ -138,7 +147,16 @@ void LLVMCodeGen::generate(bytecode::GetLocalRef* inst) {
 
 void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
     llvm::AllocaInst* local = m_local_scope->local(inst->index());
-    llvm::Value* value = valueof(inst->src());
+
+    bytecode::Operand src = inst->src();
+    llvm::Value* value = nullptr;
+
+    if (src.is_none()) {
+        llvm::Type* type = local->getAllocatedType();
+        value = llvm::Constant::getNullValue(type);
+    } else {
+        value = valueof(src);
+    }
 
     m_ir_builder->CreateStore(value, local);
 }
@@ -146,6 +164,42 @@ void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
 void LLVMCodeGen::generate(bytecode::GetGlobal*) {}
 void LLVMCodeGen::generate(bytecode::GetGlobalRef*) {}
 void LLVMCodeGen::generate(bytecode::SetGlobal*) {}
+
+LLVMCodeGen::GEPResult LLVMCodeGen::create_gep(bytecode::Operand src, u32 index) {
+    Vector<llvm::Value*> indices = {
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context),0),
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(*m_context), index)
+    };
+
+    Type* type = m_state.type(src)->get_pointee_type();
+    if (type->is_array()) {
+        type = type->get_array_element_type();
+    }
+
+    Type* underlying_type = nullptr;
+    if (type->is_struct()) {
+        underlying_type = type->get_struct_field_at(index);
+    } else {
+        underlying_type = type;
+    }
+
+    llvm::Value* value = m_ir_builder->CreateGEP(type->to_llvm_type(*m_context), valueof(src), indices);
+    return { value, underlying_type->to_llvm_type(*m_context) };
+}
+
+void LLVMCodeGen::generate(bytecode::GetMember* inst) {
+    auto [value, underlying_type] = this->create_gep(inst->src(), inst->index());
+    llvm::Value* result = m_ir_builder->CreateLoad(underlying_type, value);
+
+    this->set_register(inst->dst(), result);
+}
+
+void LLVMCodeGen::generate(bytecode::SetMember*) {}
+
+void LLVMCodeGen::generate(bytecode::GetMemberRef* inst) {
+    auto [value, _] = this->create_gep(inst->src(), inst->index());
+    this->set_register(inst->dst(), value);
+}
 
 void LLVMCodeGen::generate(bytecode::Read* inst) {
     llvm::Value* src = valueof(inst->src());
@@ -222,6 +276,43 @@ void LLVMCodeGen::generate(bytecode::Cast*) {}
 
 void LLVMCodeGen::generate(bytecode::NewArray*) {}
 
+void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
+    Struct* structure = inst->structure();
+    if (structure->opaque()) {
+        auto* type = llvm::StructType::create(*m_context, structure->name());
+        structure->underlying_type()->set_llvm_struct_type(type);
+
+        m_structs[structure] = type;
+        return;
+    }
+
+    auto range = llvm::map_range(structure->fields(), [this](auto& entry) {
+        return entry.second.type->to_llvm_type(*m_context);
+    });
+
+    Vector<llvm::Type*> fields = Vector<llvm::Type*>(range.begin(), range.end());
+    auto* type = llvm::StructType::create(*m_context, fields, structure->name());
+
+    structure->underlying_type()->set_llvm_struct_type(type);
+    m_structs[structure] = type;
+}
+
+void LLVMCodeGen::generate(bytecode::Construct* inst) {
+    Struct* structure = inst->structure();
+    llvm::StructType* type = m_structs[structure];
+
+    auto range = llvm::map_range(inst->arguments(), [this](auto& operand) {
+        return valueof(operand);
+    });
+
+    llvm::Value* value = llvm::UndefValue::get(type);
+    for (auto [index, field] : llvm::enumerate(range)) {
+        value = m_ir_builder->CreateInsertValue(value, field, index);
+    }
+
+    this->set_register(inst->dst(), value);
+}
+
 void LLVMCodeGen::set_register(bytecode::Register reg, llvm::Value* value) {
     m_registers[reg.index()] = value;
 }
@@ -261,7 +352,7 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
     }
 }
 
-void LLVMCodeGen::generate() {
+ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     for (auto& inst : m_state.global_instructions()) {
         this->generate(inst);
     }
@@ -269,6 +360,7 @@ void LLVMCodeGen::generate() {
     auto& basic_blocks = m_state.generator().blocks();
     for (auto& block : basic_blocks) {
         m_ir_builder->SetInsertPoint(this->create_block_from(&*block));
+
         for (auto& instruction : block->instructions()) {
             this->generate(instruction);
         }
@@ -288,20 +380,66 @@ void LLVMCodeGen::generate() {
 
     builder.crossRegisterProxies(lam, fam, cgam, mam);
 
-    // llvm::FunctionPassManager fpm = builder.buildFunctionSimplificationPipeline(
-    //     llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None
-    // );
+    llvm::FunctionPassManager fpm = builder.buildFunctionSimplificationPipeline(
+        llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None
+    );
 
-    // fpm.addPass(llvm::VerifierPass());
-    // for (auto& function : m_module->functions()) {
-    //     if (function.isDeclaration()) {
-    //         continue;
-    //     }
+    fpm.addPass(llvm::VerifierPass());
+    for (auto& function : m_module->functions()) {
+        if (function.isDeclaration()) {
+            continue;
+        }
 
-    //     fpm.run(function, fam);
-    // }
+        fpm.run(function, fam);
+    }
 
     llvm::verifyModule(*m_module);
+
+    String triple, error;
+    if (options.has_target()) {
+        triple = options.target;
+    } else {
+        triple = llvm::sys::getDefaultTargetTriple();
+    }
+
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
+    auto* target = llvm::TargetRegistry::lookupTarget(triple, error);
+    if (!target) {
+        return err("Failed to lookup target '{0}'", triple);
+    }
+
+    llvm::TargetOptions target_options;
+    auto reloc = Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
+
+    OwnPtr<llvm::TargetMachine> machine(
+        target->createTargetMachine(triple, "generic", "", target_options, reloc)
+    );
+
+    m_module->setDataLayout(machine->createDataLayout());
+    m_module->setTargetTriple(triple);
+
+    String output = options.input.with_extension("o");
+
+    std::error_code ec;
+    llvm::raw_fd_ostream stream(output, ec);
+
+    if (ec) {
+        return err("Failed to open file '{0}': {1}", output, ec.message());
+    }
+
+    llvm::legacy::PassManager pm;
+    machine->addPassesToEmitFile(pm, stream, nullptr, llvm::CGFT_ObjectFile);
+
+    pm.run(*m_module);
+    stream.flush();
+    
+    llvm::llvm_shutdown();
+    return {}; 
 }
 
 }

@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
             .mangle_style = args.mangle_style
         },
         .verbose = args.verbose,
-        .standalone = args.standalone,
+        .no_libc = args.no_libc,
         .object_files = {},
         .extras = {}
     };

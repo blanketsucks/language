@@ -54,13 +54,14 @@ String SourceCode::format_error(Error& error) const {
     StringView view = this->line(span);
     String line = format("{0} | {1}", lineno + 1, view);
 
+    size_t size = std::max(span.size(), 1ul);
     return format(
         "\x1b[1;37m{0}:{1}:{2}: \x1b[1;31merror:\x1b[0m {3}\n{4}\n{5}{6}", 
         m_filename, lineno + 1, column + 1,
         error.message(),
         line,
         String(column + (line.size() - view.size()) - 1, ' '),
-        String(span.size(), '^')
+        String(size, '^')
     );
 }
 

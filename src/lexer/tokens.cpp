@@ -20,11 +20,11 @@ llvm::StringRef get_unary_op_value(UnaryOp type) {
         case UnaryOp::Inc: return "++";
         case UnaryOp::Dec: return "--";
         case UnaryOp::Add: return "+";
-        case UnaryOp::Sub: return "-";
+        case UnaryOp::Neg: return "-";
         case UnaryOp::Not: return "!";
-        case UnaryOp::BinaryNot: return "~";
-        case UnaryOp::BinaryAnd: return "&";
-        case UnaryOp::Mul: return "*";
+        case UnaryOp::BinaryNeg: return "~";
+        case UnaryOp::Ref: return "&";
+        case UnaryOp::DeRef: return "*";
     }
 }
 
@@ -137,7 +137,10 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::Maybe: return "?";
         case TokenKind::DoubleDot: return "..";
         case TokenKind::EOS: return "EOS";
+        case TokenKind::None: return "None";
     }
+
+    return "";
 }
 
 i8 Token::precedence() const {
