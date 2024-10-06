@@ -14,7 +14,7 @@ using IntTypeStorageKey = std::pair<u32, bool>;
 using TupleTypeStorageKey = Vector<Type*>;
 using PointerTypeStorageKey = std::pair<Type*, bool>;
 using ArrayTypeStorageKey = std::pair<Type*, size_t>;
-using FunctionTypeStorageKey = std::pair<Type*, Vector<Type*>>;
+using FunctionTypeStorageKey = std::pair<Type*, std::pair<Vector<Type*>, bool>>;
 
 class TypeRegistry {
 public:

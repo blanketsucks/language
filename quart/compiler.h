@@ -33,7 +33,7 @@ static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_EXT = {
     {OutputFormat::LLVM, "ll"},
     {OutputFormat::Bitcode, "bc"},
     {OutputFormat::Assembly, "s"},
-    {OutputFormat::Executable, ""},
+    {OutputFormat::Executable, {}},
 #if _WIN32 || _WIN64
     {OutputFormat::SharedLibrary, "lib"}
 #else
@@ -60,15 +60,6 @@ struct OptimizationOptions {
     bool dead_code_elimination = true;
 
     MangleStyle mangle_style = MangleStyle::Full; // Not really an optimization, but it's here for now
-};
-
-struct CompilerError {
-    i32 code;
-    String message;
-
-    CompilerError(i32 code, String message);
-    static CompilerError ok();
-    void unwrap();
 };
 
 struct CompilerOptions {

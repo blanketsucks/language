@@ -1,14 +1,14 @@
 import libc;
 import libc::errno;
 
-const stderr = libc::fdopen(2, "w");
+const stderr = libc::fdopen(2, "w"); 
 
 func read_from_filename(filename: *i8) -> *i8 {
     let file = libc::fopen(filename, "r");
     if !file {
         let err = *errno::__errno_location();
         libc::fprintf(stderr, "Could not open file '%s': %s\n", filename, errno::strerror(err));
-
+        
         return null;
     }
 

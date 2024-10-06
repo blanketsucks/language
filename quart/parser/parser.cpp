@@ -39,7 +39,9 @@ static const std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
     { "u64", ast::BuiltinType::u64 },
     { "u128", ast::BuiltinType::u128 },
     { "f32", ast::BuiltinType::f32 },
-    { "f64", ast::BuiltinType::f64 }
+    { "f64", ast::BuiltinType::f64 },
+    { "isize", ast::BuiltinType::isize },
+    { "usize", ast::BuiltinType::usize }
 };
 
 
@@ -192,7 +194,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type() {
             TRY(this->expect(TokenKind::SemiColon));
             auto size = TRY(this->expr(false));
 
-            Span end = TRY(this->expect(TokenKind::RParen)).span();
+            Span end = TRY(this->expect(TokenKind::RBracket)).span();
             Span span { start, end };
 
             return { make<ast::ArrayTypeExpr>(span, move(type), move(size)) };
@@ -422,7 +424,6 @@ ErrorOr<ast::FunctionParameters> Parser::parse_function_parameters() {
         // FIXME: A function only has one `self` parameter
         if (name == "self" && m_self_allowed) {
             flags |= FunctionParameter::Self;
-            this->next();
         } else {
             TRY(this->expect(TokenKind::Colon));
             type = TRY(this->parse_type());
@@ -457,7 +458,7 @@ end:
     return ast::FunctionParameters { move(params), is_c_variadic };
 }
 
-ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpecifier linkage, bool with_name) {
+ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier linkage, bool with_name) {
     Span start = m_current.span();
     String name = "<anonymous>";
 
@@ -480,7 +481,7 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(ast::LinkageSpeci
     return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic) };
 }
 
-ParseResult<ast::Expr> Parser::parse_function(ast::LinkageSpecifier linkage) {
+ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage) {
     auto decl = TRY(this->parse_function_decl(linkage, true));
     if (m_current.is(TokenKind::SemiColon)) {
         return { move(decl) };
@@ -536,9 +537,15 @@ ParseResult<ast::Expr> Parser::parse_for() {
     auto expr = TRY(this->expr(false));
     if (m_current.is(TokenKind::DoubleDot)) {
         this->next();
+        bool inclusive = false;
+
+        if (m_current.is(TokenKind::Assign)) {
+            this->next();
+            inclusive = true;
+        }
 
         OwnPtr<ast::Expr> end = nullptr;
-        if (!m_current.is(TokenKind::LBrace)) {
+        if (!m_current.is(TokenKind::LBrace) || inclusive) {
             end = TRY(this->expr(false));
         }
         
@@ -547,7 +554,7 @@ ParseResult<ast::Expr> Parser::parse_for() {
         auto body = TRY(this->parse_block());
         m_in_loop = has_outer_loop;
 
-        return { make<ast::RangeForExpr>(ident.span, move(ident), move(expr), move(end), move(body)) };
+        return { make<ast::RangeForExpr>(ident.span, move(ident), inclusive, move(expr), move(end), move(body)) };
     }
 
     TRY(this->expect(TokenKind::LBrace));
@@ -751,7 +758,7 @@ ParseResult<ast::Expr> Parser::parse_variable_definition(bool allow_tuple, bool 
     return this->parse_single_variable_definition(is_const);
 }
 
-ParseResult<ast::Expr> Parser::parse_extern(ast::LinkageSpecifier linkage) {
+ParseResult<ast::Expr> Parser::parse_extern(LinkageSpecifier linkage) {
     OwnPtr<ast::Expr> definition;
     
     ast::Attributes attrs = TRY(this->parse_attributes());
@@ -765,6 +772,8 @@ ParseResult<ast::Expr> Parser::parse_extern(ast::LinkageSpecifier linkage) {
 
         this->next();
         definition = TRY(this->parse_function(linkage));
+
+        TRY(this->expect(TokenKind::SemiColon));
     }
 
     definition->attributes().update(attrs);
@@ -773,7 +782,7 @@ ParseResult<ast::Expr> Parser::parse_extern(ast::LinkageSpecifier linkage) {
 
 ParseResult<ast::Expr> Parser::parse_extern_block() {
     Span start = m_current.span();
-    ast::LinkageSpecifier linkage = ast::LinkageSpecifier::Unspecified;
+    LinkageSpecifier linkage = LinkageSpecifier::Unspecified;
 
     if (m_current.is(TokenKind::String)) {
         if (m_current.value() != "C") {
@@ -781,7 +790,7 @@ ParseResult<ast::Expr> Parser::parse_extern_block() {
         }
 
         this->next();
-        linkage = ast::LinkageSpecifier::C;
+        linkage = LinkageSpecifier::C;
     }
 
     if (m_current.is(TokenKind::LBrace)) {
@@ -860,7 +869,7 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
     Span end = params.back().span;
 
     Span span = { start, end };
-    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), ast::LinkageSpecifier::None, false);
+    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), LinkageSpecifier::None, false);
 
     return { make<ast::FunctionExpr>(span, move(decl), move(body)) };
 }
@@ -968,6 +977,11 @@ ParseResult<ast::MatchExpr> Parser::parse_match() {
 }
 
 ParseResult<ast::ImplExpr> Parser::parse_impl() {
+    Vector<ast::GenericParameter> parameters;
+    if (m_current.is(TokenKind::Lt)) {
+        parameters = TRY(this->parse_generic_parameters());
+    }
+
     auto type = TRY(this->parse_type());
     TRY(this->expect(TokenKind::LBrace));
 
@@ -983,6 +997,8 @@ ParseResult<ast::ImplExpr> Parser::parse_impl() {
 
         switch (m_current.kind()) {
             case TokenKind::Func:
+                this->next();
+
                 body.push_back(TRY(this->parse_function()));
                 break;
             default:
@@ -990,7 +1006,11 @@ ParseResult<ast::ImplExpr> Parser::parse_impl() {
         }
     }
 
-    return { make<ast::ImplExpr>(type->span(), move(type), move(body)) };
+    TRY(this->expect(TokenKind::RBrace));
+    Span span = type->span();
+
+    auto block = make<ast::BlockExpr>(span, move(body));
+    return { make<ast::ImplExpr>(span, move(type), move(block), move(parameters)) };
 }
 
 ErrorOr<Path> Parser::parse_path(Optional<String> name) {
@@ -1083,7 +1103,7 @@ ParseResult<ast::Expr> Parser::statement() {
         }
         case TokenKind::Const: {
             this->next();
-            return this->parse_variable_definition(true);
+            return this->parse_variable_definition(true, true);
         }
         case TokenKind::Struct: {
             this->next();
@@ -1159,10 +1179,10 @@ ParseResult<ast::Expr> Parser::statement() {
             TRY(this->expect(TokenKind::From));
 
             this->next();
-            auto parent = TRY(this->expr());
+            Path path = TRY(this->parse_path());
 
-            Span span = { start, parent->span() };
-            return { make<ast::UsingExpr>(span, move(parent), move(symbols)) };
+            Span span = start; // FIXME:
+            return { make<ast::UsingExpr>(span, move(path), move(symbols)) };
         } 
         case TokenKind::Defer: {
             if (!m_in_function) {

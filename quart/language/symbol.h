@@ -24,6 +24,8 @@ public:
         Module
     };
 
+    static String parse_qualified_name(Symbol*, Scope*);
+
     Symbol(String name, SymbolType type) : m_name(move(name)), m_type(type) {}
     virtual ~Symbol() = default;
 

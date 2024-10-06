@@ -342,7 +342,7 @@ ErrorOr<Vector<Token>> Lexer::lex() {
         tokens.push_back(TRY(this->once()));
     }
 
-    Token eof = { TokenKind::EOS, "", { m_offset, m_offset } };
+    Token eof = { TokenKind::EOS, {}, { m_offset, m_offset } };
     tokens.push_back(eof);
 
     return tokens;

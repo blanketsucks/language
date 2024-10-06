@@ -4,8 +4,10 @@ namespace quart {
 
 State::State() {
     m_type_registry = TypeRegistry::create();
-    m_current_scope = Scope::create({}, ScopeType::Global, nullptr);
+    m_current_scope = m_global_scope = Scope::create({}, ScopeType::Global, nullptr);
 }
+
+void State::dump() const {}
 
 bytecode::Register State::allocate_register() {
     bytecode::Register reg = m_generator.allocate_register();
@@ -34,25 +36,80 @@ Type* State::type(bytecode::Operand operand) const {
     }
 }
 
+void State::add_global_function(RefPtr<Function> function) {
+    m_all_functions[function->qualified_name()] = function;
+}
+
+Function const& State::get_global_function(const String& name) const {
+    return *m_all_functions.at(name);
+}
+
+void State::add_global_struct(RefPtr<Struct> structure) {
+    m_all_structs[structure->underlying_type()] = structure;
+}
+
+void State::add_impl(OwnPtr<Impl> impl) {
+    if (impl->is_generic()) {
+        m_generic_impls.push_back(move(impl));
+        return;
+    }
+
+    m_impls[impl->underlying_type()] = move(impl);
+}
+
+bool State::has_impl(Type* type) {
+    return m_impls.contains(type);
+}
+
+Struct const* State::get_global_struct(Type* type) const {
+    if (auto iterator = m_all_structs.find(type); iterator != m_all_structs.end()) {
+        return iterator->second.get();
+    }
+
+    return nullptr;
+}
+
+bool State::has_global_module(const String& name) const {
+    return m_modules.contains(name);
+}
+
+RefPtr<Module> State::get_global_module(const String& name) const {
+    if (auto iterator = m_modules.find(name); iterator != m_modules.end()) {
+        return iterator->second;
+    }
+
+    return nullptr;
+}
+
+void State::add_global_module(RefPtr<Module> module) {
+    m_modules[module->qualified_name()] = module;
+}
+
+ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const String& name) {
+    auto* symbol = current_scope->resolve(name);
+    if (!symbol) {
+        return err(span, "namespace '{0}' not found", name);
+    }
+
+    if (!symbol->is(Symbol::Module, Symbol::Struct)) {
+        return err(span, "'{0}' is not a valid namespace", name);
+    }
+
+    Scope* scope = nullptr;
+    if (symbol->is<Module>()) {
+        scope = symbol->as<Module>()->scope();
+    } else {
+        scope = symbol->as<Struct>()->scope();
+    }
+
+    return scope;
+}
+
 ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path) {
     Scope* scope = m_current_scope;
     for (auto& segment : path.segments) {
         Span segment_span = { span.start(), span.start() + segment.size() };
-        auto* symbol = scope->resolve(segment);
-        
-        if (!symbol) {
-            return err(segment_span, "namespace '{0}' not found", segment);
-        }
-
-        if (!symbol->is(Symbol::Module, Symbol::Struct)) {
-            return err(segment_span, "'{0}' is not a valid namespace", segment);
-        }
-
-        if (symbol->is<Module>()) {
-            scope = symbol->as<Module>()->scope();
-        } else {
-            scope = symbol->as<Struct>()->scope();
-        }
+        scope = TRY(this->resolve_scope(segment_span, scope, segment));
 
         span.set_start(segment_span.end() + 2);
     }
@@ -76,7 +133,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, co
     switch (symbol->type()) {
         case Symbol::Variable: {
             auto* variable = symbol->as<Variable>();
-            this->emit<bytecode::GetLocalRef>(reg, variable->local_index());
+            this->emit<bytecode::GetLocalRef>(reg, variable->index());
 
             if (!variable->is_mutable() && is_mutable) {
                 return err(span, "Cannot take a mutable reference to an immutable variable");
@@ -203,11 +260,13 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     ast::Expr const& parent = expr.parent();
     auto result = this->resolve_symbol(parent);
 
+    bool is_mutable = false;
+
     if (result.is_err()) {
-        // FIXME: 
+        // TODO
         return result.error();
     }
-
+    
     auto* symbol = result.value();
     if (!symbol->is<Variable>()) {
         return err(parent.span(), "Attribute access is only allowed on variables");
@@ -224,26 +283,69 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     }
 
     auto* structure = this->get_global_struct(value_type);
+    Scope* scope = nullptr;
+
     if (!structure) {
-        return err(parent.span(), "Cannot access attributes of type '{0}'", value_type->str());
-    }
+        Type* ty = variable->value_type();
+        if (!this->has_impl(ty)) {
+            for (auto& impl : m_generic_impls) {
+                scope = TRY(impl->make(*this, ty));
+                if (scope) {
+                    break;
+                }
+            }
 
-    auto* field = structure->find(expr.attribute());
-    if (!field) {
-        return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", expr.attribute(), structure->name());
-    }
-
-    if (as_reference && as_mutable && !variable->is_mutable()) {
-        return err(parent.span(), "Cannot take a mutable reference to an immutable variable");
+            if (!scope) {
+                return err(parent.span(), "Cannot access attributes of type '{0}'", ty->str());
+            }
+        } else {
+            auto& impl = *m_impls[ty];
+            scope = impl.scope();
+        }
+    } else {
+        scope = structure->scope();
     }
 
     auto reg = this->allocate_register();
     this->set_register_type(reg, variable->value_type()->get_pointer_to());
 
-    this->emit<bytecode::GetLocalRef>(reg, variable->local_index());
-    if (is_pointer_type) {
+    this->emit<bytecode::GetLocalRef>(reg, variable->index());
+    if (is_pointer_type && structure) {
         this->emit<bytecode::Read>(reg, reg);
         this->set_register_type(reg, variable->value_type());
+    }
+
+    auto& attr = expr.attribute();
+    auto* method = scope->resolve<Function>(attr);
+
+    if (method) {
+        if (!dst) {
+            dst = this->allocate_register();
+        }
+
+        auto& self = method->parameters().front();
+        if (self.is_mutable() && !variable->is_mutable()) {
+            return err(parent.span(), "Function '{0}' requires a mutable reference to self but '{1}' is immutable", method->name(), variable->name());
+        }
+
+        this->emit<bytecode::GetFunction>(*dst, method);
+        this->set_register_type(*dst, method->underlying_type()->get_pointer_to());
+
+        this->inject_self(reg);
+        return bytecode::Operand(*dst);
+    }
+
+    if (!structure) {
+        return err("Type '{0}' has no attribute named '{1}'", value_type->str(), attr);
+    }
+
+    auto* field = structure->find(attr);
+    if (!field) {
+        return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", attr, structure->name());
+    }
+
+    if (as_reference && as_mutable && !variable->is_mutable()) {
+        return err(parent.span(), "Cannot take a mutable reference to an immutable variable");
     }
 
     if (!dst.has_value()) {
@@ -259,6 +361,19 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     }
 
     return bytecode::Operand(*dst);
+}
+
+fs::Path State::search_import_paths(const String& name) {
+    static const Vector<fs::Path> IMPORT_PATHS = { fs::Path(QUART_PATH) };
+
+    for (auto& path : IMPORT_PATHS) {
+        fs::Path fullpath = path / name;
+        if (fullpath.exists()) {
+            return fullpath;
+        }
+    }
+
+    return {};
 }
 
 }

@@ -11,19 +11,23 @@
 
 #include <sstream>
 
-#include <sys/wait.h>
-
 #define PANIC_OBJ_FILE QUART_PATH "/panic.o"
 
-#define VERBOSE(msg) if (m_options.verbose) Compiler::debug(msg, start)
+// We define our own TRY macro here because we need it to be slightly different from the one in quart/errors.h
+#undef TRY
+#define TRY(expr, code)                                 \
+    ({                                                  \
+        auto result = (expr);                           \
+        if (result.is_err()) {                          \
+            auto& err = result.error();                 \
+            errln("{0}", (code).format_error(err));     \
+                                                        \
+            return 1;                                   \
+        }                                               \
+        result.release_value();                         \
+    })
 
 namespace quart {
-
-CompilerError::CompilerError(i32 code, String message) : code(code), message(std::move(message)) {}
-
-CompilerError CompilerError::ok() {
-    return { 0, "Success" };
-}
 
 Compiler::TimePoint Compiler::now() {
     return std::chrono::high_resolution_clock::now();
@@ -128,42 +132,23 @@ int Compiler::compile() const {
     SourceCode code = SourceCode::from_path(m_options.input);
 
     Lexer lexer(code);
-    auto result = lexer.lex();
+    Vector<Token> tokens = TRY(lexer.lex(), code);
 
-    if (result.is_err()) {
-        auto& error = result.error();
-        errln("{0}", code.format_error(error));
-        
-        return 1;
-    }
-
-    auto tokens = result.release_value();
     Parser parser(move(tokens));
-
-    auto ast = parser.parse();
-    if (ast.is_err()) {
-        auto& error = ast.error();
-        errln("{0}", code.format_error(error));
-
-        return 1;
-    }
+    ast::ExprList<> ast = TRY(parser.parse(), code);
 
     State state;
-    for (auto& expr : ast.release_value()) {
-        auto result = expr->generate(state);
-        if (result.is_err()) {
-            auto& error = result.error();
-            errln("{0}", code.format_error(error));
-
-            return 1;
-        }
+    for (auto& expr : ast) {
+        TRY(expr->generate(state), code);
     }
 
     codegen::LLVMCodeGen codegen(state, m_options.input.filename());
-    auto res = codegen.generate(m_options);
+    auto result = codegen.generate(m_options);
 
-    if (res.is_err()) {
-        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", res.error().message());
+    if (result.is_err()) {
+        auto& err = result.error();
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", err.message());
+
         return 1;
     }
 

@@ -51,6 +51,7 @@
     Op(Cast)                                        \
     Op(NewStruct)                                   \
     Op(Construct)                                   \
+    Op(Alloca)                                      
 
 namespace quart {
     class Function;
@@ -501,6 +502,20 @@ private:
     Register m_dst;
     Struct* m_structure;
     Vector<Operand> m_arguments;
+};
+
+class Alloca : public InstructionBase<Instruction::Alloca> {
+public:
+    Alloca(Register dst, Type* type) : m_dst(dst), m_type(type) {}
+
+    Register dst() const { return m_dst; }
+    Type* type() const { return m_type; }
+
+    void dump() const override {}
+
+private:
+    Register m_dst;
+    Type* m_type;
 };
 
 }

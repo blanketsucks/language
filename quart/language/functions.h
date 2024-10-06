@@ -1,10 +1,11 @@
 #pragma once
 
 #include <quart/language/types.h>
-#include <quart/llvm.h>
-#include <quart/common.h>
-#include <quart/language/symbol.h>
 #include <quart/bytecode/basic_block.h>
+#include <quart/language/symbol.h>
+#include <quart/parser/ast.h>
+#include <quart/common.h>
+#include <quart/llvm.h>
 
 namespace quart {
 
@@ -41,7 +42,9 @@ class Function : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Function; }
 
-    static RefPtr<Function> create(String name, Vector<FunctionParameter> parameters, FunctionType* underlying_type, Scope*);
+    static RefPtr<Function> create(String name, Vector<FunctionParameter> parameters, FunctionType* underlying_type, Scope*, LinkageSpecifier);
+
+    LinkageSpecifier linkage_specifier() const { return m_linkage_specifier; }
 
     FunctionType* underlying_type() const { return m_underlying_type; }
     Type* return_type() const { return m_underlying_type->return_type(); }
@@ -87,10 +90,13 @@ private:
         String name,
         Vector<FunctionParameter> parameters,
         FunctionType* underlying_type,
-        Scope* scope
-    ) : Symbol(move(name), Symbol::Function), m_underlying_type(underlying_type), m_parameters(move(parameters)), m_scope(scope) {
+        Scope* scope,
+        LinkageSpecifier linkage_specifier
+    ) : Symbol(move(name), Symbol::Function), m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), m_scope(scope) {
         this->set_qualified_name();
     }
+
+    LinkageSpecifier m_linkage_specifier;
 
     FunctionType* m_underlying_type;
     String m_qualified_name;

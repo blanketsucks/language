@@ -38,13 +38,15 @@ class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type));
+    static RefPtr<Struct> create(String name, StructType* underlying_type, Scope* parent) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, parent));
     }
 
     static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope) {
         return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope));
     }
+
+    String const& qualified_name() const { return m_qualified_name; }
 
     StructType* underlying_type() const { return m_underlying_type; }
 
@@ -56,12 +58,23 @@ public:
 
     bool opaque() const { return m_opaque; }
 
+    void set_fields(HashMap<String, StructField> fields) { m_fields = move(fields); }
+
 private:
-    Struct(String name, StructType* underlying_type) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(true) {}
+    void set_qualified_name(Scope* parent = nullptr);
+
+    Struct(String name, StructType* underlying_type, Scope* parent) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(true) {
+        this->set_qualified_name(parent);
+    }
+
     Struct(
         String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope
-    ) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {}
+    ) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {
+        this->set_qualified_name();
+    }
     
+    String m_qualified_name;
+
     StructType* m_underlying_type;
 
     bool m_opaque;

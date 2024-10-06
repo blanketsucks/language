@@ -140,7 +140,7 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::None: return "None";
     }
 
-    return "";
+    return {};
 }
 
 i8 Token::precedence() const {

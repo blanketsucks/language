@@ -6,24 +6,22 @@
 
 namespace quart {
 
-RefPtr<Function> Function::create(String name, Vector<FunctionParameter> parameters, FunctionType* underlying_type, Scope* scope) {
-    return RefPtr<Function>(new Function(move(name), move(parameters), underlying_type, scope));
+RefPtr<Function> Function::create(
+    String name,
+    Vector<FunctionParameter> parameters,
+    FunctionType* underlying_type, 
+    Scope* scope,
+    LinkageSpecifier linkage_specifier
+) {
+    return RefPtr<Function>(new Function(move(name), move(parameters), underlying_type, scope, linkage_specifier));
 }
 
 void Function::set_qualified_name() {
-    Vector<String> parts;
-    parts.push_back(name());
-
-    for (auto* scope = m_scope->parent(); scope; scope = scope->parent()) {
-        if (scope->type() == ScopeType::Global) {
-            break;
-        }
-
-        parts.push_back(scope->name());
+    if (m_linkage_specifier == LinkageSpecifier::C) {
+        m_qualified_name = name();
+    } else {
+        m_qualified_name = Symbol::parse_qualified_name(this, m_scope->parent());
     }
-
-    m_qualified_name = llvm::join(parts.rbegin(), parts.rend(), ".");
-
 }
 
 }

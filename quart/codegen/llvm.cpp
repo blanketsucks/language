@@ -20,7 +20,8 @@ LLVMCodeGen::LLVMCodeGen(State& state, String module_name) : m_state(state) {
     m_module = make<llvm::Module>(move(module_name), *m_context);
     m_ir_builder = make<llvm::IRBuilder<>>(*m_context);
 
-    m_registers.resize(m_state.register_count());
+    m_registers.resize(state.register_count());
+    m_globals.resize(state.global_count());
 }
 
 void LLVMCodeGen::generate(bytecode::Move* inst) {
@@ -161,9 +162,27 @@ void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
     m_ir_builder->CreateStore(value, local);
 }
 
-void LLVMCodeGen::generate(bytecode::GetGlobal*) {}
-void LLVMCodeGen::generate(bytecode::GetGlobalRef*) {}
-void LLVMCodeGen::generate(bytecode::SetGlobal*) {}
+void LLVMCodeGen::generate(bytecode::GetGlobal* inst) {
+    auto* global = m_globals[inst->index()];
+    llvm::Value* result = m_ir_builder->CreateLoad(global->getValueType(), global);
+
+    this->set_register(inst->dst(), result);
+}
+
+void LLVMCodeGen::generate(bytecode::GetGlobalRef* inst) {
+    auto* global = m_globals[inst->index()];
+    this->set_register(inst->dst(), global);
+}
+
+void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
+    auto* global = m_globals[inst->index()];
+    String name = format("global.{0}", inst->index());
+
+    llvm::Type* type = m_state.type(inst->src())->to_llvm_type(*m_context);
+    if (!global) {
+        m_module->getOrInsertGlobal(name, type);
+    }
+}
 
 LLVMCodeGen::GEPResult LLVMCodeGen::create_gep(bytecode::Operand src, u32 index) {
     Vector<llvm::Value*> indices = {
@@ -194,18 +213,28 @@ void LLVMCodeGen::generate(bytecode::GetMember* inst) {
     this->set_register(inst->dst(), result);
 }
 
-void LLVMCodeGen::generate(bytecode::SetMember*) {}
+void LLVMCodeGen::generate(bytecode::SetMember* inst) {
+    auto [value, _] = this->create_gep(inst->dst(), inst->index());
+    m_ir_builder->CreateStore(valueof(inst->src()), value);
+}
 
 void LLVMCodeGen::generate(bytecode::GetMemberRef* inst) {
     auto [value, _] = this->create_gep(inst->src(), inst->index());
     this->set_register(inst->dst(), value);
 }
 
+void LLVMCodeGen::generate(bytecode::Alloca* inst) {
+    llvm::Type* type = inst->type()->to_llvm_type(*m_context);
+    llvm::Value* alloca = m_ir_builder->CreateAlloca(type);
+
+    this->set_register(inst->dst(), alloca);
+}
+
 void LLVMCodeGen::generate(bytecode::Read* inst) {
     llvm::Value* src = valueof(inst->src());
     Type* type = m_state.type(inst->src());
 
-    llvm::Type* pointee = type->get_pointee_type()->to_llvm_type(*m_context);
+    llvm::Type* pointee = type->underlying_type()->to_llvm_type(*m_context);
     llvm::Value* value = m_ir_builder->CreateLoad(pointee, src);
 
     this->set_register(inst->dst(), value);
@@ -272,28 +301,76 @@ void LLVMCodeGen::generate(bytecode::Call* inst) {
     this->set_register(inst->dst(), value);
 }
 
-void LLVMCodeGen::generate(bytecode::Cast*) {}
+void LLVMCodeGen::generate(bytecode::Cast* inst) {
+    llvm::Value* src = valueof(inst->src());
+
+    Type* from = m_state.type(inst->src());
+    Type* to = inst->type();
+
+    llvm::Type* type = to->to_llvm_type(*m_context);
+
+    llvm::Value* value = src;
+    if (from->is_int()) {
+        if (to->is_floating_point()) {
+            if (from->is_int_unsigned()) {
+                value = m_ir_builder->CreateUIToFP(src, type);
+            } else {
+                value = m_ir_builder->CreateSIToFP(src, type);
+            }
+        } else if (to->is_int()) {
+            if (from->is_int_unsigned()) {
+                value = m_ir_builder->CreateZExtOrTrunc(src, type);
+            } else {
+                value = m_ir_builder->CreateSExtOrTrunc(src, type);
+            }
+        } else if (to->is_pointer()) {
+            value = m_ir_builder->CreateIntToPtr(src, type);
+        }
+    } else if (from->is_floating_point()) {
+        if (to->is_floating_point()) {
+            value = m_ir_builder->CreateFPCast(src, type);
+        } else if (to->is_int()) {
+            if (to->is_int_unsigned()) {
+                value = m_ir_builder->CreateFPToUI(value, type);
+            } else {
+                value = m_ir_builder->CreateFPToSI(value, type);
+            }
+        }
+    } else if (from->is_pointer()) {
+        if (to->is_int()) {
+            value = m_ir_builder->CreatePtrToInt(src, type);
+        } else if (to->is_pointer()) {
+            value = m_ir_builder->CreateBitCast(src, type);
+        }
+    } else if (from->is_reference() && to->is_pointer()) {
+        value = m_ir_builder->CreateBitCast(src, type);
+    }
+
+    this->set_register(inst->dst(), value);
+}
 
 void LLVMCodeGen::generate(bytecode::NewArray*) {}
 
 void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
     Struct* structure = inst->structure();
     if (structure->opaque()) {
-        auto* type = llvm::StructType::create(*m_context, structure->name());
+        auto* type = llvm::StructType::create(*m_context, structure->qualified_name());
         structure->underlying_type()->set_llvm_struct_type(type);
 
         m_structs[structure] = type;
         return;
     }
 
+    auto* type = llvm::StructType::create(*m_context, {}, structure->qualified_name());
+    structure->underlying_type()->set_llvm_struct_type(type);
+
     auto range = llvm::map_range(structure->fields(), [this](auto& entry) {
         return entry.second.type->to_llvm_type(*m_context);
     });
 
     Vector<llvm::Type*> fields = Vector<llvm::Type*>(range.begin(), range.end());
-    auto* type = llvm::StructType::create(*m_context, fields, structure->name());
+    type->setBody(fields);
 
-    structure->underlying_type()->set_llvm_struct_type(type);
     m_structs[structure] = type;
 }
 
@@ -353,8 +430,8 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
 }
 
 ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
-    for (auto& inst : m_state.global_instructions()) {
-        this->generate(inst);
+    for (auto& instruction : m_state.global_instructions()) {
+        this->generate(instruction);
     }
 
     auto& basic_blocks = m_state.generator().blocks();
@@ -365,6 +442,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
             this->generate(instruction);
         }
     }
+
 
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
@@ -385,7 +463,15 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     );
 
     fpm.addPass(llvm::VerifierPass());
+
+    Vector<llvm::Function*> functions_to_erase;
+    Vector<llvm::GlobalVariable*> globals_to_erase;
+
     for (auto& function : m_module->functions()) {
+        if (function.use_empty() && function.getName() != options.entry) {
+            functions_to_erase.push_back(&function);
+        }
+
         if (function.isDeclaration()) {
             continue;
         }
@@ -393,7 +479,27 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         fpm.run(function, fam);
     }
 
-    llvm::verifyModule(*m_module);
+    llvm::verifyModule(*m_module, &llvm::errs());
+
+    for (auto& function : functions_to_erase) {
+        function->eraseFromParent();
+    }
+
+    for (auto& global : m_module->globals()) {
+        if (global.getName().startswith("llvm.")) {
+            continue;
+        }
+
+        if (global.use_empty()) {
+            globals_to_erase.push_back(&global);
+        }
+    }
+
+    for (auto& global : globals_to_erase) {
+        m_module->eraseGlobalVariable(global);
+    }
+
+    m_module->print(llvm::errs(), nullptr);
 
     String triple, error;
     if (options.has_target()) {

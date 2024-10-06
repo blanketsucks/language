@@ -8,6 +8,7 @@
 #include <string_view>
 #include <string>
 #include <deque>
+#include <set>
 
 #ifndef QUART_PATH
     #define QUART_PATH "lib"
@@ -79,6 +80,8 @@ template<typename T> using Deque = std::deque<T>;
 
 template<typename T, size_t N> using Array = std::array<T, N>;
 
+template<typename T> using Set = std::set<T>;
+
 template<typename T> using Optional = std::optional<T>;
 
 template<typename T> using RefPtr = std::shared_ptr<T>;
@@ -95,5 +98,11 @@ template<typename T, typename ...Args>
 inline OwnPtr<T> make(Args&&... args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
+
+enum class LinkageSpecifier {
+    None,
+    Unspecified,
+    C,
+};
 
 }

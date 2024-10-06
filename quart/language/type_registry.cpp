@@ -112,19 +112,19 @@ ReferenceType* TypeRegistry::create_reference_type(Type* inner, bool is_mutable)
 }
 
 FunctionType* TypeRegistry::create_function_type(Type* return_type, const Vector<Type*>& parameters, bool is_var_arg) {
-    auto iterator = m_functions.find({ return_type, parameters });
+    auto iterator = m_functions.find({ return_type, { parameters, is_var_arg } });
     if (iterator != m_functions.end()) {
         return &*iterator->second;
     }
 
     auto* type = new FunctionType(this, return_type, parameters, is_var_arg);
-    m_functions[{ return_type, parameters }] = OwnPtr<FunctionType>(type);
+    m_functions[{ return_type, { parameters, is_var_arg } }] = OwnPtr<FunctionType>(type);
 
     return type;
 }
 
 PointerType* TypeRegistry::cstr() {
-    return this->create_pointer_type(&m_u8, true);
+    return this->create_pointer_type(&m_i8, false);
 }
 
 // NOLINTEND(cppcoreguidelines-owning-memory)

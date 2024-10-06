@@ -21,7 +21,6 @@ struct GenericTypeParameter {
 
 class TypeAlias : public Symbol {
 public:
-
     static RefPtr<TypeAlias> create(String name, Type* type) {
         return RefPtr<TypeAlias>(new TypeAlias(move(name), type));
     }
@@ -40,8 +39,8 @@ public:
     bool is_generic() const { return m_underlying_type == nullptr; }
     bool all_parameters_have_default() const; // FIXME: Find a better name for this
 
-    Type* evaluate(State&);
-    Type* evaluate(State&, const Vector<Type*>& args);
+    ErrorOr<Type*> evaluate(State&);
+    ErrorOr<Type*> evaluate(State&, const Vector<Type*>& args);
 
 private:
     TypeAlias(String name, Type* type) : Symbol(move(name), Symbol::TypeAlias), m_underlying_type(type) {}

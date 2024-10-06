@@ -80,8 +80,8 @@ public:
     ParseResult<ast::BlockExpr> parse_block();
 
     ErrorOr<ast::FunctionParameters> parse_function_parameters();
-    ParseResult<ast::FunctionDeclExpr> parse_function_decl(ast::LinkageSpecifier linkage, bool with_name = true);
-    ParseResult<ast::Expr> parse_function(ast::LinkageSpecifier linkage = ast::LinkageSpecifier::None);
+    ParseResult<ast::FunctionDeclExpr> parse_function_decl(LinkageSpecifier linkage, bool with_name = true);
+    ParseResult<ast::Expr> parse_function(LinkageSpecifier linkage = LinkageSpecifier::None);
 
     ErrorOr<Vector<ast::GenericParameter>> parse_generic_parameters();
     ErrorOr<ast::ExprList<ast::TypeExpr>> parse_generic_arguments();
@@ -97,7 +97,7 @@ public:
     ParseResult<ast::Expr> parse_tuple_variable_definition(); // let (foo, bar) = ...;
     ParseResult<ast::Expr> parse_variable_definition(bool allow_tuple = false, bool is_const = false);
 
-    ParseResult<ast::Expr> parse_extern(ast::LinkageSpecifier linkage);
+    ParseResult<ast::Expr> parse_extern(LinkageSpecifier linkage);
     ParseResult<ast::Expr> parse_extern_block();
 
     ParseResult<ast::EnumExpr> parse_enum();

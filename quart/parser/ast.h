@@ -40,12 +40,6 @@ class TypeExpr;
 
 template<class T = Expr> using ExprList = Vector<OwnPtr<T>>;
 
-enum class LinkageSpecifier {
-    None,
-    Unspecified,
-    C,
-};
-
 enum class ExprKind {
     Block,
     ExternBlock,
@@ -53,8 +47,8 @@ enum class ExprKind {
     Float,
     String,
     Identifier,
-    LetAssignment,
-    LetTupleAssignment,
+    Assignment,
+    TupleAssignment,
     Const,
     Array,
     UnaryOp,
@@ -123,6 +117,8 @@ enum class BuiltinType {
     u128,
     f32,
     f64,
+    usize,
+    isize,
     Void
 };
 
@@ -329,7 +325,7 @@ private:
     String m_name;
 };
 
-class AssignmentExpr : public ExprBase<ExprKind::LetAssignment> {
+class AssignmentExpr : public ExprBase<ExprKind::Assignment> {
 public:
     AssignmentExpr(
         Span span,
@@ -351,7 +347,7 @@ private:
     OwnPtr<Expr> m_value;
 };
 
-class TupleAssignmentExpr : public ExprBase<ExprKind::LetTupleAssignment> {
+class TupleAssignmentExpr : public ExprBase<ExprKind::TupleAssignment> {
 public:
     TupleAssignmentExpr(
         Span span, 
@@ -747,15 +743,15 @@ private:
 
 class UsingExpr : public ExprBase<ExprKind::Using> {
 public:
-    UsingExpr(Span span, OwnPtr<Expr> parent, Vector<String> symbols) : ExprBase(span), m_parent(move(parent)), m_symbols(move(symbols)) {}
+    UsingExpr(Span span, Path path, Vector<String> symbols) : ExprBase(span), m_path(move(path)), m_symbols(move(symbols)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Expr const& parent() const { return *m_parent; }
+    Path const& path() const { return m_path; }
     Vector<String> const& symbols() const { return m_symbols; }
 
 private:
-    OwnPtr<Expr> m_parent;
+    Path m_path;
     Vector<String> m_symbols;
 };
 
@@ -864,12 +860,13 @@ private:
 class RangeForExpr : public ExprBase<ExprKind::RangeFor> {
 public:
     RangeForExpr(
-        Span span, Ident identifier, OwnPtr<Expr> start, OwnPtr<Expr> end, OwnPtr<Expr> body
-    ) : ExprBase(span), m_identifier(move(identifier)), m_start(move(start)), m_end(move(end)), m_body(move(body)) {}
+        Span span, Ident identifier, bool inclusive, OwnPtr<Expr> start, OwnPtr<Expr> end, OwnPtr<Expr> body
+    ) : ExprBase(span), m_identifier(move(identifier)), m_inclusive(inclusive), m_start(move(start)), m_end(move(end)), m_body(move(body)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     Ident const& identifier() const { return m_identifier; }
+    bool inclusive() const { return m_inclusive; }
 
     Expr const& start() const { return *m_start; }
     Expr const& end() const { return *m_end; }
@@ -878,10 +875,12 @@ public:
 
 private:
     Ident m_identifier;
+    bool m_inclusive;
 
     OwnPtr<Expr> m_start;
     OwnPtr<Expr> m_end;
     OwnPtr<Expr> m_body;
+
 };
 
 class ArrayFillExpr : public ExprBase<ExprKind::ArrayFill> {
@@ -934,33 +933,46 @@ private:
 
 class MaybeExpr : public ExprBase<ExprKind::Maybe> {
 public:
-    OwnPtr<Expr> value;
-
-    MaybeExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), value(move(value)) {}
+    MaybeExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), m_value(move(value)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& value() const { return *m_value; }
+
+private:
+    OwnPtr<Expr> m_value;
 };
 
 class ImplExpr : public ExprBase<ExprKind::Impl> {
 public:
-    OwnPtr<TypeExpr> type;
-    ExprList<Expr> body;
-
-    ImplExpr(Span span, OwnPtr<TypeExpr> type, ExprList<Expr> body) :
-        ExprBase(span), type(move(type)), body(move(body)) {}
+    ImplExpr(
+        Span span, OwnPtr<TypeExpr> type, OwnPtr<BlockExpr> body, Vector<GenericParameter> parameters
+    ) : ExprBase(span), m_type(move(type)), m_body(move(body)), m_parameters(move(parameters)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    TypeExpr const& type() const { return *m_type; }
+    BlockExpr const& body() const { return *m_body; }
+    Vector<GenericParameter> const& parameters() const { return m_parameters; }
+
+private:
+    OwnPtr<TypeExpr> m_type;
+    OwnPtr<BlockExpr> m_body;
+    Vector<GenericParameter> m_parameters;
 };
 
 class MatchExpr : public ExprBase<ExprKind::Match> {
 public:
-    OwnPtr<Expr> value;
-    Vector<MatchArm> arms;
-
-    MatchExpr(Span span, OwnPtr<Expr> value, Vector<MatchArm> arms) :
-        ExprBase(span), value(move(value)), arms(move(arms)) {}
+    MatchExpr(Span span, OwnPtr<Expr> value, Vector<MatchArm> arms) : ExprBase(span), m_value(move(value)), m_arms(move(arms)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Expr const& value() const { return *m_value; }
+    Vector<MatchArm> const& arms() const { return m_arms; }
+
+private:
+    OwnPtr<Expr> m_value;
+    Vector<MatchArm> m_arms;
 };
 
 class TypeExpr {
@@ -977,6 +989,11 @@ public:
     template<typename T> requires(std::is_base_of_v<TypeExpr, T>)
     bool is() const {
         return T::classof(this);
+    }
+
+    template<typename T> requires(std::is_base_of_v<TypeExpr, T>)
+    T const* as() const {
+        return T::classof(this) ? static_cast<T const*>(this) : nullptr;
     }
 
     virtual ErrorOr<Type*> evaluate(State&) = 0;

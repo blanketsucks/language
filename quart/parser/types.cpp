@@ -24,6 +24,10 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
         MATCH_TYPE(u64, create_int_type, 64, false);
         MATCH_TYPE(u128, create_int_type, 128, false);
 
+        // FIXME: Has to be 32 bit on a 32 bit target
+        MATCH_TYPE(usize, create_int_type, 64, false);
+        MATCH_TYPE(isize, create_int_type, 64, true);
+
         default:
             return err(span(), "Unknown builtin type");
     }
@@ -53,7 +57,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
             if (!underlying_type && !alias->all_parameters_have_default()) {
                 return err(span(), "Type '{0}' is generic and requires type arguments", m_path.name);
             } else if (!underlying_type) {
-                underlying_type = alias->evaluate(state);
+                underlying_type = TRY(alias->evaluate(state));
             }
 
             return underlying_type;
@@ -139,8 +143,31 @@ ErrorOr<Type*> IntegerTypeExpr::evaluate(State&) {
     return nullptr;
 }
 
-ErrorOr<Type*> GenericTypeExpr::evaluate(State&) {
-    // FIXME: Implement
+ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
+    auto& path = m_parent->path();
+    auto* scope = TRY(state.resolve_scope_path(m_parent->span(), path));
+
+    auto* symbol = scope->resolve(path.name);
+    if (!symbol) {
+        return err(m_parent->span(), "Unknown identifier '{0}'", path.name);
+    }
+
+    Vector<Type*> args;
+    for (auto& expr : m_args) {
+        args.push_back(TRY(expr->evaluate(state)));
+    }
+
+    switch (symbol->type()) {
+        case Symbol::TypeAlias: {
+            auto* type_alias = symbol->as<TypeAlias>();
+            if (!type_alias->is_generic()) {
+                return err(span(), "Type '{0}' is not generic", type_alias->name());
+            }
+
+            return type_alias->evaluate(state, args);
+        }
+    }
+
     return nullptr;
 }
 

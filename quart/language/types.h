@@ -105,6 +105,7 @@ public:
     Type* get_function_return_type() const;
     Vector<Type*> const& get_function_params() const;
     Type* get_function_param(size_t index) const;
+    bool is_function_var_arg() const;
 
     String str() const;
 

@@ -192,6 +192,10 @@ Type* Type::get_function_param(size_t index) const {
     return this->as<FunctionType>()->get_parameter_at(index);
 }
 
+bool Type::is_function_var_arg() const {
+    return this->as<FunctionType>()->is_var_arg();
+}
+
 String Type::str() const {
     switch (this->kind()) {
         case TypeKind::Void: return "void";
@@ -241,6 +245,10 @@ String Type::str() const {
             Vector<String> params;
             for (auto& param : this->get_function_params()) {
                 params.push_back(param->str());
+            }
+
+            if (this->is_function_var_arg()) {
+                params.emplace_back("...");
             }
 
             return format("func({0}) -> {1}", llvm::make_range(params.begin(), params.end()), return_type);

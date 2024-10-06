@@ -322,7 +322,7 @@ Path Path::join(const Path& path) const {
 String Path::extension() const {
     auto pos = m_name.find_last_of('.');
     if (pos == String::npos) {
-        return "";
+        return {};
     }
 
     return m_name.substr(pos + 1);
