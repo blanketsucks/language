@@ -1,9 +1,18 @@
 #include <quart/compiler.h>
 #include <quart/cl.h>
 
+#include <llvm/Support/ManagedStatic.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+
 using namespace quart;
 
 int main(int argc, char** argv) {
+    llvm::llvm_shutdown_obj shutdown;
+
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+
     ErrorOr<cl::Arguments> result = cl::parse_arguments(argc, argv);
     if (result.is_err()) {
         auto error = result.error();
@@ -13,6 +22,11 @@ int main(int argc, char** argv) {
     }
 
     cl::Arguments args = result.release_value();
+    if (args.print_all_targets) {
+        llvm::TargetRegistry::printRegisteredTargetsForVersion(llvm::outs());
+        return 0;
+    }
+
     CompilerOptions options = {
         .input = args.file,
         .output = args.output,
@@ -23,8 +37,7 @@ int main(int argc, char** argv) {
         .imports = {},
         .format = args.format,
         .opts = OptimizationOptions {
-            .level = args.optimize ? OptimizationLevel::Release : OptimizationLevel::Debug,
-            .enable = args.optimize,
+            .level = args.optimization_level,
             .mangle_style = args.mangle_style
         },
         .verbose = args.verbose,

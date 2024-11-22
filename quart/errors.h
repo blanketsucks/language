@@ -16,6 +16,11 @@
 
 namespace quart {
 
+struct Note {
+    Span span;
+    String note;
+};
+
 class Error {
 public:
     Error() = default;
@@ -23,10 +28,17 @@ public:
 
     Span span() const { return m_span; }
     StringView message() const { return m_error; }
+    Vector<Note> const& notes() const { return m_notes; }
+
+    void add_note(Span span, String note) {
+        m_notes.emplace_back(span, move(note));
+    }
 
 private:
     Span m_span;
     String m_error;
+
+    Vector<Note> m_notes;
 };
 
 template<typename ...Args> requires(std::conjunction_v<has_format_provider<Args>...>)

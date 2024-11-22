@@ -73,8 +73,7 @@ ErrorOr<Scope*> Impl::make(State& state, Type* type) {
         args[result.name] = result.type;
     }
 
-    // FIXME: Should the scope belong to where the impl was first defined rather than just global?
-    Scope* scope = Scope::create(type->str(), ScopeType::Impl, state.global_scope());
+    Scope* scope = Scope::create(type->str(), ScopeType::Impl, m_parent_scope);
     for (auto& [name, ty] : args) {
         scope->add_symbol(TypeAlias::create(name, ty)); 
     }
@@ -88,6 +87,7 @@ ErrorOr<Scope*> Impl::make(State& state, Type* type) {
     state.set_current_scope(current_scope);
     state.set_self_type(nullptr);
 
+    m_impls[type] = scope;
     return scope;
 }
 

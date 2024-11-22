@@ -49,8 +49,6 @@ public:
     IntType* u64() { return &m_u64; }
 
     PointerType* cstr();
-
-    friend class Visitor;
 private:
     TypeRegistry();
 

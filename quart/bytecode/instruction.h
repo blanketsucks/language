@@ -51,7 +51,10 @@
     Op(Cast)                                        \
     Op(NewStruct)                                   \
     Op(Construct)                                   \
-    Op(Alloca)                                      
+    Op(Alloca)                                      \
+    Op(NewTuple)                                    \
+    Op(Null)                                        \
+    Op(Boolean)
 
 namespace quart {
     class Function;
@@ -150,16 +153,18 @@ private:
 // `dst = [elements...]`
 class NewArray : public InstructionBase<Instruction::NewArray> {
 public:
-    NewArray(Register dst, Vector<Operand> elements) : m_dst(dst), m_elements(move(elements)) {}
+    NewArray(Register dst, Vector<Operand> elements, ArrayType* type) : m_dst(dst), m_elements(move(elements)), m_type(type) {}
 
     Register dst() const { return m_dst; }
     Vector<Operand> const& elements() const { return m_elements; }
+    ArrayType* type() const { return m_type; }
 
     void dump() const override;
 
 private:
     Register m_dst;
     Vector<Operand> m_elements;
+    ArrayType* m_type;
 };
 
 class GetMember : public InstructionBase<Instruction::GetMember> {
@@ -511,11 +516,55 @@ public:
     Register dst() const { return m_dst; }
     Type* type() const { return m_type; }
 
-    void dump() const override {}
+    void dump() const override;
 
 private:
     Register m_dst;
     Type* m_type;
+};
+
+class NewTuple : public InstructionBase<Instruction::NewTuple> {
+public:
+    NewTuple(Register dst, TupleType* type, Vector<Operand> operands) : m_dst(dst), m_type(type), m_operands(move(operands)) {}
+
+    Register dst() const { return m_dst; }
+    TupleType* type() const { return m_type; }
+    Vector<Operand> const& operands() const { return m_operands; }
+
+    void dump() const override {}
+
+private:
+    Register m_dst;
+    TupleType* m_type;
+    Vector<Operand> m_operands;
+};
+
+class Null : public InstructionBase<Instruction::Null> {
+public:
+    Null(Register dst, Type* type) : m_dst(dst), m_type(type) {}
+
+    Register dst() const { return m_dst; }
+    Type* type() const { return m_type; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    Type* m_type;
+};
+
+class Boolean : public InstructionBase<Instruction::Boolean> {
+public:
+    Boolean(Register dst, bool value) : m_dst(dst), m_value(value) {}
+
+    Register dst() const { return m_dst; }
+    bool value() const { return m_value; }
+
+    void dump() const override;
+
+private:
+    Register m_dst;
+    bool m_value;
 };
 
 }

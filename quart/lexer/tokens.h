@@ -80,7 +80,12 @@ enum class TokenKind {
     Readonly,
     Operator,
     Impl,
+    Trait,
     Match,
+
+    True,
+    False,
+    Null,
 
     Add,
     Sub,
@@ -168,8 +173,10 @@ enum class BinaryOp {
     Assign
 };
 
-llvm::StringRef get_binary_op_value(BinaryOp op);
-llvm::StringRef get_unary_op_value(UnaryOp op);
+llvm::StringRef get_binary_op_value(BinaryOp);
+llvm::StringRef get_unary_op_value(UnaryOp);
+
+bool is_comparison_operator(BinaryOp);
 
 StringView token_kind_to_str(TokenKind);
 
@@ -236,7 +243,11 @@ static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     {"readonly", TokenKind::Readonly},
     {"operator", TokenKind::Operator},
     {"impl", TokenKind::Impl},
+    {"trait", TokenKind::Trait},
     {"match", TokenKind::Match},
+    {"true", TokenKind::True},
+    {"false", TokenKind::False},
+    {"null", TokenKind::Null}
 };
 
 static const std::map<TokenKind, u8> PRECEDENCES = {

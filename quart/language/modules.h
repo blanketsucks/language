@@ -11,6 +11,8 @@ class Scope;
 
 class Module : public Symbol {
 public:
+    static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::Module; }
+
     enum State {
         Ready,
         Importing

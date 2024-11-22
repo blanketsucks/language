@@ -13,8 +13,6 @@
 #include <algorithm>
 #include <functional>
 
-#include <llvm/ADT/StringRef.h>
-
 namespace quart {
 
 struct ExpectedToken {
@@ -24,7 +22,7 @@ struct ExpectedToken {
 
 class Lexer {
 public:
-    Lexer(SourceCode&);
+    Lexer(SourceCode const&);
 
     [[nodiscard]] ErrorOr<char> next();
     [[nodiscard]] ErrorOr<void> skip(size_t n = 1);
@@ -45,9 +43,6 @@ public:
 
         return option.value();
     }
-
-    Token create_token(TokenKind type, String value);
-    Token create_token(TokenKind type, String value, Span);
 
     ErrorOr<size_t> lex_while(
         std::string& buffer,
@@ -72,6 +67,7 @@ private:
     bool m_eof = false;
     char m_current = 0;
 
+    SourceCode const& m_source_code; // NOLINT
     StringView m_code;
 };
 

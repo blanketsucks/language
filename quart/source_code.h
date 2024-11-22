@@ -9,11 +9,13 @@ class Span {
 public:
     Span() = default;
 
-    Span(size_t start, size_t end) : m_start(start), m_end(end) {}
-    Span(const Span& start, const Span& end) : m_start(start.start()), m_end(end.end()) {}
+    Span(size_t start, size_t end, u16 source_code_index) : m_start(start), m_source_code_index(source_code_index), m_end(end) {}
+    Span(const Span& start, const Span& end) : m_start(start.start()), m_source_code_index(start.source_code_index()), m_end(end.end()) {}
 
     size_t start() const { return m_start; }
     size_t end() const { return m_end; }
+
+    u16 source_code_index() const { return m_source_code_index; }
 
     size_t size() const { return m_end - m_start; }
 
@@ -21,7 +23,9 @@ public:
     void set_end(size_t end) { m_end = end; }
 
 private:
-    size_t m_start = 0;
+    size_t m_start : 48 = 0;
+    u16 m_source_code_index = 0;
+
     size_t m_end = 0;
 };
 
@@ -32,21 +36,24 @@ struct Line {
 
 class SourceCode {
 public:
-    SourceCode(String code, String filename);
+    static SourceCode const& create(String code, String filename);
+    static SourceCode const& from_path(fs::Path);
 
-    static SourceCode from_path(fs::Path);
+    static SourceCode const& lookup(size_t index);
 
+    u16 index() const { return m_index; }
     StringView code() const { return m_code; }
     StringView filename() const { return m_filename; }
 
     Line line_for(size_t offset) const;
     size_t column_for(size_t offset) const;
 
-    StringView line(const Span&) const;
-
-    String format_error(class Error&) const;
+    static StringView line(const Span&);
+    static String format_error(class Error&);
 
 private:
+    SourceCode(String code, String filename, size_t index);
+
     size_t next_line_offset(size_t line) const {
         return m_line_offsets[line + 1];
     }
@@ -54,6 +61,7 @@ private:
     String m_code;
     String m_filename;
 
+    size_t m_index;
     Vector<size_t> m_line_offsets;
 };
 

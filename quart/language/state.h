@@ -64,6 +64,9 @@ public:
         return m_generator.emit<T>(std::forward<Args>(args)...);
     }
 
+    HashMap<String, RefPtr<Function>> const& functions() const { return m_all_functions; }
+
+    bool has_global_function(const String& name) const;
     void add_global_function(RefPtr<Function> function);
     Function const& get_global_function(const String& name) const;
 

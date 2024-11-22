@@ -41,10 +41,13 @@ static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_EXT = {
 #endif
 };
 
-
-enum class OptimizationLevel {
-    Debug,
-    Release
+enum class OptimizationLevel : u32 {
+    O0,
+    O1,
+    O2,
+    O3,
+    Os,
+    Oz
 };
 
 enum class MangleStyle {
@@ -54,9 +57,7 @@ enum class MangleStyle {
 };
 
 struct OptimizationOptions {
-    OptimizationLevel level = OptimizationLevel::Debug;
-
-    bool enable = true;
+    OptimizationLevel level = OptimizationLevel::O2;
     bool dead_code_elimination = true;
 
     MangleStyle mangle_style = MangleStyle::Full; // Not really an optimization, but it's here for now

@@ -2,13 +2,13 @@
 
 #include <quart/lexer/lexer.h>
 
-#define ASSERT(x)                                                                   \
-    do {                                                                            \
-        if (!(x)) {                                                                 \
-            quart::assertion_failed(#x, __FILE__, __LINE__, __PRETTY_FUNCTION__);   \
-            LLVM_BUILTIN_TRAP;                                                      \
-        }                                                                           \
-    } while (0)                                                                     \
+#define ASSERT(x, message)                                                                  \
+    do {                                                                                    \
+        if (!(x)) {                                                                         \
+            quart::assertion_failed(message, #x, __FILE__, __LINE__, __PRETTY_FUNCTION__);  \
+            LLVM_BUILTIN_TRAP;                                                              \
+        }                                                                                   \
+    } while (0)                                                                             \
 
 namespace quart {
 
@@ -20,6 +20,6 @@ enum class Color {
 };
 
 bool has_color_support();
-void assertion_failed(const char* message, const char* file, u32 line, const char* function);
+void assertion_failed(StringView message, StringView condition, StringView file, u32 line, StringView function);
 
 }

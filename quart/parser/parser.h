@@ -108,7 +108,9 @@ public:
 
     ParseResult<ast::MatchExpr> parse_match();
 
-    ParseResult<ast::ImplExpr> parse_impl();
+    ParseResult<ast::Expr> parse_impl();
+
+    ParseResult<ast::TraitExpr> parse_trait();
 
     ParseResult<ast::CallExpr> parse_call(OwnPtr<ast::Expr> callee);
 

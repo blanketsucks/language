@@ -1,9 +1,11 @@
+#include <llvm-17/llvm/TargetParser/Host.h>
 #include <quart/compiler.h>
 #include <quart/lexer/lexer.h>
 #include <quart/parser/parser.h>
 #include <quart/language/state.h>
 #include <quart/language/symbol.h>
 #include <quart/codegen/llvm.h>
+#include <quart/target.h>
 
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Program.h>
@@ -15,16 +17,16 @@
 
 // We define our own TRY macro here because we need it to be slightly different from the one in quart/errors.h
 #undef TRY
-#define TRY(expr, code)                                 \
-    ({                                                  \
-        auto result = (expr);                           \
-        if (result.is_err()) {                          \
-            auto& err = result.error();                 \
-            errln("{0}", (code).format_error(err));     \
-                                                        \
-            return 1;                                   \
-        }                                               \
-        result.release_value();                         \
+#define TRY(expr)                                           \
+    ({                                                      \
+        auto result = (expr);                               \
+        if (result.is_err()) {                              \
+            auto& err = result.error();                     \
+            errln("{0}", SourceCode::format_error(err));    \
+                                                            \
+            return 1;                                       \
+        }                                                   \
+        result.release_value();                             \
     })
 
 namespace quart {
@@ -44,8 +46,7 @@ void Compiler::dump() const {
     stream << format("Output file: '{0}'", m_options.output) << '\n';
     stream << format("Program entry point: '{0}'", m_options.entry) << '\n';
 
-    const char* opt = m_options.opts.level == OptimizationLevel::Debug ? "Debug" : "Release";
-    stream << format("Optimization level: '{0}'", opt) << '\n';
+    stream << format("Optimization level: 'O{0}'", (u32)m_options.opts.level) << '\n';
 
     StringView fmt = OUTPUT_FORMATS_TO_STR.at(m_options.format);
     stream << format("Output format: '{0}'", fmt) << '\n';
@@ -129,19 +130,27 @@ Vector<String> Compiler::get_linker_arguments() const {
 }
 
 int Compiler::compile() const {
-    SourceCode code = SourceCode::from_path(m_options.input);
+    String target = m_options.has_target() ? Target::normalize(m_options.target) : llvm::sys::getDefaultTargetTriple();
+    Target::set_build_target(target);
+
+    auto& code = SourceCode::from_path(m_options.input);
 
     Lexer lexer(code);
-    Vector<Token> tokens = TRY(lexer.lex(), code);
+    Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));
-    ast::ExprList<> ast = TRY(parser.parse(), code);
+    ast::ExprList<> ast = TRY(parser.parse());
 
     State state;
     for (auto& expr : ast) {
-        TRY(expr->generate(state), code);
+        TRY(expr->generate(state));
     }
 
+    for (auto& [_, function] : state.functions()) {
+        if (function->is_decl()) continue;
+        function->dump();
+    }
+ 
     codegen::LLVMCodeGen codegen(state, m_options.input.filename());
     auto result = codegen.generate(m_options);
 

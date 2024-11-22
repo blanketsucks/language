@@ -13,15 +13,14 @@ public:
     NO_COPY(Symbol)
     DEFAULT_MOVE(Symbol)
 
-    static bool classof(Symbol const*) { return true; }
-
     enum SymbolType {
         Variable,
         Function,
         Struct,
         Enum,
         TypeAlias,
-        Module
+        Module,
+        Trait
     };
 
     static String parse_qualified_name(Symbol*, Scope*);
@@ -31,6 +30,8 @@ public:
 
     String const& name() const { return m_name; }
     SymbolType type() const { return m_type; }
+
+    StringView str() const;
 
     bool is_variable() const { return m_type == SymbolType::Variable; }
     bool is_function() const { return m_type == SymbolType::Function; }

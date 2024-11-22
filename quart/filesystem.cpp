@@ -17,7 +17,7 @@ Path Path::cwd() {
     return Path(buffer);
 #else
     Array<char, FILENAME_MAX> buffer = {};
-    ASSERT(getcwd(buffer.data(), FILENAME_MAX) && "getcwd() error");
+    ASSERT(getcwd(buffer.data(), FILENAME_MAX), "getcwd() error");
 
     return { buffer.data() };
 #endif
@@ -31,7 +31,7 @@ Path Path::home() {
     return Path(buffer);
 #else
     char* buffer = getenv("HOME");
-    ASSERT(buffer && "getenv() error");
+    ASSERT(buffer, "getenv() error");
 
     return { buffer };
 #endif
@@ -277,7 +277,7 @@ Vector<Path> Path::glob(const String& pattern, int flags) {
 
 std::fstream Path::open(OpenMode mode) {
     // FIXME: Remove this assert
-    ASSERT(this->is_regular_file() && "Path is not a file");
+    ASSERT(this->is_regular_file(), "Path is not a file");
 
     if (mode == OpenMode::Read) {
         return std::fstream(m_name, std::fstream::in);
@@ -288,7 +288,7 @@ std::fstream Path::open(OpenMode mode) {
 
 std::stringstream Path::read(bool binary) {
     // FIXME: Remove this assert
-    ASSERT(this->is_regular_file() && "Path is not a file");
+    ASSERT(this->is_regular_file(), "Path is not a file");
 
     std::fstream::openmode mode = std::fstream::in;
     if (binary) {

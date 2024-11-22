@@ -1,20 +1,25 @@
 #include <quart/assert.h>
 
-#include <sstream>
-
 namespace quart {
 
 bool has_color_support() {
     return isatty(fileno(stdout));
 }
 
-void assertion_failed(const char* message, const char* file, u32 line, const char* function) {
-    std::stringstream stream;
+void assertion_failed(StringView message, StringView condition, StringView file, u32 line, StringView function) {
+    String fmt = format(
+        "{0}:{1} in `{2}`: Assertion failed ({3})",
+        file, line, function, condition
+    );
 
-    stream << format("\x1b[1;37m{0}:{1}:{2}: \x1b[1;31massertion failed: \x1b[0m", file, line, function) << ' ';
-    stream << message << '\n';
+    auto& err = std::cerr;
 
-    std::cout << stream.str() << std::endl;
+    err << fmt;
+    if (!message.empty()) {
+        err << ": " << message;
+    }
+
+    err << std::endl;
 }
 
 }

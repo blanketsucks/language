@@ -1,4 +1,11 @@
-type size_t = u64;
+type size_t = usize;
+
+type in_addr_t = u32;
+type socklen_t = u32;
+
+const STDIN_FILENO  = 0;
+const STDOUT_FILENO = 1;
+const STDERR_FILENO = 2;
 
 const O_APPEND = 1024;
 const O_ASYNC = 8192;
@@ -41,7 +48,7 @@ struct sockaddr {
 }
 
 struct in_addr {
-    s_addr: i32;
+    s_addr: in_addr_t;
 }
 
 struct sockaddr_in {
@@ -54,8 +61,8 @@ struct sockaddr_in {
 struct hostent {
     h_name: *i8;
     h_aliases: **i8;
-    h_addrtype: i16;
-    h_length: i16;
+    h_addrtype: i32;
+    h_length: i32;
     h_addr_list: **i8;
 }
 
@@ -64,7 +71,7 @@ struct addrinfo {
     ai_family: i32;
     ai_socktype: i32;
     ai_protocol: i32;
-    ai_addrlen: i64;
+    ai_addrlen: socklen_t;
     ai_addr: *sockaddr;
     ai_canonname: *i8;
     ai_next: *addrinfo;
@@ -181,7 +188,7 @@ extern "C" {
     func accept(sockfd: i32, addr: *sockaddr, addrlen: *i32) -> i32;
     func recv(sockfd: i32, buf: *i8, len: i32, flags: i32) -> i32;
     func send(sockfd: i32, buf: *i8, len: i32, flags: i32) -> i32;
-    func connect(sockfd: i32, addr: *sockaddr, addrlen: i32) -> i32;
+    func connect(sockfd: i32, addr: *sockaddr, addrlen: socklen_t) -> i32;
 
     func htons(hostshort: i16) -> i16;
     func htonl(hostlong: i32) -> i32;
@@ -190,7 +197,7 @@ extern "C" {
     
     func inet_pton(af: i32, src: *i8, dst: *i8) -> i32;
     func inet_ntoa(addr: in_addr) -> *i8;
-    func inet_addr(cp: *i8) -> i32;
+    func inet_addr(cp: *i8) -> in_addr_t;
 
     func gethostbyname(name: *i8) -> *hostent;
     func getaddrinfo(node: *i8, service: *i8, hints: *addrinfo, res: **addrinfo) -> i32;

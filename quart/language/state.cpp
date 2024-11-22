@@ -36,6 +36,10 @@ Type* State::type(bytecode::Operand operand) const {
     }
 }
 
+bool State::has_global_function(const String& name) const {
+    return m_all_functions.contains(name);
+}
+
 void State::add_global_function(RefPtr<Function> function) {
     m_all_functions[function->qualified_name()] = function;
 }
@@ -82,7 +86,7 @@ RefPtr<Module> State::get_global_module(const String& name) const {
 }
 
 void State::add_global_module(RefPtr<Module> module) {
-    m_modules[module->qualified_name()] = module;
+    m_modules[module->qualified_name()] = move(module);
 }
 
 ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const String& name) {
@@ -108,7 +112,7 @@ ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const Stri
 ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path) {
     Scope* scope = m_current_scope;
     for (auto& segment : path.segments) {
-        Span segment_span = { span.start(), span.start() + segment.size() };
+        Span segment_span = { span.start(), span.start() + segment.size(), span.source_code_index() };
         scope = TRY(this->resolve_scope(segment_span, scope, segment));
 
         span.set_start(segment_span.end() + 2);
@@ -133,7 +137,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, co
     switch (symbol->type()) {
         case Symbol::Variable: {
             auto* variable = symbol->as<Variable>();
-            this->emit<bytecode::GetLocalRef>(reg, variable->index());
+            emit<bytecode::GetLocalRef>(reg, variable->index());
 
             if (!variable->is_mutable() && is_mutable) {
                 return err(span, "Cannot take a mutable reference to an immutable variable");
@@ -167,7 +171,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool
             auto* attribute = expr.as<ast::AttributeExpr>();
             auto operand = TRY(this->generate_attribute_access(*attribute, true, dst, is_mutable));
 
-            ASSERT(operand.is_register());
+            ASSERT(operand.is_register(), {});
             return bytecode::Register(operand.value());
         }
         case ExprKind::Index: {
@@ -185,7 +189,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool
             }
 
             auto reg = this->allocate_register();
-            this->emit<bytecode::Move>(reg, *option);
+            emit<bytecode::Move>(reg, *option);
 
             this->set_register_type(reg, type);
             return reg;
@@ -250,7 +254,7 @@ ErrorOr<bytecode::Operand> State::type_check_and_cast(Span span, bytecode::Opera
     }
 
     auto reg = this->allocate_register();
-    this->emit<bytecode::Cast>(reg, operand, target);
+    emit<bytecode::Cast>(reg, operand, target);
 
     this->set_register_type(reg, target);
     return bytecode::Operand(reg);
@@ -261,32 +265,61 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     auto result = this->resolve_symbol(parent);
 
     bool is_mutable = false;
-
-    if (result.is_err()) {
-        // TODO
-        return result.error();
-    }
-    
-    auto* symbol = result.value();
-    if (!symbol->is<Variable>()) {
-        return err(parent.span(), "Attribute access is only allowed on variables");
-    }
-
-    auto* variable = symbol->as<Variable>();
-
-    Type* value_type = variable->value_type();
     bool is_pointer_type = false;
 
-    if (value_type->is_pointer()) {
-        value_type = value_type->get_pointee_type();
-        is_pointer_type = true;
+    bytecode::Register reg = this->allocate_register();
+    bool reg_has_value = false;
+
+    Type* variable_type = nullptr;
+    Type* value_type = nullptr;
+
+    size_t local_index = 0;
+
+    if (result.is_err()) {
+        auto option = TRY(parent.generate(*this, {}));
+        if (!option.has_value()) {
+            return err(parent.span(), "Expected an expression");
+        }
+
+        value_type = this->type(*option);
+        if (value_type->is_pointer()) {
+            this->set_register_type(reg, value_type);
+
+            value_type = value_type->get_pointee_type();
+            emit<bytecode::Move>(reg, *option);
+        } else {
+            emit<bytecode::Alloca>(reg, value_type);
+            emit<bytecode::Write>(reg, *option);
+
+            this->set_register_type(reg, value_type->get_pointer_to());
+        }
+        
+        reg_has_value = true;
+    } else {
+        auto* symbol = result.value();
+        if (!symbol->is<Variable>()) {
+            return err(parent.span(), "Attribute access is only allowed on variables");
+        }
+
+        auto* variable = symbol->as<Variable>();
+
+        variable_type = variable->value_type();
+        value_type = variable->value_type();
+
+        if (value_type->is_pointer()) {
+            value_type = value_type->get_pointee_type();
+            is_pointer_type = true;
+        }
+
+        local_index = variable->index();
+        is_mutable = variable->is_mutable();
     }
 
     auto* structure = this->get_global_struct(value_type);
     Scope* scope = nullptr;
 
     if (!structure) {
-        Type* ty = variable->value_type();
+        Type* ty = variable_type ? variable_type : value_type;
         if (!this->has_impl(ty)) {
             for (auto& impl : m_generic_impls) {
                 scope = TRY(impl->make(*this, ty));
@@ -306,13 +339,14 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         scope = structure->scope();
     }
 
-    auto reg = this->allocate_register();
-    this->set_register_type(reg, variable->value_type()->get_pointer_to());
-
-    this->emit<bytecode::GetLocalRef>(reg, variable->index());
-    if (is_pointer_type && structure) {
-        this->emit<bytecode::Read>(reg, reg);
-        this->set_register_type(reg, variable->value_type());
+    if (!reg_has_value) {
+        if (is_pointer_type) {
+            emit<bytecode::GetLocal>(reg, local_index);
+            this->set_register_type(reg, variable_type);
+        } else {
+            emit<bytecode::GetLocalRef>(reg, local_index);
+            this->set_register_type(reg, variable_type->get_pointer_to());
+        }
     }
 
     auto& attr = expr.attribute();
@@ -324,11 +358,11 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         }
 
         auto& self = method->parameters().front();
-        if (self.is_mutable() && !variable->is_mutable()) {
-            return err(parent.span(), "Function '{0}' requires a mutable reference to self but '{1}' is immutable", method->name(), variable->name());
+        if (self.is_mutable() && !is_mutable) {
+            return err(parent.span(), "Function '{0}' requires a mutable reference to self but self is immutable", method->name());
         }
 
-        this->emit<bytecode::GetFunction>(*dst, method);
+        emit<bytecode::GetFunction>(*dst, method);
         this->set_register_type(*dst, method->underlying_type()->get_pointer_to());
 
         this->inject_self(reg);
@@ -344,8 +378,8 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", attr, structure->name());
     }
 
-    if (as_reference && as_mutable && !variable->is_mutable()) {
-        return err(parent.span(), "Cannot take a mutable reference to an immutable variable");
+    if (as_reference && as_mutable && !is_mutable) {
+        return err(parent.span(), "Cannot take a mutable reference to an immutable value");
     }
 
     if (!dst.has_value()) {
@@ -353,10 +387,10 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     }
 
     if (as_reference) {
-        this->emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), field->index);
+        emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), field->index);
         this->set_register_type(*dst, field->type->get_reference_to(as_mutable));
     } else {
-        this->emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), field->index);
+        emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), field->index);
         this->set_register_type(*dst, field->type);
     }
 

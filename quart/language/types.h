@@ -47,8 +47,14 @@ public:
 
     template<typename T> requires(std::is_base_of_v<Type, T>) 
     T const* as() const {
-        ASSERT(T::classof(this) && "Cannot cast to type");
+        ASSERT(T::classof(this), "Cannot cast to type");
         return static_cast<T const*>(this);
+    }
+
+    template<typename T> requires(std::is_base_of_v<Type, T>)
+    T* as() {
+        ASSERT(T::classof(this), "Cannot cast to type");
+        return static_cast<T*>(this);
     }
 
     bool is_void() const { return m_kind == TypeKind::Void; }

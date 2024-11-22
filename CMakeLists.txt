@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 set(LLVM_VERSION 17)
 
-find_package(LLVM ${LLVM_VERSION} REQUIRED CONFIG)
+find_package(LLVM ${LLVM_VERSION} REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 
@@ -24,7 +24,7 @@ include_directories(.)
 add_compile_options(-Wall -Wextra -Wno-redundant-move -Wno-unused-variable -Wno-reorder -Wno-switch -Wno-unused-parameter -Wno-non-pod-varargs)
 add_compile_options(-O3 -fno-exceptions -g)
 
-add_link_options(-O3 -g)
+add_link_options(-O3 -g -rdynamic)
 
 add_compile_definitions(QUART_PATH="${CMAKE_SOURCE_DIR}/lib")
 

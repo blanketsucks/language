@@ -2,6 +2,22 @@
 
 namespace quart {
 
+bool is_comparison_operator(BinaryOp op) {
+    switch (op) {
+        case BinaryOp::BinaryOr:
+        case BinaryOp::BinaryAnd:
+        case BinaryOp::Eq:
+        case BinaryOp::Neq:
+        case BinaryOp::Gt:
+        case BinaryOp::Lt:
+        case BinaryOp::Gte:
+        case BinaryOp::Lte:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool is_keyword(StringView word) {
     return KEYWORDS.find(word) != KEYWORDS.end();
 }
@@ -26,6 +42,8 @@ llvm::StringRef get_unary_op_value(UnaryOp type) {
         case UnaryOp::Ref: return "&";
         case UnaryOp::DeRef: return "*";
     }
+
+    return {};
 }
 
 llvm::StringRef get_binary_op_value(BinaryOp type) {
@@ -50,6 +68,8 @@ llvm::StringRef get_binary_op_value(BinaryOp type) {
         case BinaryOp::Lte: return "<=";
         case BinaryOp::Assign: return "=";
     }
+
+    return {};
 }
 
 StringView token_kind_to_str(TokenKind kind) {
@@ -138,6 +158,7 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::DoubleDot: return "..";
         case TokenKind::EOS: return "EOS";
         case TokenKind::None: return "None";
+        case TokenKind::Trait: return "trait";
     }
 
     return {};

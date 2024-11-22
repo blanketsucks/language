@@ -4,7 +4,7 @@ Small language made for fun.
 
 ## Building
 
-Make sure to have `cmake` installed, a C++ compiler (such as `g++`) and LLVM 14 installed (other versions are not supported).
+Make sure to have `cmake` installed, a C++ compiler (such as `g++`) and LLVM 17 installed (other versions are not supported).
 
 ```console
 $ git clone https://github.com/blanketsucks/language.git

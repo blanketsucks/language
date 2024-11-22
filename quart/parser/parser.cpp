@@ -1,5 +1,5 @@
 #include <quart/parser/parser.h>
-#include <quart/parser/attrs.h>
+#include <quart/attributes/attributes.h>
 #include <quart/parser/ast.h>
 #include <quart/language/structs.h>
 
@@ -8,7 +8,28 @@
 #include <memory>
 #include <cstring>
 
+#define BOOL_EXPR(name) {                                   \
+    Span span = m_current.span();                           \
+    this->next();                                           \
+    expr = make<ast::BoolExpr>(span, ast::BoolExpr::name);  \
+    break; }
+
 namespace quart {
+
+String Path::format() const {
+    String fmt = {};
+    if (segments.empty()) {
+        return name;
+    }
+
+    for (auto& segment : segments) {
+        fmt.append(segment);
+        fmt.append("::");
+    }
+
+    fmt.append(name);
+    return fmt;
+}
 
 struct IntegerSuffix {
     u32 bits;
@@ -135,7 +156,7 @@ bool Parser::is_upcoming_constructor(ast::Expr const& previous) const {
 }
 
 AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attributes) {
-    for (auto& [_, attribute] : attributes.values) {
+    for (auto& [_, attribute] : attributes) {
         auto result = AttributeHandler::handle(*this, attribute);
         if (result != AttributeHandler::Ok) {
             return result;
@@ -274,7 +295,7 @@ ErrorOr<ExprBlock> Parser::parse_expr_block() {
                 continue;
             }
 
-            expr->attributes().update(attrs);
+            expr->attributes().insert(attrs);
             block.push_back(move(expr));
         }
     }
@@ -416,7 +437,7 @@ ErrorOr<ast::FunctionParameters> Parser::parse_function_parameters() {
                 this->next();
             } break;
             default:
-                ASSERT(false);
+                ASSERT(false, "Unreachable");
         }
 
         OwnPtr<ast::TypeExpr> type = nullptr;
@@ -462,8 +483,13 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier 
     Span start = m_current.span();
     String name = "<anonymous>";
 
+    Span span;
     if (with_name) {
-        name = TRY(this->expect(TokenKind::Identifier, "function name")).value();
+        Token token = TRY(this->expect(TokenKind::Identifier, "function name"));
+        
+        name = token.value();
+        span = token.span();
+        
         TRY(this->expect(TokenKind::LParen));
     }
 
@@ -477,13 +503,17 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier 
         return_type = TRY(this->parse_type());
     }
 
-    Span span { start, end };
+    if (!span.start()) {
+        span = { start, end };
+    }
+    
     return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic) };
 }
 
 ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage) {
     auto decl = TRY(this->parse_function_decl(linkage, true));
     if (m_current.is(TokenKind::SemiColon)) {
+        this->next();
         return { move(decl) };
     }
     
@@ -609,7 +639,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
                 this->next();
                 auto expr = TRY(this->parse_function());
 
-                expr->attributes().update(attrs);
+                expr->attributes().insert(attrs);
                 members.push_back(move(expr));
             } break;
             case TokenKind::Const: {
@@ -772,11 +802,9 @@ ParseResult<ast::Expr> Parser::parse_extern(LinkageSpecifier linkage) {
 
         this->next();
         definition = TRY(this->parse_function(linkage));
-
-        TRY(this->expect(TokenKind::SemiColon));
     }
 
-    definition->attributes().update(attrs);
+    definition->attributes().insert(attrs);
     return definition;
 }
 
@@ -976,13 +1004,22 @@ ParseResult<ast::MatchExpr> Parser::parse_match() {
     return { make<ast::MatchExpr>(value->span(), move(value), move(arms)) };
 }
 
-ParseResult<ast::ImplExpr> Parser::parse_impl() {
+ParseResult<ast::Expr> Parser::parse_impl() {
     Vector<ast::GenericParameter> parameters;
     if (m_current.is(TokenKind::Lt)) {
         parameters = TRY(this->parse_generic_parameters());
     }
 
     auto type = TRY(this->parse_type());
+    OwnPtr<ast::TypeExpr> trait = nullptr;
+
+    if (m_current.is(TokenKind::For)) {
+        trait = move(type);
+        this->next();
+
+        type = TRY(this->parse_type());
+    }
+
     TRY(this->expect(TokenKind::LBrace));
 
     ast::ExprList<> body;
@@ -998,21 +1035,55 @@ ParseResult<ast::ImplExpr> Parser::parse_impl() {
         switch (m_current.kind()) {
             case TokenKind::Func:
                 this->next();
-
                 body.push_back(TRY(this->parse_function()));
+                
                 break;
             default:
-                ASSERT(false);
+                ASSERT(false, "Unreachable");
         }
     }
 
     TRY(this->expect(TokenKind::RBrace));
     Span span = type->span();
 
+    if (trait) {
+        return { make<ast::ImplTraitExpr>(span, move(trait), move(type), move(body)) };
+    }
+
     auto block = make<ast::BlockExpr>(span, move(body));
     return { make<ast::ImplExpr>(span, move(type), move(block), move(parameters)) };
 }
 
+ParseResult<ast::TraitExpr> Parser::parse_trait() {
+    Token token = TRY(this->expect(TokenKind::Identifier));
+
+    String name = token.value();
+    Span span = token.span();
+
+    ast::ExprList<> body;
+    m_self_allowed = true;
+
+    TRY(this->expect(TokenKind::LBrace));
+    while (!m_current.is(TokenKind::RBrace)) {
+        if (!m_current.is(TokenKind::Func)) {
+            return err(m_current.span(), "Expected function definition");
+        }
+
+        switch (m_current.kind()) {
+            case TokenKind::Func:
+                this->next();
+
+                body.push_back(TRY(this->parse_function()));
+                break;
+            default:
+                ASSERT(false, "Unreachable");
+        }
+    }
+
+    TRY(this->expect(TokenKind::RBrace));
+    return { make<ast::TraitExpr>(span, move(name), move(body)) };
+}
+ 
 ErrorOr<Path> Parser::parse_path(Optional<String> name) {
     if (!name.has_value()) {
         name = TRY(this->expect(TokenKind::Identifier)).value();
@@ -1053,7 +1124,7 @@ ErrorOr<ast::ExprList<>> Parser::statements() {
                 continue;
             }
 
-            expr->attributes().update(attrs);
+            expr->attributes().insert(attrs);
             statements.push_back(move(expr));
         }
     }
@@ -1259,7 +1330,10 @@ ParseResult<ast::Expr> Parser::statement() {
         case TokenKind::Impl: {
             this->next();
             return this->parse_impl();
-
+        }
+        case TokenKind::Trait: {
+            this->next();
+            return this->parse_trait();
         }
         case TokenKind::SemiColon:
             this->next();
@@ -1284,7 +1358,7 @@ ErrorOr<ast::Attributes> Parser::parse_attributes() {
             }
 
             auto& handler = m_attributes.at(token.value());
-            attrs.add(TRY(handler(*this)));
+            attrs.insert(TRY(handler(*this)));
 
             if (m_current.is(TokenKind::Comma)) {
                 this->next();
@@ -1539,14 +1613,14 @@ ParseResult<ast::Expr> Parser::primary() {
             expr = make<ast::StringExpr>(start, value);
             break;
         }
+        
+        case TokenKind::True: BOOL_EXPR(True);
+        case TokenKind::False: BOOL_EXPR(False);
+        case TokenKind::Null: BOOL_EXPR(Null);
+
         case TokenKind::Identifier: {
             String name = m_current.value();
             this->next();
-            if (name == "true") {
-                return { make<ast::IntegerExpr>(start, 1, 1) };
-            } else if (name == "false") {
-                return { make<ast::IntegerExpr>(start, 0, 1) };
-            }
 
             if (m_current.is(TokenKind::DoubleColon)) {
                 Path path = TRY(this->parse_path(name));
@@ -1633,7 +1707,9 @@ ParseResult<ast::Expr> Parser::primary() {
                 }
 
                 elements.push_back(move(element));
-                TRY(this->expect(TokenKind::Comma));
+                if (!m_current.is(TokenKind::RBracket)) {
+                    TRY(this->expect(TokenKind::Comma));
+                }
             }
 
             while (!m_current.is(TokenKind::RBracket)) {

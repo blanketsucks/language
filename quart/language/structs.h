@@ -83,35 +83,4 @@ private:
     Scope* m_scope = nullptr;
 };
 
-// struct Struct_ {
-//     std::string name;
-
-//     quart::StructType* type;
-
-//     std::map<std::string, StructField> fields;
-//     Scope* scope;
-
-//     std::vector<Struct*> parents;
-
-//     bool opaque;
-
-//     static RefPtr<Struct> create(const std::string& name, quart::StructType* type, bool opaque);
-//     static RefPtr<Struct> create(
-//         const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque
-//     );
-
-//     i32 get_field_index(const std::string& name);
-//     StructField get_field_at(u32 index);
-//     std::vector<StructField> get_fields(bool with_private = false);
-
-//     bool has_method(const std::string& name);
-//     RefPtr<Function> get_method(const std::string& name);
-
-//     std::vector<Struct*> expand();
-
-// private:
-//     Struct(const std::string& name, quart::StructType* type, bool opaque);
-//     Struct(const std::string& name, quart::StructType* type, std::map<std::string, StructField> fields, bool opaque);
-// };
-
 }

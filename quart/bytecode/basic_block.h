@@ -25,6 +25,8 @@ public:
     bool is_terminated() const { return m_terminated; }
     void terminate() { m_terminated = true; }
 
+    void dump() const;
+
 private:
     explicit BasicBlock(String name) : m_name(move(name)) {}
 

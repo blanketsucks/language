@@ -21,6 +21,8 @@ struct GenericTypeParameter {
 
 class TypeAlias : public Symbol {
 public:
+    static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::TypeAlias; }
+
     static RefPtr<TypeAlias> create(String name, Type* type) {
         return RefPtr<TypeAlias>(new TypeAlias(move(name), type));
     }

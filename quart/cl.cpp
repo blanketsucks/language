@@ -14,13 +14,6 @@ const llvm::cl::opt<bool> verbose(
     llvm::cl::cat(category)
 );
 
-const llvm::cl::opt<bool> optimize(
-    "optimize", 
-    llvm::cl::desc("Enable optimizations"), 
-    llvm::cl::init(false), 
-    llvm::cl::cat(category)
-);
-
 const llvm::cl::opt<bool> no_libc(
     "no-libc",
     llvm::cl::desc("When provided libc doesn't get linked with the final executable"),
@@ -32,6 +25,22 @@ const llvm::cl::opt<bool> print_all_targets(
     "print-all-targets",
     llvm::cl::desc("Print all available targets"),
     llvm::cl::init(false),
+    llvm::cl::cat(category)
+);
+
+const llvm::cl::opt<OptimizationLevel> optimization_level(
+    "O",
+    llvm::cl::Prefix,
+    llvm::cl::desc("Set the optimization level used for code generation."), 
+    llvm::cl::init(OptimizationLevel::O2),
+    llvm::cl::values(
+        clEnumValN(OptimizationLevel::O0, "0", "Disable as many optimizations as possible."),
+        clEnumValN(OptimizationLevel::O1, "1", "Optimize quickly without destroying debuggability."),
+        clEnumValN(OptimizationLevel::O2, "2", "Optimize for fast execution as much as possible without triggering significant incremental compile time or code size growth (default)."),
+        clEnumValN(OptimizationLevel::O3, "3", "Optimize for fast execution as much as possible."),
+        clEnumValN(OptimizationLevel::Os, "s", "Optimize for small code size instead of ast execution."),
+        clEnumValN(OptimizationLevel::Oz, "z", "A very specialized mode that will optimize for code size at any and all costs.")
+    ),
     llvm::cl::cat(category)
 );
 
@@ -133,7 +142,7 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
 
     args.entry = entry.getValue(); 
     args.format = format;
-    args.optimize = optimize;
+    args.optimization_level = optimization_level;
     args.verbose = verbose;
     args.imports = Vector<String>(imports.begin(), imports.end());
     args.no_libc = no_libc;

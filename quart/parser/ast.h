@@ -1,7 +1,7 @@
 #pragma once
 
 #include <quart/lexer/tokens.h>
-#include <quart/parser/attrs.h>
+#include <quart/attributes/attributes.h>
 
 #include <quart/errors.h>
 #include <quart/bytecode/operand.h>
@@ -31,6 +31,8 @@ class Type;
 struct Path {
     String name;
     std::deque<String> segments;
+
+    String format() const;
 };
 
 namespace ast {
@@ -87,8 +89,11 @@ enum class ExprKind {
     Maybe,
     Module,
     Impl,
+    Trait,
+    ImplTrait,
     Match,
-    RangeFor
+    RangeFor,
+    Bool
 };
 
 enum class TypeKind {
@@ -122,19 +127,45 @@ enum class BuiltinType {
     Void
 };
 
-struct Attributes {
-    std::map<Attribute::Type, Attribute> values;
+class Attributes {
+public:
+    using HashMapType = HashMap<Attribute::Type, Attribute>;
+    using ConstIterator = HashMapType::const_iterator;
 
-    void add(const Attribute& attr) {
-        values[attr.type] = attr;
+    HashMap<Attribute::Type, Attribute> const& value() const {
+        return m_values;
     }
 
-    [[nodiscard]] bool has(Attribute::Type type) const { return this->values.find(type) != values.end(); }
-    [[nodiscard]] Attribute const& get(Attribute::Type type) const { return this->values.at(type); }
-
-    void update(const Attributes& other) {
-        this->values.insert(other.values.begin(), other.values.end());
+    void insert(Attribute attribute) {
+        m_values[attribute.type()] = move(attribute);
     }
+
+    void insert(Attributes other) {
+        m_values.insert(other.m_values.begin(), other.m_values.end());
+    }
+
+    [[nodiscard]] bool has(Attribute::Type type) const {
+        return m_values.contains(type);
+    }
+
+    [[nodiscard]] Attribute const& get(Attribute::Type type) const {
+        return m_values.at(type);
+    }
+
+    Attribute const& operator[](Attribute::Type type) const {
+        return m_values.at(type);
+    }
+
+    ConstIterator begin() const {
+        return m_values.begin();
+    }
+
+    ConstIterator end() const {
+        return m_values.end();
+    }
+
+private:
+    HashMap<Attribute::Type, Attribute> m_values;
 };
 
 struct Ident {
@@ -217,8 +248,8 @@ public:
     ExprKind kind() const { return m_kind; }
     Span span() const { return m_span; }
 
-    Attributes& attributes() { return m_attributes; }
-    const Attributes& attributes() const { return m_attributes; }
+    Attributes& attributes() { return m_attrs; }
+    const Attributes& attributes() const { return m_attrs; }
 
     bool is(ExprKind kind) const { return m_kind == kind; }
 
@@ -237,12 +268,15 @@ public:
         return T::classof(this) ? static_cast<T const*>(this) : nullptr;
     }
 
+    bool is_function_decl() const { return this->is(ExprKind::FunctionDecl); }
+
     virtual BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const = 0;
+
+protected:
+    Attributes m_attrs; // NOLINT
 
 private:
     Span m_span;
-    Attributes m_attributes;
-
     ExprKind m_kind;
 };
 
@@ -958,7 +992,38 @@ public:
 private:
     OwnPtr<TypeExpr> m_type;
     OwnPtr<BlockExpr> m_body;
+    
     Vector<GenericParameter> m_parameters;
+};
+
+class TraitExpr : public ExprBase<ExprKind::Trait> {
+public:
+    TraitExpr(Span span, String name, ExprList<> body) : ExprBase(span), m_name(move(name)), m_body(move(body)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    String const& name() const { return m_name; }
+    ExprList<> const& body() const { return m_body; }
+
+private:
+    String m_name;
+    ExprList<> m_body;
+};
+
+class ImplTraitExpr : public ExprBase<ExprKind::ImplTrait> {
+public:
+    ImplTraitExpr(Span span, OwnPtr<TypeExpr> trait, OwnPtr<TypeExpr> type, ExprList<> body) : ExprBase(span), m_trait(move(trait)), m_type(move(type)), m_body(move(body)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    TypeExpr const& trait() const { return *m_trait; }
+    TypeExpr const& type() const { return *m_type; }
+    ExprList<> const& body() const { return m_body; }
+
+private:
+    OwnPtr<TypeExpr> m_trait;
+    OwnPtr<TypeExpr> m_type;
+    ExprList<> m_body;
 };
 
 class MatchExpr : public ExprBase<ExprKind::Match> {
@@ -973,6 +1038,24 @@ public:
 private:
     OwnPtr<Expr> m_value;
     Vector<MatchArm> m_arms;
+};
+
+class BoolExpr : public ExprBase<ExprKind::Bool> {
+public:
+    enum Value {
+        False,
+        True,
+        Null, // Not really a "boolean", but i don't know where else to put it
+    };
+
+    BoolExpr(Span span, Value value) : ExprBase(span), m_value(value) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    Value value() const { return m_value; }
+
+private:
+    Value m_value;
 };
 
 class TypeExpr {

@@ -1,5 +1,3 @@
-#include <llvm-17/llvm/IR/Constants.h>
-#include <llvm-17/llvm/Pass.h>
 #include <quart/codegen/llvm.h>
 #include <quart/compiler.h>
 
@@ -181,7 +179,12 @@ void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
     llvm::Type* type = m_state.type(inst->src())->to_llvm_type(*m_context);
     if (!global) {
         m_module->getOrInsertGlobal(name, type);
+        global = m_module->getGlobalVariable(name);
+
+        m_globals[inst->index()] = global;
     }
+
+    global->setInitializer(llvm::cast<llvm::Constant>(valueof(inst->src())));
 }
 
 LLVMCodeGen::GEPResult LLVMCodeGen::create_gep(bytecode::Operand src, u32 index) {
@@ -225,7 +228,12 @@ void LLVMCodeGen::generate(bytecode::GetMemberRef* inst) {
 
 void LLVMCodeGen::generate(bytecode::Alloca* inst) {
     llvm::Type* type = inst->type()->to_llvm_type(*m_context);
-    llvm::Value* alloca = m_ir_builder->CreateAlloca(type);
+
+    llvm::BasicBlock* block = m_ir_builder->GetInsertBlock();
+    llvm::Function* function = block->getParent();
+
+    llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
+    llvm::Value* alloca = tmp.CreateAlloca(type, nullptr);
 
     this->set_register(inst->dst(), alloca);
 }
@@ -263,8 +271,8 @@ void LLVMCodeGen::generate(bytecode::JumpIf* inst) {
 
 void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     auto* function = inst->function();
-
     llvm::Type* function_type = function->underlying_type()->to_llvm_type(*m_context);
+
     auto* llvm_function = llvm::Function::Create(
         llvm::cast<llvm::FunctionType>(function_type), llvm::Function::ExternalLinkage, function->qualified_name(), &*m_module
     );
@@ -338,7 +346,11 @@ void LLVMCodeGen::generate(bytecode::Cast* inst) {
         }
     } else if (from->is_pointer()) {
         if (to->is_int()) {
-            value = m_ir_builder->CreatePtrToInt(src, type);
+            if (to->get_int_bit_width() == 1) {
+                value = m_ir_builder->CreateIsNotNull(src);
+            } else {
+                value = m_ir_builder->CreatePtrToInt(src, type);
+            }
         } else if (to->is_pointer()) {
             value = m_ir_builder->CreateBitCast(src, type);
         }
@@ -349,7 +361,16 @@ void LLVMCodeGen::generate(bytecode::Cast* inst) {
     this->set_register(inst->dst(), value);
 }
 
-void LLVMCodeGen::generate(bytecode::NewArray*) {}
+void LLVMCodeGen::generate(bytecode::NewArray* inst) {
+    auto range = llvm::map_range(inst->elements(), [this](auto& operand) { return valueof(operand); });
+    llvm::Value* value = llvm::UndefValue::get(inst->type()->to_llvm_type(*m_context));
+
+    for (auto [index, field] : llvm::enumerate(range)) {
+        value = m_ir_builder->CreateInsertValue(value, field, index);
+    }
+
+    this->set_register(inst->dst(), value);
+}
 
 void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
     Struct* structure = inst->structure();
@@ -364,8 +385,8 @@ void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
     auto* type = llvm::StructType::create(*m_context, {}, structure->qualified_name());
     structure->underlying_type()->set_llvm_struct_type(type);
 
-    auto range = llvm::map_range(structure->fields(), [this](auto& entry) {
-        return entry.second.type->to_llvm_type(*m_context);
+    auto range = llvm::map_range(structure->underlying_type()->fields(), [this](auto& entry) {
+        return entry->to_llvm_type(*m_context);
     });
 
     Vector<llvm::Type*> fields = Vector<llvm::Type*>(range.begin(), range.end());
@@ -388,6 +409,40 @@ void LLVMCodeGen::generate(bytecode::Construct* inst) {
     }
 
     this->set_register(inst->dst(), value);
+}
+
+void LLVMCodeGen::generate(bytecode::NewTuple* inst) {
+    TupleType* type = inst->type();
+    auto iterator = m_tuple_types.find(type);
+
+    llvm::StructType* structure = nullptr;
+    if (iterator == m_tuple_types.end()) {
+        auto range = llvm::map_range(type->types(), [this](auto* type) { return type->to_llvm_type(*m_context); });
+        Vector<llvm::Type*> types(range.begin(), range.end());
+
+        String name = format("__tuple.{0}", m_tuple_count++);
+        structure = llvm::StructType::create(*m_context, types, name);
+    } else {
+        structure = iterator->second;
+    }
+
+    llvm::Value* value = llvm::UndefValue::get(structure);
+    for (auto [index, operand] : llvm::enumerate(inst->operands())) {
+        value = m_ir_builder->CreateInsertValue(value, valueof(operand), index);
+    }
+
+    this->set_register(inst->dst(), value);
+}
+
+void LLVMCodeGen::generate(bytecode::Null* inst) {
+    llvm::Type* type = inst->type()->to_llvm_type(*m_context);
+    llvm::Value* value = llvm::Constant::getNullValue(type);
+
+    this->set_register(inst->dst(), value);
+}
+
+void LLVMCodeGen::generate(bytecode::Boolean* inst) {
+    this->set_register(inst->dst(), m_ir_builder->getInt1(inst->value()));
 }
 
 void LLVMCodeGen::set_register(bytecode::Register reg, llvm::Value* value) {
@@ -424,7 +479,7 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
         case bytecode::Instruction::x:                              \
             return this->generate(static_cast<bytecode::x*>(inst)); \
 
-        ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
+        ENUMERATE_BYTECODE_INSTRUCTIONS(Op) /* NOLINT */
     #undef Op
     }
 }
@@ -443,7 +498,6 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         }
     }
 
-
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
@@ -458,20 +512,29 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
 
     builder.crossRegisterProxies(lam, fam, cgam, mam);
 
-    llvm::FunctionPassManager fpm = builder.buildFunctionSimplificationPipeline(
-        llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None
-    );
+    llvm::OptimizationLevel level;
+    switch (options.opts.level) {
+        case OptimizationLevel::O0:
+            level = llvm::OptimizationLevel::O0; break;
+        case OptimizationLevel::O1:
+            level = llvm::OptimizationLevel::O1; break;
+        case OptimizationLevel::O2:
+            level = llvm::OptimizationLevel::O2; break;
+        case OptimizationLevel::O3:
+            level = llvm::OptimizationLevel::O3; break;
+        case OptimizationLevel::Os:
+            level = llvm::OptimizationLevel::Os; break;
+        case OptimizationLevel::Oz:
+            level = llvm::OptimizationLevel::Oz; break;
+    }
 
+    llvm::FunctionPassManager fpm = builder.buildFunctionSimplificationPipeline(level, llvm::ThinOrFullLTOPhase::None);
     fpm.addPass(llvm::VerifierPass());
 
     Vector<llvm::Function*> functions_to_erase;
     Vector<llvm::GlobalVariable*> globals_to_erase;
 
     for (auto& function : m_module->functions()) {
-        if (function.use_empty() && function.getName() != options.entry) {
-            functions_to_erase.push_back(&function);
-        }
-
         if (function.isDeclaration()) {
             continue;
         }
@@ -479,8 +542,15 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         fpm.run(function, fam);
     }
 
-    llvm::verifyModule(*m_module, &llvm::errs());
+    // We have to do a second run since LLVM likes to optimize some functions in
+    // for example: if it seems fit, it can replace a printf call to a puts call
+    for (auto& function : m_module->functions()) {
+        if (function.use_empty() && function.getName() != options.entry) {
+            functions_to_erase.push_back(&function);
+        }
+    }
 
+    llvm::verifyModule(*m_module, &llvm::errs());
     for (auto& function : functions_to_erase) {
         function->eraseFromParent();
     }
@@ -498,8 +568,8 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     for (auto& global : globals_to_erase) {
         m_module->eraseGlobalVariable(global);
     }
-
-    m_module->print(llvm::errs(), nullptr);
+    
+    m_module->dump();
 
     String triple, error;
     if (options.has_target()) {
@@ -508,8 +578,6 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         triple = llvm::sys::getDefaultTargetTriple();
     }
 
-    llvm::InitializeAllTargetInfos();
-    llvm::InitializeAllTargets();
     llvm::InitializeAllTargetMCs();
     llvm::InitializeAllAsmParsers();
     llvm::InitializeAllAsmPrinters();

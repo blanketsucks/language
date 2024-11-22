@@ -23,7 +23,8 @@ struct Arguments {
     OutputFormat format;
     MangleStyle mangle_style;
     
-    bool optimize = false;
+    OptimizationLevel optimization_level;
+
     bool verbose = false;
     bool no_libc = false;
     bool print_all_targets = false;

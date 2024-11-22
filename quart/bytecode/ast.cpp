@@ -3,12 +3,15 @@
 #include <quart/parser/ast.h>
 #include <quart/temporary_change.h>
 
+#include <quart/stacktrace.h>
+
 namespace quart::ast {
 
 struct ModuleQualifiedName {
     String name;
 
     explicit ModuleQualifiedName(String name) : name(move(name)) {}
+    explicit ModuleQualifiedName() = default;
 
     operator String() const { return name; }
 
@@ -17,16 +20,6 @@ struct ModuleQualifiedName {
         name.append(segment);
     }
 };
-
-static String format_path(Path const& path) {
-    String result = path.name;
-    for (auto& segment : path.segments) {
-        result.append("::");
-        result.append(segment);
-    }
-
-    return result;
-}
 
 static inline bytecode::Register select_dst(State& state, Optional<bytecode::Register> dst) {
     if (dst.has_value()) {
@@ -65,9 +58,8 @@ BytecodeResult IntegerExpr::generate(State& state, Optional<bytecode::Register> 
     IntType* type = nullptr;
     Type* context = state.context();
 
-    outln("context = {0}, value = {1}", context, m_value);
     if (context && context->is_int()) {
-        type = const_cast<IntType*>(context->as<IntType>());
+        type = context->as<IntType>();
     } else {
         type = state.types().create_int_type(m_width, true);
     }
@@ -88,6 +80,31 @@ BytecodeResult StringExpr::generate(State& state, Optional<bytecode::Register> d
     state.emit<bytecode::NewString>(reg, m_value);
 
     state.set_register_type(reg, state.types().cstr());
+    return bytecode::Operand(reg);
+}
+
+BytecodeResult BoolExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    auto reg = select_dst(state, dst);
+    auto& registry = state.types();
+
+    switch (m_value) {
+        case BoolExpr::False:
+        case BoolExpr::True:
+            state.emit<bytecode::Boolean>(reg, static_cast<bool>(m_value));
+            state.set_register_type(reg, registry.i1());
+
+            break;
+        case BoolExpr::Null: {
+            Type* type = state.context();
+            if (!type) {
+                type = registry.void_type()->get_pointer_to();
+            }
+
+            state.emit<bytecode::Null>(reg, type);
+            state.set_register_type(reg, type);
+        }
+    }
+
     return bytecode::Operand(reg);
 }
 
@@ -115,8 +132,8 @@ BytecodeResult ArrayExpr::generate(State& state, Optional<bytecode::Register> ds
         ops.push_back(operand);
     }
 
-    state.emit<bytecode::NewArray>(reg, ops);
     auto* type = registry.create_array_type(array_element_type, ops.size());
+    state.emit<bytecode::NewArray>(reg, ops, type);
 
     state.set_register_type(reg, type);
     return bytecode::Operand(reg);
@@ -151,7 +168,7 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
 }
 
 BytecodeResult FloatExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -186,7 +203,7 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
 }
 
 BytecodeResult TupleAssignmentExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -220,6 +237,8 @@ BytecodeResult UnaryOpExpr::generate(State& state, Optional<bytecode::Register> 
 
             return bytecode::Operand(reg);
         }
+        default:
+            ASSERT(false, "Unimplemented");
     }
 
     return {};
@@ -238,9 +257,11 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
     }
 
     bytecode::Operand lhs = TRY(ensure(state, *m_lhs, {}));
+    Type* lhs_type = state.type(lhs);
+
+    state.set_type_context(lhs_type);
     bytecode::Operand rhs = TRY(ensure(state, *m_rhs, {}));
 
-    Type* lhs_type = state.type(lhs);
     rhs = TRY(state.type_check_and_cast(span(), rhs, lhs_type, "Cannot perform binary operation on operands of type '{0}' and '{1}'"));
 
     auto reg = select_dst(state, dst);
@@ -254,7 +275,14 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
             return err(span(), "Unknown binary operator");
     }
 
-    state.set_register_type(reg, lhs_type);
+    if (is_comparison_operator(m_op)) {
+        state.set_register_type(reg, state.types().i1());
+    } else {
+        state.set_register_type(reg, lhs_type);
+    }
+
+    state.set_type_context(nullptr);
+
     return bytecode::Operand(reg);
 }
 
@@ -404,7 +432,18 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
     auto* underlying_type = state.types().create_function_type(return_type, Vector<Type*>(range.begin(), range.end()), m_is_c_variadic);
 
     auto* scope = Scope::create(m_name, ScopeType::Function, state.scope());
-    auto function = Function::create(m_name, parameters, underlying_type, scope, m_linkage);
+
+    RefPtr<LinkInfo> link_info = nullptr;
+    if (m_attrs.has(Attribute::Link)) {
+        auto& attr = m_attrs[Attribute::Link];
+        link_info = attr.value<RefPtr<LinkInfo>>();
+    }
+
+    auto function = Function::create(m_name, parameters, underlying_type, scope, m_linkage, move(link_info));
+
+    if (state.has_global_function(function->qualified_name())) {
+        return err(span(), "Function '{0}' is already defined", function->qualified_name());
+    }
 
     state.scope()->add_symbol(function);
     state.add_global_function(function);
@@ -442,6 +481,15 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
         TRY(expr->generate(state, {}));
     }
 
+    for (auto& block : function->basic_blocks()) {
+        if (!block->is_terminated() && !function->return_type()->is_void()) {
+            return err(span(), "Function '{0}' does not return from all paths", function->name());
+        } else if (!block->is_terminated()) {
+            state.switch_to(block);
+            state.emit<bytecode::Return>();
+        }
+    }
+
     state.switch_to(previous_block);
     state.set_current_scope(previous_scope);
 
@@ -450,7 +498,7 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
 }
 
 BytecodeResult DeferExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -461,6 +509,8 @@ BytecodeResult IfExpr::generate(State& state, Optional<bytecode::Register>) cons
     auto* else_block = state.create_block();
 
     auto operand = TRY(ensure(state, *m_condition, {}));
+    operand = TRY(state.type_check_and_cast(m_condition->span(), operand, state.types().i1(), "If conditions must be booleans"));
+
     state.emit<bytecode::JumpIf>(operand, then_block, else_block);
 
     current_function->insert_block(then_block);
@@ -492,7 +542,9 @@ BytecodeResult IfExpr::generate(State& state, Optional<bytecode::Register>) cons
 
 BytecodeResult WhileExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
+
     auto operand = TRY(ensure(state, *m_condition, {}));
+    operand = TRY(state.type_check_and_cast(m_condition->span(), operand, state.types().i1(), "While conditions must be booleans"));
 
     auto* while_block = state.create_block();
     auto* end_block = state.create_block();
@@ -606,7 +658,7 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
 }
 
 BytecodeResult EmptyConstructorExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -615,7 +667,7 @@ BytecodeResult AttributeExpr::generate(State& state, Optional<bytecode::Register
 }
 
 BytecodeResult IndexExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -634,12 +686,12 @@ BytecodeResult CastExpr::generate(State& state, Optional<bytecode::Register> dst
 }
 
 BytecodeResult SizeofExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult OffsetofExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -673,18 +725,33 @@ BytecodeResult PathExpr::generate(State& state, Optional<bytecode::Register> dst
     return {};
 }
 
-BytecodeResult TupleExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
-    return {};
+BytecodeResult TupleExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    Vector<bytecode::Operand> operands;
+    Vector<Type*> types;
+    
+    for (auto& expr : m_elements) {
+        auto operand = TRY(ensure(state, *expr, {}));
+
+        types.push_back(state.type(operand));
+        operands.push_back(operand);
+    }
+
+    auto* type = state.types().create_tuple_type(types);
+    auto reg = select_dst(state, dst);
+
+    state.emit<bytecode::NewTuple>(reg, type, move(operands));
+    state.set_register_type(reg, type);
+
+    return bytecode::Operand(reg);
 }
 
 BytecodeResult EnumExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) const {
-    String qualified_name = format_path(m_path);
+    String qualified_name = m_path.format();
 
     auto module = state.get_global_module(qualified_name);
     Scope* current_scope = state.scope();
@@ -700,7 +767,8 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     }
 
     String fullpath = {};
-    ModuleQualifiedName current_qualified_name(m_path.name);
+    // FIXME: ModuleQualifiedName is reversed
+    ModuleQualifiedName current_qualified_name;
 
     for (auto& segment : m_path.segments) {
         fullpath.append(segment);
@@ -723,6 +791,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
         auto* module = current_scope->resolve<Module>(segment);
         Scope* new_scope = nullptr;
 
+        current_qualified_name.append(segment);
         if (!module) {
             RefPtr<Module> mod = nullptr;
             if (state.has_global_module(current_qualified_name)) {
@@ -742,8 +811,6 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
 
         current_scope = new_scope;
         fullpath.push_back('/');
-
-        current_qualified_name.append(segment);
     }
 
     fs::Path path = fs::Path(fullpath + m_path.name + FILE_EXTENSION);
@@ -791,33 +858,13 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     state.set_current_scope(current_scope);
     state.set_current_module(&*module);
 
-    SourceCode code = SourceCode::from_path(path);
+    auto& code = SourceCode::from_path(path);
     Lexer lexer(code);
 
-    Vector<Token> tokens = ({
-        auto result = lexer.lex();
-        if (result.is_err()) {
-            auto& error = result.error();
-            errln("{0}", code.format_error(error));
-
-            return err(span(), "Failed to import module '{0}'", m_path.name);
-        }
-
-        result.release_value();
-    });
+    Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));
-    auto ast = ({
-        auto result = parser.parse();
-        if (result.is_err()) {
-            auto& error = result.error();
-            errln("{0}", code.format_error(error));
-
-            return err(span(), "Failed to import module '{0}'", m_path.name);
-        }
-
-        result.release_value();
-    });
+    auto ast = TRY(parser.parse());
 
     for (auto& expr : ast) {
         TRY(expr->generate(state, {}));
@@ -829,22 +876,41 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     return {};
 }
 
-BytecodeResult UsingExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult UsingExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
+    auto* module = scope->resolve<Module>(m_path.name);
+
+    if (!module) {
+        return err("Could not find module '{0}'", m_path.format());
+    }
+
+    scope = module->scope();
+    Scope* current_scope = state.scope();
+
+    for (auto& name : m_symbols) {
+        auto* symbol = scope->resolve(name);
+        if (!symbol) {
+            return err(span(), "Unknown symbol '{0}' for '{1}'", name, m_path.format());
+        }
+
+        current_scope->add_symbol(scope->symbols().at(name));
+    }
+
     return {};
 }
 
 BytecodeResult ModuleExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult TernaryExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult ForExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -907,7 +973,7 @@ BytecodeResult RangeForExpr::generate(State& state, Optional<bytecode::Register>
 }
 
 BytecodeResult ArrayFillExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -940,17 +1006,17 @@ BytecodeResult TypeAliasExpr::generate(State& state, Optional<bytecode::Register
 }
 
 BytecodeResult StaticAssertExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult MaybeExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
 BytecodeResult MatchExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false && "Not implemented");
+    ASSERT(false, "Not implemented");
     return {};
 }
 
@@ -994,6 +1060,7 @@ void create_impl_conditions(Vector<OwnPtr<ImplCondition>>& conditions, Set<Strin
 }
 
 BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Scope* current_scope = state.scope();
     if (!m_parameters.empty()) {
         auto range = llvm::map_range(m_parameters, [](auto& param) { return param.name; });
         Set<String> parameters(range.begin(), range.end());
@@ -1005,15 +1072,13 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
             return err(span(), "Impl is generic but doesn't use generic parameters");
         }
         
-        auto impl = Impl::create(&*m_type, &*m_body, move(conditions));
+        auto impl = Impl::create(current_scope, &*m_type, &*m_body, move(conditions));
         state.add_impl(move(impl));
 
         return {};
     }
 
     Type* underlying_type = TRY(m_type->evaluate(state));
-
-    Scope* current_scope = state.scope();
     Scope* scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope);
 
     auto impl = Impl::create(underlying_type, scope);
@@ -1026,6 +1091,15 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
     state.add_impl(move(impl));
 
     state.set_self_type(nullptr);
+    return {};
+}
+
+BytecodeResult TraitExpr::generate(State&, Optional<bytecode::Register>) const {
+    outln("Defining trait '{0}'", m_name);
+    return {};
+}
+
+BytecodeResult ImplTraitExpr::generate(State&, Optional<bytecode::Register>) const {
     return {};
 }
 

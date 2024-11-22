@@ -1,11 +1,13 @@
 #include <quart/parser/ast.h>
 #include <quart/language/state.h>
+#include <quart/target.h>
 
 #define MATCH_TYPE(Type, Func, ...) case BuiltinType::Type: return state.types().Func(__VA_ARGS__);
 
 namespace quart::ast {
 
 ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
+    size_t word_size = Target::build().word_size();
     switch (m_value) {
         MATCH_TYPE(Void, void_type);
         MATCH_TYPE(f32, f32);
@@ -24,9 +26,8 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
         MATCH_TYPE(u64, create_int_type, 64, false);
         MATCH_TYPE(u128, create_int_type, 128, false);
 
-        // FIXME: Has to be 32 bit on a 32 bit target
-        MATCH_TYPE(usize, create_int_type, 64, false);
-        MATCH_TYPE(isize, create_int_type, 64, true);
+        MATCH_TYPE(usize, create_int_type, word_size, false);
+        MATCH_TYPE(isize, create_int_type, word_size, true);
 
         default:
             return err(span(), "Unknown builtin type");

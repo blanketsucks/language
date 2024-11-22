@@ -1,6 +1,5 @@
 #pragma once
 
-#include <llvm-17/llvm/IR/GlobalVariable.h>
 #include <quart/bytecode/instruction.h>
 #include <quart/language/state.h>
 
@@ -72,6 +71,9 @@ private:
 
     Vector<llvm::Value*> m_registers;
     Vector<llvm::GlobalVariable*> m_globals;
+
+    HashMap<TupleType*, llvm::StructType*> m_tuple_types;
+    size_t m_tuple_count = 0;
 
     HashMap<bytecode::BasicBlock*, llvm::BasicBlock*> m_basic_blocks;
     HashMap<Function*, llvm::Function*> m_functions;

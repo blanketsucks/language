@@ -13,6 +13,8 @@ class Scope;
 
 class Enum : public Symbol {
 public:
+    static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::TypeAlias; }
+
     quart::Type* underlying_type() const { return m_underlying_type; }
     Scope* scope() const { return m_scope; }
 
