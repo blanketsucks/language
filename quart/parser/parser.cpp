@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <quart/parser/parser.h>
 #include <quart/attributes/attributes.h>
 #include <quart/parser/ast.h>
@@ -16,34 +17,33 @@
 
 namespace quart {
 
+constexpr int DECIMAL_BASE = 10;
+constexpr int HEX_BASE = 16;
+constexpr int BINARY_BASE = 2;
+
 String Path::format() const {
     String fmt = {};
     if (segments.empty()) {
-        return name;
+        return last.name;
     }
 
     for (auto& segment : segments) {
-        fmt.append(segment);
+        fmt.append(segment.name);
         fmt.append("::");
     }
 
-    fmt.append(name);
+    fmt.append(last.name);
     return fmt;
 }
 
-struct IntegerSuffix {
-    u32 bits;
-    bool is_float;
-};
-
-static const HashMap<StringView, IntegerSuffix> INTEGER_SUFFIXES = {
-    { "i8", { 8, false } },
-    { "i16", { 16, false } },
-    { "i32", { 32, false } },
-    { "i64", { 64, false } },
-    { "i128", { 128, false } },
-    { "f32", { 32, true } },
-    { "f64", { 64, true } }
+static const HashMap<StringView, ast::IntegerSuffix> INTEGER_SUFFIXES = {
+    { "i8", { ast::BuiltinType::i8 } },
+    { "i16", { ast::BuiltinType::i16 } },
+    { "i32", { ast::BuiltinType::i32 } },
+    { "i64", { ast::BuiltinType::i64} },
+    { "i128", { ast::BuiltinType::i128 } },
+    { "usize", { ast::BuiltinType::usize } },
+    { "isize", { ast::BuiltinType::isize } }
 };
 
 static const std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
@@ -170,7 +170,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type() {
     Span start = m_current.span();
 
     switch (m_current.kind()) {
-        case TokenKind::BinaryAnd: {
+        case TokenKind::And: {
             this->next();
             bool is_mutable = this->try_expect(TokenKind::Mut).has_value();
 
@@ -602,6 +602,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
     String name = token.value();
     Span end = token.span();
 
+    Vector<ast::GenericParameter> parameters;
     Vector<ast::StructField> fields;
     ast::ExprList<> members;
 
@@ -609,7 +610,11 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
         this->next();
         Span span { start, m_current.span() };
 
-        return { make<ast::StructExpr>(span, move(name), true, move(fields), move(members)) };
+        return { make<ast::StructExpr>(span, move(name), true, move(parameters), move(fields), move(members)) };
+    }
+
+    if (m_current.is(TokenKind::Lt)) {
+        parameters = TRY(this->parse_generic_parameters());
     }
 
     m_in_struct = true;
@@ -676,7 +681,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
     m_in_struct = false;
 
     Span span { start, end };
-    return { make<ast::StructExpr>(span, move(name), false, move(fields), move(members)) };   
+    return { make<ast::StructExpr>(span, move(name), false, move(parameters), move(fields), move(members)) };   
 }
 
 ErrorOr<ast::Ident> Parser::parse_identifier() {
@@ -978,7 +983,7 @@ ParseResult<ast::MatchExpr> Parser::parse_match() {
                 span = { span, expr->span() };
 
                 pattern.values.push_back(move(expr));
-                if (!m_current.is(TokenKind::BinaryOr)) {
+                if (!m_current.is(TokenKind::Or)) {
                     break;
                 }
 
@@ -1084,25 +1089,51 @@ ParseResult<ast::TraitExpr> Parser::parse_trait() {
     return { make<ast::TraitExpr>(span, move(name), move(body)) };
 }
  
-ErrorOr<Path> Parser::parse_path(Optional<String> name) {
+ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last) {
+    PathSegment segment = {};
     if (!name.has_value()) {
-        name = TRY(this->expect(TokenKind::Identifier)).value();
+        segment.name = TRY(this->expect(TokenKind::Identifier)).value();
+        if (m_current.is(TokenKind::Lt)) {
+            segment.arguments = TRY(this->parse_generic_arguments());
+        }
+    } else {
+        segment.name = move(name.value());
+        if (arguments.empty() && m_current.is(TokenKind::Lt)) {
+            segment.arguments = TRY(this->parse_generic_arguments());
+        } else {
+            segment.arguments = move(arguments);
+        }
     }
 
-    Path path = { move(*name), {} };
+    Path path;
+    path.last = move(segment);
+
     while (m_current.is(TokenKind::DoubleColon)) {
         this->next();
 
-        String segment = TRY(this->expect(TokenKind::Identifier)).value();
+        auto option = this->try_expect(TokenKind::Identifier);
+        if (!option.has_value() && ignore_last) {
+            break;
+        } else if (!option.has_value()) {
+            return err(m_current.span(), "Expected 'identifier'");
+        }
+
+        PathSegment segment = {};
+        segment.name = option->value();
+
+        if (m_current.is(TokenKind::Lt)) {
+            segment.arguments = TRY(this->parse_generic_arguments());
+        }
+
         path.segments.push_back(move(segment));
     }
 
     if (!path.segments.empty()) {
-        String back = path.segments.back();
+        PathSegment back = move(path.segments.back());
         path.segments.pop_back();
 
-        path.segments.push_back(path.name);
-        path.name = back;
+        path.segments.push_back(move(path.last));
+        path.last = move(back);
     }
 
     return path;
@@ -1247,7 +1278,10 @@ ParseResult<ast::Expr> Parser::statement() {
                 TRY(this->expect(TokenKind::RParen));
             }
 
-            TRY(this->expect(TokenKind::From));
+            Token token = TRY(this->expect(TokenKind::Identifier));
+            if (token.value() != "from") {
+                return err(token.span(), "Expected 'from'");
+            }
 
             this->next();
             Path path = TRY(this->parse_path());
@@ -1280,19 +1314,34 @@ ParseResult<ast::Expr> Parser::statement() {
                 this->next();
             }
 
-            Path path = TRY(this->parse_path());
+            Path path = TRY(this->parse_path({}, {}, true));
             bool is_wildcard = false;
 
+            Vector<String> symbols;
             if (m_current.is(TokenKind::Mul)) {
                 is_wildcard = true;
                 this->next();
+            } else if (m_current.is(TokenKind::LBrace)) {
+                this->next();
+                while (!m_current.is(TokenKind::RBrace)) {
+                    String symbol = TRY(this->expect(TokenKind::Identifier)).value();
+                    symbols.push_back(move(symbol));
+
+                    if (!m_current.is(TokenKind::Comma)) {
+                        break;
+                    }
+
+                    this->next();
+                }
+
+                TRY(this->expect(TokenKind::RBrace));
             }
 
             Span end = TRY(this->expect(TokenKind::SemiColon)).span();
             Span span = { start, end };
             
             // FIXME: Rather than an ImportExpr, we should just resolve the everything here and return ModuleExpr
-            return { make<ast::ImportExpr>(span, move(path), is_relative, is_wildcard) };
+            return { make<ast::ImportExpr>(span, move(path), is_relative, is_wildcard, move(symbols)) };
         }
         case TokenKind::Module: {
             this->next();
@@ -1419,7 +1468,7 @@ ParseResult<ast::Expr> Parser::unary() {
 
     if (iterator == UNARY_OPS.end()) {
         expr = TRY(this->call());
-    } else if (m_current.is(TokenKind::BinaryAnd)) {
+    } else if (m_current.is(TokenKind::And)) {
         Span start = m_current.span();
         this->next();
 
@@ -1523,9 +1572,10 @@ ParseResult<ast::Expr> Parser::call() {
 ParseResult<ast::Expr> Parser::attribute(OwnPtr<ast::Expr> expr) {
     while (m_current.is(TokenKind::Dot)) {
         this->next();
+        Token token = TRY(this->expect(TokenKind::Identifier));
 
-        String value = TRY(this->expect(TokenKind::Identifier)).value();
-        Span span = { expr->span(), m_current.span() };
+        String value = token.value();
+        Span span = { expr->span(), token.span() };
 
         expr = make<ast::AttributeExpr>(span, move(expr), value);
     }
@@ -1564,33 +1614,34 @@ ParseResult<ast::Expr> Parser::primary() {
             String value = m_current.value();
             this->next();
 
-            u32 width = 32;
+            ast::IntegerSuffix suffix;
 
             // FIXME: Handle f32 and f64 correctly
-            auto iterator = INTEGER_SUFFIXES.find(value);
-            if (iterator != INTEGER_SUFFIXES.end()) {
-                width = iterator->second.bits;
+            auto iterator = INTEGER_SUFFIXES.find(m_current.value());
+            if (iterator != INTEGER_SUFFIXES.end() && m_current.is(TokenKind::Identifier)) {
+                suffix = iterator->second;
                 this->next();
             }
 
             // FIXME: This is ugly
-            u16 base = 10;
+            u16 base = DECIMAL_BASE;
             if (value.starts_with("0x")) {
-                base = 16;
+                base = HEX_BASE;
                 value = value.substr(2);
             } else if (value.starts_with("0b")) {
-                base = 2;
+                base = BINARY_BASE;
                 value = value.substr(2);
             }
 
             u64 result = std::strtoull(value.c_str(), nullptr, base);
-            return { make<ast::IntegerExpr>(start, result, width) };
+            return { make<ast::IntegerExpr>(start, result, suffix) };
         }
         case TokenKind::Char: {
             String value = m_current.value();
             this->next();
 
-            return { make<ast::IntegerExpr>(start, value[0], 8) };
+            ast::IntegerSuffix suffix { ast::BuiltinType::i8 };
+            return { make<ast::IntegerExpr>(start, value[0], suffix) };
         }
         case TokenKind::Float: {
             double result = 0.0;
@@ -1622,7 +1673,7 @@ ParseResult<ast::Expr> Parser::primary() {
             String name = m_current.value();
             this->next();
 
-            if (m_current.is(TokenKind::DoubleColon)) {
+            if (m_current.is(TokenKind::DoubleColon) || m_current.is(TokenKind::Lt)) {
                 Path path = TRY(this->parse_path(name));
                 expr = make<ast::PathExpr>(start, move(path));
             } else {

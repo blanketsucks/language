@@ -36,7 +36,7 @@ struct ImplCondition {
     };
 
     static OwnPtr<ImplCondition> create(String name, Type type, size_t index = 0, OwnPtr<ImplCondition> inner = nullptr) {
-        return make<ImplCondition>(move(name), type, index, move(inner));
+        return OwnPtr<ImplCondition>(new ImplCondition(move(name), type, index, move(inner)));
     }
 
     String name; // Name of the generic parameter for this condition
@@ -46,6 +46,9 @@ struct ImplCondition {
     OwnPtr<ImplCondition> inner;
 
     Result is_satisfied(quart::Type*);
+
+private:
+    ImplCondition(String name, Type type, size_t index, OwnPtr<ImplCondition> inner) : name(move(name)), type(type), index(index), inner(move(inner)) {}
 };
 
 class Impl {

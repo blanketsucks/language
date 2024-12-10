@@ -8,6 +8,9 @@
 
 namespace quart {
 
+class Struct;
+class Function;
+
 class TypeRegistry;
 
 class PointerType;
@@ -113,6 +116,8 @@ public:
     Type* get_function_param(size_t index) const;
     bool is_function_var_arg() const;
 
+    size_t size() const;
+
     String str() const;
 
     void print() const;
@@ -174,19 +179,24 @@ public:
     llvm::StructType* get_llvm_struct_type() const { return m_type; }
     void set_llvm_struct_type(llvm::StructType* type) { m_type = type; }
 
+    void set_struct(Struct* structure) { m_struct = structure; }
+    Struct* get_struct() const { return m_struct; }
+
     friend TypeRegistry;
 private:
     StructType(
         TypeRegistry* type_registry, 
         String name,
         Vector<Type*> fields,
-        llvm::StructType* type
-    ) : Type(type_registry, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_type(type) {}
+        llvm::StructType* type,
+        Struct* structure
+    ) : Type(type_registry, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_type(type), m_struct(structure) {}
 
     String m_name;
     Vector<Type*> m_fields;
 
     llvm::StructType* m_type;
+    Struct* m_struct;
 };
 
 class ArrayType : public Type {
@@ -303,6 +313,9 @@ public:
     }
 
     bool is_var_arg() const { return m_is_var_arg; }
+    
+    Function* function() const { return m_function; }
+    void set_function(Function* function) { m_function = function; }
 
     friend TypeRegistry;
 private:
@@ -314,6 +327,8 @@ private:
     Vector<Type*> m_params;
 
     bool m_is_var_arg;
+
+    Function* m_function;
 };
 
 // Returns true if `type` is a struct or a pointer to a struct

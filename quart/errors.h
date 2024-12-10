@@ -19,6 +19,8 @@ namespace quart {
 struct Note {
     Span span;
     String note;
+
+    Note(Span span, String note) : span(span), note(move(note)) {}
 };
 
 class Error {

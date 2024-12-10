@@ -15,6 +15,8 @@ class Enum : public Symbol {
 public:
     static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::TypeAlias; }
 
+    static RefPtr<Enum> create(String name, quart::Type* underlying_type, Scope*);
+
     quart::Type* underlying_type() const { return m_underlying_type; }
     Scope* scope() const { return m_scope; }
 

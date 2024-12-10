@@ -45,7 +45,7 @@ StructType* TypeRegistry::create_struct_type(const String& name, const Vector<Ty
         return &*iterator->second;
     }
 
-    auto* type = new StructType(this, name, fields, llvm_type);
+    auto* type = new StructType(this, name, fields, llvm_type, nullptr);
     m_structs[name] = OwnPtr<StructType>(type);
 
     return type;

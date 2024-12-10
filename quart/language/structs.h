@@ -11,7 +11,6 @@
 
 namespace quart {
 
-struct Function;
 class Scope;
 
 struct StructField {
@@ -34,6 +33,11 @@ struct StructField {
     inline bool is_mutable() const { return flags & Flags::Mutable; }
 };
 
+struct GenericStruct {
+    StructType* type;
+    Scope* scope;
+};
+
 class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
@@ -47,18 +51,17 @@ public:
     }
 
     String const& qualified_name() const { return m_qualified_name; }
-
     StructType* underlying_type() const { return m_underlying_type; }
-
-    HashMap<String, StructField> const& fields() const { return m_fields; }
     Scope* scope() const { return m_scope; }
+    bool opaque() const { return m_opaque; }
+
+    void set_fields(HashMap<String, StructField> fields) { m_fields = move(fields); }
+    HashMap<String, StructField> const& fields() const { return m_fields; }
 
     StructField const* find(const String& name) const;
     bool has_method(const String& name) const;
 
-    bool opaque() const { return m_opaque; }
 
-    void set_fields(HashMap<String, StructField> fields) { m_fields = move(fields); }
 
 private:
     void set_qualified_name(Scope* parent = nullptr);

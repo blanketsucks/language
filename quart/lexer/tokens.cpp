@@ -4,8 +4,8 @@ namespace quart {
 
 bool is_comparison_operator(BinaryOp op) {
     switch (op) {
-        case BinaryOp::BinaryOr:
-        case BinaryOp::BinaryAnd:
+        case BinaryOp::LogicalAnd:
+        case BinaryOp::LogicalOr:
         case BinaryOp::Eq:
         case BinaryOp::Neq:
         case BinaryOp::Gt:
@@ -55,8 +55,8 @@ llvm::StringRef get_binary_op_value(BinaryOp type) {
         case BinaryOp::Mod: return "%";
         case BinaryOp::Or: return "|";
         case BinaryOp::And: return "&";
-        case BinaryOp::BinaryOr: return "||";
-        case BinaryOp::BinaryAnd: return "&&";
+        case BinaryOp::LogicalOr: return "||";
+        case BinaryOp::LogicalAnd: return "&&";
         case BinaryOp::Xor: return "^";
         case BinaryOp::Rsh: return ">>";
         case BinaryOp::Lsh: return "<<";
@@ -101,7 +101,6 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::Offsetof: return "offsetof";
         case TokenKind::Typeof: return "typeof";
         case TokenKind::Using: return "using";
-        case TokenKind::From: return "from";
         case TokenKind::Defer: return "defer";
         case TokenKind::Private: return "private";
         case TokenKind::Foreach: return "foreach";
@@ -118,12 +117,12 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::Div: return "/";
         case TokenKind::Mod: return "%";
         case TokenKind::Not: return "!";
-        case TokenKind::Or: return "||";
-        case TokenKind::And: return "&&";
+        case TokenKind::LogicalOr: return "||";
+        case TokenKind::LogicalAnd: return "&&";
         case TokenKind::Inc: return "++";
         case TokenKind::Dec: return "--";
-        case TokenKind::BinaryOr: return "|";
-        case TokenKind::BinaryAnd: return "&";
+        case TokenKind::Or: return "|";
+        case TokenKind::And: return "&";
         case TokenKind::BinaryNot: return "~";
         case TokenKind::Xor: return "^";
         case TokenKind::Rsh: return ">>";

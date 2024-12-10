@@ -19,9 +19,9 @@
     Op(GetGlobal)                                   \
     Op(GetGlobalRef)                                \
     Op(SetGlobal)                                   \
-    Op(GetMember)                                    \
-    Op(SetMember)                                    \
-    Op(GetMemberRef)                                 \
+    Op(GetMember)                                   \
+    Op(SetMember)                                   \
+    Op(GetMemberRef)                                \
     Op(Read)                                        \
     Op(Write)                                       \
     Op(Add)                                         \
@@ -31,8 +31,8 @@
     Op(Mod)                                         \
     Op(Or)                                          \
     Op(And)                                         \
-    Op(BinaryOr)                                    \
-    Op(BinaryAnd)                                   \
+    Op(LogicalOr)                                   \
+    Op(LogicalAnd)                                  \
     Op(Xor)                                         \
     Op(Rsh)                                         \
     Op(Lsh)                                         \
@@ -54,7 +54,9 @@
     Op(Alloca)                                      \
     Op(NewTuple)                                    \
     Op(Null)                                        \
-    Op(Boolean)
+    Op(Boolean)                                     \
+    Op(Not)                                         \
+    Op(Memcpy)                                       
 
 namespace quart {
     class Function;
@@ -169,50 +171,50 @@ private:
 
 class GetMember : public InstructionBase<Instruction::GetMember> {
 public:
-    GetMember(Register dst, Operand src, u32 index) : m_dst(dst), m_src(src), m_index(index) {}
+    GetMember(Register dst, Operand src, Operand index) : m_dst(dst), m_src(src), m_index(index) {}
 
     Register dst() const { return m_dst; }
     Operand src() const { return m_src; }
-    u32 index() const { return m_index; }
+    Operand index() const { return m_index; }
 
     void dump() const override;
 
 private:
     Register m_dst;
     Operand m_src;
-    u32 m_index;
+    Operand m_index;
 };
 
 class SetMember : public InstructionBase<Instruction::SetMember> {
 public:
-    SetMember(Operand dst, u32 index, Operand src) : m_dst(dst), m_index(index), m_src(src) {}
+    SetMember(Operand dst, Operand index, Operand src) : m_dst(dst), m_index(index), m_src(src) {}
 
     Operand dst() const { return m_dst; }
-    u32 index() const { return m_index; }
+    Operand index() const { return m_index; }
     Operand src() const { return m_src; }
 
     void dump() const override;
 
 private:
     Operand m_dst;
-    u32 m_index;
+    Operand m_index;
     Operand m_src;
 };
 
 class GetMemberRef : public InstructionBase<Instruction::GetMemberRef> {
 public:
-    GetMemberRef(Register dst, Operand src, u32 index) : m_dst(dst), m_src(src), m_index(index) {}
+    GetMemberRef(Register dst, Operand src, Operand index) : m_dst(dst), m_src(src), m_index(index) {}
 
     Register dst() const { return m_dst; }
     Operand src() const { return m_src; }
-    u32 index() const { return m_index; }
+    Operand index() const { return m_index; }
 
     void dump() const override;
 
 private:
     Register m_dst;
     Operand m_src;
-    u32 m_index;
+    Operand m_index;
 };
 
 class NewLocalScope : public InstructionBase<Instruction::NewLocalScope> {
@@ -565,6 +567,36 @@ public:
 private:
     Register m_dst;
     bool m_value;
+};
+
+class Not : public InstructionBase<Instruction::Boolean> {
+public:
+    Not(Register dst, Operand value) : m_dst(dst), m_value(value) {}
+
+    Register dst() const { return m_dst; }
+    Operand value() const { return m_value; }
+
+    void dump() const override {}
+
+private:
+    Register m_dst;
+    Operand m_value;
+};
+
+class Memcpy : public InstructionBase<Instruction::Memcpy> {
+public:
+    Memcpy(Register dst, Operand src, size_t size) : m_dst(dst), m_src(src), m_size(size) {}
+
+    Register dst() const { return m_dst; }
+    Operand src() const { return m_src; }
+    size_t size() const { return m_size; }
+
+    void dump() const override {}
+
+private:
+    Register m_dst;
+    Operand m_src;
+    size_t m_size;
 };
 
 }

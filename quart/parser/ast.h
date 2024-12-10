@@ -15,6 +15,10 @@
 
 namespace quart {
 
+namespace ast {
+    class TypeExpr;
+}
+
 class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
 public:
     BytecodeResult() = default;
@@ -28,9 +32,16 @@ public:
 class State;
 class Type;
 
-struct Path {
+struct PathSegment {
     String name;
-    std::deque<String> segments;
+    Vector<OwnPtr<ast::TypeExpr>> arguments;
+
+    operator String() const { return name; }
+};
+
+struct Path {
+    PathSegment last;
+    std::deque<PathSegment> segments;
 
     String format() const;
 };
@@ -38,7 +49,6 @@ struct Path {
 namespace ast {
 
 class Expr;
-class TypeExpr;
 
 template<class T = Expr> using ExprList = Vector<OwnPtr<T>>;
 
@@ -109,6 +119,7 @@ enum class TypeKind {
 };
 
 enum class BuiltinType {
+    None = 0,
     Bool,
     i8,
     i16,
@@ -125,6 +136,10 @@ enum class BuiltinType {
     usize,
     isize,
     Void
+};
+
+struct IntegerSuffix {
+    BuiltinType type = BuiltinType::None;
 };
 
 class Attributes {
@@ -313,15 +328,15 @@ private:
 
 class IntegerExpr : public ExprBase<ExprKind::Integer> {
 public:
-    IntegerExpr(Span span, u64 value, u16 width) : ExprBase(span), m_value(value), m_width(width) {}
+    IntegerExpr(Span span, u64 value, IntegerSuffix suffix) : ExprBase(span), m_value(value), m_suffix(suffix) {}
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     u64 value() const { return m_value; }
-    u16 width() const { return m_width; }
+    IntegerSuffix suffix() const { return m_suffix; }
 
 private:
     u64 m_value;
-    u16 m_width;
+    IntegerSuffix m_suffix;
 };
 
 class FloatExpr : public ExprBase<ExprKind::Float> {
@@ -645,21 +660,25 @@ public:
         Span span, 
         String name,
         bool opaque,
+        Vector<GenericParameter> parameters,
         Vector<StructField> fields, 
         Vector<OwnPtr<Expr>> members
-    ) : ExprBase(span), m_name(move(name)), m_opaque(opaque), m_fields(move(fields)), m_members(move(members)) {}
+    ) : ExprBase(span), m_name(move(name)), m_opaque(opaque), m_parameters(move(parameters)), m_fields(move(fields)), m_members(move(members)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     String const& name() const { return m_name; }
     bool is_opaque() const { return m_opaque; }
 
+    const Vector<GenericParameter>& parameters() const { return m_parameters; }
     const Vector<StructField>& fields() const { return m_fields; }
     const Vector<OwnPtr<Expr>>& members() const { return m_members; }
 
 private:
     String m_name;
     bool m_opaque;
+    
+    Vector<GenericParameter> m_parameters;
     Vector<StructField> m_fields;
     Vector<OwnPtr<Expr>> m_members;
 };
@@ -823,8 +842,8 @@ private:
 class ImportExpr : public ExprBase<ExprKind::Import> {
 public:
     ImportExpr(
-        Span span, Path path, bool is_wildcard, bool is_relative
-    ) : ExprBase(span), m_path(move(path)), m_is_wildcard(is_wildcard), m_is_relative(is_relative) {}
+        Span span, Path path, bool is_wildcard, bool is_relative, Vector<String> symbols
+    ) : ExprBase(span), m_path(move(path)), m_is_wildcard(is_wildcard), m_is_relative(is_relative), m_symbols(move(symbols)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -833,11 +852,15 @@ public:
     bool is_wildcard() const { return m_is_wildcard; }
     bool is_relative() const { return m_is_relative; }
 
+    Vector<String> const& symbols() const { return m_symbols; }
+
 private:
     Path m_path;
 
     bool m_is_wildcard;
     bool m_is_relative;
+
+    Vector<String> m_symbols;
 };
 
 class ModuleExpr : public ExprBase<ExprKind::Module> {
@@ -1209,6 +1232,17 @@ private:
     ExprList<TypeExpr> m_args;
 };
 
+};
+
+}
+
+namespace llvm {
+
+template<>
+struct format_provider<quart::PathSegment> {
+    static void format(const quart::PathSegment& segment, raw_ostream& stream, StringRef) {
+        stream << std::string(segment);
+    }
 };
 
 }

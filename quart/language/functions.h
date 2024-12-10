@@ -10,7 +10,6 @@
 namespace quart {
 
 class Scope;
-struct Struct;
 
 struct FunctionParameter {
     enum Flags : u8 {
@@ -18,11 +17,12 @@ struct FunctionParameter {
         Keyword  = 1 << 0,
         Mutable  = 1 << 1,
         Self     = 1 << 2,
-        Variadic = 1 << 3
+        Variadic = 1 << 3,
+        Byval    = 1 << 4
     };
 
     String name;
-    quart::Type* type;
+    Type* type;
 
     u8 flags;
 
@@ -31,6 +31,7 @@ struct FunctionParameter {
 
     bool is_reference() const { return this->type->is_reference(); }
     bool is_mutable() const { return this->flags & Flags::Mutable; }
+    bool is_byval() const { return this->flags & Flags::Byval; }
 };
 
 struct Loop {

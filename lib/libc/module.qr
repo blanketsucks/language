@@ -195,6 +195,7 @@ extern "C" {
     func ntohs(netshort: i16) -> i16;
     func ntohl(netlong: i32) -> i32;
     
+    func inet_aton(cp: *i8, addr: *in_addr) -> i32;
     func inet_pton(af: i32, src: *i8, dst: *i8) -> i32;
     func inet_ntoa(addr: in_addr) -> *i8;
     func inet_addr(cp: *i8) -> in_addr_t;

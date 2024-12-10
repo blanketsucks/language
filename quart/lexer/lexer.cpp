@@ -284,13 +284,13 @@ ErrorOr<Token> Lexer::once() {
         } case '|': {
             TRY(this->next());
             
-            Optional<Token> option = this->expect('|', { TokenKind::Or, '|' });
-            return option.value_or(Token { TokenKind::BinaryOr, "|", { start, m_offset, m_source_code.index() } });
+            Optional<Token> option = this->expect('|', { TokenKind::LogicalOr, '|' });
+            return option.value_or(Token { TokenKind::Or, "|", { start, m_offset, m_source_code.index() } });
         } case '&': {
             TRY(this->next());
             
-            Optional<Token> option = this->expect('&', { TokenKind::And, '&' });
-            return option.value_or(Token { TokenKind::BinaryAnd, "&", { start, m_offset, m_source_code.index() } });
+            Optional<Token> option = this->expect('&', { TokenKind::LogicalAnd, '&' });
+            return option.value_or(Token { TokenKind::And, "&", { start, m_offset, m_source_code.index() } });
         } case '.': {
             TRY(this->next());
             if (m_current == '.' && this->peek() == '.') {

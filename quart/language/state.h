@@ -7,6 +7,11 @@
 
 namespace quart {
 
+struct RegisterState {
+    Type* type = nullptr;
+    Function* function = nullptr;
+};
+
 class State {
 public:
     State();
@@ -35,7 +40,7 @@ public:
     void set_self_type(Type* type) { m_self_type = type; }
 
     ErrorOr<Scope*> resolve_scope(Span, Scope* current_scope, const String& name);
-    ErrorOr<Scope*> resolve_scope_path(Span, const Path&);
+    ErrorOr<Scope*> resolve_scope_path(Span, const Path&, bool allow_generic_arguments = false);
     
     Vector<bytecode::Instruction*> const& global_instructions() const { return m_generator.global_instructions(); }
 
@@ -47,7 +52,8 @@ public:
     size_t register_count() { return m_generator.register_count(); }
 
     bytecode::Register allocate_register();
-    void set_register_type(bytecode::Register reg, quart::Type* type);
+    void set_register_state(bytecode::Register reg, quart::Type* type, Function* function = nullptr);
+    RegisterState const& register_state(bytecode::Register reg) const { return m_registers[reg.index()]; }
 
     size_t global_count() const { return m_global_count; }
     size_t allocate_global() { return m_global_count++; }
@@ -81,7 +87,13 @@ public:
     void add_impl(OwnPtr<Impl>);
     bool has_impl(Type*);
     
-    ErrorOr<bytecode::Register> resolve_reference(ast::Expr const&, bool is_mutable = false, Optional<bytecode::Register> dst = {});
+    ErrorOr<bytecode::Register> resolve_reference(
+        ast::Expr const&, 
+        bool is_mutable = false, 
+        Optional<bytecode::Register> dst = {},
+        bool use_default_case = true
+    );
+
     ErrorOr<bytecode::Register> resolve_reference(Scope*, Span, const String& name, bool is_mutable, Optional<bytecode::Register> dst = {});
 
     ErrorOr<Symbol*> resolve_symbol(ast::Expr const&);
@@ -89,15 +101,29 @@ public:
 
     ErrorOr<bytecode::Operand> type_check_and_cast(Span, bytecode::Operand, Type* target, StringView error_message);
 
-    ErrorOr<bytecode::Operand> generate_attribute_access(ast::AttributeExpr const&, bool as_reference, Optional<bytecode::Register> dst = {}, bool as_mutable = false);
+    ErrorOr<bytecode::Operand> generate_attribute_access(
+        ast::AttributeExpr const&,
+        bool as_reference,
+        bool as_mutable = false,
+        Optional<bytecode::Register> dst = {}
+    );
+
+    ErrorOr<bytecode::Operand> generate_index_access(
+        ast::IndexExpr const&,
+        bool as_reference,
+        bool as_mutable = false,
+        Optional<bytecode::Register> dst = {}
+    );
 
     fs::Path search_import_paths(const String& name);
+
+    Type* get_type_from_builtin(ast::BuiltinType);
 
 private:
     bytecode::Generator m_generator;
     OwnPtr<TypeRegistry> m_type_registry;
 
-    Vector<Type*> m_registers;
+    Vector<RegisterState> m_registers;
 
     Scope* m_global_scope = nullptr;
 

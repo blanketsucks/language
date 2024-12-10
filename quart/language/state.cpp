@@ -11,7 +11,7 @@ void State::dump() const {}
 
 bytecode::Register State::allocate_register() {
     bytecode::Register reg = m_generator.allocate_register();
-    m_registers.push_back(nullptr);
+    m_registers.push_back({});
 
     return reg;
 }
@@ -20,19 +20,19 @@ void State::switch_to(bytecode::BasicBlock* block) {
     m_generator.switch_to(block);
 }
 
-void State::set_register_type(bytecode::Register reg, Type* type) {
-    m_registers[reg.index()] = type;
+void State::set_register_state(bytecode::Register reg, Type* type, Function* function) {
+    m_registers[reg.index()] = { type, function };
 }
 
 Type* State::type(bytecode::Register reg) const {
-    return m_registers[reg.index()];
+    return m_registers[reg.index()].type;
 }
 
 Type* State::type(bytecode::Operand operand) const {
     if (operand.is_immediate()) {
         return operand.value_type();
     } else {
-        return m_registers[operand.value()];
+        return m_registers[operand.value()].type;
     }
 }
 
@@ -109,9 +109,14 @@ ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const Stri
     return scope;
 }
 
-ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path) {
+ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path, bool allow_generic_arguments) {
     Scope* scope = m_current_scope;
-    for (auto& segment : path.segments) {
+
+    for (auto& [segment, arguments] : path.segments) {
+        if (!arguments.empty() && !allow_generic_arguments) {
+            return err(span, "Generic arguments are not allowed in this context");
+        }
+
         Span segment_span = { span.start(), span.start() + segment.size(), span.source_code_index() };
         scope = TRY(this->resolve_scope(segment_span, scope, segment));
 
@@ -144,7 +149,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, co
             }
 
             Type* type = variable->value_type();
-            this->set_register_type(reg, type->get_reference_to(is_mutable));
+            this->set_register_state(reg, type->get_reference_to(is_mutable));
 
             return reg;
         }
@@ -153,7 +158,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(Scope* scope, Span span, co
     }
 }
 
-ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool is_mutable, Optional<bytecode::Register> dst) {
+ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool is_mutable, Optional<bytecode::Register> dst, bool use_default_case) {
     using ast::ExprKind;
     
     switch (expr.kind()) {
@@ -165,19 +170,27 @@ ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool
             auto& path = expr.as<ast::PathExpr>()->path();
             Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
 
-            return this->resolve_reference(scope, expr.span(), path.name, is_mutable, dst);
+            return this->resolve_reference(scope, expr.span(), path.last.name, is_mutable, dst);
         }
         case ExprKind::Attribute: {
             auto* attribute = expr.as<ast::AttributeExpr>();
-            auto operand = TRY(this->generate_attribute_access(*attribute, true, dst, is_mutable));
+            auto operand = TRY(this->generate_attribute_access(*attribute, true, is_mutable, dst));
 
             ASSERT(operand.is_register(), {});
             return bytecode::Register(operand.value());
         }
         case ExprKind::Index: {
-            break;
+            auto index = expr.as<ast::IndexExpr>();
+            auto operand = TRY(this->generate_index_access(*index, true, is_mutable, dst));
+
+            ASSERT(operand.is_register(), {});
+            return bytecode::Register(operand.value());
         }
         default:
+            if (!use_default_case) {
+                return err(expr.span(), "Invalid reference");
+            }
+
             auto option = TRY(expr.generate(*this, {}));
             if (!option.has_value()) {
                 return err(expr.span(), "Expected an expression");
@@ -191,7 +204,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(ast::Expr const& expr, bool
             auto reg = this->allocate_register();
             emit<bytecode::Move>(reg, *option);
 
-            this->set_register_type(reg, type);
+            this->set_register_state(reg, type);
             return reg;
     }
 
@@ -216,9 +229,9 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
             auto& path = expr.as<ast::PathExpr>()->path();
             Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
 
-            auto* symbol = scope->resolve(path.name);
+            auto* symbol = scope->resolve(path.last.name);
             if (!symbol) {
-                return err(expr.span(), "Unknown identifier '{0}'", path.name);
+                return err(expr.span(), "Unknown identifier '{0}'", path.last.name);
             }
 
             return symbol;
@@ -256,11 +269,13 @@ ErrorOr<bytecode::Operand> State::type_check_and_cast(Span span, bytecode::Opera
     auto reg = this->allocate_register();
     emit<bytecode::Cast>(reg, operand, target);
 
-    this->set_register_type(reg, target);
+    this->set_register_state(reg, target);
     return bytecode::Operand(reg);
 }
 
-ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr const& expr, bool as_reference, Optional<bytecode::Register> dst, bool as_mutable) {
+ErrorOr<bytecode::Operand> State::generate_attribute_access(
+    ast::AttributeExpr const& expr, bool as_reference, bool as_mutable, Optional<bytecode::Register> dst
+) {
     ast::Expr const& parent = expr.parent();
     auto result = this->resolve_symbol(parent);
 
@@ -282,16 +297,16 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         }
 
         value_type = this->type(*option);
-        if (value_type->is_pointer()) {
-            this->set_register_type(reg, value_type);
+        if (value_type->is_pointer() || value_type->is_reference()) {
+            this->set_register_state(reg, value_type);
 
-            value_type = value_type->get_pointee_type();
+            value_type = value_type->underlying_type();
             emit<bytecode::Move>(reg, *option);
         } else {
             emit<bytecode::Alloca>(reg, value_type);
             emit<bytecode::Write>(reg, *option);
 
-            this->set_register_type(reg, value_type->get_pointer_to());
+            this->set_register_state(reg, value_type->get_pointer_to());
         }
         
         reg_has_value = true;
@@ -306,8 +321,8 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         variable_type = variable->value_type();
         value_type = variable->value_type();
 
-        if (value_type->is_pointer()) {
-            value_type = value_type->get_pointee_type();
+        if (value_type->is_pointer() || value_type->is_reference()) {
+            value_type = value_type->underlying_type();
             is_pointer_type = true;
         }
 
@@ -342,10 +357,10 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
     if (!reg_has_value) {
         if (is_pointer_type) {
             emit<bytecode::GetLocal>(reg, local_index);
-            this->set_register_type(reg, variable_type);
+            this->set_register_state(reg, variable_type);
         } else {
             emit<bytecode::GetLocalRef>(reg, local_index);
-            this->set_register_type(reg, variable_type->get_pointer_to());
+            this->set_register_state(reg, variable_type->get_pointer_to());
         }
     }
 
@@ -363,7 +378,7 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         }
 
         emit<bytecode::GetFunction>(*dst, method);
-        this->set_register_type(*dst, method->underlying_type()->get_pointer_to());
+        this->set_register_state(*dst, method->underlying_type()->get_pointer_to(), method);
 
         this->inject_self(reg);
         return bytecode::Operand(*dst);
@@ -386,12 +401,88 @@ ErrorOr<bytecode::Operand> State::generate_attribute_access(ast::AttributeExpr c
         dst = this->allocate_register();
     }
 
+    bytecode::Operand index(field->index, types().i32());
     if (as_reference) {
-        emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), field->index);
-        this->set_register_type(*dst, field->type->get_reference_to(as_mutable));
+        emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), index);
+        this->set_register_state(*dst, field->type->get_reference_to(as_mutable));
     } else {
-        emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), field->index);
-        this->set_register_type(*dst, field->type);
+        emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), index);
+        this->set_register_state(*dst, field->type);
+    }
+
+    return bytecode::Operand(*dst);
+}
+
+ErrorOr<bytecode::Operand> State::generate_index_access(
+    ast::IndexExpr const& expr, bool as_reference, bool as_mutable, Optional<bytecode::Register> dst
+) {
+    auto result = this->resolve_reference(expr.value(), as_mutable, {}, false);
+
+    bytecode::Register reg;
+    Type* type = nullptr;
+
+    bool deref = false;
+    if (result.is_err()) {
+        auto option = TRY(expr.value().generate(*this, {}));
+        if (!option.has_value()) {
+            return err(expr.value().span(), "Expected an expression");
+        }
+
+        type = this->type(*option);
+        if (!type->is_array() && !type->is_pointer()) {
+            return err(expr.value().span(), "Cannot index into type '{0}'", type->str());
+        }
+
+        reg = this->allocate_register();
+        if (type->is_pointer()) {
+            emit<bytecode::Move>(reg, *option);
+        } else {
+            // FIXME: Use extractvalue in the LLVM backend for arrays
+            return err(expr.value().span(), "Indexing into array immediates is not yet supported");
+        }
+    } else {
+        reg = result.value();
+        type = this->type(reg)->get_reference_type();
+
+        if (!type->is_array() && !type->is_pointer()) {
+            return err(expr.span(), "Cannot index into type '{0}'", type->str());
+        }
+
+        deref = true;
+    }
+
+    Type* inner = nullptr;
+    if (type->is_array()) {
+        inner = type->get_array_element_type();
+    } else if (type->is_pointer() && deref) {
+        emit<bytecode::Read>(reg, reg);
+        inner = type->get_pointee_type();
+    } else {
+        inner = type->get_pointee_type();
+    }
+
+    auto index = TRY(expr.index().generate(*this, {}));
+    if (!index.has_value()) {
+        return err(expr.index().span(), "Expected an expression");
+    }
+
+    auto idx = index.value();
+    if (!this->type(idx)->is_int()) {
+        return err(expr.index().span(), "Expected an integer");
+    }
+
+    if (!dst.has_value()) {
+        dst = this->allocate_register();
+    }
+
+    // GetMemberRef/GetMember expects a pointer
+    this->set_register_state(reg, type->get_pointer_to());
+    if (as_reference) {
+        emit<bytecode::GetMemberRef>(*dst, bytecode::Operand(reg), idx);
+        this->set_register_state(*dst, inner->get_reference_to(as_mutable));
+    } else {
+        emit<bytecode::GetMember>(*dst, bytecode::Operand(reg), idx);
+        this->set_register_state(*dst, inner);
     }
 
     return bytecode::Operand(*dst);

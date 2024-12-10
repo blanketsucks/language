@@ -82,6 +82,10 @@ bool Type::can_safely_cast_to(Type* to) {
     } else if (from->is_struct() && to->is_struct()) {
         return to->get_struct_name() == from->get_struct_name();
     } else if (from->is_int() && to->is_int()) {
+        if (to->get_int_bit_width() == 1) {
+            return true;
+        }
+
         return from->is_int_unsigned() == to->is_int_unsigned() && to->get_int_bit_width() >= from->get_int_bit_width();
     } else if (from->is_float() && to->is_float()) {
         return true;
@@ -334,6 +338,44 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
         default:
             return nullptr;
     }
+}
+
+size_t Type::size() const {
+    switch (this->kind()) {
+        case TypeKind::Float:
+            return 4;
+        case TypeKind::Double:
+            return 8;
+        case TypeKind::Int:
+            return this->get_int_bit_width() / 8;
+        case TypeKind::Enum:
+            return this->get_inner_enum_type()->size();
+        case TypeKind::Struct: {
+            size_t size = 0;
+            for (auto& field : this->get_struct_fields()) {
+                size += field->size();
+            }
+
+            return size;
+        }
+        case TypeKind::Array: {
+            return this->get_array_element_type()->size() * this->get_array_size();
+        }
+        case TypeKind::Tuple: {
+            size_t size = 0;
+            for (auto& type : this->get_tuple_types()) {
+                size += type->size();
+            }
+
+            return size;
+        }
+        case TypeKind::Pointer:
+        case TypeKind::Reference: // FIXME: Use Target::word_size()
+            return 8;
+        default: break;
+    }
+
+    return 0;
 }
 
 void StructType::set_fields(const Vector<Type*>& fields) {

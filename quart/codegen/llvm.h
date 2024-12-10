@@ -22,14 +22,14 @@ public:
     Function* function() const { return m_function; }
     size_t local_count() const { return m_local_count; }
 
-    llvm::AllocaInst* local(size_t index) const { return m_locals[index]; }
-    void set_local(size_t index, llvm::AllocaInst* local) { m_locals[index] = local; }
+    llvm::Value* local(size_t index) const { return m_locals[index]; }
+    void set_local(size_t index, llvm::Value* local) { m_locals[index] = local; }
 
 private:
     Function* m_function = nullptr;
     size_t m_local_count = 0;
 
-    Vector<llvm::AllocaInst*> m_locals;
+    Vector<llvm::Value*> m_locals;
 };
 
 class LLVMCodeGen {
@@ -42,17 +42,12 @@ public:
     llvm::Module& module() { return *m_module; }
 
 private:
-    struct GEPResult {
-        llvm::Value* value;
-        llvm::Type* underlying_type;
-    };
-
     llvm::Value* valueof(bytecode::Register);
     llvm::Value* valueof(bytecode::Operand);
 
     llvm::BasicBlock* create_block_from(bytecode::BasicBlock*);
 
-    GEPResult create_gep(bytecode::Operand src, u32 index);
+    llvm::Value* create_gep(bytecode::Operand src, bytecode::Operand index);
     
     void set_register(bytecode::Register, llvm::Value*);
 

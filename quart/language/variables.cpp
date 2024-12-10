@@ -10,7 +10,7 @@ void Variable::emit(State& state, bytecode::Register dst) {
         state.emit<bytecode::GetLocal>(dst, m_index);
     }
 
-    state.set_register_type(dst, m_type);
+    state.set_register_state(dst, m_type);
 }
 
 }

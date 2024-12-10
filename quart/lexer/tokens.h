@@ -19,8 +19,8 @@
     OP(Mod)                      \
     OP(Or)                       \
     OP(And)                      \
-    OP(BinaryOr)                 \
-    OP(BinaryAnd)                \
+    OP(LogicalOr)                \
+    OP(LogicalAnd)               \
     OP(Xor)                      \
     OP(Rsh)                      \
     OP(Lsh)                      \
@@ -70,7 +70,6 @@ enum class TokenKind {
     Offsetof,
     Typeof,
     Using,
-    From,
     Defer,
     Private,
     Foreach,
@@ -93,14 +92,14 @@ enum class TokenKind {
     Div,
     Mod,
     Not,
-    Or,
-    And,
+    LogicalOr,
+    LogicalAnd,
     Inc,
     Dec,
 
-    BinaryOr,
-    BinaryAnd,
     BinaryNot,
+    Or,
+    And,
     Xor,
     Rsh,
     Lsh,
@@ -159,8 +158,8 @@ enum class BinaryOp {
     Mod,
     Or,
     And,
-    BinaryOr,
-    BinaryAnd,
+    LogicalOr,
+    LogicalAnd,
     Xor,
     Rsh,
     Lsh,
@@ -233,7 +232,6 @@ static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     {"offsetof", TokenKind::Offsetof},
     {"typeof", TokenKind::Typeof},
     {"using", TokenKind::Using},
-    {"from", TokenKind::From},
     {"defer", TokenKind::Defer},
     {"private", TokenKind::Private},
     {"foreach", TokenKind::Foreach},
@@ -253,8 +251,8 @@ static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
 static const std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Assign, 5},
 
-    {TokenKind::And, 10},
-    {TokenKind::Or, 10},
+    {TokenKind::LogicalAnd, 10},
+    {TokenKind::LogicalOr, 10},
     {TokenKind::Lt, 15},
     {TokenKind::Gt, 15},
     {TokenKind::Lte, 15},
@@ -262,8 +260,8 @@ static const std::map<TokenKind, u8> PRECEDENCES = {
     {TokenKind::Eq, 15},
     {TokenKind::Neq, 15},
 
-    {TokenKind::BinaryAnd, 20},
-    {TokenKind::BinaryOr, 20},
+    {TokenKind::And, 20},
+    {TokenKind::Or, 20},
     {TokenKind::Xor, 20},
     {TokenKind::Rsh, 20},
     {TokenKind::Lsh, 20},
@@ -285,7 +283,7 @@ static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
     {TokenKind::Add, UnaryOp::Add},
     {TokenKind::Sub, UnaryOp::Neg},
     {TokenKind::BinaryNot, UnaryOp::BinaryNeg},
-    {TokenKind::BinaryAnd, UnaryOp::Ref},
+    {TokenKind::And, UnaryOp::Ref},
     {TokenKind::Mul, UnaryOp::DeRef},
     {TokenKind::Inc, UnaryOp::Inc},
     {TokenKind::Dec, UnaryOp::Dec}
@@ -299,8 +297,8 @@ static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
     {TokenKind::Mod, BinaryOp::Mod},
     {TokenKind::Or, BinaryOp::Or},
     {TokenKind::And, BinaryOp::And},
-    {TokenKind::BinaryOr, BinaryOp::BinaryOr},
-    {TokenKind::BinaryAnd, BinaryOp::BinaryAnd},
+    {TokenKind::LogicalAnd, BinaryOp::LogicalAnd},
+    {TokenKind::LogicalOr, BinaryOp::LogicalOr},
     {TokenKind::Xor, BinaryOp::Xor},
     {TokenKind::Rsh, BinaryOp::Rsh},
     {TokenKind::Lsh, BinaryOp::Lsh},

@@ -115,7 +115,7 @@ public:
     ParseResult<ast::CallExpr> parse_call(OwnPtr<ast::Expr> callee);
 
     // Parses `foo::bar::baz` into a deque of strings
-    [[nodiscard]] ErrorOr<Path> parse_path(Optional<String> name = {});
+    [[nodiscard]] ErrorOr<Path> parse_path(Optional<String> name = {}, ast::ExprList<ast::TypeExpr> arguments = {}, bool ignore_last = false);
 
     ParseResult<ast::Expr> parse_immediate_binary_op(OwnPtr<ast::Expr> right, OwnPtr<ast::Expr> left, TokenKind op);
     ParseResult<ast::Expr> parse_immediate_unary_op(OwnPtr<ast::Expr> expr, TokenKind op);

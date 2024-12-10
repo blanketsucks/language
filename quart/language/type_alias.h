@@ -2,22 +2,12 @@
 
 #include <quart/language/types.h>
 #include <quart/language/symbol.h>
+#include <quart/language/generics.h>
 #include <quart/parser/ast.h>
 
 namespace quart {
 
 using GenericCache = HashMap<Vector<Type*>, Type*>;
-
-struct GenericTypeParameter {
-    String name;
-
-    Vector<Type*> constraints;
-    Type* default_type;
-
-    Span span;
-
-    bool is_optional() const { return default_type != nullptr; }  
-};
 
 class TypeAlias : public Symbol {
 public:

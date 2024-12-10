@@ -2,13 +2,13 @@
 #include <quart/language/state.h>
 #include <quart/target.h>
 
-#define MATCH_TYPE(Type, Func, ...) case BuiltinType::Type: return state.types().Func(__VA_ARGS__);
+#define MATCH_TYPE(Type, Func, ...) case ast::BuiltinType::Type: return types().Func(__VA_ARGS__);
 
-namespace quart::ast {
+namespace quart {
 
-ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
+Type* State::get_type_from_builtin(ast::BuiltinType value) {
     size_t word_size = Target::build().word_size();
-    switch (m_value) {
+    switch (value) {
         MATCH_TYPE(Void, void_type);
         MATCH_TYPE(f32, f32);
         MATCH_TYPE(f64, f64);
@@ -30,16 +30,26 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
         MATCH_TYPE(isize, create_int_type, word_size, true);
 
         default:
-            return err(span(), "Unknown builtin type");
+            return nullptr;
     }
+
+    return nullptr;
+}
+
+}
+
+namespace quart::ast {
+
+ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
+    return state.get_type_from_builtin(m_value);
 }
 
 ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
     Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
-    auto* symbol = scope->resolve(m_path.name);
+    auto* symbol = scope->resolve(m_path.last.name);
 
     if (!symbol) {
-        return err(span(), "Undefined identifier '{0}'", m_path.name);
+        return err(span(), "Undefined identifier '{0}'", m_path.last.name);
     }
 
     switch (symbol->type()) {
@@ -56,7 +66,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
             Type* underlying_type = alias->underlying_type();
 
             if (!underlying_type && !alias->all_parameters_have_default()) {
-                return err(span(), "Type '{0}' is generic and requires type arguments", m_path.name);
+                return err(span(), "Type '{0}' is generic and requires type arguments", m_path.last.name);
             } else if (!underlying_type) {
                 underlying_type = TRY(alias->evaluate(state));
             }
@@ -66,7 +76,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
         default: break;
     }
 
-    return err(span(), "'{0}' does not name a type", m_path.name);
+    return err(span(), "'{0}' does not name a type", m_path.last.name);
 }
 
 ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) {
@@ -148,9 +158,9 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
     auto& path = m_parent->path();
     auto* scope = TRY(state.resolve_scope_path(m_parent->span(), path));
 
-    auto* symbol = scope->resolve(path.name);
+    auto* symbol = scope->resolve(path.last.name);
     if (!symbol) {
-        return err(m_parent->span(), "Unknown identifier '{0}'", path.name);
+        return err(m_parent->span(), "Unknown identifier '{0}'", path.last.name);
     }
 
     Vector<Type*> args;

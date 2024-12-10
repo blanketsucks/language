@@ -27,6 +27,8 @@ public:
     Type type() const { return m_type; }
     u64 value() const { return m_value; }
 
+    bytecode::Register as_reg() const;
+
 private:
     Type m_type = None;
     u64 m_value = 0;

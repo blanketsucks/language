@@ -23,7 +23,6 @@ public:
     }
 
     String const& qualified_name() const { return m_qualified_name; }
-
     fs::Path const& path() const { return m_path; }
     Scope* scope() const { return m_scope; }
 

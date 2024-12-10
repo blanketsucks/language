@@ -5,18 +5,14 @@ import libc;
 # const SIZE = 100;
 # let mut state: [i32; SIZE];
 
-func main() -> i32 { 
-    let SIZE = 100;
+func main() -> i32 {
+    const SIZE = 100;
     let mut state: [i32; 100];
 
     state[SIZE - 2] = 1;
     for _ in 0..SIZE - 2 {
         for j in 0..SIZE {
-            if (state[j]) {
-                libc::putchar('*');
-            } else {
-                libc::putchar(' ');
-            }
+            libc::putchar(" *"[state[j]]);
         }
 
         libc::putchar('\n');

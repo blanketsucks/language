@@ -38,14 +38,14 @@ static inline String format_operand(Register reg) {
 static inline String format_operand(const Operand& operand) {
     switch (operand.type()) {
         case Operand::None:
-            return "{ empty value }";
+            return "{}";
         case Operand::Register:
             return format("r{0}", operand.value());
         case Operand::Immediate:
             return format("{0}", operand.value());
     }
 
-    return "{ unknown operand type }";
+    return "???";
 }
 
 void Move::dump() const {
@@ -89,15 +89,15 @@ void SetGlobal::dump() const {
 }
 
 void GetMember::dump() const {
-    outln("GetMember {0}, {1}, {2}", format_operand(m_dst), format_operand(m_src), m_index);
+    outln("GetMember {0}, {1}, {2}", format_operand(m_dst), format_operand(m_src), format_operand(m_index));
 }
 
 void GetMemberRef::dump() const {
-    outln("GetMemberRef {0}, {1}, {2}", format_operand(m_dst), format_operand(m_src), m_index);
+    outln("GetMemberRef {0}, {1}, {2}", format_operand(m_dst), format_operand(m_src), format_operand(m_index));
 }
 
 void SetMember::dump() const {
-    outln("SetMember {0}, {1}, {2}", format_operand(m_src), format_operand(m_dst), m_index);
+    outln("SetMember {0}, {1}, {2}", format_operand(m_src), format_operand(m_dst), format_operand(m_index));
 }
 
 void Read::dump() const {
