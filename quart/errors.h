@@ -23,14 +23,27 @@ struct Note {
     Note(Span span, String note) : span(span), note(move(note)) {}
 };
 
+enum class ErrorType {
+    Generic,
+
+    EndOfString,
+
+    UnknownIdentifier,
+    MutabilityMismatch,
+};
+
 class Error {
 public:
     Error() = default;
     Error(Span span, String error) : m_span(span), m_error(move(error)) {}
+    Error(Span span, ErrorType type, String error) : m_span(span), m_error(move(error)), m_type(type) {}
 
     Span span() const { return m_span; }
     StringView message() const { return m_error; }
+
     Vector<Note> const& notes() const { return m_notes; }
+
+    ErrorType type() const { return m_type; }
 
     void add_note(Span span, String note) {
         m_notes.emplace_back(span, move(note));
@@ -41,16 +54,34 @@ private:
     String m_error;
 
     Vector<Note> m_notes;
+    ErrorType m_type = ErrorType::Generic;
 };
 
-template<typename ...Args> requires(std::conjunction_v<has_format_provider<Args>...>)
+template<typename ...Args> requires(formatable_v<Args...>)
 Error err(Span span, const char* fmt, Args... args) {
     return { span, format(fmt, std::forward<Args>(args)...) };
 }
 
-template<typename ...Args> requires(std::conjunction_v<has_format_provider<Args>...>)
+template<typename ...Args> requires(formatable_v<Args...>)
+Error err(ErrorType type, Span span, const char* fmt, Args... args) {
+    return { span, type, format(fmt, std::forward<Args>(args)...) };
+}
+
+template<typename ...Args> requires(formatable_v<Args...>)
 Error err(const char* fmt, Args... args) {
     return { Span {}, format(fmt, std::forward<Args>(args)...) };
+}
+
+template<typename ...Args> requires(formatable_v<Args...>)
+void warn(Span span, const char* fmt, Args... args) {
+    String message = format(fmt, std::forward<Args>(args)...);
+    outln(SourceCode::format_warning(span, message));
+}
+
+template<typename ...Args> requires(formatable_v<Args...>)
+void note(Span span, const char* fmt, Args... args) {
+    String message = format(fmt, std::forward<Args>(args)...);
+    outln(SourceCode::format_note(span, message));
 }
 
 template<typename T, typename E>

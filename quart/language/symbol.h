@@ -7,6 +7,7 @@
 namespace quart {
 
 class Scope;
+class Module;
 
 class Symbol {
 public:
@@ -25,7 +26,7 @@ public:
 
     static String parse_qualified_name(Symbol*, Scope*);
 
-    Symbol(String name, SymbolType type) : m_name(move(name)), m_type(type) {}
+    Symbol(String name, SymbolType type, bool is_public) : m_name(move(name)), m_type(type), m_is_public(is_public) {}
     virtual ~Symbol() = default;
 
     String const& name() const { return m_name; }
@@ -59,9 +60,17 @@ public:
         return (... || (m_type == args));
     }
 
+    bool is_public() const { return m_is_public; }
+
+    class Module* module() const { return m_module; }
+    void set_module(class Module* module) { m_module = module; }
+
 private:
     String m_name;
     SymbolType m_type;
+
+    bool m_is_public = false;
+    class Module* m_module = nullptr;
 };
 
 }

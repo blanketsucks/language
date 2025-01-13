@@ -1,15 +1,22 @@
 #pragma once
 
 #include <quart/bytecode/generator.h>
-#include <quart/language/type_registry.h>
+#include <quart/language/context.h>
 #include <quart/language/scopes.h>
 #include <quart/language/impl.h>
 
 namespace quart {
 
 struct RegisterState {
+    enum Flags {
+        None,
+        Constructor = 1 << 0
+    };
+
     Type* type = nullptr;
     Function* function = nullptr;
+
+    u8 flags = 0;
 };
 
 class State {
@@ -21,10 +28,11 @@ public:
     Scope* global_scope() const { return m_global_scope; }
 
     bytecode::Generator& generator() { return m_generator; }
-    TypeRegistry& types() { return *m_type_registry; }
+    Context& context() { return *m_context; }
+    ConstantEvaluator& constant_evaluator() { return m_constant_evaluator; }
 
-    Type* context() const { return m_context; }
-    void set_type_context(Type* type) { m_context = type; }
+    Type* type_context() const { return m_type_context; }
+    void set_type_context(Type* type) { m_type_context = type; }
 
     Scope* scope() const { return m_current_scope; }
     Function* function() const { return m_current_function; }
@@ -52,18 +60,25 @@ public:
     size_t register_count() { return m_generator.register_count(); }
 
     bytecode::Register allocate_register();
-    void set_register_state(bytecode::Register reg, quart::Type* type, Function* function = nullptr);
+
+    void set_register_state(bytecode::Register reg, quart::Type* type, Function* function = nullptr, u8 flags = 0);
+    void set_register_flags(bytecode::Register reg, u8 flags) { m_registers[reg.index()].flags = flags; }
+
     RegisterState const& register_state(bytecode::Register reg) const { return m_registers[reg.index()]; }
 
     size_t global_count() const { return m_global_count; }
     size_t allocate_global() { return m_global_count++; }
 
     Type* type(bytecode::Register) const;
-    Type* type(bytecode::Operand) const;
+    Type* type(bytecode::Operand const&) const;
 
-    void inject_self(bytecode::Register reg) { m_self = bytecode::Operand(reg); }
-    Optional<bytecode::Operand> self() const { return m_self; }
+    void inject_self(bytecode::Register reg) { m_self = reg; }
+    Optional<bytecode::Register> self() const { return m_self; }
     void reset_self() { m_self = {}; }
+
+    void inject_return(bytecode::Register reg) { m_return = reg; }
+    Optional<bytecode::Register> return_register() const { return m_return; }
+    void reset_return() { m_return = {}; }
 
     template<typename T, typename... Args>
     inline T* emit(Args&&... args) {
@@ -91,24 +106,31 @@ public:
         ast::Expr const&, 
         bool is_mutable = false, 
         Optional<bytecode::Register> dst = {},
-        bool use_default_case = true
+        bool use_default_case = true,
+        bool override_mutability = false
     );
 
-    ErrorOr<bytecode::Register> resolve_reference(Scope*, Span, const String& name, bool is_mutable, Optional<bytecode::Register> dst = {});
+    ErrorOr<bytecode::Register> resolve_reference(
+        Scope*, Span,
+        const String& name,
+        bool is_mutable,
+        Optional<bytecode::Register> dst = {},
+        bool override_mutability = false
+    );
 
     ErrorOr<Symbol*> resolve_symbol(ast::Expr const&);
     ErrorOr<Struct*> resolve_struct(ast::Expr const&);
 
-    ErrorOr<bytecode::Operand> type_check_and_cast(Span, bytecode::Operand, Type* target, StringView error_message);
+    ErrorOr<bytecode::Register> type_check_and_cast(Span, bytecode::Register, Type* target, StringView error_message);
 
-    ErrorOr<bytecode::Operand> generate_attribute_access(
+    ErrorOr<bytecode::Register> generate_attribute_access(
         ast::AttributeExpr const&,
         bool as_reference,
         bool as_mutable = false,
         Optional<bytecode::Register> dst = {}
     );
 
-    ErrorOr<bytecode::Operand> generate_index_access(
+    ErrorOr<bytecode::Register> generate_index_access(
         ast::IndexExpr const&,
         bool as_reference,
         bool as_mutable = false,
@@ -119,9 +141,12 @@ public:
 
     Type* get_type_from_builtin(ast::BuiltinType);
 
+    ErrorOr<size_t> size_of(ast::Expr const&);
+
 private:
     bytecode::Generator m_generator;
-    OwnPtr<TypeRegistry> m_type_registry;
+    OwnPtr<Context> m_context;
+    ConstantEvaluator m_constant_evaluator;
 
     Vector<RegisterState> m_registers;
 
@@ -129,7 +154,7 @@ private:
 
     size_t m_global_count = 0;
 
-    Type* m_context = nullptr;
+    Type* m_type_context = nullptr;
 
     Scope* m_current_scope = nullptr;
     Function* m_current_function = nullptr;
@@ -143,7 +168,8 @@ private:
 
     HashMap<String, RefPtr<Module>> m_modules;
 
-    Optional<bytecode::Operand> m_self;
+    Optional<bytecode::Register> m_self;
+    Optional<bytecode::Register> m_return; // Used for constructor functions
 
     HashMap<Type*, OwnPtr<Impl>> m_impls;
     Vector<OwnPtr<Impl>> m_generic_impls;

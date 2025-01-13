@@ -28,35 +28,6 @@ enum class ScopeType {
     Impl
 };
 
-// struct ScopeLocal {
-//     enum Flags : u8 {
-//         None,
-//         Constant       = 1 << 0,
-//         Mutable        = 1 << 1,
-//         StackAllocated = 1 << 2,
-//         LocalToScope   = 1 << 3
-//     };
-
-//     std::string name;
-
-//     llvm::Value* value;
-//     quart::Type* type;
-
-//     u8 flags;
-
-//     bool is_null();
-//     static ScopeLocal null();
-
-//     static ScopeLocal from_variable(const quart::Variable& variable, bool use_store_value = false);
-//     static ScopeLocal from_constant(const quart::Constant& constant, bool use_store_value = false);
-//     static ScopeLocal from_scope_local(const ScopeLocal& local, llvm::Value* value, quart::Type* type = nullptr);
-
-//     inline bool is_mutable() const { return this->flags & Flags::Mutable; }
-//     inline bool is_constant() const { return this->flags & Flags::Constant; }
-
-//     llvm::Constant* get_constant_value();
-// };
-
 class Scope {
 public:
     static Scope* create(String name, ScopeType type, Scope* parent = nullptr);
@@ -66,6 +37,9 @@ public:
 
     Scope* parent() const { return m_parent; }
     Vector<Scope*> const& children() const { return m_children; }
+
+    Module* module() const { return m_module; }
+    void set_module(Module* module) { m_module = module; }
 
     HashMap<String, RefPtr<Symbol>> const& symbols() const { return m_symbols; }
 
@@ -97,7 +71,7 @@ private:
     HashMap<String, RefPtr<Symbol>> m_symbols;
     
     Vector<ast::Expr*> m_defers;
-
+    Module* m_module = nullptr;
 };
 
 }

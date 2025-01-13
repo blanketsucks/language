@@ -102,7 +102,7 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::Typeof: return "typeof";
         case TokenKind::Using: return "using";
         case TokenKind::Defer: return "defer";
-        case TokenKind::Private: return "private";
+        case TokenKind::Pub: return "pub";
         case TokenKind::Foreach: return "foreach";
         case TokenKind::In: return "in";
         case TokenKind::StaticAssert: return "static_assert";
@@ -131,6 +131,11 @@ StringView token_kind_to_str(TokenKind kind) {
         case TokenKind::ISub: return "-=";
         case TokenKind::IMul: return "*=";
         case TokenKind::IDiv: return "/=";
+        case TokenKind::IOr: return "|=";
+        case TokenKind::IAnd: return "&=";
+        case TokenKind::IXor: return "^=";
+        case TokenKind::IRsh: return ">>=";
+        case TokenKind::ILsh: return "<<=";
         case TokenKind::Eq: return "==";
         case TokenKind::Neq: return "!=";
         case TokenKind::Gt: return ">";

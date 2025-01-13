@@ -4,7 +4,6 @@
 #include <quart/attributes/attributes.h>
 
 #include <quart/errors.h>
-#include <quart/bytecode/operand.h>
 #include <quart/bytecode/register.h>
 
 #include <quart/language/functions.h>
@@ -13,37 +12,112 @@
 #include <vector>
 #include <deque>
 
+#define ENUMERATE_EXPR_KINDS(Op)     \
+    Op(Block)                        \
+    Op(ExternBlock)                  \
+    Op(Integer)                      \
+    Op(Float)                        \
+    Op(String)                       \
+    Op(Identifier)                   \
+    Op(Assignment)                   \
+    Op(TupleAssignment)              \
+    Op(Const)                        \
+    Op(Array)                        \
+    Op(UnaryOp)                      \
+    Op(Reference)                    \
+    Op(BinaryOp)                     \
+    Op(InplaceBinaryOp)              \
+    Op(Call)                         \
+    Op(Return)                       \
+    Op(FunctionDecl)                 \
+    Op(Function)                     \
+    Op(Defer)                        \
+    Op(If)                           \
+    Op(While)                        \
+    Op(For)                          \
+    Op(Break)                        \
+    Op(Continue)                     \
+    Op(Struct)                       \
+    Op(Constructor)                  \
+    Op(EmptyConstructor)             \
+    Op(Attribute)                    \
+    Op(Index)                        \
+    Op(Cast)                         \
+    Op(Sizeof)                       \
+    Op(Offsetof)                     \
+    Op(Path)                         \
+    Op(Using)                        \
+    Op(Tuple)                        \
+    Op(Enum)                         \
+    Op(Import)                       \
+    Op(Ternary)                      \
+    Op(ArrayFill)                    \
+    Op(TypeAlias)                    \
+    Op(StaticAssert)                 \
+    Op(Maybe)                        \
+    Op(Module)                       \
+    Op(Impl)                         \
+    Op(Trait)                        \
+    Op(ImplTrait)                    \
+    Op(Match)                        \
+    Op(RangeFor)                     \
+    Op(Bool)
+
 namespace quart {
 
 namespace ast {
     class TypeExpr;
 }
 
-class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
+class BytecodeResult : public ErrorOr<Optional<bytecode::Register>> {
 public:
     BytecodeResult() = default;
 
-    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(move(error)) {}
+    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Register>>(move(error)) {}
 
-    BytecodeResult(bytecode::Operand value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
-    BytecodeResult(Optional<bytecode::Operand> value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
+    BytecodeResult(bytecode::Register value) : ErrorOr<Optional<bytecode::Register>>(value) {}
+    BytecodeResult(Optional<bytecode::Register> value) : ErrorOr<Optional<bytecode::Register>>(value) {}
 };
 
 class State;
 class Type;
 
 struct PathSegment {
-    String name;
-    Vector<OwnPtr<ast::TypeExpr>> arguments;
+public:
+    PathSegment() = default;
+    PathSegment(String name, Vector<OwnPtr<ast::TypeExpr>> arguments) : m_name(move(name)), m_arguments(move(arguments)) {}
 
-    operator String() const { return name; }
+    String const& name() const { return m_name; }
+    Vector<OwnPtr<ast::TypeExpr>> const& arguments() const { return m_arguments; }
+
+    bool has_generic_arguments() const { return !m_arguments.empty(); }
+
+private:
+    String m_name;
+    Vector<OwnPtr<ast::TypeExpr>> m_arguments;
 };
 
 struct Path {
-    PathSegment last;
-    std::deque<PathSegment> segments;
+public:
+    Path() = default;
+    Path(PathSegment last, Deque<PathSegment> segments) : m_last(move(last)), m_segments(move(segments)) {}
+
+    PathSegment const& last() const { return m_last; }
+    Deque<PathSegment> const& segments() const { return m_segments; }
+
+    String const& name() const { return m_last.name(); }
 
     String format() const;
+    void rearrange();
+
+    void push(PathSegment segment) {
+        m_segments.push_back(move(segment));
+    }
+
+private:
+
+    PathSegment m_last;
+    std::deque<PathSegment> m_segments;
 };
 
 namespace ast {
@@ -85,14 +159,12 @@ enum class ExprKind {
     Cast,
     Sizeof,
     Offsetof,
-    Assembly,
     Path,
     Using,
     Tuple,
     Enum,
     Import,
     Ternary,
-    Type,
     ArrayFill,
     TypeAlias,
     StaticAssert,
@@ -380,8 +452,9 @@ public:
         Span span,
         Ident identifier,
         OwnPtr<TypeExpr> type, 
-        OwnPtr<Expr> value
-    ) : ExprBase(span), m_identifier(move(identifier)), m_type(move(type)), m_value(move(value)) {}
+        OwnPtr<Expr> value,
+        bool is_public
+    ) : ExprBase(span), m_identifier(move(identifier)), m_type(move(type)), m_value(move(value)), m_is_public(is_public) {}
     
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -390,10 +463,14 @@ public:
     const TypeExpr* type() const { return m_type.get(); }
     const Expr* value() const { return m_value.get(); }
 
+    bool is_public() const { return m_is_public; }
+
 private:
     Ident m_identifier;
     OwnPtr<TypeExpr> m_type;
     OwnPtr<Expr> m_value;
+
+    bool m_is_public;
 };
 
 class TupleAssignmentExpr : public ExprBase<ExprKind::TupleAssignment> {
@@ -421,8 +498,8 @@ private:
 class ConstExpr : public ExprBase<ExprKind::Const> {
 public:
     ConstExpr(
-        Span span, String name, OwnPtr<TypeExpr> type, OwnPtr<Expr> value
-    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_value(move(value)) {}
+        Span span, String name, OwnPtr<TypeExpr> type, OwnPtr<Expr> value, bool is_public
+    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_value(move(value)), m_is_public(is_public) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -431,10 +508,14 @@ public:
     const TypeExpr* type() const { return m_type.get(); }
     Expr const& value() const { return *m_value; }
 
+    bool is_public() const { return m_is_public; }
+
 private:
     String m_name;
     OwnPtr<TypeExpr> m_type;
     OwnPtr<Expr> m_value;
+
+    bool m_is_public;
 };
 
 class ArrayExpr : public ExprBase<ExprKind::Array> {
@@ -558,8 +639,10 @@ public:
         Vector<Parameter> parameters,
         OwnPtr<TypeExpr> return_type,
         LinkageSpecifier linkage,
-        bool is_c_variadic
-    ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)), m_linkage(linkage), m_is_c_variadic(is_c_variadic) {}
+        bool is_c_variadic,
+        bool is_public
+    ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)),
+        m_is_c_variadic(is_c_variadic), m_is_public(is_public), m_linkage(linkage) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -569,6 +652,8 @@ public:
     const TypeExpr* return_type() const { return m_return_type.get(); }
 
     bool is_c_variadic() const { return m_is_c_variadic; }
+    bool is_public() const { return m_is_public; }
+
     LinkageSpecifier linkage() const { return m_linkage; }
 
 private:
@@ -577,6 +662,7 @@ private:
     OwnPtr<TypeExpr> m_return_type;
 
     bool m_is_c_variadic = false;
+    bool m_is_public = false;
 
     LinkageSpecifier m_linkage;
 };
@@ -662,13 +748,16 @@ public:
         bool opaque,
         Vector<GenericParameter> parameters,
         Vector<StructField> fields, 
-        Vector<OwnPtr<Expr>> members
-    ) : ExprBase(span), m_name(move(name)), m_opaque(opaque), m_parameters(move(parameters)), m_fields(move(fields)), m_members(move(members)) {}
+        Vector<OwnPtr<Expr>> members,
+        bool is_public
+    ) : ExprBase(span), m_name(move(name)), m_opaque(opaque), m_parameters(move(parameters)), m_fields(move(fields)), m_members(move(members)), m_is_public(is_public) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     String const& name() const { return m_name; }
+
     bool is_opaque() const { return m_opaque; }
+    bool is_public() const { return m_is_public; }
 
     const Vector<GenericParameter>& parameters() const { return m_parameters; }
     const Vector<StructField>& fields() const { return m_fields; }
@@ -681,6 +770,8 @@ private:
     Vector<GenericParameter> m_parameters;
     Vector<StructField> m_fields;
     Vector<OwnPtr<Expr>> m_members;
+
+    bool m_is_public;
 };
 
 class ConstructorExpr : public ExprBase<ExprKind::Constructor> {
@@ -957,21 +1048,25 @@ private:
 class TypeAliasExpr : public ExprBase<ExprKind::TypeAlias> {
 public:
     TypeAliasExpr(
-        Span span, String name, OwnPtr<TypeExpr> type, Vector<GenericParameter> parameters
-    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_parameters(move(parameters)) {}
+        Span span, String name, OwnPtr<TypeExpr> type, Vector<GenericParameter> parameters, bool is_public
+    ) : ExprBase(span), m_name(move(name)), m_type(move(type)), m_parameters(move(parameters)), m_is_public(is_public) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     String const& name() const { return m_name; }
     Vector<GenericParameter> const& parameters() const { return m_parameters; }
 
-    TypeExpr const& type() const { return *m_type; } 
+    TypeExpr const& type() const { return *m_type; }
+
+    bool is_public() const { return m_is_public; }
 
 private:
     String m_name;
     OwnPtr<TypeExpr> m_type;
 
     Vector<GenericParameter> m_parameters;
+
+    bool m_is_public = false;
 };
 
 class StaticAssertExpr : public ExprBase<ExprKind::StaticAssert> {
@@ -1241,7 +1336,7 @@ namespace llvm {
 template<>
 struct format_provider<quart::PathSegment> {
     static void format(const quart::PathSegment& segment, raw_ostream& stream, StringRef) {
-        stream << std::string(segment);
+        stream << segment.name();
     }
 };
 

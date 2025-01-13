@@ -23,17 +23,29 @@ constexpr int BINARY_BASE = 2;
 
 String Path::format() const {
     String fmt = {};
-    if (segments.empty()) {
-        return last.name;
+    if (m_segments.empty()) {
+        return name();
     }
 
-    for (auto& segment : segments) {
-        fmt.append(segment.name);
+    for (auto& segment : m_segments) {
+        fmt.append(segment.name());
         fmt.append("::");
     }
 
-    fmt.append(last.name);
+    fmt.append(name());
     return fmt;
+}
+
+void Path::rearrange() {
+    if (m_segments.empty()) {
+        return;
+    }
+
+    PathSegment segment = move(m_last);
+    m_last = move(m_segments.back());
+
+    m_segments.pop_back();
+    m_segments.push_back(move(segment));
 }
 
 static const HashMap<StringView, ast::IntegerSuffix> INTEGER_SUFFIXES = {
@@ -45,26 +57,6 @@ static const HashMap<StringView, ast::IntegerSuffix> INTEGER_SUFFIXES = {
     { "usize", { ast::BuiltinType::usize } },
     { "isize", { ast::BuiltinType::isize } }
 };
-
-static const std::map<llvm::StringRef, ast::BuiltinType> STR_TO_TYPE = {
-    { "void", ast::BuiltinType::Void },
-    { "bool", ast::BuiltinType::Bool },
-    { "i8", ast::BuiltinType::i8 },
-    { "i16", ast::BuiltinType::i16 },
-    { "i32", ast::BuiltinType::i32 },
-    { "i64", ast::BuiltinType::i64 },
-    { "i128", ast::BuiltinType::i128 },
-    { "u8", ast::BuiltinType::u8 },
-    { "u16", ast::BuiltinType::u16 },
-    { "u32", ast::BuiltinType::u32 },
-    { "u64", ast::BuiltinType::u64 },
-    { "u128", ast::BuiltinType::u128 },
-    { "f32", ast::BuiltinType::f32 },
-    { "f64", ast::BuiltinType::f64 },
-    { "isize", ast::BuiltinType::isize },
-    { "usize", ast::BuiltinType::usize }
-};
-
 
 Parser::Parser(Vector<Token> tokens) : m_tokens(move(tokens)), m_current(m_tokens.front()) {
     Attributes::init(*this);
@@ -381,8 +373,8 @@ ErrorOr<ast::ExprList<ast::TypeExpr>> Parser::parse_generic_arguments() {
     return arguments;
 }
 
-ParseResult<ast::TypeAliasExpr> Parser::parse_type_alias() {
-    Span start = m_current.span();
+ParseResult<ast::TypeAliasExpr> Parser::parse_type_alias(bool is_public) {
+    Span span = m_current.span();
     Vector<ast::GenericParameter> parameters;
 
     String name = TRY(this->expect(TokenKind::Identifier)).value();
@@ -393,10 +385,9 @@ ParseResult<ast::TypeAliasExpr> Parser::parse_type_alias() {
     TRY(this->expect(TokenKind::Assign));
 
     auto type = TRY(this->parse_type());
-    Span end = TRY(this->expect(TokenKind::SemiColon)).span();
+    TRY(this->expect(TokenKind::SemiColon));
 
-    Span span { start, end };
-    return { make<ast::TypeAliasExpr>(span, move(name), move(type), move(parameters)) };
+    return { make<ast::TypeAliasExpr>(span, move(name), move(type), move(parameters), is_public) };
 }
 
 ErrorOr<ast::FunctionParameters> Parser::parse_function_parameters() {
@@ -479,7 +470,7 @@ end:
     return ast::FunctionParameters { move(params), is_c_variadic };
 }
 
-ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier linkage, bool with_name) {
+ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier linkage, bool with_name, bool is_public) {
     Span start = m_current.span();
     String name = "<anonymous>";
 
@@ -507,11 +498,11 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier 
         span = { start, end };
     }
     
-    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic) };
+    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic, is_public) };
 }
 
-ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage) {
-    auto decl = TRY(this->parse_function_decl(linkage, true));
+ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage, bool is_public) {
+    auto decl = TRY(this->parse_function_decl(linkage, true, is_public));
     if (m_current.is(TokenKind::SemiColon)) {
         this->next();
         return { move(decl) };
@@ -595,7 +586,7 @@ ParseResult<ast::Expr> Parser::parse_for() {
     return { make<ast::ForExpr>(ident.span, move(ident), move(expr), move(body)) };
 }
 
-ParseResult<ast::StructExpr> Parser::parse_struct() {
+ParseResult<ast::StructExpr> Parser::parse_struct(bool is_public) {
     Span start = m_current.span();
     Token token = TRY(this->expect(TokenKind::Identifier, "struct name"));
     
@@ -610,7 +601,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
         this->next();
         Span span { start, m_current.span() };
 
-        return { make<ast::StructExpr>(span, move(name), true, move(parameters), move(fields), move(members)) };
+        return { make<ast::StructExpr>(span, move(name), true, move(parameters), move(fields), move(members), is_public) };
     }
 
     if (m_current.is(TokenKind::Lt)) {
@@ -628,8 +619,8 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
 
         u8 flags = StructField::None;
         switch (m_current.kind()) {
-            case TokenKind::Private: {
-                flags |= StructField::Private;
+            case TokenKind::Pub: {
+                flags |= StructField::Public;
                 this->next();
             } break;
             case TokenKind::Readonly: {
@@ -639,21 +630,22 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
             default: break;
         }
 
+        bool is_field_public = flags & StructField::Public;
         switch (m_current.kind()) {
             case TokenKind::Func: {
                 this->next();
-                auto expr = TRY(this->parse_function());
+                auto expr = TRY(this->parse_function(LinkageSpecifier::None, is_field_public));
 
                 expr->attributes().insert(attrs);
                 members.push_back(move(expr));
             } break;
             case TokenKind::Const: {
                 this->next();
-                members.push_back(TRY(this->parse_variable_definition(false, true)));
+                members.push_back(TRY(this->parse_variable_definition(false, true, is_field_public)));
             } break;
             case TokenKind::Type: {
                 this->next();
-                members.push_back(TRY(this->parse_type_alias()));
+                members.push_back(TRY(this->parse_type_alias(is_field_public)));
             } break;
             case TokenKind::Identifier: {
                 String name = m_current.value();
@@ -681,7 +673,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct() {
     m_in_struct = false;
 
     Span span { start, end };
-    return { make<ast::StructExpr>(span, move(name), false, move(parameters), move(fields), move(members)) };   
+    return { make<ast::StructExpr>(span, move(name), false, move(parameters), move(fields), move(members), is_public) };   
 }
 
 ErrorOr<ast::Ident> Parser::parse_identifier() {
@@ -691,7 +683,7 @@ ErrorOr<ast::Ident> Parser::parse_identifier() {
     return ast::Ident { token.value(), is_mutable, token.span() };
 }
 
-ParseResult<ast::Expr> Parser::parse_single_variable_definition(bool is_const) {
+ParseResult<ast::Expr> Parser::parse_single_variable_definition(bool is_const, bool is_public) {
     Span span = m_current.span();
 
     OwnPtr<ast::TypeExpr> type = nullptr;
@@ -728,10 +720,10 @@ ParseResult<ast::Expr> Parser::parse_single_variable_definition(bool is_const) {
             return err(m_current.span(), "Constants must have an initializer");
         }
 
-        return { make<ast::ConstExpr>(span, move(ident.value), move(type), move(expr)) };
+        return { make<ast::ConstExpr>(span, move(ident.value), move(type), move(expr), is_public) };
     }
 
-    return { make<ast::AssignmentExpr>(span, move(ident), move(type), move(expr)) };
+    return { make<ast::AssignmentExpr>(span, move(ident), move(type), move(expr), is_public) };
 }
 
 ParseResult<ast::Expr> Parser::parse_tuple_variable_definition() {
@@ -785,35 +777,45 @@ ParseResult<ast::Expr> Parser::parse_tuple_variable_definition() {
     return { make<ast::TupleAssignmentExpr>(span, move(idents), move(type), move(expr)) };
 }
 
-ParseResult<ast::Expr> Parser::parse_variable_definition(bool allow_tuple, bool is_const) {
+ParseResult<ast::Expr> Parser::parse_variable_definition(bool allow_tuple, bool is_const, bool is_public) {
     if (allow_tuple && m_current.is(TokenKind::LParen)) {
         return this->parse_tuple_variable_definition();
     }
 
-    return this->parse_single_variable_definition(is_const);
+    return this->parse_single_variable_definition(is_const, is_public);
 }
 
-ParseResult<ast::Expr> Parser::parse_extern(LinkageSpecifier linkage) {
+ParseResult<ast::Expr> Parser::parse_extern(LinkageSpecifier linkage, bool is_public) {
     OwnPtr<ast::Expr> definition;
     
     ast::Attributes attrs = TRY(this->parse_attributes());
+
+    if (m_current.is(TokenKind::Pub)) {
+        if (is_public) {
+            note(m_current.span(), "Redundant pub");
+        }
+
+        is_public = true;
+        this->next();
+    }
+
     if (m_current.is(TokenKind::Let)) {
         this->next();
-        definition = TRY(this->parse_single_variable_definition(false));
+        definition = TRY(this->parse_single_variable_definition(false, is_public));
     } else {
         if (!m_current.is(TokenKind::Func)) {
             return err(m_current.span(), "Expected function definition or variable declaration");
         }
 
         this->next();
-        definition = TRY(this->parse_function(linkage));
+        definition = TRY(this->parse_function(linkage, is_public));
     }
 
     definition->attributes().insert(attrs);
     return definition;
 }
 
-ParseResult<ast::Expr> Parser::parse_extern_block() {
+ParseResult<ast::Expr> Parser::parse_extern_block(bool is_public) {
     Span start = m_current.span();
     LinkageSpecifier linkage = LinkageSpecifier::Unspecified;
 
@@ -831,7 +833,7 @@ ParseResult<ast::Expr> Parser::parse_extern_block() {
         this->next();
 
         while (!m_current.is(TokenKind::RBrace)) {
-            auto expr = TRY(this->parse_extern(linkage));
+            auto expr = TRY(this->parse_extern(linkage, is_public));
             if (this->handle_expr_attributes(expr->attributes()) != AttributeHandler::Ok) {
                 continue;
             }
@@ -845,7 +847,7 @@ ParseResult<ast::Expr> Parser::parse_extern_block() {
         return { make<ast::ExternBlockExpr>(span, move(definitions)) };
     }
 
-    return this->parse_extern(linkage);
+    return this->parse_extern(linkage, is_public);
 }
 
 ParseResult<ast::EnumExpr> Parser::parse_enum() {
@@ -902,7 +904,9 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
     Span end = params.back().span;
 
     Span span = { start, end };
-    auto decl = make<ast::FunctionDeclExpr>(span, "<anonymous>", move(params), move(return_type), LinkageSpecifier::None, false);
+    auto decl = make<ast::FunctionDeclExpr>(
+        span, "<anonymous>", move(params), move(return_type), LinkageSpecifier::None, false, true
+    );
 
     return { make<ast::FunctionExpr>(span, move(decl), move(body)) };
 }
@@ -1089,25 +1093,63 @@ ParseResult<ast::TraitExpr> Parser::parse_trait() {
     return { make<ast::TraitExpr>(span, move(name), move(body)) };
 }
  
+ParseResult<ast::Expr> Parser::parse_pub() {
+    switch (m_current.kind()) {
+        case TokenKind::Func:
+            this->next();
+            return this->parse_function(LinkageSpecifier::None, true);
+        case TokenKind::Struct:
+            this->next();
+            return this->parse_struct(true);
+        case TokenKind::Type:
+            this->next();
+            return this->parse_type_alias(true);
+        case TokenKind::Enum:
+            this->next();
+            return this->parse_enum();
+        case TokenKind::Trait:
+            this->next();
+            return this->parse_trait();
+        case TokenKind::Impl:
+            this->next();
+            return this->parse_impl();
+        case TokenKind::Extern:
+            this->next();
+            return this->parse_extern_block(true);
+        case TokenKind::Const:
+            this->next();
+            return this->parse_variable_definition(false, true, true);
+        case TokenKind::Let:
+            this->next();
+            return this->parse_variable_definition(false, false, true);
+        default:
+            return err(m_current.span(), "Invalid token for 'pub' keyword");
+    }
+}
+
 ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last) {
     PathSegment segment = {};
     if (!name.has_value()) {
-        segment.name = TRY(this->expect(TokenKind::Identifier)).value();
+        String name = TRY(this->expect(TokenKind::Identifier)).value();
+        ast::ExprList<ast::TypeExpr> arguments;
+
         if (m_current.is(TokenKind::Lt)) {
-            segment.arguments = TRY(this->parse_generic_arguments());
+            arguments = TRY(this->parse_generic_arguments());
         }
+
+        segment = { move(name), move(arguments) };
     } else {
-        segment.name = move(name.value());
+        ast::ExprList<ast::TypeExpr> args;
         if (arguments.empty() && m_current.is(TokenKind::Lt)) {
-            segment.arguments = TRY(this->parse_generic_arguments());
+            args = TRY(this->parse_generic_arguments());
         } else {
-            segment.arguments = move(arguments);
+            args = move(arguments);
         }
+
+        segment = { move(name.value()), move(args) };
     }
 
-    Path path;
-    path.last = move(segment);
-
+    Path path { move(segment), {} };
     while (m_current.is(TokenKind::DoubleColon)) {
         this->next();
 
@@ -1118,24 +1160,15 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeE
             return err(m_current.span(), "Expected 'identifier'");
         }
 
-        PathSegment segment = {};
-        segment.name = option->value();
-
+        ast::ExprList<ast::TypeExpr> arguments;
         if (m_current.is(TokenKind::Lt)) {
-            segment.arguments = TRY(this->parse_generic_arguments());
+            arguments = TRY(this->parse_generic_arguments());
         }
 
-        path.segments.push_back(move(segment));
+        path.push({ option->value(), move(arguments) });
     }
-
-    if (!path.segments.empty()) {
-        PathSegment back = move(path.segments.back());
-        path.segments.pop_back();
-
-        path.segments.push_back(move(path.last));
-        path.last = move(back);
-    }
-
+    
+    path.rearrange();
     return path;
 }
 
@@ -1341,7 +1374,7 @@ ParseResult<ast::Expr> Parser::statement() {
             Span span = { start, end };
             
             // FIXME: Rather than an ImportExpr, we should just resolve the everything here and return ModuleExpr
-            return { make<ast::ImportExpr>(span, move(path), is_relative, is_wildcard, move(symbols)) };
+            return { make<ast::ImportExpr>(span, move(path), is_wildcard, is_relative, move(symbols)) };
         }
         case TokenKind::Module: {
             this->next();
@@ -1383,6 +1416,10 @@ ParseResult<ast::Expr> Parser::statement() {
         case TokenKind::Trait: {
             this->next();
             return this->parse_trait();
+        }
+        case TokenKind::Pub: {
+            this->next();
+            return this->parse_pub();
         }
         case TokenKind::SemiColon:
             this->next();
@@ -1437,12 +1474,6 @@ ParseResult<ast::Expr> Parser::binary(i32 prec, OwnPtr<ast::Expr> left) {
         }
 
         TokenKind kind = m_current.kind();
-        // Special case for `>>` operator
-        if (kind == TokenKind::Gt && this->peek().is(TokenKind::Gt)) {
-            this->next();
-            kind = TokenKind::Rsh;
-        }
-
         BinaryOp op = BINARY_OPS.at(kind);
 
         this->next();

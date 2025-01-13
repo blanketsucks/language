@@ -6,6 +6,10 @@ void outln(const char* str) {
     llvm::outs() << str << '\n';
 }
 
+void outln(const String& str) {
+    llvm::outs() << str << '\n';
+}
+
 void outln() {
     llvm::outs() << '\n';
 }

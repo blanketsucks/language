@@ -75,7 +75,7 @@ ErrorOr<Scope*> Impl::make(State& state, Type* type) {
 
     Scope* scope = Scope::create(type->str(), ScopeType::Impl, m_parent_scope);
     for (auto& [name, ty] : args) {
-        scope->add_symbol(TypeAlias::create(name, ty)); 
+        scope->add_symbol(TypeAlias::create(name, ty, false)); 
     }
 
     Scope* current_scope = state.scope();

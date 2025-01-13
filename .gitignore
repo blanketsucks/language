@@ -7,7 +7,6 @@ build/
 
 *.o
 main
-*.qr
 test.*
 test
 leakcheck.hpp

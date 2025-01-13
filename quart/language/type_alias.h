@@ -13,12 +13,12 @@ class TypeAlias : public Symbol {
 public:
     static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::TypeAlias; }
 
-    static RefPtr<TypeAlias> create(String name, Type* type) {
-        return RefPtr<TypeAlias>(new TypeAlias(move(name), type));
+    static RefPtr<TypeAlias> create(String name, Type* type, bool is_public) {
+        return RefPtr<TypeAlias>(new TypeAlias(move(name), type, is_public));
     }
 
-    static RefPtr<TypeAlias> create(String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr) {
-        return RefPtr<TypeAlias>(new TypeAlias(move(name), move(parameters), expr));
+    static RefPtr<TypeAlias> create(String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr, bool is_public) {
+        return RefPtr<TypeAlias>(new TypeAlias(move(name), move(parameters), expr, is_public));
     }
 
     Type* underlying_type() const { return m_underlying_type; }
@@ -32,13 +32,14 @@ public:
     bool all_parameters_have_default() const; // FIXME: Find a better name for this
 
     ErrorOr<Type*> evaluate(State&);
+    ErrorOr<Type*> evaluate(State&, const ast::ExprList<ast::TypeExpr>& args);
     ErrorOr<Type*> evaluate(State&, const Vector<Type*>& args);
 
 private:
-    TypeAlias(String name, Type* type) : Symbol(move(name), Symbol::TypeAlias), m_underlying_type(type) {}
+    TypeAlias(String name, Type* type, bool is_public) : Symbol(move(name), Symbol::TypeAlias, is_public), m_underlying_type(type) {}
     TypeAlias(
-        String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr
-    ) : Symbol(move(name), Symbol::TypeAlias), m_parameters(move(parameters)), m_expr(expr) {}
+        String name, Vector<GenericTypeParameter> parameters, ast::TypeExpr* expr, bool is_public
+    ) : Symbol(move(name), Symbol::TypeAlias, is_public), m_parameters(move(parameters)), m_expr(expr) {}
 
     Type* m_underlying_type = nullptr;
 

@@ -15,22 +15,11 @@ bool Struct::has_method(const String& name) const {
 }
 
 void Struct::set_qualified_name(Scope* parent) {
-    Vector<String> parts;
-    parts.push_back(name());
-
     if (!parent) {
         parent = m_scope->parent();
     }
 
-    for (Scope* scope = parent; scope; scope = scope->parent()) {
-        if (scope->type() == ScopeType::Global) {
-            break;
-        }
-
-        parts.push_back(scope->name());
-    }
-
-    m_qualified_name = llvm::join(parts.rbegin(), parts.rend(), ".");
+    m_qualified_name = Symbol::parse_qualified_name(this, parent);
 }
 
 }

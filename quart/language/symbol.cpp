@@ -26,12 +26,15 @@ String Symbol::parse_qualified_name(Symbol* symbol, Scope* scope) {
     for (; scope; scope = scope->parent()) {
         if (scope->type() == ScopeType::Global) {
             break;
+        } else if (scope->type() == ScopeType::Module) {
+            class Module* module = scope->module();
+            parts.push_back(module->qualified_name());
+        } else {
+            parts.push_back(scope->name());
         }
-
-        parts.push_back(scope->name());
     }
 
-    return llvm::join(parts.rbegin(), parts.rend(), ".");
+    return llvm::join(parts.rbegin(), parts.rend(), "::");
 }
 
 }

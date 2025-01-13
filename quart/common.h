@@ -62,6 +62,9 @@ using i16 = int16_t;
 using i32 = int32_t;
 using i64 = int64_t;
 
+using f32 = float;
+using f64 = double;
+
 namespace quart {
 
 using String = std::string;
@@ -83,6 +86,8 @@ template<typename T, size_t N> using Array = std::array<T, N>;
 template<typename T> using Set = std::set<T>;
 
 template<typename T> using Optional = std::optional<T>;
+
+template<typename F, typename S> using Pair = std::pair<F, S>;
 
 template<typename T> using RefPtr = std::shared_ptr<T>;
 template<typename T> using OwnPtr = std::unique_ptr<T>;

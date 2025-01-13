@@ -35,6 +35,15 @@ struct ExprBlock {
 
 class Parser {
 public:
+    enum State {
+        None        = 0,
+        InFunction  = 1 << 0,
+        InLoop      = 1 << 1,
+        InStruct    = 1 << 2,
+        SelfAllowed = 1 << 3,
+        Public      = 1 << 4
+    };
+
     using AttributeFunc = ErrorOr<Attribute>(*)(Parser &);
     
     Parser(Vector<Token> tokens);
@@ -80,8 +89,8 @@ public:
     ParseResult<ast::BlockExpr> parse_block();
 
     ErrorOr<ast::FunctionParameters> parse_function_parameters();
-    ParseResult<ast::FunctionDeclExpr> parse_function_decl(LinkageSpecifier linkage, bool with_name = true);
-    ParseResult<ast::Expr> parse_function(LinkageSpecifier linkage = LinkageSpecifier::None);
+    ParseResult<ast::FunctionDeclExpr> parse_function_decl(LinkageSpecifier linkage, bool with_name = true, bool is_public = false);
+    ParseResult<ast::Expr> parse_function(LinkageSpecifier linkage = LinkageSpecifier::None, bool is_public = false);
 
     ErrorOr<Vector<ast::GenericParameter>> parse_generic_parameters();
     ErrorOr<ast::ExprList<ast::TypeExpr>> parse_generic_arguments();
@@ -91,18 +100,18 @@ public:
     ParseResult<ast::IfExpr> parse_if();
     ParseResult<ast::Expr> parse_for();
 
-    ParseResult<ast::StructExpr> parse_struct();
+    ParseResult<ast::StructExpr> parse_struct(bool is_public = false);
 
-    ParseResult<ast::Expr> parse_single_variable_definition(bool is_const = false); // let foo = ...;
+    ParseResult<ast::Expr> parse_single_variable_definition(bool is_const = false, bool is_public = false); // let foo = ...;
     ParseResult<ast::Expr> parse_tuple_variable_definition(); // let (foo, bar) = ...;
-    ParseResult<ast::Expr> parse_variable_definition(bool allow_tuple = false, bool is_const = false);
+    ParseResult<ast::Expr> parse_variable_definition(bool allow_tuple = false, bool is_const = false, bool is_public = false);
 
-    ParseResult<ast::Expr> parse_extern(LinkageSpecifier linkage);
-    ParseResult<ast::Expr> parse_extern_block();
+    ParseResult<ast::Expr> parse_extern(LinkageSpecifier linkage, bool is_public = false);
+    ParseResult<ast::Expr> parse_extern_block(bool is_public = false);
 
     ParseResult<ast::EnumExpr> parse_enum();
 
-    ParseResult<ast::TypeAliasExpr> parse_type_alias();
+    ParseResult<ast::TypeAliasExpr> parse_type_alias(bool is_public = false);
 
     ParseResult<ast::Expr> parse_anonymous_function();
 
@@ -111,6 +120,8 @@ public:
     ParseResult<ast::Expr> parse_impl();
 
     ParseResult<ast::TraitExpr> parse_trait();
+
+    ParseResult<ast::Expr> parse_pub();
 
     ParseResult<ast::CallExpr> parse_call(OwnPtr<ast::Expr> callee);
 
@@ -146,6 +157,25 @@ private:
     bool m_self_allowed = false;
 
     HashMap<StringView, AttributeFunc> m_attributes;
+};
+
+static const std::map<StringView, ast::BuiltinType> STR_TO_TYPE = {
+    { "void", ast::BuiltinType::Void },
+    { "bool", ast::BuiltinType::Bool },
+    { "i8", ast::BuiltinType::i8 },
+    { "i16", ast::BuiltinType::i16 },
+    { "i32", ast::BuiltinType::i32 },
+    { "i64", ast::BuiltinType::i64 },
+    { "i128", ast::BuiltinType::i128 },
+    { "u8", ast::BuiltinType::u8 },
+    { "u16", ast::BuiltinType::u16 },
+    { "u32", ast::BuiltinType::u32 },
+    { "u64", ast::BuiltinType::u64 },
+    { "u128", ast::BuiltinType::u128 },
+    { "f32", ast::BuiltinType::f32 },
+    { "f64", ast::BuiltinType::f64 },
+    { "isize", ast::BuiltinType::isize },
+    { "usize", ast::BuiltinType::usize }
 };
 
 }

@@ -2,7 +2,7 @@
 #include <quart/language/state.h>
 #include <quart/target.h>
 
-#define MATCH_TYPE(Type, Func, ...) case ast::BuiltinType::Type: return types().Func(__VA_ARGS__);
+#define MATCH_TYPE(Type, Func, ...) case ast::BuiltinType::Type: return context().Func(__VA_ARGS__);
 
 namespace quart {
 
@@ -46,10 +46,14 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
 
 ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
     Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
-    auto* symbol = scope->resolve(m_path.last.name);
+    auto* symbol = scope->resolve(m_path.name());
 
     if (!symbol) {
-        return err(span(), "Undefined identifier '{0}'", m_path.last.name);
+        return err(span(), "Unknown identifier '{0}'", m_path.format());
+    }
+
+    if (!symbol->is_public() && symbol->module() != state.module()) {
+        return err(span(), "Cannot access private symbol '{0}'", m_path.format());
     }
 
     switch (symbol->type()) {
@@ -65,10 +69,19 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
             auto* alias = symbol->as<TypeAlias>();
             Type* underlying_type = alias->underlying_type();
 
+            auto& last = m_path.last();
             if (!underlying_type && !alias->all_parameters_have_default()) {
-                return err(span(), "Type '{0}' is generic and requires type arguments", m_path.last.name);
+                if (!last.has_generic_arguments()) {
+                    return err(span(), "Type '{0}' is generic and requires type arguments", m_path.format());
+                }
+
+                underlying_type = TRY(alias->evaluate(state, last.arguments()));
             } else if (!underlying_type) {
-                underlying_type = TRY(alias->evaluate(state));
+                if (last.has_generic_arguments()) {
+                    underlying_type = TRY(alias->evaluate(state, last.arguments()));
+                } else {
+                    underlying_type = TRY(alias->evaluate(state));
+                }
             }
 
             return underlying_type;
@@ -76,30 +89,23 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
         default: break;
     }
 
-    return err(span(), "'{0}' does not name a type", m_path.last.name);
+    return err(span(), "'{0}' does not refer to a type", m_path.format());
 }
 
 ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) {
-    auto option = TRY(m_size->generate(state));
-    if (!option.has_value()) {
-        return err(m_size->span(), "Expected an expression");
+    Constant* constant = TRY(state.constant_evaluator().evaluate(*m_size));
+    if (!constant->is<ConstantInt>()) {
+        return err(m_size->span(), "Array size must be an integer not {0}", constant->type()->str());
     }
 
-    bytecode::Operand operand = option.value();
-    if (!operand.is_immediate()) {
-        return err(m_size->span(), "Array size must be a constant");
-    }
-
-    if (!operand.value_type()->is_int()) {
-        return err(m_size->span(), "Array size must be an integer");
-    }
-
+    u64 size = constant->as<ConstantInt>()->value();
     auto* element_type = TRY(m_type->evaluate(state));
+
     if (element_type->is_void()) {
         return err(m_type->span(), "Array elements cannot have void type");
     }
 
-    return state.types().create_array_type(element_type, operand.value());
+    return ArrayType::get(state.context(), element_type, size);
 }
 
 ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) {
@@ -116,7 +122,9 @@ ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) {
     }
 
     Type* return_type = TRY(m_return_type->evaluate(state));
-    return state.types().create_function_type(return_type, parameters)->get_pointer_to();
+    auto* type = FunctionType::get(state.context(), return_type, parameters, false);
+
+    return type->get_pointer_to();
 }
 
 ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) {
@@ -132,12 +140,12 @@ ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) {
         elements.push_back(type);
     }
 
-    return state.types().create_tuple_type(elements);
+    return TupleType::get(state.context(), elements);
 }
 
 ErrorOr<Type*> PointerTypeExpr::evaluate(State& state) {
     Type* pointee = TRY(m_pointee->evaluate(state));
-    return state.types().create_pointer_type(pointee, m_is_mutable);
+    return pointee->get_pointer_to(m_is_mutable);
 }
 
 ErrorOr<Type*> ReferenceTypeExpr::evaluate(State& state) {
@@ -146,7 +154,7 @@ ErrorOr<Type*> ReferenceTypeExpr::evaluate(State& state) {
         return err(m_type->span(), "Cannot create a reference to void type");
     }
 
-    return state.types().create_reference_type(type, m_is_mutable);
+    return type->get_reference_to(m_is_mutable);
 }
 
 ErrorOr<Type*> IntegerTypeExpr::evaluate(State&) {
@@ -158,9 +166,9 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
     auto& path = m_parent->path();
     auto* scope = TRY(state.resolve_scope_path(m_parent->span(), path));
 
-    auto* symbol = scope->resolve(path.last.name);
+    auto* symbol = scope->resolve(path.name());
     if (!symbol) {
-        return err(m_parent->span(), "Unknown identifier '{0}'", path.last.name);
+        return err(m_parent->span(), "Unknown identifier '{0}'", path.name());
     }
 
     Vector<Type*> args;

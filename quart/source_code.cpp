@@ -4,7 +4,13 @@
 
 namespace quart {
 
-static Vector<SourceCode> s_source_codes;
+static const HashMap<SourceCode::MessageType, Pair<StringView, StringView>> MESSAGE_TYPES = {
+    { SourceCode::MessageType::Error, { "error", "\x1b[1;31m" } },
+    { SourceCode::MessageType::Warning, { "warning", "\x1b[1;35m" } },
+    { SourceCode::MessageType::Note, { "note", "\x1b[1;36m" } }
+};
+
+static Vector<SourceCode> s_source_codes; // NOLINT
 
 SourceCode::SourceCode(String code, String filename, size_t index) : m_code(move(code)), m_filename(move(filename)), m_index(index) {
     m_line_offsets.push_back(0);
@@ -58,16 +64,12 @@ StringView SourceCode::line(const Span& span) {
     return code.substr(start, next_line_offset - start - 1);
 }
 
-String SourceCode::format_error(Error& error) {
-    static const StringView RED = "\x1b[1;31m";
-
-    Span span = error.span();
+String SourceCode::format_generic_message(const Span& span, StringView message, MessageType type) {
+    auto& [name, color] = MESSAGE_TYPES.at(type);
     SourceCode const& source_code = SourceCode::lookup(span.source_code_index());
 
     auto [lineno, start] = source_code.line_for(span.start());
     auto column = span.start() - start;
-
-    // FIXME: Do not format with ANSI escape codes if not outputting to a terminal
 
     StringView view = source_code.line(span);
     String line = format("{0} | {1}", lineno + 1, view);
@@ -75,20 +77,29 @@ String SourceCode::format_error(Error& error) {
     size_t spaces = column + (line.size() - view.size()) - 1;
     size_t size = std::max(span.size(), 1ul);
 
-    // Maybe?
-if constexpr (false) {
-    line.insert(spaces, RED);
-    line.insert(spaces + size + RED.size(), "\x1b[0m");
-}
+    line.insert(spaces, color);
+    line.insert(spaces + size + color.size(), "\x1b[0m");
 
     return format(
-        "\x1b[1;37m{0}:{1}:{2}: \x1b[1;31merror:\x1b[0m {3}\n{4}\n{5}{6}", 
+        "\x1b[1;37m{0}:{1}:{2}: {3}{4}:\x1b[0m {5}\n{6}\n{7}{8}{9}{10}", 
         source_code.filename(), lineno + 1, column + 1,
-        error.message(),
+        color, name, message,
         line,
         String(spaces, ' '),
-        String(size, '^')
+        color, String(size, '^'), "\x1b[0m"
     );
+}
+
+String SourceCode::format_error(Error& error) {
+    return format_generic_message(error.span(), error.message(), MessageType::Error);
+}
+
+String SourceCode::format_warning(const Span& span, StringView message) {
+    return format_generic_message(span, message, MessageType::Warning);
+}
+
+String SourceCode::format_note(const Span& span, StringView message) {
+    return format_generic_message(span, message, MessageType::Note);
 }
 
 }

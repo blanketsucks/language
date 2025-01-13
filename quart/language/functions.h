@@ -32,6 +32,7 @@ struct FunctionParameter {
     bool is_reference() const { return this->type->is_reference(); }
     bool is_mutable() const { return this->flags & Flags::Mutable; }
     bool is_byval() const { return this->flags & Flags::Byval; }
+    bool is_self() const { return this->flags & Flags::Self; }
 };
 
 struct Loop {
@@ -44,7 +45,13 @@ public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Function; }
 
     static RefPtr<Function> create(
-        String name, Vector<FunctionParameter> parameters, FunctionType* underlying_type, Scope*, LinkageSpecifier, RefPtr<LinkInfo>
+        String name, 
+        Vector<FunctionParameter> parameters, 
+        FunctionType* underlying_type,
+        Scope*,
+        LinkageSpecifier,
+        RefPtr<LinkInfo>,
+        bool is_public
     );
 
     LinkageSpecifier linkage_specifier() const { return m_linkage_specifier; }
@@ -59,6 +66,9 @@ public:
 
     Scope* scope() const { return m_scope; }
     bool is_decl() const { return !m_entry_block; }
+
+    bool is_struct_return() const { return m_underlying_type->return_type()->is_struct(); }
+    bool is_member_method() const { return m_parameters.size() > 0 && m_parameters[0].is_self(); }
 
     size_t local_count() const { return m_locals.size(); }
     Vector<Type*> const& locals() const { return m_locals; }
@@ -76,6 +86,9 @@ public:
     }
 
     void set_local_type(size_t index, Type* type) { m_locals[index] = type; }
+
+    void add_struct_local(size_t index) { m_struct_locals.insert(index); }
+    bool is_struct_local(size_t index) const { return m_struct_locals.contains(index); }
 
     void set_current_block(bytecode::BasicBlock* block) { m_current_block = block; }
     void set_entry_block(bytecode::BasicBlock* block) {
@@ -97,10 +110,12 @@ private:
         FunctionType* underlying_type,
         Scope* scope,
         LinkageSpecifier linkage_specifier,
-        RefPtr<LinkInfo> link_info
-    ) : Symbol(move(name), Symbol::Function), 
+        RefPtr<LinkInfo> link_info,
+        bool is_public
+    ) : Symbol(move(name), Symbol::Function, is_public), 
         m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
-        m_scope(scope), m_link_info(move(link_info)) {
+        m_link_info(move(link_info)), m_scope(scope) {
+            
         this->set_qualified_name();
     }
 
@@ -119,6 +134,7 @@ private:
     Vector<bytecode::BasicBlock*> m_basic_blocks;
 
     Vector<Type*> m_locals;
+    Set<size_t> m_struct_locals;
 
     Loop m_loop = {};
     

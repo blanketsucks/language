@@ -1,0 +1,131 @@
+import libc;
+
+pub struct String {
+    data: *mut i8;
+    length: usize;
+    cap: usize;
+
+    pub func new() -> String {
+        return String { data: null, length: 0, cap: 0 };
+    }
+
+    pub func with_capacity(capacity: usize) -> String {
+        let data = libc::malloc(capacity) as *mut i8;
+        libc::memset(data as *void, 0, capacity);
+
+        return String {
+            data: data,
+            length: 0usize,
+            cap: capacity
+        };
+    }
+
+    pub func from(str: *i8) -> String {
+        let len = libc::strlen(str);
+
+        let data = libc::malloc(len) as *mut i8;
+        libc::memcpy(data, str as *void, len);
+
+        return String {
+            data: data,
+            length: len,
+            cap: len
+        };
+    }
+
+    pub func len(self) -> usize { return self.length; }
+    pub func capacity(self) -> usize { return self.cap; }
+
+    pub func as_ptr(self) -> *i8 { return self.data; }
+    pub func as_mut_ptr(mut self) -> *mut i8 { return self.data; }
+
+    pub func reserve(mut self, capacity: usize) {
+        if (!self.data) {
+            self.data = libc::malloc(capacity) as *mut i8;
+        } else {
+            self.data = libc::realloc(self.data, capacity) as *mut i8;
+        }
+
+        self.cap = capacity;
+    }
+
+    pub func resize(mut self, len: usize) {
+        if (len > self.cap) {
+            self.reserve(len);
+        }
+
+        self.length = len;
+    }
+
+    pub func grow(mut self, force: bool = false) {
+        if (self.length < self.cap && !force) {
+            return;
+        }
+
+        let mut capacity = 8usize;
+        if (self.cap != 0) {
+            capacity = self.cap * 2;
+        }
+
+        self.reserve(capacity);
+    }
+
+    pub func shrink(mut self) {
+        if (self.cap > self.length) {
+            self.data = libc::realloc(self.data, self.length) as *mut i8;
+            self.cap = self.length;
+        }
+    }
+
+    pub func push(mut self, char: i8) {
+        self.grow(false);
+
+        self.data[self.length] = char;
+        self.length += 1usize;
+    }
+
+    pub func push_str(mut self, s: String) {
+        let len = s.length;
+        while (self.length + len >= self.cap) {
+            self.grow(true);
+        }
+
+        let data = ((self.data as u64) + (self.length)) as *mut i8;
+        libc::memcpy(data, s.data as *void, len);
+
+        self.length += len;
+    }
+
+    pub func pop(mut self) -> i8 {
+        if (self.length == 0) {
+            return '\0';
+        }
+
+        self.length -= 1usize;
+        return self.data[self.length];
+    }
+
+    pub func equals(self, other: String) -> bool {
+        if (self.length != other.length) {
+            return false;
+        }
+
+        return libc::memcmp(self.data as *void, other.data as *void, self.length) == 0;
+    }
+
+    pub func copy(self) -> String {
+        return String::from(self.data);
+    }
+
+    pub func clear(mut self) {
+        self.length = 0usize;
+    }
+
+    pub func free(mut self) {
+        libc::free(self.data as *void);
+
+        self.data = null as *mut i8;
+        self.length = 0usize;
+        self.cap = 0usize;
+    }
+}

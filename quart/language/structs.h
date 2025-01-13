@@ -16,7 +16,7 @@ class Scope;
 struct StructField {
     enum Flags : u8 {
         None,
-        Private  = 1 << 0,
+        Public   = 1 << 0,
         Readonly = 1 << 1,
         Mutable  = 1 << 2,
     };
@@ -28,7 +28,7 @@ struct StructField {
 
     u32 index;
 
-    inline bool is_private() const { return flags & Flags::Private; }
+    inline bool is_public() const { return flags & Flags::Public; }
     inline bool is_readonly() const { return flags & Flags::Readonly; }
     inline bool is_mutable() const { return flags & Flags::Mutable; }
 };
@@ -42,12 +42,12 @@ class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type, Scope* parent) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type, parent));
+    static RefPtr<Struct> create(String name, StructType* underlying_type, Scope* parent, bool is_public) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, parent, is_public));
     }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope));
+    static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope, bool is_public) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope, is_public));
     }
 
     String const& qualified_name() const { return m_qualified_name; }
@@ -61,18 +61,21 @@ public:
     StructField const* find(const String& name) const;
     bool has_method(const String& name) const;
 
-
-
 private:
     void set_qualified_name(Scope* parent = nullptr);
 
-    Struct(String name, StructType* underlying_type, Scope* parent) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(true) {
+    Struct(
+        String name,
+        StructType* underlying_type,
+        Scope* parent,
+        bool is_public
+    ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(true) {
         this->set_qualified_name(parent);
     }
 
     Struct(
-        String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope
-    ) : Symbol(move(name), Symbol::Struct), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {
+        String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope, bool is_public
+    ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {
         this->set_qualified_name();
     }
     

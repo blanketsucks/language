@@ -30,6 +30,17 @@ ErrorOr<Type*> TypeAlias::evaluate(State& state) {
     return this->evaluate(state, Vector<Type*>(range.begin(), range.end()));
 }
 
+ErrorOr<Type*> TypeAlias::evaluate(State& state, const ast::ExprList<ast::TypeExpr>& args) {
+    Vector<Type*> arguments;
+    arguments.reserve(args.size());
+
+    for (auto& argument : args) {
+        arguments.push_back(TRY(argument->evaluate(state)));
+    }
+
+    return this->evaluate(state, arguments);
+}
+
 ErrorOr<Type*> TypeAlias::evaluate(State& state, const Vector<Type*>& args) {
     auto iterator = m_cache.find(args);
     if (iterator != m_cache.end()) {
@@ -46,7 +57,7 @@ ErrorOr<Type*> TypeAlias::evaluate(State& state, const Vector<Type*>& args) {
         quart::Type* type = std::get<1>(entry);
 
         // TODO: Apply constraints
-        scope->add_symbol(TypeAlias::create(parameter.name, type));
+        scope->add_symbol(TypeAlias::create(parameter.name, type, false));
     }
 
     Type* type = TRY(m_expr->evaluate(state));

@@ -146,10 +146,10 @@ int Compiler::compile() const {
         TRY(expr->generate(state));
     }
 
-    for (auto& [_, function] : state.functions()) {
-        if (function->is_decl()) continue;
-        function->dump();
-    }
+    // for (auto& [_, function] : state.functions()) {
+    //     if (function->is_decl()) continue;
+    //     function->dump();
+    // }
  
     codegen::LLVMCodeGen codegen(state, m_options.input.filename());
     auto result = codegen.generate(m_options);

@@ -36,6 +36,12 @@ struct Line {
 
 class SourceCode {
 public:
+    enum class MessageType {
+        Error,
+        Warning,
+        Note
+    };
+
     static SourceCode const& create(String code, String filename);
     static SourceCode const& from_path(fs::Path);
 
@@ -49,8 +55,12 @@ public:
     size_t column_for(size_t offset) const;
 
     static StringView line(const Span&);
+
+    static String format_note(const Span&, StringView message);
+    static String format_warning(const Span&, StringView message);
     static String format_error(class Error&);
 
+    static String format_generic_message(const Span&, StringView message, MessageType);
 private:
     SourceCode(String code, String filename, size_t index);
 

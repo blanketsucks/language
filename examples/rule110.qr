@@ -2,12 +2,9 @@
 
 import libc;
 
-# const SIZE = 100;
-# let mut state: [i32; SIZE];
-
 func main() -> i32 {
     const SIZE = 100;
-    let mut state: [i32; 100];
+    let mut state: [i32; SIZE];
 
     state[SIZE - 2] = 1;
     for _ in 0..SIZE - 2 {

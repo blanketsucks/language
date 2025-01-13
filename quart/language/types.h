@@ -11,7 +11,7 @@ namespace quart {
 class Struct;
 class Function;
 
-class TypeRegistry;
+class Context;
 
 class PointerType;
 class ReferenceType;
@@ -33,15 +33,12 @@ enum class TypeKind {
 class Type {
 public:
     virtual ~Type() = default;
-    
-    Type& operator=(const Type&) = delete;
-    Type(const Type&) = delete;
 
-    Type(Type&&) = delete;
-    Type& operator=(Type&&) = delete;
+    NO_COPY(Type)
+    NO_MOVE(Type)
 
     TypeKind kind() const { return m_kind; }
-    TypeRegistry* type_registry() const { return m_type_registry; }
+    Context* context() const { return m_context; }
 
     template<typename T> requires(std::is_base_of_v<Type, T>)
     bool is() const {
@@ -124,11 +121,11 @@ public:
 
     llvm::Type* to_llvm_type(llvm::LLVMContext&) const;
 
-    friend TypeRegistry;
+    friend Context;
 protected:
-    Type(TypeRegistry* type_registry, TypeKind kind) : m_type_registry(type_registry), m_kind(kind) {}
+    Type(Context* context, TypeKind kind) : m_context(context), m_kind(kind) {}
     
-    TypeRegistry* m_type_registry; // NOLINT
+    Context* m_context; // NOLINT
 private:
     TypeKind m_kind;
 };
@@ -136,6 +133,8 @@ private:
 class IntType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Int; }
+
+    static IntType* get(Context&, u32 bits, bool is_signed);
 
     enum {
         MIN_BITS = llvm::IntegerType::MIN_INT_BITS,
@@ -149,11 +148,11 @@ public:
     u32 bit_width() const { return m_bits; }
     bool is_unsigned() const { return !m_is_signed; }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     IntType(
-        TypeRegistry* type_registry, u32 bits, bool is_signed
-    ) : Type(type_registry, TypeKind::Int), m_bits(bits), m_is_signed(is_signed) {}
+        Context* context, u32 bits, bool is_signed
+    ) : Type(context, TypeKind::Int), m_bits(bits), m_is_signed(is_signed) {}
 
     u32 m_bits;
     bool m_is_signed;
@@ -162,6 +161,8 @@ private:
 class StructType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Struct; }
+
+    static StructType* get(Context&, const String& name, const Vector<Type*>& fields, llvm::StructType* type = nullptr);
 
     Vector<Type*> const& fields() const { return m_fields; }
     String const& name() const { return m_name; }
@@ -182,15 +183,15 @@ public:
     void set_struct(Struct* structure) { m_struct = structure; }
     Struct* get_struct() const { return m_struct; }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     StructType(
-        TypeRegistry* type_registry, 
+        Context* context, 
         String name,
         Vector<Type*> fields,
         llvm::StructType* type,
         Struct* structure
-    ) : Type(type_registry, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_type(type), m_struct(structure) {}
+    ) : Type(context, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_type(type), m_struct(structure) {}
 
     String m_name;
     Vector<Type*> m_fields;
@@ -203,14 +204,16 @@ class ArrayType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Array; }
 
+    static ArrayType* get(Context&, Type* element, size_t size);
+
     size_t size() const { return m_size; }
     Type* element_type() const { return m_element; }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     ArrayType(
-        TypeRegistry* type_registry, Type* element, size_t size
-    ) : Type(type_registry, TypeKind::Array), m_element(element), m_size(size) {}
+        Context* context, Type* element, size_t size
+    ) : Type(context, TypeKind::Array), m_element(element), m_size(size) {}
 
     Type* m_element;
     size_t m_size;
@@ -219,6 +222,8 @@ private:
 class TupleType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Tuple; }
+
+    static TupleType* get(Context&, const Vector<Type*>& types);
 
     Vector<Type*> const& types() const { return m_types; }
     size_t size() const { return m_types.size(); }
@@ -231,11 +236,11 @@ public:
         return m_types[index];
     }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     TupleType(
-        TypeRegistry* type_registry, Vector<Type*> types
-    ) : Type(type_registry, TypeKind::Tuple), m_types(move(types)) {}
+        Context* context, Vector<Type*> types
+    ) : Type(context, TypeKind::Tuple), m_types(move(types)) {}
 
     Vector<Type*> m_types;
 };
@@ -244,17 +249,19 @@ class PointerType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Pointer; }
 
+    static PointerType* get(Context&, Type* pointee, bool is_mutable);
+
     Type* pointee() const { return m_pointee; }
     bool is_mutable() const { return m_is_mutable; }
 
     PointerType* as_const();
     PointerType* as_mutable();
     
-    friend TypeRegistry;
+    friend Context;
 private:
     PointerType(
-        TypeRegistry* type_registry, Type* pointee, bool is_mutable
-    ) : Type(type_registry, TypeKind::Pointer), m_pointee(pointee), m_is_mutable(is_mutable) {}
+        Context* context, Type* pointee, bool is_mutable
+    ) : Type(context, TypeKind::Pointer), m_pointee(pointee), m_is_mutable(is_mutable) {}
 
     Type* m_pointee;
     bool m_is_mutable;
@@ -264,17 +271,19 @@ class ReferenceType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Reference; }
 
+    static ReferenceType* get(Context&, Type* type, bool is_mutable);
+
     Type* reference_type() const { return m_type; }
     bool is_mutable() const { return m_is_mutable; }
 
     ReferenceType* as_const();
     ReferenceType* as_mutable();
     
-    friend TypeRegistry;
+    friend Context;
 private:
     ReferenceType(
-        TypeRegistry* type_registry, Type* type, bool is_mutable
-    ) : Type(type_registry, TypeKind::Reference), m_type(type), m_is_mutable(is_mutable) {}
+        Context* context, Type* type, bool is_mutable
+    ) : Type(context, TypeKind::Reference), m_type(type), m_is_mutable(is_mutable) {}
 
     Type* m_type;
     bool m_is_mutable;
@@ -284,14 +293,16 @@ class EnumType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Enum; }
 
+    static EnumType* get(Context&, const String& name, Type* inner);
+
     Type* inner() const { return m_inner; }
     String const& name() const { return m_name; }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     EnumType(
-        TypeRegistry* type_registry, String name, Type* inner
-    ) : Type(type_registry, TypeKind::Enum), m_name(move(name)), m_inner(inner) {}
+        Context* context, String name, Type* inner
+    ) : Type(context, TypeKind::Enum), m_name(move(name)), m_inner(inner) {}
 
     String m_name;
     Type* m_inner;
@@ -300,6 +311,8 @@ private:
 class FunctionType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Function; }
+
+    static FunctionType* get(Context&, Type* return_type, const Vector<Type*>& params, bool is_var_arg);
 
     Type* return_type() const { return m_return_type; }
     Vector<Type*> const& parameters() const { return m_params; }
@@ -313,22 +326,17 @@ public:
     }
 
     bool is_var_arg() const { return m_is_var_arg; }
-    
-    Function* function() const { return m_function; }
-    void set_function(Function* function) { m_function = function; }
 
-    friend TypeRegistry;
+    friend Context;
 private:
     FunctionType(
-        TypeRegistry* type_registry, Type* return_type, const Vector<Type*>& params,  bool is_var_arg
-    ) : Type(type_registry, TypeKind::Function), m_return_type(return_type), m_params(params), m_is_var_arg(is_var_arg) {}
+        Context* context, Type* return_type, const Vector<Type*>& params,  bool is_var_arg
+    ) : Type(context, TypeKind::Function), m_return_type(return_type), m_params(params), m_is_var_arg(is_var_arg) {}
 
     Type* m_return_type;
     Vector<Type*> m_params;
 
     bool m_is_var_arg;
-
-    Function* m_function;
 };
 
 // Returns true if `type` is a struct or a pointer to a struct

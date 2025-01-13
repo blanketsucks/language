@@ -1,5 +1,6 @@
 #include <quart/language/types.h>
-#include <quart/language/type_registry.h>
+#include <quart/language/context.h>
+#include <quart/language/structs.h>
 
 namespace quart {
 
@@ -34,13 +35,13 @@ bool Type::can_safely_cast_to(Type* to) {
         if (!from->is_enum()) return false; 
         return to->get_enum_name() == from->get_enum_name();
     }
+
+    bool is_match_mutable = false;
+    if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable()) || (!from->is_mutable() && !to->is_mutable())) {
+        is_match_mutable = true;
+    }
     
     if (to->is_pointer() && from->is_pointer()) {
-        bool is_match_mutable = false;
-        if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
-            is_match_mutable = true;
-        }
-
         from = from->get_pointee_type(); 
         to = to->get_pointee_type();
 
@@ -50,22 +51,15 @@ bool Type::can_safely_cast_to(Type* to) {
 
         return is_match_mutable && from->can_safely_cast_to(to);
     } else if (from->is_reference() && to->is_pointer()) {
-        bool is_match_mutable = false;
-        if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
-            is_match_mutable = true;
-        }
-
         from = from->get_reference_type();
         to = to->get_pointee_type();
 
-        if (to->is_void()) return is_match_mutable;
-        return is_match_mutable && from->can_safely_cast_to(to);
-    } else if (from->is_reference() && to->is_reference()) {
-        bool is_match_mutable = false;
-        if ((from->is_mutable() && !to->is_mutable()) || (from->is_mutable() && to->is_mutable())) {
-            is_match_mutable = true;
+        if (to->is_void()) {
+            return is_match_mutable;
         }
 
+        return is_match_mutable && from->can_safely_cast_to(to);
+    } else if (from->is_reference() && to->is_reference()) {
         from = from->get_reference_type();
         to = to->get_reference_type();
 
@@ -109,11 +103,11 @@ bool Type::is_mutable() const {
 }
 
 PointerType* Type::get_pointer_to(bool is_mutable) {
-    return m_type_registry->create_pointer_type(this, is_mutable);
+    return m_context->create_pointer_type(this, is_mutable);
 }
 
 ReferenceType* Type::get_reference_to(bool is_mutable) {
-    return m_type_registry->create_reference_type(this, is_mutable);
+    return m_context->create_reference_type(this, is_mutable);
 }
 
 u32 Type::get_int_bit_width() const {
@@ -153,7 +147,14 @@ Type* Type::get_struct_field_at(size_t index) const {
 }
 
 String const& Type::get_struct_name() const {
-    return this->as<StructType>()->name();
+    auto* type = this->as<StructType>();
+    auto* structure = type->get_struct();
+
+    if (structure) {
+        return structure->qualified_name();
+    }
+
+    return type->name();
 }
 
 Type* Type::get_array_element_type() const {
@@ -378,6 +379,38 @@ size_t Type::size() const {
     return 0;
 }
 
+IntType* IntType::get(Context& context, u32 bit_width, bool is_unsigned) {
+    return context.create_int_type(bit_width, is_unsigned);
+}
+
+StructType* StructType::get(Context& context, const String& name, const Vector<Type*>& fields, llvm::StructType* type) {
+    return context.create_struct_type(name, fields, type);
+}
+
+ArrayType* ArrayType::get(Context& context, Type* element, size_t size) {
+    return context.create_array_type(element, size);
+}
+
+TupleType* TupleType::get(Context& context, const Vector<Type*>& types) {
+    return context.create_tuple_type(types);
+}
+
+PointerType* PointerType::get(Context& context, Type* pointee, bool is_mutable) {
+    return context.create_pointer_type(pointee, is_mutable);
+}
+
+ReferenceType* ReferenceType::get(Context& context, Type* type, bool is_mutable) {
+    return context.create_reference_type(type, is_mutable);
+}
+
+EnumType* EnumType::get(Context& context, const String& name, Type* inner) {
+    return context.create_enum_type(name, inner);
+}
+
+FunctionType* FunctionType::get(Context& context, Type* return_type, const Vector<Type*>& params, bool is_var_arg) {
+    return context.create_function_type(return_type, params, is_var_arg);
+}
+
 void StructType::set_fields(const Vector<Type*>& fields) {
     m_fields = fields;
 }
@@ -387,7 +420,7 @@ PointerType* PointerType::as_const() {
         return this;
     }
 
-    return m_type_registry->create_pointer_type(m_pointee, false);
+    return m_context->create_pointer_type(m_pointee, false);
 }
 
 PointerType* PointerType::as_mutable() {
@@ -395,7 +428,7 @@ PointerType* PointerType::as_mutable() {
         return this;
     }
 
-    return m_type_registry->create_pointer_type(m_pointee, true);
+    return m_context->create_pointer_type(m_pointee, true);
 }
 
 ReferenceType* ReferenceType::as_const() {
@@ -403,7 +436,7 @@ ReferenceType* ReferenceType::as_const() {
         return this;
     }
 
-    return m_type_registry->create_reference_type(m_type, false);
+    return m_context->create_reference_type(m_type, false);
 }
 
 ReferenceType* ReferenceType::as_mutable() {
@@ -411,7 +444,7 @@ ReferenceType* ReferenceType::as_mutable() {
         return this;
     }
 
-    return m_type_registry->create_reference_type(m_type, true);
+    return m_context->create_reference_type(m_type, true);
 }
 
 }

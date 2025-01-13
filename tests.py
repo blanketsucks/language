@@ -53,7 +53,7 @@ class Example:
             print(stderr)
 
             print('-----------------------------------------')
-            print(f'Failed to compile: {self.file}. Update the example of fix the compiler.')
+            print(f'Failed to compile: {self.file}. Update the example or fix the compiler.')
 
             exit(returncode)        
 

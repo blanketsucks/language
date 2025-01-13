@@ -1,83 +1,86 @@
-type size_t = usize;
+pub type size_t = usize;
 
-type in_addr_t = u32;
-type socklen_t = u32;
+pub type in_addr_t = u32;
+pub type socklen_t = u32;
 
-const STDIN_FILENO  = 0;
-const STDOUT_FILENO = 1;
-const STDERR_FILENO = 2;
+pub const STDIN_FILENO  = 0;
+pub const STDOUT_FILENO = 1;
+pub const STDERR_FILENO = 2;
 
-const O_APPEND = 1024;
-const O_ASYNC = 8192;
-const O_CLOEXEC = 524288;
-const O_CREAT = 64;
-const O_TRUNC = 512;
-const O_RDONLY = 0;
-const O_WRONLY = 1;
-const O_RDWR = 2;
+pub const O_APPEND = 1024;
+pub const O_ASYNC = 8192;
+pub const O_CLOEXEC = 524288;
+pub const O_CREAT = 64;
+pub const O_TRUNC = 512;
+pub const O_RDONLY = 0;
+pub const O_WRONLY = 1;
+pub const O_RDWR = 2;
 
-const SEEK_END = 2;
-const SEEK_SET = 0;
+pub const SEEK_END = 2;
+pub const SEEK_SET = 0;
 
-const AF_UNSPEC = 0;
-const AF_UNIX = 1;
-const AF_INET = 2;
-const AF_INET6 = 10;
+pub const AF_UNSPEC = 0;
+pub const AF_UNIX = 1;
+pub const AF_INET = 2;
+pub const AF_INET6 = 10;
 
-const SOCK_STREAM = 1;
-const SOCK_DGRAM = 2;
-const SOCK_RAW = 3;
+pub const SOCK_STREAM = 1;
+pub const SOCK_DGRAM = 2;
+pub const SOCK_RAW = 3;
 
-const SHUT_RD = 0;
-const SHUT_WR = 1;
-const SHUT_RDWR = 2;
+pub const IP_ADDRANY = 0;
 
-const SOL_SOCKET = 1;
-const SO_REUSEADDR = 2;
-const SO_REUSEPORT = 15;
-const SO_KEEPALIVE = 9;
-const SO_LINGER = 13;
-const SO_RCVBUF = 8;
+pub const SHUT_RD = 0;
+pub const SHUT_WR = 1;
+pub const SHUT_RDWR = 2;
+
+pub const SOL_SOCKET = 1;
+pub const SO_REUSEADDR = 2;
+pub const SO_REUSEPORT = 15;
+pub const SO_KEEPALIVE = 9;
+pub const SO_LINGER = 13;
+pub const SO_RCVBUF = 8;
     
 struct FILE;
 
-struct sockaddr {
-    sa_len: i8;
-    sa_family: i8;
-    sa_data: [i8; 14];
+pub struct sockaddr {
+    pub sa_len: i8;
+    pub sa_family: i8;
+    pub sa_data: [i8; 14];
 }
 
-struct in_addr {
-    s_addr: in_addr_t;
+pub struct in_addr {
+    pub s_addr: in_addr_t;
 }
 
-struct sockaddr_in {
-    sin_family: i8;
-    sin_port: i16;
-    sin_addr: in_addr;
-    sin_zero: [i8; 8];
+pub struct sockaddr_in {
+    pub sin_family: i8;
+    pub sin_port: i16;
+    pub sin_addr: in_addr;
+    pub sin_zero: [i8; 8];
 }
 
-struct hostent {
-    h_name: *i8;
-    h_aliases: **i8;
-    h_addrtype: i32;
-    h_length: i32;
-    h_addr_list: **i8;
+pub struct hostent {
+    pub h_name: *i8;
+    pub h_aliases: **i8;
+    pub h_addrtype: i32;
+    pub h_length: i32;
+    pub h_addr_list: **i8;
 }
 
-struct addrinfo {
-    ai_flags: i32;
-    ai_family: i32;
-    ai_socktype: i32;
-    ai_protocol: i32;
-    ai_addrlen: socklen_t;
-    ai_addr: *sockaddr;
-    ai_canonname: *i8;
-    ai_next: *addrinfo;
+# TODO: Some syntax to allow for all fields to be public would be nice
+pub struct addrinfo {
+    pub ai_flags: i32;
+    pub ai_family: i32;
+    pub ai_socktype: i32;
+    pub ai_protocol: i32;
+    pub ai_addrlen: socklen_t;
+    pub ai_addr: *sockaddr;
+    pub ai_canonname: *i8;
+    pub ai_next: *addrinfo;
 }
 
-extern "C" {
+pub extern "C" {
     func open(path: *i8, flags: i32, mode: i32) -> i32;
     func read(fd: i32, buf: *void, n: i32) -> i32;
     func write(fd: i32, buf: *void, n: i32) -> i32;
@@ -121,10 +124,10 @@ extern "C" {
     func sprintf(buf: *i8, fmt: *i8, ...) -> i32;
     func snprintf(buf: *i8, n: i32, fmt: *i8, ...) -> i32;
 
-    func malloc(size: size_t) -> *void;
-    func calloc(nmemb: i32, size: i32) -> *void;
-    func realloc(ptr: *void, size: size_t) -> *void;
-    func reallocarray(ptr: *void, nmemb: i32, size: i32) -> *void;
+    func malloc(size: size_t) -> *mut void;
+    func calloc(nmemb: i32, size: i32) -> *mut void;
+    func realloc(ptr: *void, size: size_t) -> *mut void;
+    func reallocarray(ptr: *void, nmemb: i32, size: i32) -> *mut void;
     func free(ptr: *void);
 
     func memcpy(dest: *void, src: *void, size: size_t) -> *void;
@@ -215,4 +218,10 @@ extern "C" {
     ![noreturn] func exit(code: i32);
 
     func atexit(f: func() -> void);
+
+    func strerror(err: i32) -> *i8;
+    func perror(s: *i8);
+
+    func __errno_location() -> *i32;
+    func __h_errno_location() -> *i32;
 }

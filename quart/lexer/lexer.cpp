@@ -266,8 +266,22 @@ ErrorOr<Token> Lexer::once() {
         } case '>': {
             TRY(this->next());
             
-            Optional<Token> option = this->expect('>', { TokenKind::Gte, '=' });
-            return option.value_or(Token { TokenKind::Gt, ">", { start, m_offset, m_source_code.index() } });
+            Optional<Token> option = this->expect('>', 
+                ExpectedToken { TokenKind::Gte, '=' },
+                ExpectedToken { TokenKind::Rsh, '>' }
+            );
+
+            if (option.has_value()) {
+                auto& token = option.value();
+                if (token.kind() == TokenKind::Rsh && m_current == '=') {
+                    TRY(this->next());
+                    return Token { TokenKind::IRsh, ">>=", { start, m_offset, m_source_code.index() } };
+                }
+
+                return token;
+            }
+
+            return Token { TokenKind::Gt, ">", { start, m_offset, m_source_code.index() } };
         } case '<': {
             TRY(this->next());
             Optional<Token> option = this->expect('<',
@@ -275,7 +289,17 @@ ErrorOr<Token> Lexer::once() {
                 ExpectedToken { TokenKind::Lsh, '<' }
             );
 
-            return option.value_or(Token { TokenKind::Lt, "<", { start, m_offset, m_source_code.index() } });
+            if (option.has_value()) {
+                auto& token = option.value();
+                if (token.kind() == TokenKind::Lsh && m_current == '=') {
+                    TRY(this->next());
+                    return Token { TokenKind::ILsh, "<<=", { start, m_offset, m_source_code.index() } };
+                }
+
+                return token;
+            }
+
+            return Token { TokenKind::Lt, "<", { start, m_offset, m_source_code.index() } };
         } case '!': {
             TRY(this->next());
             
@@ -284,12 +308,20 @@ ErrorOr<Token> Lexer::once() {
         } case '|': {
             TRY(this->next());
             
-            Optional<Token> option = this->expect('|', { TokenKind::LogicalOr, '|' });
+            Optional<Token> option = this->expect('|', 
+                ExpectedToken { TokenKind::LogicalOr, '|' },
+                ExpectedToken { TokenKind::IOr, '=' }
+            );
+
             return option.value_or(Token { TokenKind::Or, "|", { start, m_offset, m_source_code.index() } });
         } case '&': {
             TRY(this->next());
             
-            Optional<Token> option = this->expect('&', { TokenKind::LogicalAnd, '&' });
+            Optional<Token> option = this->expect('&',
+                ExpectedToken { TokenKind::LogicalAnd, '&' },
+                ExpectedToken { TokenKind::IAnd, '=' }
+            );
+
             return option.value_or(Token { TokenKind::And, "&", { start, m_offset, m_source_code.index() } });
         } case '.': {
             TRY(this->next());

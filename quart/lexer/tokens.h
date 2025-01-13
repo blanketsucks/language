@@ -2,9 +2,6 @@
 
 #include <quart/source_code.h>
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/STLExtras.h>
-
 #include <vector>
 #include <iostream>
 #include <string>
@@ -30,6 +27,16 @@
     OP(Lt)                       \
     OP(Gte)                      \
     OP(Lte)                      \
+
+#define ENUMERATE_UNARY_OPS(OP) \
+    OP(Not)                     \
+    OP(Add)                     \
+    OP(Sub)                     \
+    OP(BinaryNot)               \
+    OP(Ref)                     \
+    OP(DeRef)                   \
+    OP(Inc)                     \
+    OP(Dec)                     \
 
 namespace quart {
 
@@ -71,7 +78,7 @@ enum class TokenKind {
     Typeof,
     Using,
     Defer,
-    Private,
+    Pub,
     Foreach,
     In,
     StaticAssert,
@@ -108,6 +115,11 @@ enum class TokenKind {
     ISub,
     IMul,
     IDiv,
+    IOr,
+    IAnd,
+    IXor,
+    IRsh,
+    ILsh,
 
     Eq,
     Neq,
@@ -210,117 +222,117 @@ private:
 };
 
 static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
-    {"extern", TokenKind::Extern},
-    {"func", TokenKind::Func},
-    {"return", TokenKind::Return},
-    {"if", TokenKind::If},
-    {"else", TokenKind::Else},
-    {"while", TokenKind::While},
-    {"for", TokenKind::For},
-    {"break", TokenKind::Break},
-    {"continue", TokenKind::Continue},
-    {"let", TokenKind::Let},
-    {"const", TokenKind::Const},
-    {"struct", TokenKind::Struct},
-    {"namespace", TokenKind::Namespace},
-    {"enum", TokenKind::Enum},
-    {"module", TokenKind::Module},
-    {"import", TokenKind::Import},
-    {"as", TokenKind::As},
-    {"type", TokenKind::Type},
-    {"sizeof", TokenKind::Sizeof},
-    {"offsetof", TokenKind::Offsetof},
-    {"typeof", TokenKind::Typeof},
-    {"using", TokenKind::Using},
-    {"defer", TokenKind::Defer},
-    {"private", TokenKind::Private},
-    {"foreach", TokenKind::Foreach},
-    {"in", TokenKind::In},
-    {"static_assert", TokenKind::StaticAssert},
-    {"mut", TokenKind::Mut},
-    {"readonly", TokenKind::Readonly},
-    {"operator", TokenKind::Operator},
-    {"impl", TokenKind::Impl},
-    {"trait", TokenKind::Trait},
-    {"match", TokenKind::Match},
-    {"true", TokenKind::True},
-    {"false", TokenKind::False},
-    {"null", TokenKind::Null}
+    { "extern", TokenKind::Extern },
+    { "func", TokenKind::Func },
+    { "return", TokenKind::Return },
+    { "if", TokenKind::If },
+    { "else", TokenKind::Else },
+    { "while", TokenKind::While },
+    { "for", TokenKind::For },
+    { "break", TokenKind::Break },
+    { "continue", TokenKind::Continue },
+    { "let", TokenKind::Let },
+    { "const", TokenKind::Const },
+    { "struct", TokenKind::Struct },
+    { "namespace", TokenKind::Namespace },
+    { "enum", TokenKind::Enum },
+    { "module", TokenKind::Module },
+    { "import", TokenKind::Import },
+    { "as", TokenKind::As },
+    { "type", TokenKind::Type },
+    { "sizeof", TokenKind::Sizeof },
+    { "offsetof", TokenKind::Offsetof },
+    { "typeof", TokenKind::Typeof },
+    { "using", TokenKind::Using },
+    { "defer", TokenKind::Defer },
+    { "pub", TokenKind::Pub },
+    { "foreach", TokenKind::Foreach },
+    { "in", TokenKind::In },
+    { "static_assert", TokenKind::StaticAssert },
+    { "mut", TokenKind::Mut },
+    { "readonly", TokenKind::Readonly },
+    { "operator", TokenKind::Operator },
+    { "impl", TokenKind::Impl },
+    { "trait", TokenKind::Trait },
+    { "match", TokenKind::Match },
+    { "true", TokenKind::True },
+    { "false", TokenKind::False },
+    { "null", TokenKind::Null }
 };
 
 static const std::map<TokenKind, u8> PRECEDENCES = {
-    {TokenKind::Assign, 5},
-
-    {TokenKind::LogicalAnd, 10},
-    {TokenKind::LogicalOr, 10},
-    {TokenKind::Lt, 15},
-    {TokenKind::Gt, 15},
-    {TokenKind::Lte, 15},
-    {TokenKind::Gte, 15},
-    {TokenKind::Eq, 15},
-    {TokenKind::Neq, 15},
-
-    {TokenKind::And, 20},
-    {TokenKind::Or, 20},
-    {TokenKind::Xor, 20},
-    {TokenKind::Rsh, 20},
-    {TokenKind::Lsh, 20},
-
-    {TokenKind::IAdd, 25},
-    {TokenKind::ISub, 25},
-    {TokenKind::IMul, 25},
-    {TokenKind::IDiv, 25},
-
-    {TokenKind::Add, 30},
-    {TokenKind::Sub, 30},
-    {TokenKind::Mod, 35},
-    {TokenKind::Div, 40},
-    {TokenKind::Mul, 40}
+    { TokenKind::Assign, 5 },
+    { TokenKind::LogicalAnd, 10 },
+    { TokenKind::LogicalOr, 10 },
+    { TokenKind::Lt, 15 },
+    { TokenKind::Gt, 15 },
+    { TokenKind::Lte, 15 },
+    { TokenKind::Gte, 15 },
+    { TokenKind::Eq, 15 },
+    { TokenKind::Neq, 15 },
+    { TokenKind::And, 20 },
+    { TokenKind::Or, 20 },
+    { TokenKind::Xor, 20 },
+    { TokenKind::Rsh, 20 },
+    { TokenKind::Lsh, 20 },
+    { TokenKind::IAdd, 25 },
+    { TokenKind::ISub, 25 },
+    { TokenKind::IMul, 25 },
+    { TokenKind::IDiv, 25 },
+    { TokenKind::Add, 30 },
+    { TokenKind::Sub, 30 },
+    { TokenKind::Mod, 35 },
+    { TokenKind::Div, 40 },
+    { TokenKind::Mul, 40 }
 };
 
 static const std::map<TokenKind, UnaryOp> UNARY_OPS = {
-    {TokenKind::Not, UnaryOp::Not},
-    {TokenKind::Add, UnaryOp::Add},
-    {TokenKind::Sub, UnaryOp::Neg},
-    {TokenKind::BinaryNot, UnaryOp::BinaryNeg},
-    {TokenKind::And, UnaryOp::Ref},
-    {TokenKind::Mul, UnaryOp::DeRef},
-    {TokenKind::Inc, UnaryOp::Inc},
-    {TokenKind::Dec, UnaryOp::Dec}
+    { TokenKind::Not, UnaryOp::Not   },
+    { TokenKind::Add, UnaryOp::Add   },
+    { TokenKind::Sub, UnaryOp::Neg   },
+    { TokenKind::And, UnaryOp::Ref   },
+    { TokenKind::Mul, UnaryOp::DeRef },
+    { TokenKind::Inc, UnaryOp::Inc   },
+    { TokenKind::Dec, UnaryOp::Dec   },
+    { TokenKind::BinaryNot, UnaryOp::BinaryNeg }
 };
 
 static const std::map<TokenKind, BinaryOp> BINARY_OPS = {
-    {TokenKind::Add, BinaryOp::Add},
-    {TokenKind::Sub, BinaryOp::Sub},
-    {TokenKind::Mul, BinaryOp::Mul},
-    {TokenKind::Div, BinaryOp::Div},
-    {TokenKind::Mod, BinaryOp::Mod},
-    {TokenKind::Or, BinaryOp::Or},
-    {TokenKind::And, BinaryOp::And},
-    {TokenKind::LogicalAnd, BinaryOp::LogicalAnd},
-    {TokenKind::LogicalOr, BinaryOp::LogicalOr},
-    {TokenKind::Xor, BinaryOp::Xor},
-    {TokenKind::Rsh, BinaryOp::Rsh},
-    {TokenKind::Lsh, BinaryOp::Lsh},
-    {TokenKind::Eq, BinaryOp::Eq},
-    {TokenKind::Neq, BinaryOp::Neq},
-    {TokenKind::Gt, BinaryOp::Gt},
-    {TokenKind::Lt, BinaryOp::Lt},
-    {TokenKind::Gte, BinaryOp::Gte},
-    {TokenKind::Lte, BinaryOp::Lte},
-    {TokenKind::Assign, BinaryOp::Assign},
-    {TokenKind::IAdd, BinaryOp::Add},
-    {TokenKind::ISub, BinaryOp::Sub},
-    {TokenKind::IMul, BinaryOp::Mul},
-    {TokenKind::IDiv, BinaryOp::Div}
+    { TokenKind::Add, BinaryOp::Add },
+    { TokenKind::Sub, BinaryOp::Sub },
+    { TokenKind::Mul, BinaryOp::Mul },
+    { TokenKind::Div, BinaryOp::Div },
+    { TokenKind::Mod, BinaryOp::Mod },
+    { TokenKind::Or, BinaryOp::Or },
+    { TokenKind::And, BinaryOp::And },
+    { TokenKind::LogicalAnd, BinaryOp::LogicalAnd },
+    { TokenKind::LogicalOr, BinaryOp::LogicalOr },
+    { TokenKind::Xor, BinaryOp::Xor },
+    { TokenKind::Rsh, BinaryOp::Rsh },
+    { TokenKind::Lsh, BinaryOp::Lsh },
+    { TokenKind::Eq, BinaryOp::Eq },
+    { TokenKind::Neq, BinaryOp::Neq },
+    { TokenKind::Gt, BinaryOp::Gt },
+    { TokenKind::Lt, BinaryOp::Lt },
+    { TokenKind::Gte, BinaryOp::Gte },
+    { TokenKind::Lte, BinaryOp::Lte },
+    { TokenKind::Assign, BinaryOp::Assign },
+    { TokenKind::IAdd, BinaryOp::Add },
+    { TokenKind::ISub, BinaryOp::Sub },
+    { TokenKind::IMul, BinaryOp::Mul },
+    { TokenKind::IDiv, BinaryOp::Div }
 };
 
 static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
-    {TokenKind::IAdd, BinaryOp::Add},
-    {TokenKind::ISub, BinaryOp::Sub},
-    {TokenKind::IMul, BinaryOp::Mul},
-    {TokenKind::IDiv, BinaryOp::Div},
-    // TODO: add more
+    { TokenKind::IAdd, BinaryOp::Add },
+    { TokenKind::ISub, BinaryOp::Sub },
+    { TokenKind::IMul, BinaryOp::Mul },
+    { TokenKind::IDiv, BinaryOp::Div },
+    { TokenKind::IOr , BinaryOp::Or  },
+    { TokenKind::IAnd, BinaryOp::And },
+    { TokenKind::IXor, BinaryOp::Xor },
+    { TokenKind::IRsh, BinaryOp::Rsh },
+    { TokenKind::ILsh, BinaryOp::Lsh }
 };  
 
 }

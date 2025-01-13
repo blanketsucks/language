@@ -12,9 +12,10 @@ RefPtr<Function> Function::create(
     FunctionType* underlying_type, 
     Scope* scope,
     LinkageSpecifier linkage_specifier,
-    RefPtr<LinkInfo> link_info
+    RefPtr<LinkInfo> link_info,
+    bool is_public
 ) {
-    return RefPtr<Function>(new Function(move(name), move(parameters), underlying_type, scope, linkage_specifier, move(link_info)));
+    return RefPtr<Function>(new Function(move(name), move(parameters), underlying_type, scope, linkage_specifier, move(link_info), is_public));
 }
 
 void Function::set_qualified_name() {

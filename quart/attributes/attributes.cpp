@@ -19,7 +19,7 @@ SIMPLE_ATTRIBUTE(noreturn, Attribute::Noreturn)
 SIMPLE_ATTRIBUTE(packed, Attribute::Packed)
 
 ATTRIBUTE(link) {
-    static const Set<String> ALLOWED_LINK_PARAMETERS = {"name", "arch", "section", "platform"};
+    static const Set<String> ALLOWED_LINK_PARAMETERS = { "name", "arch", "section", "platform" };
     HashMap<String, String> args = TRY(AttributeParser::parse_call_like_attribute(parser, "link", ALLOWED_LINK_PARAMETERS));
     
     auto info = make_ref<LinkInfo>(args);

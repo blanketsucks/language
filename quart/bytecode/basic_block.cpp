@@ -13,11 +13,6 @@ void BasicBlock::add_instruction(Instruction* inst) {
 void BasicBlock::dump() const {
     outln("{0}:", m_name);
     for (auto& instruction : m_instructions) {
-        if (instruction->type() == Instruction::NewLocalScope) {
-            outln("  NewLocalScope");
-            continue;
-        }
-
         out("  "); instruction->dump();
     }
 }

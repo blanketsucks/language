@@ -23,7 +23,7 @@ public:
 private:
     Enum(
         String name, quart::Type* underlying_type, Scope* scope
-    ) : Symbol(move(name), Symbol::Enum), m_underlying_type(underlying_type), m_scope(scope) {}
+    ) : Symbol(move(name), Symbol::Enum, false), m_underlying_type(underlying_type), m_scope(scope) {}
 
 
     quart::Type* m_underlying_type;
