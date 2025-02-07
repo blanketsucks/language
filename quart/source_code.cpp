@@ -2,6 +2,8 @@
 #include <quart/errors.h>
 #include <algorithm>
 
+#include <llvm/ADT/StringExtras.h>
+
 namespace quart {
 
 static const HashMap<SourceCode::MessageType, Pair<StringView, StringView>> MESSAGE_TYPES = {
@@ -91,7 +93,14 @@ String SourceCode::format_generic_message(const Span& span, StringView message, 
 }
 
 String SourceCode::format_error(Error& error) {
-    return format_generic_message(error.span(), error.message(), MessageType::Error);
+    Vector<String> messages;
+    messages.push_back(format_generic_message(error.span(), error.message(), MessageType::Error));
+
+    for (auto& note : error.notes()) {
+        messages.push_back(format_generic_message(note.span, note.note, MessageType::Note));
+    }
+
+    return llvm::join(messages, "\n");
 }
 
 String SourceCode::format_warning(const Span& span, StringView message) {

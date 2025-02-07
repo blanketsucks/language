@@ -1,4 +1,3 @@
-#include "instruction.h"
 #include <quart/language/state.h>
 #include <quart/parser/parser.h>
 #include <quart/parser/ast.h>
@@ -294,6 +293,33 @@ BytecodeResult UnaryOpExpr::generate(State& state, Optional<bytecode::Register> 
 
 BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register> dst) const {
     if (m_op == BinaryOp::Assign) {
+        if (m_lhs->is<UnaryOpExpr>()) {
+            auto* unary = m_lhs->as<UnaryOpExpr>();
+
+            if (unary->op() == UnaryOp::DeRef) {
+                auto& value = unary->value();
+
+                auto lhs = TRY(ensure(state, value, {}));
+                Type* type = state.type(lhs);
+
+                if (!type->is_pointer() && !type->is_reference()) {
+                    return err(value.span(), "Cannot dereference a value of type '{0}'", type->str());
+                }
+
+                if (!type->is_mutable()) {
+                    return err(value.span(), "Cannot assign to a non-mutable reference");
+                }
+
+                auto rhs = TRY(ensure(state, *m_rhs, {}));
+                rhs = TRY(state.type_check_and_cast(m_rhs->span(), rhs, type->underlying_type(), "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+
+                state.emit<bytecode::Write>(lhs, rhs);
+                return {};
+            }
+
+            return err(span(), "Invalid left-hand side of assignment");
+        }
+
         auto lhs = TRY(state.resolve_reference(*m_lhs, true));
         auto rhs = TRY(ensure(state, *m_rhs, {}));
 
@@ -612,11 +638,14 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
         link_info = attr.value<RefPtr<LinkInfo>>();
     }
 
-    auto function = Function::create(m_name, parameters, underlying_type, scope, m_linkage, move(link_info), m_is_public);
+    auto function = Function::create(span(), m_name, parameters, underlying_type, scope, m_linkage, move(link_info), m_is_public);
     function->set_module(state.module());
 
-    if (state.has_global_function(function->qualified_name())) {
-        return err(span(), "Function '{0}' is already defined", function->qualified_name());
+    if (auto* original = state.get_global_function(function->qualified_name())) {
+        auto error = err(span(), "Function '{0}' is already defined", function->qualified_name());
+        error.add_note(original->span(), "Previous definition is here");
+
+        return error;
     }
 
     state.scope()->add_symbol(function);
@@ -818,7 +847,6 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
         }
 
         fields.insert_or_assign(field.name, quart::StructField { field.name, type, field.flags, field.index });
-
         types.push_back(type);
     }
 
@@ -925,9 +953,22 @@ BytecodeResult CastExpr::generate(State& state, Optional<bytecode::Register> dst
     return reg;
 }
 
-BytecodeResult SizeofExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
-    return {};
+BytecodeResult SizeofExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    size_t size = TRY(state.size_of(*m_value));
+    auto reg = select_dst(state, dst);
+
+    state.emit<bytecode::Move>(reg, size);
+    Type* context = state.type_context();
+
+    Type* type = nullptr;
+    if (context && context->is_int()) {
+        type = context->as<IntType>();
+    } else {
+        type = state.context().u32();
+    }
+
+    state.set_register_state(reg, type);
+    return reg;
 }
 
 BytecodeResult OffsetofExpr::generate(State&, Optional<bytecode::Register>) const {

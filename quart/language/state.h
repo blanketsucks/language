@@ -89,7 +89,7 @@ public:
 
     bool has_global_function(const String& name) const;
     void add_global_function(RefPtr<Function> function);
-    Function const& get_global_function(const String& name) const;
+    Function const* get_global_function(const String& name) const;
 
     void add_global_struct(RefPtr<Struct> structure);
     Struct const* get_global_struct(Type* type) const;

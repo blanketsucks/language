@@ -7,6 +7,7 @@
 namespace quart {
 
 RefPtr<Function> Function::create(
+    Span span,
     String name,
     Vector<FunctionParameter> parameters,
     FunctionType* underlying_type, 
@@ -15,7 +16,7 @@ RefPtr<Function> Function::create(
     RefPtr<LinkInfo> link_info,
     bool is_public
 ) {
-    return RefPtr<Function>(new Function(move(name), move(parameters), underlying_type, scope, linkage_specifier, move(link_info), is_public));
+    return RefPtr<Function>(new Function(span, move(name), move(parameters), underlying_type, scope, linkage_specifier, move(link_info), is_public));
 }
 
 void Function::set_qualified_name() {

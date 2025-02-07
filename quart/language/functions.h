@@ -45,6 +45,7 @@ public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Function; }
 
     static RefPtr<Function> create(
+        Span,
         String name, 
         Vector<FunctionParameter> parameters, 
         FunctionType* underlying_type,
@@ -53,6 +54,8 @@ public:
         RefPtr<LinkInfo>,
         bool is_public
     );
+
+    Span span() const { return m_span; }
 
     LinkageSpecifier linkage_specifier() const { return m_linkage_specifier; }
     LinkInfo const* link_info() const { return m_link_info.get(); }
@@ -65,7 +68,10 @@ public:
     String const& qualified_name() const { return m_qualified_name; }
 
     Scope* scope() const { return m_scope; }
+
     bool is_decl() const { return !m_entry_block; }
+    bool is_extern() const { return m_linkage_specifier > LinkageSpecifier::None; }
+    bool is_main() const { return m_qualified_name == "main"; }
 
     bool is_struct_return() const { return m_underlying_type->return_type()->is_struct(); }
     bool is_member_method() const { return m_parameters.size() > 0 && m_parameters[0].is_self(); }
@@ -105,6 +111,7 @@ private:
     void set_qualified_name();
 
     Function(
+        Span span,
         String name,
         Vector<FunctionParameter> parameters,
         FunctionType* underlying_type,
@@ -112,12 +119,14 @@ private:
         LinkageSpecifier linkage_specifier,
         RefPtr<LinkInfo> link_info,
         bool is_public
-    ) : Symbol(move(name), Symbol::Function, is_public), 
+    ) : Symbol(move(name), Symbol::Function, is_public), m_span(span),
         m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
         m_link_info(move(link_info)), m_scope(scope) {
             
         this->set_qualified_name();
     }
+
+    Span m_span;
 
     LinkageSpecifier m_linkage_specifier;
 

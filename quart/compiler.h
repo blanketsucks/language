@@ -66,7 +66,7 @@ struct OptimizationOptions {
 struct CompilerOptions {
     using Extra = std::pair<String, String>;
 
-    fs::Path input;
+    fs::Path file;
     String output;
 
     String entry;
@@ -151,7 +151,7 @@ public:
     }
 
     void set_input_file(const fs::Path& input) {
-        m_options.input = input;
+        m_options.file = input;
     }
 
     void set_entry_point(const String& entry) {

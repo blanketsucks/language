@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     }
 
     CompilerOptions options = {
-        .input = args.file,
+        .file = args.file,
         .output = args.output,
         .entry = args.entry,
         .target = args.target,

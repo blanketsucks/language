@@ -1,4 +1,3 @@
-#include <llvm-17/llvm/TargetParser/Host.h>
 #include <quart/compiler.h>
 #include <quart/lexer/lexer.h>
 #include <quart/parser/parser.h>
@@ -10,6 +9,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Program.h>
 #include <llvm/ADT/StringExtras.h>
+#include <llvm/TargetParser/Host.h>
 
 #include <sstream>
 
@@ -35,14 +35,10 @@ Compiler::TimePoint Compiler::now() {
     return std::chrono::high_resolution_clock::now();
 }
 
-void Compiler::shutdown() {
-    llvm::llvm_shutdown();
-}
-
 void Compiler::dump() const {
     std::stringstream stream;
 
-    stream << format("Input file: '{0}'", m_options.input.filename()) << '\n';
+    stream << format("Input file: '{0}'", m_options.file.filename()) << '\n';
     stream << format("Output file: '{0}'", m_options.output) << '\n';
     stream << format("Program entry point: '{0}'", m_options.entry) << '\n';
 
@@ -91,7 +87,7 @@ void Compiler::dump() const {
 }
 
 Vector<String> Compiler::get_linker_arguments() const {
-    String object = m_options.input.with_extension("o");
+    String object = m_options.file.with_extension("o");
     Vector<String> args = {
         m_options.linker,
         "-o", m_options.output,
@@ -133,7 +129,7 @@ int Compiler::compile() const {
     String target = m_options.has_target() ? Target::normalize(m_options.target) : llvm::sys::getDefaultTargetTriple();
     Target::set_build_target(target);
 
-    auto& code = SourceCode::from_path(m_options.input);
+    auto& code = SourceCode::from_path(m_options.file);
 
     Lexer lexer(code);
     Vector<Token> tokens = TRY(lexer.lex());
@@ -151,7 +147,7 @@ int Compiler::compile() const {
     //     function->dump();
     // }
  
-    codegen::LLVMCodeGen codegen(state, m_options.input.filename());
+    codegen::LLVMCodeGen codegen(state, m_options.file.filename());
     auto result = codegen.generate(m_options);
 
     if (result.is_err()) {

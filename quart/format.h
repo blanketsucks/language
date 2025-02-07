@@ -7,7 +7,7 @@
 namespace quart {
 
 template<typename T>
-using has_format_provider = llvm::detail::has_FormatProvider<T>;
+using has_format_provider = llvm::support::detail::has_FormatProvider<T>;
 
 template<typename T>
 static constexpr bool has_format_provider_v = has_format_provider<T>::value;

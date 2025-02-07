@@ -1,4 +1,5 @@
 #include <quart/language/state.h>
+#include <quart/parser/parser.h>
 
 namespace quart {
 
@@ -44,8 +45,13 @@ void State::add_global_function(RefPtr<Function> function) {
     m_all_functions[function->qualified_name()] = function;
 }
 
-Function const& State::get_global_function(const String& name) const {
-    return *m_all_functions.at(name);
+Function const* State::get_global_function(const String& name) const {
+    auto iterator = m_all_functions.find(name);
+    if (iterator != m_all_functions.end()) {
+        return iterator->second.get();
+    }
+
+    return nullptr;
 }
 
 void State::add_global_struct(RefPtr<Struct> structure) {
@@ -397,7 +403,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     auto* field = structure->find(attr);
     if (!field) {
         return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", attr, structure->name());
-    } else if (!field->is_public() && m_current_struct != structure) {
+    } else if (!field->is_public() && m_current_struct != structure && structure->module() != m_current_module) {
         return err(expr.span(), "Cannot access private field '{0}'", field->name);
     }
 
@@ -514,7 +520,13 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             symbol = m_current_scope->resolve(ident->name());
 
             if (!symbol) {
-                return err(expr.span(), "Unknown identifier '{0}'", ident->name());
+                auto iterator = STR_TO_TYPE.find(ident->name());
+                if (iterator == STR_TO_TYPE.end()) {
+                    return err(expr.span(), "Unknown identifier '{0}'", ident->name());
+                }
+
+                Type* type = this->get_type_from_builtin(iterator->second);
+                return type->size();
             }
 
             break;

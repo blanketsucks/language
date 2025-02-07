@@ -1,3 +1,4 @@
+#include <llvm-20/llvm/Support/Threading.h>
 #include <quart/codegen/llvm.h>
 #include <quart/compiler.h>
 
@@ -30,7 +31,7 @@ void LLVMCodeGen::generate(bytecode::Move* inst) {
 }
 
 void LLVMCodeGen::generate(bytecode::NewString* inst) {
-    llvm::Value* value = m_ir_builder->CreateGlobalStringPtr(inst->value(), ".str", 0, &*m_module);
+    llvm::Value* value = m_ir_builder->CreateGlobalString(inst->value(), ".str", 0, &*m_module);
     this->set_register(inst->dst(), value);
 }
 
@@ -320,6 +321,11 @@ void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     );
 
     auto* llvm_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, normalize(function->qualified_name()), &*m_module);
+    
+    llvm_function->setDSOLocal(!function->is_decl());
+    if (!function->is_extern() && !function->is_main()) {
+        llvm_function->setLinkage(llvm::GlobalValue::LinkageTypes::InternalLinkage);
+    }
 
     m_functions[function] = llvm_function;
     for (auto& basic_block : function->basic_blocks()) {
@@ -537,7 +543,7 @@ llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
         }
         case Constant::Kind::String: {
             auto* string = constant->as<ConstantString>();
-            return m_ir_builder->CreateGlobalStringPtr(string->value(), ".str", 0, &*m_module);
+            return m_ir_builder->CreateGlobalString(string->value(), ".str", 0, &*m_module);
         }
         case Constant::Kind::Array: {
             auto* array = constant->as<ConstantArray>();
@@ -677,7 +683,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     }
 
     for (auto& global : m_module->globals()) {
-        if (global.getName().startswith("llvm.")) {
+        if (global.getName().starts_with("llvm.")) {
             continue;
         }
 
@@ -691,7 +697,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     }
     
     {
-        String out = options.input.with_extension("ll");
+        String out = options.file.with_extension("ll");
         std::error_code ec;
     
         llvm::raw_fd_ostream stream(out, ec);
@@ -724,7 +730,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     m_module->setDataLayout(machine->createDataLayout());
     m_module->setTargetTriple(triple);
 
-    String output = options.input.with_extension("o");
+    String output = options.file.with_extension("o");
 
     std::error_code ec;
     llvm::raw_fd_ostream stream(output, ec);
@@ -734,13 +740,12 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     }
 
     llvm::legacy::PassManager pm;
-    machine->addPassesToEmitFile(pm, stream, nullptr, llvm::CGFT_ObjectFile);
+    machine->addPassesToEmitFile(pm, stream, nullptr, llvm::CodeGenFileType::ObjectFile);
 
     pm.run(*m_module);
     stream.flush();
-    
-    llvm::llvm_shutdown();
-    return {}; 
+
+    return {};
 }
 
 }
