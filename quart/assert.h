@@ -12,7 +12,7 @@
 
 namespace quart {
 
-enum class Color {
+enum class Color : u8 {
     Reset = 0,
     Red = 31,
     White = 37,

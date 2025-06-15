@@ -16,7 +16,7 @@ class Context;
 class PointerType;
 class ReferenceType;
 
-enum class TypeKind {
+enum class TypeKind : u8 {
     Void,
     Int,
     Float,

@@ -17,7 +17,7 @@
 
 namespace quart {
 
-enum class ScopeType {
+enum class ScopeType : u8 {
     Global,
     Function,
     Anonymous,

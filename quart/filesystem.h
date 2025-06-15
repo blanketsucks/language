@@ -35,7 +35,7 @@
 
 namespace quart::fs {
 
-enum class OpenMode {
+enum class OpenMode : u8 {
     Read,
     Write
 };

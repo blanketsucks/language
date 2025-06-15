@@ -7,7 +7,7 @@ namespace quart {
 
 class Constant {
 public:
-    enum class Kind {
+    enum class Kind : u8 {
         Int,
         Float,
         String,

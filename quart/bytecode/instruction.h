@@ -71,7 +71,7 @@ class BasicBlock;
 
 class Operand {
 public:
-    enum class Type {
+    enum class Type : u8 {
         Register,
         Value
     };

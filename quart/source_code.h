@@ -36,7 +36,7 @@ struct Line {
 
 class SourceCode {
 public:
-    enum class MessageType {
+    enum class MessageType : u8 {
         Error,
         Warning,
         Note

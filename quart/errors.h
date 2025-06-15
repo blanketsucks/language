@@ -23,7 +23,7 @@ struct Note {
     Note(Span span, String note) : span(span), note(move(note)) {}
 };
 
-enum class ErrorType {
+enum class ErrorType : u8 {
     Generic,
 
     EndOfString,

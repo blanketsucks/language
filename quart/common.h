@@ -104,7 +104,7 @@ inline OwnPtr<T> make(Args&&... args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
-enum class LinkageSpecifier {
+enum class LinkageSpecifier : u8 {
     None,
     Unspecified,
     C,

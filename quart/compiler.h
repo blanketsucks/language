@@ -10,7 +10,7 @@
 
 namespace quart {
 
-enum class OutputFormat {
+enum class OutputFormat : u8 {
     Object,
     LLVM,    // Refers to LLVM IR
     Bitcode, // Refers to LLVM Bitcode
@@ -41,7 +41,7 @@ static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_EXT = {
 #endif
 };
 
-enum class OptimizationLevel : u32 {
+enum class OptimizationLevel : u8 {
     O0,
     O1,
     O2,
@@ -50,7 +50,7 @@ enum class OptimizationLevel : u32 {
     Oz
 };
 
-enum class MangleStyle {
+enum class MangleStyle : u8 {
     Full,
     Minimal,
     None

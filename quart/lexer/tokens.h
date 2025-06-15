@@ -40,12 +40,12 @@
 
 namespace quart {
 
-enum class TokenKind;
+enum class TokenKind : u8;
 
 bool is_keyword(StringView value);
 TokenKind get_keyword_kind(StringView word);
 
-enum class TokenKind {
+enum class TokenKind : u8 {
     None,
 
     Identifier,
@@ -151,7 +151,7 @@ enum class TokenKind {
     EOS
 };
 
-enum class UnaryOp {
+enum class UnaryOp : u8 {
     Not,
     Add,
     Neg,
@@ -162,7 +162,7 @@ enum class UnaryOp {
     Dec
 };
 
-enum class BinaryOp {
+enum class BinaryOp : u8 {
     Add,
     Sub,
     Mul,

@@ -126,7 +126,7 @@ class Expr;
 
 template<class T = Expr> using ExprList = Vector<OwnPtr<T>>;
 
-enum class ExprKind {
+enum class ExprKind : u8 {
     Block,
     ExternBlock,
     Integer,
@@ -178,7 +178,7 @@ enum class ExprKind {
     Bool
 };
 
-enum class TypeKind {
+enum class TypeKind : u8 {
     Builtin,
     Integer,
     Named,
@@ -190,7 +190,7 @@ enum class TypeKind {
     Generic
 };
 
-enum class BuiltinType {
+enum class BuiltinType : u8 {
     None = 0,
     Bool,
     i8,
