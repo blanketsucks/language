@@ -1164,7 +1164,6 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     state.set_current_module(prev_module);
 
     if (m_is_wildcard) {
-        outln("Wildcard import:");
         for (auto& [name, symbol] : current_scope->symbols()) {
             if (symbol->is<Module>() || !symbol->is_public()) {
                 continue;
