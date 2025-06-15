@@ -129,9 +129,9 @@ int Compiler::compile() const {
     String target = m_options.has_target() ? Target::normalize(m_options.target) : llvm::sys::getDefaultTargetTriple();
     Target::set_build_target(target);
 
-    auto& code = SourceCode::from_path(m_options.file);
+    auto source_code = SourceCode::from_path(m_options.file);
 
-    Lexer lexer(code);
+    Lexer lexer(source_code);
     Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));

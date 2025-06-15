@@ -9,4 +9,6 @@ build/
 main
 test.*
 test
-leakcheck.hpp
+
+!examples/*.qr
+examples/*

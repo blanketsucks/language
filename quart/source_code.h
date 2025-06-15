@@ -42,10 +42,10 @@ public:
         Note
     };
 
-    static SourceCode const& create(String code, String filename);
-    static SourceCode const& from_path(fs::Path);
+    static RefPtr<SourceCode> create(String code, String filename);
+    static RefPtr<SourceCode> from_path(fs::Path);
 
-    static SourceCode const& lookup(size_t index);
+    static RefPtr<SourceCode> lookup(size_t index);
 
     u16 index() const { return m_index; }
     StringView code() const { return m_code; }

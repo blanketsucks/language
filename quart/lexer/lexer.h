@@ -22,7 +22,7 @@ struct ExpectedToken {
 
 class Lexer {
 public:
-    Lexer(SourceCode const&);
+    Lexer(RefPtr<SourceCode>);
 
     [[nodiscard]] ErrorOr<char> next();
     [[nodiscard]] ErrorOr<void> skip(size_t n = 1);
@@ -67,7 +67,7 @@ private:
     bool m_eof = false;
     char m_current = 0;
 
-    SourceCode const& m_source_code; // NOLINT
+    RefPtr<SourceCode> m_source_code;
     StringView m_code;
 };
 

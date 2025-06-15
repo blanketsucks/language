@@ -1148,8 +1148,8 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     state.set_current_scope(current_scope);
     state.set_current_module(&*module);
 
-    auto& code = SourceCode::from_path(path);
-    Lexer lexer(code);
+    auto source_code = SourceCode::from_path(path);
+    Lexer lexer(source_code);
 
     Vector<Token> tokens = TRY(lexer.lex());
 
