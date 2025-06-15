@@ -105,7 +105,7 @@ public:
 
     virtual ~Instruction() = default;
 
-    enum InstructionType {
+    enum InstructionType : u8 {
     #define Op(x) x, // NOLINT
         ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
     #undef Op
