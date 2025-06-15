@@ -1704,7 +1704,7 @@ ParseResult<ast::Expr> Parser::primary() {
             String name = m_current.value();
             this->next();
 
-            if (m_current.is(TokenKind::DoubleColon) || m_current.is(TokenKind::Lt)) {
+            if (m_current.is(TokenKind::DoubleColon)) {
                 Path path = TRY(this->parse_path(name));
                 expr = make<ast::PathExpr>(start, move(path));
             } else {
