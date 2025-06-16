@@ -300,8 +300,22 @@ bool ConstantEvaluator::is_constant_expression(ast::WhileExpr const& expr) const
     return this->is_constant_expression(expr.condition()) && this->is_constant_expression(expr.body());
 }
 
-ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const&) {
-    ASSERT(false, "Not implemented");
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
+    Constant* condition = TRY(this->evaluate(expr.condition()));
+    if (!condition->is<ConstantInt>()) {
+        return err(expr.condition().span(), "Expected an integer");
+    }
+
+    auto* integer = condition->as<ConstantInt>();
+    u64 value = integer->value();
+
+    while (value) {
+        TRY(this->evaluate(expr.body()));
+
+        Constant* condition = TRY(this->evaluate(expr.condition()));
+        value = condition->as<ConstantInt>()->value();
+    }
+
     return nullptr;
 }
 
