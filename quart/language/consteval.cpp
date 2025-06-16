@@ -274,9 +274,69 @@ bool ConstantEvaluator::is_constant_expression(ast::BinaryOpExpr const& expr) co
     return this->is_constant_expression(expr.lhs()) && this->is_constant_expression(expr.rhs());
 }
 
-ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const&) {
-    ASSERT(false, "Not implemented");
-    return nullptr;
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
+    Constant* clhs = TRY(this->evaluate(expr.lhs()));
+    Constant* crhs = TRY(this->evaluate(expr.rhs()));
+
+    // TODO: Float support
+    if (!clhs->is<ConstantInt>()) {
+        return err(expr.lhs().span(), "Expected an integer");
+    } else if (!crhs->is<ConstantInt>()) {
+        return err(expr.rhs().span(), "Expected an integer");
+    }
+
+    i64 lhs = static_cast<i64>(clhs->as<ConstantInt>()->value());
+    i64 rhs = static_cast<i64>(crhs->as<ConstantInt>()->value());
+
+    i64 result = 0;
+
+    switch (expr.op()) {
+        case BinaryOp::Add:
+            result = lhs + rhs; break;
+        case BinaryOp::Sub:
+            result = lhs - rhs; break;
+        case BinaryOp::Mul:
+            result = lhs * rhs; break;
+        case BinaryOp::Div:
+            result = lhs / rhs; break;
+        case BinaryOp::Mod:
+            result = lhs % rhs; break;
+        case BinaryOp::Or:
+            result = lhs | rhs; break;
+        case BinaryOp::And:
+            result = lhs & rhs; break;
+        case BinaryOp::LogicalOr:
+            result = lhs || rhs; break;
+        case BinaryOp::LogicalAnd:
+            result = lhs && rhs; break;
+        case BinaryOp::Xor:
+            result = lhs ^ rhs; break;
+        case BinaryOp::Rsh:
+            result = lhs << rhs; break;
+        case BinaryOp::Lsh:
+            result = lhs >> rhs; break;
+        case BinaryOp::Eq:
+            result = lhs == rhs; break;
+        case BinaryOp::Neq:
+            result = lhs != rhs; break;
+        case BinaryOp::Gt:
+            result = lhs > rhs; break;
+        case BinaryOp::Lt:
+            result = lhs < rhs; break;
+        case BinaryOp::Gte:
+            result = lhs >= rhs; break;
+        case BinaryOp::Lte:
+            result = lhs <= rhs; break;
+        default:
+            err(expr.span(), "Unimplemented OP");
+    }
+
+    Type* type = clhs->type();
+    if (is_comparison_operator(expr.op())) {
+        type = m_state.context().i1();
+    }
+
+    return ConstantInt::get(m_state.context(), type, result);
 }
 
 bool ConstantEvaluator::is_constant_expression(ast::IfExpr const& expr) const {
@@ -444,7 +504,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const& expr) {
         case BoolExpr::Null:
             ASSERT(false, "Not Implemented");
     }
-    
+
     return nullptr;
 }
 
