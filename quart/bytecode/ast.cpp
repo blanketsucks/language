@@ -774,6 +774,9 @@ BytecodeResult IfExpr::generate(State& state, Optional<bytecode::Register>) cons
 
 BytecodeResult WhileExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
+    if (!current_function) {
+        return err(span(), "While loops are not allowed outside functions");
+    }
 
     auto operand = TRY(ensure(state, *m_condition, {}));
     operand = TRY(state.type_check_and_cast(m_condition->span(), operand, state.context().i1(), "While conditions must be booleans"));
