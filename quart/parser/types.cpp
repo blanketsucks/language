@@ -45,7 +45,7 @@ ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
 }
 
 ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
-    Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
+    auto scope = TRY(state.resolve_scope_path(span(), m_path));
     auto* symbol = scope->resolve(m_path.name());
 
     if (!symbol) {
@@ -164,7 +164,7 @@ ErrorOr<Type*> IntegerTypeExpr::evaluate(State&) {
 
 ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
     auto& path = m_parent->path();
-    auto* scope = TRY(state.resolve_scope_path(m_parent->span(), path));
+    auto scope = TRY(state.resolve_scope_path(m_parent->span(), path));
 
     auto* symbol = scope->resolve(path.name());
     if (!symbol) {

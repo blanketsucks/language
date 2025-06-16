@@ -630,7 +630,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
 
     auto* underlying_type = FunctionType::get(state.context(), return_type, params, m_is_c_variadic);
 
-    auto* scope = Scope::create(m_name, ScopeType::Function, state.scope());
+    auto scope = Scope::create(m_name, ScopeType::Function, state.scope());
 
     RefPtr<LinkInfo> link_info = nullptr;
     if (m_attrs.has(Attribute::Link)) {
@@ -667,7 +667,7 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     auto* previous_block = state.current_block();
     state.switch_to(entry_block);
 
-    Scope* previous_scope = state.scope();
+    auto previous_scope = state.scope();
     for (auto& param : function->parameters()) {
         size_t index = function->allocate_local();
         function->set_local_type(index, param.type);
@@ -827,7 +827,7 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
     }
 
     auto* type = StructType::get(state.context(), m_name, {});
-    auto* scope = Scope::create(m_name, ScopeType::Struct, state.scope());
+    auto scope = Scope::create(m_name, ScopeType::Struct, state.scope());
 
     auto structure = Struct::create(m_name, type, {}, scope, m_is_public);
     structure->set_module(state.module());
@@ -853,15 +853,15 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
     type->set_fields(types);
     structure->set_fields(move(fields));
 
-    Scope* previous_scope = state.scope();
+    auto previous_scope = state.scope();
 
     state.set_current_scope(scope);
-    state.set_current_struct(&*structure);
+    state.set_current_struct(structure.get());
 
     state.add_global_struct(structure);
     state.set_self_type(structure->underlying_type());
 
-    state.emit<bytecode::NewStruct>(&*structure);
+    state.emit<bytecode::NewStruct>(structure.get());
     for (auto& expr : m_members) {
         TRY(expr->generate(state, {}));
     }
@@ -977,7 +977,7 @@ BytecodeResult OffsetofExpr::generate(State&, Optional<bytecode::Register>) cons
 }
 
 BytecodeResult PathExpr::generate(State& state, Optional<bytecode::Register> dst) const {
-    Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
+    auto scope = TRY(state.resolve_scope_path(span(), m_path));
     auto* symbol = scope->resolve(m_path.name());
 
     if (!symbol) {
@@ -1038,9 +1038,9 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     String qualified_name = m_path.format();
 
     auto module = state.get_global_module(qualified_name);
-    Scope* current_scope = state.scope();
+    auto current_scope = state.scope();
 
-    Scope* prev_scope = current_scope;
+    auto prev_scope = current_scope;
     if (module) {
         if (module->is_importing()) {
             return err(span(), "Could not import '{0}' because a circular dependency was detected", m_path.name());
@@ -1079,7 +1079,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
         }
 
         auto* module = current_scope->resolve<Module>(segment);
-        Scope* new_scope = nullptr;
+        RefPtr<Scope> new_scope = nullptr;
 
         current_qualified_name.append(segment);
         if (!module) {
@@ -1087,7 +1087,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
             if (state.has_global_module(current_qualified_name)) {
                 mod = state.get_global_module(current_qualified_name);
             } else {
-                Scope* scope = Scope::create(segment, ScopeType::Module);
+                auto scope = Scope::create(segment, ScopeType::Module);
                 mod = Module::create(segment, current_qualified_name, path, scope);
 
                 state.add_global_module(mod);
@@ -1123,7 +1123,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
         path = dir.join("module.qr");
 
         if (!path.exists()) {
-            Scope* scope = Scope::create(m_path.name(), ScopeType::Module);
+            auto scope = Scope::create(m_path.name(), ScopeType::Module);
             auto module = Module::create(m_path.name(), qualified_name, path, scope);
 
             current_scope->add_symbol(module);
@@ -1187,7 +1187,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
 }
 
 BytecodeResult UsingExpr::generate(State& state, Optional<bytecode::Register>) const {
-    Scope* scope = TRY(state.resolve_scope_path(span(), m_path));
+    auto scope = TRY(state.resolve_scope_path(span(), m_path));
     auto* module = scope->resolve<Module>(m_path.name());
 
     if (!module) {
@@ -1195,7 +1195,7 @@ BytecodeResult UsingExpr::generate(State& state, Optional<bytecode::Register>) c
     }
 
     scope = module->scope();
-    Scope* current_scope = state.scope();
+    auto current_scope = state.scope();
 
     for (auto& name : m_symbols) {
         auto* symbol = scope->resolve(name);
@@ -1226,7 +1226,7 @@ BytecodeResult ForExpr::generate(State&, Optional<bytecode::Register>) const {
 
 BytecodeResult RangeForExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
-    Scope* current_scope = state.scope();
+    auto current_scope = state.scope();
 
     auto* end_block = state.create_block();
     auto* body_block = state.create_block();
@@ -1367,7 +1367,7 @@ void create_impl_conditions(Vector<OwnPtr<ImplCondition>>& conditions, Set<Strin
 }
 
 BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) const {
-    Scope* current_scope = state.scope();
+    auto current_scope = state.scope();
     if (!m_parameters.empty()) {
         auto range = llvm::map_range(m_parameters, [](auto& param) { return param.name; });
         Set<String> parameters(range.begin(), range.end());
@@ -1386,7 +1386,7 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
     }
 
     Type* underlying_type = TRY(m_type->evaluate(state));
-    Scope* scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope);
+    auto scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope);
 
     auto impl = Impl::create(underlying_type, scope);
     state.set_self_type(impl->underlying_type());

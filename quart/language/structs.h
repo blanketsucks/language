@@ -8,6 +8,7 @@
 #include <llvm/IR/DerivedTypes.h>
 
 #include <map>
+#include <utility>
 
 namespace quart {
 
@@ -42,17 +43,17 @@ class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type, Scope* parent, bool is_public) {
+    static RefPtr<Struct> create(String name, StructType* underlying_type, RefPtr<Scope> parent, bool is_public) {
         return RefPtr<Struct>(new Struct(move(name), underlying_type, parent, is_public));
     }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope, bool is_public) {
+    static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, RefPtr<Scope> scope, bool is_public) {
         return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope, is_public));
     }
 
     String const& qualified_name() const { return m_qualified_name; }
     StructType* underlying_type() const { return m_underlying_type; }
-    Scope* scope() const { return m_scope; }
+    RefPtr<Scope> scope() const { return m_scope; }
     bool opaque() const { return m_opaque; }
 
     void set_fields(HashMap<String, StructField> fields) { m_fields = move(fields); }
@@ -62,20 +63,20 @@ public:
     bool has_method(const String& name) const;
 
 private:
-    void set_qualified_name(Scope* parent = nullptr);
+    void set_qualified_name(RefPtr<Scope> = nullptr);
 
     Struct(
         String name,
         StructType* underlying_type,
-        Scope* parent,
+        RefPtr<Scope> parent,
         bool is_public
     ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(true) {
-        this->set_qualified_name(parent);
+        this->set_qualified_name(move(parent));
     }
 
     Struct(
-        String name, StructType* underlying_type, HashMap<String, StructField> fields, Scope* scope, bool is_public
-    ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(scope) {
+        String name, StructType* underlying_type, HashMap<String, StructField> fields, RefPtr<Scope> scope, bool is_public
+    ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(move(scope)) {
         this->set_qualified_name();
     }
     
@@ -86,7 +87,7 @@ private:
     bool m_opaque;
 
     HashMap<String, StructField> m_fields;
-    Scope* m_scope = nullptr;
+    RefPtr<Scope> m_scope = nullptr;
 };
 
 }

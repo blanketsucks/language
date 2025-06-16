@@ -18,14 +18,14 @@ public:
         Importing
     };
 
-    static RefPtr<Module> create(String name, String qualified_name, fs::Path path, Scope* scope, RefPtr<Module> parent = nullptr) {
+    static RefPtr<Module> create(String name, String qualified_name, fs::Path path, RefPtr<Scope> scope, RefPtr<Module> parent = nullptr) {
         return RefPtr<Module>(new Module(move(name), move(qualified_name), move(path), scope, move(parent)));
     }
 
     String const& qualified_name() const { return m_qualified_name; }
     fs::Path const& path() const { return m_path; }
 
-    Scope* scope() const { return m_scope; }
+    RefPtr<Scope> scope() const { return m_scope; }
 
     bool is_ready() const { return m_state == State::Ready; }
     bool is_importing() const { return m_state == State::Importing; }
@@ -35,12 +35,12 @@ public:
     bool is_submodule() const { return m_parent != nullptr; }
 
 private:
-    Module(String name, String qualified_name, fs::Path path, Scope* scope, RefPtr<Module> parent);
+    Module(String name, String qualified_name, fs::Path path, RefPtr<Scope> scope, RefPtr<Module> parent);
 
     String m_qualified_name;
 
     fs::Path m_path;
-    Scope* m_scope;
+    RefPtr<Scope> m_scope;
 
     RefPtr<Module> m_parent;
 

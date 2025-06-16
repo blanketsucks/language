@@ -15,19 +15,19 @@ class Enum : public Symbol {
 public:
     static bool classof(Symbol const* symbol) { return symbol->type() == Symbol::TypeAlias; }
 
-    static RefPtr<Enum> create(String name, quart::Type* underlying_type, Scope*);
+    static RefPtr<Enum> create(String name, quart::Type* underlying_type, RefPtr<Scope>);
 
     quart::Type* underlying_type() const { return m_underlying_type; }
-    Scope* scope() const { return m_scope; }
+    RefPtr<Scope> scope() const { return m_scope; }
 
 private:
     Enum(
-        String name, quart::Type* underlying_type, Scope* scope
-    ) : Symbol(move(name), Symbol::Enum, false), m_underlying_type(underlying_type), m_scope(scope) {}
+        String name, quart::Type* underlying_type, RefPtr<Scope> scope
+    ) : Symbol(move(name), Symbol::Enum, false), m_underlying_type(underlying_type), m_scope(move(scope)) {}
 
 
     quart::Type* m_underlying_type;
-    Scope* m_scope;
+    RefPtr<Scope> m_scope;
 };
 
 // struct Enumerator {

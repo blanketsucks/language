@@ -95,8 +95,8 @@ void State::add_global_module(RefPtr<Module> module) {
     m_modules[module->qualified_name()] = move(module);
 }
 
-ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const String& name) {
-    auto* symbol = current_scope->resolve(name);
+ErrorOr<RefPtr<Scope>> State::resolve_scope(Span span, Scope& current_scope, const String& name) {
+    auto* symbol = current_scope.resolve(name);
     if (!symbol) {
         return err(span, "namespace '{0}' not found", name);
     }
@@ -105,7 +105,7 @@ ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const Stri
         return err(span, "'{0}' is not a valid namespace", name);
     }
 
-    Scope* scope = nullptr;
+    RefPtr<Scope> scope = nullptr;
     if (symbol->is<Module>()) {
         scope = symbol->as<Module>()->scope();
     } else {
@@ -115,8 +115,8 @@ ErrorOr<Scope*> State::resolve_scope(Span span, Scope* current_scope, const Stri
     return scope;
 }
 
-ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path, bool allow_generic_arguments) {
-    Scope* scope = m_current_scope;
+ErrorOr<RefPtr<Scope>> State::resolve_scope_path(Span span, const Path& path, bool allow_generic_arguments) {
+    auto scope = m_current_scope;
 
     for (auto& segment : path.segments()) {
         if (segment.has_generic_arguments() && !allow_generic_arguments) {
@@ -126,7 +126,7 @@ ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path, bool allo
         auto& name = segment.name();
 
         Span segment_span = { span.start(), span.start() + name.size(), span.source_code_index() };
-        scope = TRY(this->resolve_scope(segment_span, scope, name));
+        scope = TRY(this->resolve_scope(segment_span, *scope, name));
 
         span.set_start(segment_span.end() + 2);
     }
@@ -135,14 +135,14 @@ ErrorOr<Scope*> State::resolve_scope_path(Span span, const Path& path, bool allo
 }
 
 ErrorOr<bytecode::Register> State::resolve_reference(
-    Scope* scope,
+    Scope& scope,
     Span span,
     const String& name,
     bool is_mutable,
     Optional<bytecode::Register> dst,
     bool override_mutability
 ) {
-    auto* symbol = scope->resolve(name);
+    auto* symbol = scope.resolve(name);
     if (!symbol) {
         return err(span, "Unknown identifier '{0}'", name);
     }
@@ -189,13 +189,13 @@ ErrorOr<bytecode::Register> State::resolve_reference(
     switch (expr.kind()) {
         case ExprKind::Identifier: {
             auto* ident = expr.as<ast::IdentifierExpr>();
-            return this->resolve_reference(m_current_scope, expr.span(), ident->name(), is_mutable, dst, override_mutability);
+            return this->resolve_reference(*m_current_scope, expr.span(), ident->name(), is_mutable, dst, override_mutability);
         }
         case ExprKind::Path: {
             auto& path = expr.as<ast::PathExpr>()->path();
-            Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
+            auto scope = TRY(this->resolve_scope_path(expr.span(), path));
 
-            return this->resolve_reference(scope, expr.span(), path.name(), is_mutable, dst, override_mutability);
+            return this->resolve_reference(*scope, expr.span(), path.name(), is_mutable, dst, override_mutability);
         }
         case ExprKind::Attribute: {
             auto* attribute = expr.as<ast::AttributeExpr>();
@@ -247,7 +247,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
         }
         case ExprKind::Path: {
             auto& path = expr.as<ast::PathExpr>()->path();
-            Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
+            auto scope = TRY(this->resolve_scope_path(expr.span(), path));
 
             auto* symbol = scope->resolve(path.name());
             if (!symbol) {
@@ -349,7 +349,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     this->set_register_state(reg, value_type->get_pointer_to());
 
     auto* structure = this->get_global_struct(value_type);
-    Scope* scope = nullptr;
+    RefPtr<Scope> scope = nullptr;
 
     if (!structure) {
         if (!this->has_impl(value_type)) {
@@ -535,7 +535,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             auto* p = expr.as<ast::PathExpr>();
             auto& path = p->path();
 
-            Scope* scope = TRY(this->resolve_scope_path(expr.span(), path));
+            auto scope = TRY(this->resolve_scope_path(expr.span(), path));
             symbol = scope->resolve(path.name());
 
             if (!symbol) {

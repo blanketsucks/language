@@ -30,13 +30,13 @@ enum class ScopeType : u8 {
 
 class Scope {
 public:
-    static Scope* create(String name, ScopeType type, Scope* parent = nullptr);
+    static RefPtr<Scope> create(String name, ScopeType type, RefPtr<Scope> parent = nullptr);
 
     String const& name() const { return m_name; }
     ScopeType type() const { return m_type; }
 
-    Scope* parent() const { return m_parent; }
-    Vector<Scope*> const& children() const { return m_children; }
+    RefPtr<Scope> parent() const { return m_parent; }
+    Vector<RefPtr<Scope>> const& children() const { return m_children; }
 
     Module* module() const { return m_module; }
     void set_module(Module* module) { m_module = module; }
@@ -60,13 +60,13 @@ public:
     void finalize(bool eliminate_dead_functions = true);
 
 private:
-    Scope(String name, ScopeType type, Scope* parent) : m_name(move(name)), m_type(type), m_parent(parent) {}
+    Scope(String name, ScopeType type, RefPtr<Scope> parent) : m_name(move(name)), m_type(type), m_parent(move(parent)) {}
 
     String m_name;
     ScopeType m_type;
 
-    Scope* m_parent;
-    Vector<Scope*> m_children;
+    RefPtr<Scope> m_parent;
+    Vector<RefPtr<Scope>> m_children;
 
     HashMap<String, RefPtr<Symbol>> m_symbols;
     

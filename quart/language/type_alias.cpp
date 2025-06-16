@@ -47,10 +47,10 @@ ErrorOr<Type*> TypeAlias::evaluate(State& state, const Vector<Type*>& args) {
         return iterator->second;
     }
 
-    auto scope = OwnPtr<Scope>(Scope::create({}, ScopeType::Anonymous, state.global_scope()));
+    auto scope = Scope::create({}, ScopeType::Anonymous, state.global_scope());
+    auto previous_scope = state.scope();
 
-    auto* previous_scope = state.scope();
-    state.set_current_scope(&*scope);
+    state.set_current_scope(scope);
 
     for (auto entry : llvm::zip(m_parameters, args)) {
         const GenericTypeParameter& parameter = std::get<0>(entry);

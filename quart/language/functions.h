@@ -49,7 +49,7 @@ public:
         String name, 
         Vector<FunctionParameter> parameters, 
         FunctionType* underlying_type,
-        Scope*,
+        RefPtr<Scope>,
         LinkageSpecifier,
         RefPtr<LinkInfo>,
         bool is_public
@@ -67,7 +67,7 @@ public:
 
     String const& qualified_name() const { return m_qualified_name; }
 
-    Scope* scope() const { return m_scope; }
+    RefPtr<Scope> scope() const { return m_scope; }
 
     bool is_decl() const { return !m_entry_block; }
     bool is_extern() const { return m_linkage_specifier > LinkageSpecifier::None; }
@@ -115,13 +115,13 @@ private:
         String name,
         Vector<FunctionParameter> parameters,
         FunctionType* underlying_type,
-        Scope* scope,
+        RefPtr<Scope> scope,
         LinkageSpecifier linkage_specifier,
         RefPtr<LinkInfo> link_info,
         bool is_public
     ) : Symbol(move(name), Symbol::Function, is_public), m_span(span),
         m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
-        m_link_info(move(link_info)), m_scope(scope) {
+        m_link_info(move(link_info)), m_scope(move(scope)) {
             
         this->set_qualified_name();
     }
@@ -147,7 +147,7 @@ private:
 
     Loop m_loop = {};
     
-    Scope* m_scope = nullptr;
+    RefPtr<Scope> m_scope = nullptr;
 };
 
 }

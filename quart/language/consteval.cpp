@@ -360,7 +360,7 @@ bool ConstantEvaluator::is_constant_expression(ast::PathExpr const& expr) const 
         return false;
     }
 
-    Scope* scope = result.value();
+    auto scope = result.value();
     auto* variable = scope->resolve<Variable>(path.name());
 
     return variable && variable->is_constant();
@@ -369,7 +369,7 @@ bool ConstantEvaluator::is_constant_expression(ast::PathExpr const& expr) const 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::PathExpr const& expr) {
     auto& path = expr.path();
 
-    Scope* scope = TRY(m_state.resolve_scope_path(expr.span(), path));
+    auto scope = TRY(m_state.resolve_scope_path(expr.span(), path));
     auto* variable = scope->resolve<Variable>(path.name());
 
     if (!variable) {

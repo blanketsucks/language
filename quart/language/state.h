@@ -25,7 +25,7 @@ public:
 
     void dump() const;
 
-    Scope* global_scope() const { return m_global_scope; }
+    RefPtr<Scope> global_scope() const { return m_global_scope; }
 
     bytecode::Generator& generator() { return m_generator; }
     Context& context() { return *m_context; }
@@ -34,12 +34,14 @@ public:
     Type* type_context() const { return m_type_context; }
     void set_type_context(Type* type) { m_type_context = type; }
 
-    Scope* scope() const { return m_current_scope; }
+    RefPtr<Scope> scope() const { return m_current_scope; }
+
     Function* function() const { return m_current_function; }
     Struct* structure() const { return m_current_struct; }
     Module* module() const { return m_current_module; }
 
-    void set_current_scope(Scope* scope) { m_current_scope = scope; }
+    void set_current_scope(RefPtr<Scope> scope) { m_current_scope = move(scope); }
+
     void set_current_function(Function* function) { m_current_function = function; }
     void set_current_struct(Struct* structure) { m_current_struct = structure; }
     void set_current_module(Module* module) { m_current_module = module; }
@@ -47,8 +49,8 @@ public:
     Type* self_type() const { return m_self_type; }
     void set_self_type(Type* type) { m_self_type = type; }
 
-    ErrorOr<Scope*> resolve_scope(Span, Scope* current_scope, const String& name);
-    ErrorOr<Scope*> resolve_scope_path(Span, const Path&, bool allow_generic_arguments = false);
+    ErrorOr<RefPtr<Scope>> resolve_scope(Span, Scope& current_scope, const String& name);
+    ErrorOr<RefPtr<Scope>> resolve_scope_path(Span, const Path&, bool allow_generic_arguments = false);
     
     Vector<bytecode::Instruction*> const& global_instructions() const { return m_generator.global_instructions(); }
 
@@ -111,7 +113,7 @@ public:
     );
 
     ErrorOr<bytecode::Register> resolve_reference(
-        Scope*, Span,
+        Scope&, Span,
         const String& name,
         bool is_mutable,
         Optional<bytecode::Register> dst = {},
@@ -150,13 +152,13 @@ private:
 
     Vector<RegisterState> m_registers;
 
-    Scope* m_global_scope = nullptr;
+    RefPtr<Scope> m_global_scope = nullptr;
 
     size_t m_global_count = 0;
 
     Type* m_type_context = nullptr;
 
-    Scope* m_current_scope = nullptr;
+    RefPtr<Scope> m_current_scope = nullptr;
     Function* m_current_function = nullptr;
     Struct* m_current_struct = nullptr;
     Module* m_current_module = nullptr;

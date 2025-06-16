@@ -46,9 +46,9 @@ ImplCondition::Result ImplCondition::is_satisfied(quart::Type* ty) {
     return { false, nullptr, name };
 }
 
-ErrorOr<Scope*> Impl::make(State& state, Type* type) {
+ErrorOr<RefPtr<Scope>> Impl::make(State& state, Type* type) {
     if (!this->is_generic()) {
-        return nullptr;
+        return { nullptr };
     }
 
     auto iterator = m_impls.find(type);
@@ -60,25 +60,25 @@ ErrorOr<Scope*> Impl::make(State& state, Type* type) {
     for (auto& condition : m_conditions) {
         auto result = condition->is_satisfied(type);
         if (!result.satisfied) {
-            return nullptr;
+            return { nullptr };
         }
 
         auto iterator = args.find(result.name);
         if (iterator != args.end()) {
             if (iterator->second != result.type) {
-                return nullptr;
+                return { nullptr };
             }
         }
 
         args[result.name] = result.type;
     }
 
-    Scope* scope = Scope::create(type->str(), ScopeType::Impl, m_parent_scope);
+    auto scope = Scope::create(type->str(), ScopeType::Impl, m_parent_scope);
     for (auto& [name, ty] : args) {
         scope->add_symbol(TypeAlias::create(name, ty, false)); 
     }
 
-    Scope* current_scope = state.scope();
+    auto current_scope = state.scope();
     state.set_current_scope(scope);
 
     state.set_self_type(type);
