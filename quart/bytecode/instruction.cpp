@@ -43,6 +43,21 @@ static inline String fmt(Operand const& operand) {
     }
 }
 
+static String fmt(Vector<Register> registers) {
+    String str = "[";
+    for (auto [index, reg] : llvm::enumerate(registers)) {
+        str.append(fmt(reg));
+        if (index == registers.size() - 1) {
+            continue;
+        }
+
+        str.append(", ");
+    }
+
+    str.push_back(']');
+    return str;
+}
+
 void Move::dump() const {
     outln("Move {0}, {1}", fmt(m_dst), m_src);
 }
@@ -52,7 +67,7 @@ void NewString::dump() const {
 }
 
 void NewArray::dump() const {
-    outln("NewArray {0}, {1}", fmt(m_dst), m_elements.size());
+    outln("NewArray {0}, {1}", fmt(m_dst), fmt(m_elements));
 }
 
 void NewLocalScope::dump() const {
@@ -142,7 +157,7 @@ void Return::dump() const {
 }
 
 void Call::dump() const {
-    outln("Call {0}, {1}, {2}", fmt(m_dst), fmt(m_function), m_arguments.size());
+    outln("Call {0}, {1}, {2}", fmt(m_dst), fmt(m_function), fmt(m_arguments));
 }
 
 void Cast::dump() const {
@@ -154,7 +169,7 @@ void NewStruct::dump() const {
 }
 
 void Construct::dump() const {
-    outln("Construct {0}, {1}, {2}", fmt(m_dst), m_structure->qualified_name(), m_arguments.size());
+    outln("Construct {0}, {1}, {2}", fmt(m_dst), m_structure->qualified_name(), fmt(m_arguments));
 }
 
 void Alloca::dump() const {
