@@ -1,5 +1,6 @@
 #include <quart/language/consteval.h>
 #include <quart/language/state.h>
+#include <quart/temporary_change.h>
 
 // These are expressions that are always not constant no matter what
 // NOTE: Call, Return, EmptyConstructor, Cast and Ternary could be implemented in the future.
@@ -309,8 +310,14 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
     auto* integer = condition->as<ConstantInt>();
     u64 value = integer->value();
 
+    TemporaryChange<bool> change(m_in_loop, true);
     while (value) {
         TRY(this->evaluate(expr.body()));
+
+        if (m_should_break) {
+            m_should_break = false;
+            break;
+        }
 
         Constant* condition = TRY(this->evaluate(expr.condition()));
         value = condition->as<ConstantInt>()->value();
@@ -329,12 +336,11 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ForExpr const&) {
 }
 
 bool ConstantEvaluator::is_constant_expression(ast::BreakExpr const&) const {
-    // TODO: Maybe if we are inside a constantly evaluated loop, this should be true?
-    return false;
+    return m_in_loop;
 }
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BreakExpr const&) {
-    ASSERT(false, "Not implemented");
+    m_should_break = true;
     return nullptr;
 }
 

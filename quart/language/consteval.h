@@ -30,6 +30,10 @@ private:
 #undef Op
 
     State& m_state; // NOLINT
+
+    bool m_in_loop = false;
+    bool m_should_break = false;
+    bool m_should_continue = false;
 };
 
 }
