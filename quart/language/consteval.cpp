@@ -431,8 +431,20 @@ bool ConstantEvaluator::is_constant_expression(ast::BoolExpr const&) const {
     return true;
 }
 
-ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const&) {
-    ASSERT(false, "Not implemented");
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const& expr) {
+    IntType* type = m_state.context().i1();
+    
+    switch (expr.value()) {
+        using ast::BoolExpr;
+
+        case BoolExpr::False:
+            return ConstantInt::get(m_state.context(), type, 0);
+        case BoolExpr::True:
+            return ConstantInt::get(m_state.context(), type, 1);
+        case BoolExpr::Null:
+            ASSERT(false, "Not Implemented");
+    }
+    
     return nullptr;
 }
 
