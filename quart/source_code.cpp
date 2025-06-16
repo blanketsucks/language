@@ -45,7 +45,7 @@ RefPtr<SourceCode> SourceCode::from_path(fs::Path path) {
 }
 
 Line SourceCode::line_for(size_t offset) const {
-    auto iterator = std::upper_bound(m_line_offsets.begin(), m_line_offsets.end(), offset);
+    auto iterator = std::ranges::upper_bound(m_line_offsets, offset);
 
     size_t line = (iterator--) - m_line_offsets.begin() - 1;
     return { line, *iterator };
