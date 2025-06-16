@@ -82,9 +82,11 @@ String SourceCode::format_generic_message(const Span& span, StringView message, 
 
     size_t spaces = column + (line.size() - view.size()) - 1;
     size_t size = std::max(span.size(), 1ul);
-
+    
     line.insert(spaces, color);
-    line.insert(spaces + size + color.size(), "\x1b[0m");
+    
+    size_t pos = std::min(spaces + size + color.size(), line.size());
+    line.insert(pos, "\x1b[0m");
 
     return format(
         "\x1b[1;37m{0}:{1}:{2}: {3}{4}:\x1b[0m {5}\n{6}\n{7}{8}{9}{10}", 
