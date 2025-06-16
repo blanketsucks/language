@@ -83,13 +83,12 @@ bool ConstantEvaluator::is_constant_expression(ast::BlockExpr const& expr) const
 }
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BlockExpr const& expr) {
+    Constant* result = nullptr;
     for (auto const& e : expr.block()) {
-        if (auto result = this->evaluate(*e); result.is_err()) {
-            return result;
-        }
+        result = TRY(this->evaluate(*e));
     }
 
-    return nullptr;
+    return result;
 }
 
 bool ConstantEvaluator::is_constant_expression(ast::IntegerExpr const&) const {
@@ -354,8 +353,21 @@ bool ConstantEvaluator::is_constant_expression(ast::IfExpr const& expr) const {
     return true;
 }
 
-ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IfExpr const&) {
-    ASSERT(false, "Not implemented");
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IfExpr const& expr) {
+    Constant* condition = TRY(this->evaluate(expr.condition()));
+    if (!condition->is<ConstantInt>()) {
+        return err(expr.condition().span(), "Expected an integer");
+    }
+
+    auto* integer = condition->as<ConstantInt>();
+    u64 value = integer->value();
+
+    if (value) {
+        return TRY(this->evaluate(expr.body()));
+    } else if (expr.else_body()) {
+        return TRY(this->evaluate(*expr.else_body()));
+    }
+
     return nullptr;
 }
 
