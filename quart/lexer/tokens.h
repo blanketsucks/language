@@ -88,6 +88,7 @@ enum class TokenKind : u8 {
     Impl,
     Trait,
     Match,
+    ConstEval,
 
     True,
     False,
@@ -257,7 +258,8 @@ static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
     { "match", TokenKind::Match },
     { "true", TokenKind::True },
     { "false", TokenKind::False },
-    { "null", TokenKind::Null }
+    { "null", TokenKind::Null },
+    { "consteval", TokenKind::ConstEval }
 };
 
 static const std::map<TokenKind, u8> PRECEDENCES = {

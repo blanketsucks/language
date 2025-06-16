@@ -175,7 +175,8 @@ enum class ExprKind : u8 {
     ImplTrait,
     Match,
     RangeFor,
-    Bool
+    Bool,
+    ConstEval,
 };
 
 enum class TypeKind : u8 {
@@ -1174,6 +1175,18 @@ public:
 
 private:
     Value m_value;
+};
+
+class ConstEvalExpr : public ExprBase<ExprKind::Bool> {
+public:
+    ConstEvalExpr(Span span, ExprList<> body) : ExprBase(span), m_body(move(body)) {}
+
+    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
+
+    ExprList<> const& body() const { return m_body; }
+
+private:
+    ExprList<> m_body;
 };
 
 class TypeExpr {

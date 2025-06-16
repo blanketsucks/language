@@ -1413,4 +1413,12 @@ BytecodeResult ImplTraitExpr::generate(State&, Optional<bytecode::Register>) con
     return {};
 }
 
+BytecodeResult ConstEvalExpr::generate(State& state, Optional<bytecode::Register>) const {
+    for (auto& expr : m_body) {
+        TRY(state.constant_evaluator().evaluate(*expr));
+    }
+
+    return {};
+}
+
 }

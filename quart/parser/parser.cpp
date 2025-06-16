@@ -1421,6 +1421,13 @@ ParseResult<ast::Expr> Parser::statement() {
             this->next();
             return this->parse_pub();
         }
+        case TokenKind::ConstEval: {
+            this->next();
+            TRY(this->expect(TokenKind::LBrace));
+
+            auto [body, span] = TRY(this->parse_expr_block());
+            return { make<ast::ConstEvalExpr>(span, move(body)) };
+        };
         case TokenKind::SemiColon:
             this->next();
             return this->statement();
