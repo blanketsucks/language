@@ -728,6 +728,9 @@ BytecodeResult DeferExpr::generate(State&, Optional<bytecode::Register>) const {
 
 BytecodeResult IfExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
+    if (!current_function) {
+        return err(span(), "If statements are not allowed outside functions");
+    }
 
     auto* then_block = state.create_block();
     auto* else_block = state.create_block();

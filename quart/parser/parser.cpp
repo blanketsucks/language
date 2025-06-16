@@ -1225,10 +1225,6 @@ ParseResult<ast::Expr> Parser::statement() {
             return { make<ast::ReturnExpr>(span, move(expr)) };
         } 
         case TokenKind::If: {
-            if (!m_in_function) {
-                return err(m_current.span(), "If statement outside of function");
-            }
-
             this->next();
             return this->parse_if();
         } 
