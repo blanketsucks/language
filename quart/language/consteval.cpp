@@ -36,6 +36,8 @@
 
 namespace quart {
 
+static constexpr size_t MAX_LOOP_COUNT = 1'000'000;
+
 bool ConstantEvaluator::is_constant_expression(ast::Expr const& expr) const {
     switch (expr.kind()) {
     // NOLINTNEXTLINE
@@ -311,6 +313,8 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
     u64 value = integer->value();
 
     TemporaryChange<bool> change(m_in_loop, true);
+    size_t i = 0;
+
     while (value) {
         TRY(this->evaluate(expr.body()));
 
@@ -321,6 +325,11 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
 
         Constant* condition = TRY(this->evaluate(expr.condition()));
         value = condition->as<ConstantInt>()->value();
+
+        i++;
+        if (i >= MAX_LOOP_COUNT) {
+            return err(expr.span(), "Max iteration count exceeded for constant loops");
+        }
     }
 
     return nullptr;
