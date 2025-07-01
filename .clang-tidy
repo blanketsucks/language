@@ -1,7 +1,9 @@
 Checks: modernize-*, clang-analyzer-*, performance-*, cppcoreguidelines-*, bugprone-*, -readability-*,
-      -modernize-use-trailing-return-type, -modernize-use-nodiscard, -bugprone-easily-swappable-parameters,
-      -readability-magic-numbers, -modernize-use-designated-initializers
+        -modernize-use-trailing-return-type, -modernize-use-nodiscard, -bugprone-easily-swappable-parameters,
+        -modernize-use-designated-initializers
 
 CheckOptions:
   - key: cppcoreguidelines-avoid-do-while.IgnoreMacros
+    value: true
+  - key: cppcoreguidelines-avoid-magic-numbers.IgnorePowersOf2IntegerValues
     value: true
