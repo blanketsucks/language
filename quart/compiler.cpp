@@ -64,12 +64,12 @@ void Compiler::dump() const {
     }
 
     if (!m_options.library_names.empty()) {
-        String libs = "..."; // TODO: Format library names
+        String libs = format_range(m_options.library_names);
         stream << "    - " << format("Library names: {}", libs) << '\n';
     }
 
     if (!m_options.library_paths.empty()) {
-        String libpaths = "..."; // TODO: Format library paths
+        String libpaths = format_range(m_options.library_paths);
         stream << "    - " << quart::format("Library paths: {}", libpaths) << '\n';
     }
 

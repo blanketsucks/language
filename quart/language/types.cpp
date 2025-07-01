@@ -231,7 +231,7 @@ String Type::str() const {
                 types.push_back(type->str());
             }
 
-            return format("({})", "..."); // TODO: Format tuple types
+            return format("({})", format_range(types));
         }
         case TypeKind::Pointer: {
             String pointee = this->get_pointee_type()->str();
@@ -257,7 +257,7 @@ String Type::str() const {
                 params.emplace_back("...");
             }
 
-            return format("func({}) -> {}", "...", return_type); // TODO: Format function parameters
+            return format("func({}) -> {}", format_range(params), return_type);
         }
     }
 
