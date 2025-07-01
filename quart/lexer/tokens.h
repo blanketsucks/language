@@ -222,7 +222,7 @@ private:
     Span m_span;
 };
 
-static const std::map<llvm::StringRef, TokenKind> KEYWORDS = {
+static const std::map<StringView, TokenKind> KEYWORDS = {
     { "extern", TokenKind::Extern },
     { "func", TokenKind::Func },
     { "return", TokenKind::Return },
@@ -339,13 +339,10 @@ static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
 
 }
 
-namespace llvm {
 
 template<>
-struct format_provider<quart::Token> {
+struct std::formatter<quart::Token> {
     static void format(const quart::Token& token, raw_ostream& stream, StringRef) {
         stream << "Token { kind: " << int(token.kind()) << ", value: '" << token.value() << "' }";
     }
 };
-
-}
