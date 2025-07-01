@@ -186,13 +186,7 @@ public:
 
     void dump() const;
 
-    const llvm::Target* create_target(String& error, String& triple);
-    OwnPtr<llvm::TargetMachine> create_target_machine(
-        llvm::Module& module, const llvm::Target* target, llvm::StringRef triple
-    );
-
     int compile() const;
-    int jit(llvm::ArrayRef<char*> args);
 
 private:
     CompilerOptions m_options;
