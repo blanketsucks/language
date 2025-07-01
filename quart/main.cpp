@@ -47,5 +47,9 @@ int main(int argc, char** argv) {
     };
 
     Compiler compiler(move(options));
+    if (args.verbose) {
+        compiler.dump();
+    }
+
     return compiler.compile();
 }
