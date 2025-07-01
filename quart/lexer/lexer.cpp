@@ -342,7 +342,7 @@ ErrorOr<Token> Lexer::once() {
             return this->lex_string();
         }
         default:
-            return err({ start, m_offset, m_source_code->index() }, "Unexpected character '{0}'", m_current);
+            return err({ start, m_offset, m_source_code->index() }, "Unexpected character '{}'", m_current);
     }
 }
 

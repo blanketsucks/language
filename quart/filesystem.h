@@ -7,10 +7,10 @@
 #include <cassert>
 #include <fstream>
 #include <sstream>
+#include <format>
 
 #include <quart/common.h>
 
-#include <llvm/Support/FormatVariadic.h>
 
 #if _WIN32 || _WIN64
     #include <io.h>
@@ -108,13 +108,14 @@ String replace_extension(const String& filename, String extension);
 
 }
 
-namespace llvm {
-
 template<>
-struct format_provider<quart::fs::Path> {
-    static void format(const quart::fs::Path& path, raw_ostream& stream, StringRef) {
-        stream << std::string(path);
+struct std::formatter<quart::fs::Path> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(const quart::fs::Path& path, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", std::string(path));
     }
 };
-
-}

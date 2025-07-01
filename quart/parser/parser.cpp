@@ -109,9 +109,9 @@ ErrorOr<Token> Parser::expect(TokenKind kind, StringView value) {
     }
 
     if (value.empty()) {
-        return err(span, "Expected '{0}'", token_kind_to_str(kind));
+        return err(span, "Expected '{}'", token_kind_to_str(kind));
     } else {
-        return err(span, "Expected '{0}'", value);
+        return err(span, "Expected '{}'", value);
     }
 }
 
@@ -821,7 +821,7 @@ ParseResult<ast::Expr> Parser::parse_extern_block(bool is_public) {
 
     if (m_current.is(TokenKind::String)) {
         if (m_current.value() != "C") {
-            return err(m_current.span(), "Unknown linkage specifier '{0}'", m_current.value());
+            return err(m_current.span(), "Unknown linkage specifier '{}'", m_current.value());
         }
 
         this->next();
@@ -1443,7 +1443,7 @@ ErrorOr<ast::Attributes> Parser::parse_attributes() {
         while (!m_current.is(TokenKind::RBracket)) {
             Token token = TRY(this->expect(TokenKind::Identifier));
             if (!this->is_valid_attribute(token.value())) {
-                return err(token.span(), "Unknown attribute '{0}'", token.value());
+                return err(token.span(), "Unknown attribute '{}'", token.value());
             }
 
             auto& handler = m_attributes.at(token.value());

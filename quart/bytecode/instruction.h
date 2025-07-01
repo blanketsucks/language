@@ -3,6 +3,7 @@
 #include <quart/common.h>
 
 #include <quart/bytecode/register.h>
+#include <quart/lexer/tokens.h>
 #include <quart/language/types.h>
 
 #include <string>

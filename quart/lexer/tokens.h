@@ -342,7 +342,12 @@ static const std::map<TokenKind, BinaryOp> INPLACE_OPERATORS {
 
 template<>
 struct std::formatter<quart::Token> {
-    static void format(const quart::Token& token, raw_ostream& stream, StringRef) {
-        stream << "Token { kind: " << int(token.kind()) << ", value: '" << token.value() << "' }";
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(const quart::Token& token, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "Token { kind: {}, value: '{}' }", quart::token_kind_to_str(token.kind()), token.value());
     }
 };

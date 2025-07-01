@@ -15,9 +15,9 @@ ErrorOr<HashMap<String, String>> AttributeParser::parse_call_like_attribute(
 
         Span span = token.span();
         if (!allowed_parameters.contains(key)) {
-            return err(span, "Invalid '{0}' attribute key '{1}'", name, key);
+            return err(span, "Invalid '{}' attribute key '{}'", name, key);
         } else if (args.contains(key)) {
-            return err(span, "A value for '{0}' has already been provided", key);
+            return err(span, "A value for '{}' has already been provided", key);
         }
 
         TRY(parser.expect(TokenKind::Assign));

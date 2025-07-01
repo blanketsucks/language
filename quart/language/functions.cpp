@@ -31,7 +31,7 @@ void Function::set_qualified_name() {
 
 void Function::dump() const {
     auto range = llvm::map_range(m_parameters, [](auto& param) { return param.type->str(); });
-    outln("function {0}({1}) -> {2}:", m_qualified_name, range, return_type()->str());
+    outln("function {}({}) -> {}:", m_qualified_name, "...", return_type()->str()); // TODO: Format function parameters
 
     for (auto& block : m_basic_blocks) {
         block->dump();

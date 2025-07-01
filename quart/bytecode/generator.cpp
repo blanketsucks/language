@@ -9,7 +9,7 @@ bytecode::Register Generator::allocate_register() {
 
 BasicBlock* Generator::create_block(String name) {
     if (name.empty()) {
-        name = format("block.{0}", m_next_block_id++);
+        name = format("block.{}", m_next_block_id++);
     }
 
     m_blocks.push_back(BasicBlock::create(move(name)));

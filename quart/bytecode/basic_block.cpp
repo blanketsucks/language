@@ -1,5 +1,6 @@
 #include <quart/bytecode/basic_block.h>
 #include <quart/bytecode/instruction.h>
+#include <quart/format.h>
 
 namespace quart::bytecode {
 
@@ -11,7 +12,7 @@ void BasicBlock::add_instruction(Instruction* inst) {
 }
 
 void BasicBlock::dump() const {
-    outln("{0}:", m_name);
+    outln("{}:", m_name);
     for (auto& instruction : m_instructions) {
         out("  "); instruction->dump();
     }

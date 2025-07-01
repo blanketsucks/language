@@ -1,6 +1,7 @@
 #include <quart/language/types.h>
 #include <quart/language/context.h>
 #include <quart/language/structs.h>
+#include <quart/format.h>
 
 namespace quart {
 
@@ -214,7 +215,7 @@ String Type::str() const {
                 return "bool";
             }
 
-            return format("{0}{1}", is_unsigned ? "u" : "i", bits);
+            return format("{}{}", is_unsigned ? "u" : "i", bits);
         }
         case TypeKind::Enum: return this->get_enum_name();
         case TypeKind::Struct: return this->get_struct_name();
@@ -222,7 +223,7 @@ String Type::str() const {
             String element = this->get_array_element_type()->str();
             size_t size = this->get_array_size();
 
-            return format("[{0}; {1}]", element, size);
+            return format("[{}; {}]", element, size);
         }
         case TypeKind::Tuple: {
             Vector<String> types;
@@ -230,19 +231,19 @@ String Type::str() const {
                 types.push_back(type->str());
             }
 
-            return format("({0})", llvm::make_range(types.begin(), types.end()));
+            return format("({})", "..."); // TODO: Format tuple types
         }
         case TypeKind::Pointer: {
             String pointee = this->get_pointee_type()->str();
             bool is_mutable = this->is_mutable();
 
-            return format("*{0}{1}", is_mutable ? "mut " : "", pointee);
+            return format("*{}{}", is_mutable ? "mut " : "", pointee);
         }
         case TypeKind::Reference: {
             String type = this->get_reference_type()->str();
             bool is_mutable = this->is_mutable();
 
-            return format("&{0}{1}", is_mutable ? "mut " : "", type);
+            return format("&{}{}", is_mutable ? "mut " : "", type);
         }
         case TypeKind::Function: {
             String return_type = this->get_function_return_type()->str();
@@ -256,7 +257,7 @@ String Type::str() const {
                 params.emplace_back("...");
             }
 
-            return format("func({0}) -> {1}", llvm::make_range(params.begin(), params.end()), return_type);
+            return format("func({}) -> {}", "...", return_type); // TODO: Format function parameters
         }
     }
 

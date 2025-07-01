@@ -141,11 +141,11 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IdentifierExpr const& expr) 
     // FIXME: Allow for functions too
     auto* variable = m_state.scope()->resolve<Variable>(expr.name());
     if (!variable) {
-        return err(expr.span(), "Unknown identifier '{0}'", expr.name());
+        return err(expr.span(), "Unknown identifier '{}'", expr.name());
     }
 
     if (!variable->is_constant()) {
-        return err(expr.span(), "Variable '{0}' is not constant", expr.name());
+        return err(expr.span(), "Variable '{}' is not constant", expr.name());
     }
 
     return variable->initializer();
@@ -185,14 +185,14 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IndexExpr const& expr) {
 
     Constant* idx = TRY(this->evaluate(expr.index()));
     if (!idx->is<ConstantInt>()) {
-        return err(expr.span(), "Index must be an integer not {0}", idx->type()->str());
+        return err(expr.span(), "Index must be an integer not {}", idx->type()->str());
     }
 
     auto* array = value->as<ConstantArray>();
     u64 index = idx->as<ConstantInt>()->value();
 
     if (index >= array->size()) {
-        return err(expr.span(), "Index out of bounds. Array has {0} elements", array->size());
+        return err(expr.span(), "Index out of bounds. Array has {} elements", array->size());
     }
 
     return array->at(index);
@@ -220,7 +220,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ConstructorExpr const& expr)
         auto iterator = fields.find(argument.name);
 
         if (iterator == fields.end()) {
-            return err(argument.value->span(), "Unknown field '{0}'", argument.name);
+            return err(argument.value->span(), "Unknown field '{}'", argument.name);
         }
 
         auto& field = iterator->second;
@@ -247,7 +247,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::AttributeExpr const& expr) {
 
     auto iterator = fields.find(expr.attribute());
     if (iterator == fields.end()) {
-        return err(expr.span(), "Unknown attribute '{0}'", expr.attribute());
+        return err(expr.span(), "Unknown attribute '{}'", expr.attribute());
     }
 
     auto& field = iterator->second;
@@ -474,11 +474,11 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::PathExpr const& expr) {
     auto* variable = scope->resolve<Variable>(path.name());
 
     if (!variable) {
-        return err(expr.span(), "Unknown identifier '{0}'", path.format());
+        return err(expr.span(), "Unknown identifier '{}'", path.format());
     }
 
     if (!variable->is_constant()) {
-        return err(expr.span(), "Variable '{0}' is not constant", path.name());
+        return err(expr.span(), "Variable '{}' is not constant", path.name());
     }
 
     return variable->initializer();

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <quart/lexer/lexer.h>
+#include <quart/common.h>
 
 #define ASSERT(x, message)                                                                  \
     do {                                                                                    \
         if (!(x)) {                                                                         \
             quart::assertion_failed(message, #x, __FILE__, __LINE__, __PRETTY_FUNCTION__);  \
-            LLVM_BUILTIN_TRAP;                                                              \
+            __builtin_trap();                                                               \
         }                                                                                   \
     } while (0)                                                                             \
 

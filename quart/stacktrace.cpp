@@ -29,12 +29,12 @@ void print_stacktrace() {
                 continue;
             }
 
-            outln("{0}: ??? at {1}", info.dli_fname, address);
+            outln("{}: ??? at {}", info.dli_fname, address);
             continue;
         }
 
         String demangled = llvm::demangle(info.dli_sname);
-        outln("{0}: {1} at {2}", info.dli_fname, demangled, address);
+        outln("{}: {} at {}", info.dli_fname, demangled, address);
     }
 
     outln();

@@ -213,7 +213,7 @@ void LLVMCodeGen::generate(bytecode::GetGlobalRef* inst) {
 
 void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
     auto* global = m_globals[inst->index()];
-    String name = format("global.{0}", inst->index());
+    String name = format("global.{}", inst->index());
 
     llvm::Type* type = inst->src()->type()->to_llvm_type(*m_context);
     if (!global) {
@@ -470,7 +470,7 @@ void LLVMCodeGen::generate(bytecode::NewTuple* inst) {
         auto range = llvm::map_range(type->types(), [this](auto* type) { return type->to_llvm_type(*m_context); });
         Vector<llvm::Type*> types(range.begin(), range.end());
 
-        String name = format("__tuple.{0}", m_tuple_count++);
+        String name = format("__tuple.{}", m_tuple_count++);
         structure = llvm::StructType::create(*m_context, types, name);
     } else {
         structure = iterator->second;
@@ -717,7 +717,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
 
     auto* target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target) {
-        return err("Failed to lookup target '{0}'", triple);
+        return err("Failed to lookup target '{}'", triple);
     }
 
     llvm::TargetOptions target_options;
@@ -736,7 +736,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     llvm::raw_fd_ostream stream(output, ec);
 
     if (ec) {
-        return err("Failed to open file '{0}': {1}", output, ec.message());
+        return err("Failed to open file '{}': {}", output, ec.message());
     }
 
     llvm::legacy::PassManager pm;

@@ -135,9 +135,9 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
 
     args.file = files.front(); 
     if (!args.file.exists()) {
-        return err("File '{0}' does not exist", args.file);
+        return err("File '{}' does not exist", args.file);
     } else if (!args.file.is_regular_file()) {
-        return err("'{0}' is not a regular file", args.file);
+        return err("'{}' is not a regular file", args.file);
     }
 
     args.entry = entry.getValue(); 
@@ -153,8 +153,8 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
     args.library_names = std::set<String>(libraries.begin(), libraries.end());
 
     if (output.empty()) {
-        llvm::StringRef extension = OUTPUT_FORMATS_TO_EXT.at(args.format);
-        args.output = args.file.with_extension(extension.str());
+        StringView extension = OUTPUT_FORMATS_TO_EXT.at(args.format);
+        args.output = args.file.with_extension(String(extension));
     } else {
         args.output = output.getValue();
     }

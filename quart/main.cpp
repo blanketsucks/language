@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     ErrorOr<cl::Arguments> result = cl::parse_arguments(argc, argv);
     if (result.is_err()) {
         auto error = result.error();
-        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", error.message());
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{}", error.message());
 
         return 1;
     }

@@ -2,6 +2,7 @@
 #include <quart/parser/parser.h>
 #include <quart/parser/ast.h>
 #include <quart/temporary_change.h>
+#include <quart/lexer/lexer.h>
 
 #include <quart/stacktrace.h>
 
@@ -157,7 +158,7 @@ BytecodeResult ArrayExpr::generate(State& state, Optional<bytecode::Register> ds
 BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Register> dst) const {
     auto* symbol = state.scope()->resolve(m_name);
     if (!symbol) {
-        return err(span(), "Unknown identifier '{0}'", m_name);
+        return err(span(), "Unknown identifier '{}'", m_name);
     }
 
     switch (symbol->type()) {
@@ -178,7 +179,7 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
             return reg;
         }
         default:
-            return err(span(), "'{0}' does not refer to a value", m_name);
+            return err(span(), "'{}' does not refer to a value", m_name);
     }
 }
 
@@ -202,7 +203,7 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
         if (!type) {
             type = state.type(*value);
         } else {
-            value = TRY(state.type_check_and_cast(span(), *value, type, "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+            value = TRY(state.type_check_and_cast(span(), *value, type, "Cannot assign a value of type '{}' to a variable of type '{}'"));
         }
 
         auto& register_state = state.register_state(*value);
@@ -276,7 +277,7 @@ BytecodeResult UnaryOpExpr::generate(State& state, Optional<bytecode::Register> 
             Type* type = state.type(value);
 
             if (!type->is_pointer() && !type->is_reference()) {
-                return err(span(), "Cannot de-reference value of type '{0}'", type->str());
+                return err(span(), "Cannot de-reference value of type '{}'", type->str());
             }
 
             state.emit<bytecode::Read>(reg, value);
@@ -303,7 +304,7 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
                 Type* type = state.type(lhs);
 
                 if (!type->is_pointer() && !type->is_reference()) {
-                    return err(value.span(), "Cannot dereference a value of type '{0}'", type->str());
+                    return err(value.span(), "Cannot dereference a value of type '{}'", type->str());
                 }
 
                 if (!type->is_mutable()) {
@@ -311,7 +312,7 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
                 }
 
                 auto rhs = TRY(ensure(state, *m_rhs, {}));
-                rhs = TRY(state.type_check_and_cast(m_rhs->span(), rhs, type->underlying_type(), "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+                rhs = TRY(state.type_check_and_cast(m_rhs->span(), rhs, type->underlying_type(), "Cannot assign a value of type '{}' to a variable of type '{}'"));
 
                 state.emit<bytecode::Write>(lhs, rhs);
                 return {};
@@ -324,7 +325,7 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
         auto rhs = TRY(ensure(state, *m_rhs, {}));
 
         Type* lhs_type = state.type(lhs)->get_reference_type();
-        rhs = TRY(state.type_check_and_cast(m_lhs->span(), rhs, lhs_type, "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+        rhs = TRY(state.type_check_and_cast(m_lhs->span(), rhs, lhs_type, "Cannot assign a value of type '{}' to a variable of type '{}'"));
 
         state.emit<bytecode::Write>(lhs, rhs);
         return {};
@@ -336,7 +337,7 @@ BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register>
     state.set_type_context(lhs_type);
     bytecode::Register rhs = TRY(ensure(state, *m_rhs, {}));
 
-    rhs = TRY(state.type_check_and_cast(span(), rhs, lhs_type, "Cannot perform binary operation on operands of type '{0}' and '{1}'"));
+    rhs = TRY(state.type_check_and_cast(span(), rhs, lhs_type, "Cannot perform binary operation on operands of type '{}' and '{}'"));
 
     auto reg = select_dst(state, dst);
     switch (m_op) {
@@ -368,7 +369,7 @@ BytecodeResult InplaceBinaryOpExpr::generate(State& state, Optional<bytecode::Re
     state.emit<bytecode::Read>(lhs, ref);
 
     auto rhs = TRY(ensure(state, *m_rhs, {}));
-    rhs = TRY(state.type_check_and_cast(span(), rhs, type, "Cannot assign a value of type '{0}' to a variable of type '{1}'"));
+    rhs = TRY(state.type_check_and_cast(span(), rhs, type, "Cannot assign a value of type '{}' to a variable of type '{}'"));
 
     auto reg = state.allocate_register();
     switch (m_op) {
@@ -411,7 +412,7 @@ ErrorOr<void> generate_generic_function_call(
 
         auto operand = TRY(ensure(state, *arg, {}));
 
-        operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter_type, "Cannot pass a value of type '{0}' to a parameter that expects '{1}'"));
+        operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter_type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
         arguments.push_back(operand);
 
         state.set_type_context(nullptr);
@@ -444,7 +445,7 @@ ErrorOr<void> generate_function_call(
 
             auto operand = TRY(ensure(state, *arg, {}));
 
-            operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{0}' to a parameter that expects '{1}'"));
+            operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
             arguments.push_back(operand);
 
             state.set_type_context(nullptr);
@@ -464,7 +465,7 @@ ErrorOr<void> generate_function_call(
             Type* type = state.type(operand);
 
             if (type != underlying_type) {
-                return err(arg->span(), "Cannot pass a value of type '{0}' to a parameter that expects '{1}'", type->str(), underlying_type->str());
+                return err(arg->span(), "Cannot pass a value of type '{}' to a parameter that expects '{}'", type->str(), underlying_type->str());
             }
 
             state.emit<bytecode::Alloca>(reg, underlying_type);
@@ -494,14 +495,14 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
     if (type->is_pointer()) {
         Type* pointee = type->get_pointee_type();
         if (!pointee->is_function()) {
-            return err(span(), "Cannot call a value of type '{0}'", type->str());
+            return err(span(), "Cannot call a value of type '{}'", type->str());
         }
 
         function_type = pointee->as<FunctionType>();
     } else if (type->is_function()) {
         function_type = type->as<FunctionType>();
     } else {
-        return err(span(), "Cannot call a value of type '{0}'", type->str());
+        return err(span(), "Cannot call a value of type '{}'", type->str());
     }
 
 
@@ -517,9 +518,9 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
     }
 
     if (function_type->is_var_arg() && m_args.size() < params) {
-        return err(span(), "Expected at least {0} arguments but got {1}", params, m_args.size());
+        return err(span(), "Expected at least {} arguments but got {}", params, m_args.size());
     } else if (!function_type->is_var_arg() && m_args.size() != params) {
-        return err(span(), "Expected {0} arguments but got {1}", params, m_args.size());
+        return err(span(), "Expected {} arguments but got {}", params, m_args.size());
     }
 
     Vector<bytecode::Register> arguments;
@@ -576,11 +577,11 @@ BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) 
             return {};
         }
 
-        reg = TRY(state.type_check_and_cast(m_value->span(), reg, return_type, "Cannot return a value of type '{0}' from a function that expects '{1}'"));
+        reg = TRY(state.type_check_and_cast(m_value->span(), reg, return_type, "Cannot return a value of type '{}' from a function that expects '{}'"));
         state.emit<bytecode::Return>(reg);
     } else {
         if (!return_type->is_void()) {
-            return err(span(), "Cannot return void from a function that expects '{0}'", return_type->str());
+            return err(span(), "Cannot return void from a function that expects '{}'", return_type->str());
         }
 
         state.emit<bytecode::Return>();
@@ -642,7 +643,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
     function->set_module(state.module());
 
     if (auto* original = state.get_global_function(function->qualified_name())) {
-        auto error = err(span(), "Function '{0}' is already defined", function->qualified_name());
+        auto error = err(span(), "Function '{}' is already defined", function->qualified_name());
         error.add_note(original->span(), "Previous definition is here");
 
         return error;
@@ -705,7 +706,7 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
 
     for (auto& block : function->basic_blocks()) {
         if (!block->is_terminated() && !function->return_type()->is_void()) {
-            return err(span(), "Function '{0}' does not return from all paths", function->name());
+            return err(span(), "Function '{}' does not return from all paths", function->name());
         } else if (!block->is_terminated()) {
             state.switch_to(block);
             state.emit<bytecode::Return>();
@@ -847,9 +848,9 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
     for (auto& field : m_fields) {
         Type* type = TRY(field.type->evaluate(state));
         if (!type->is_sized_type()) {
-            return err(field.type->span(), "Field '{0}' has an unsized type", field.name);
+            return err(field.type->span(), "Field '{}' has an unsized type", field.name);
         } else if (type == structure->underlying_type()) {
-            return err(field.type->span(), "Field '{0}' has the same type as the struct itself", field.name);
+            return err(field.type->span(), "Field '{}' has the same type as the struct itself", field.name);
         }
 
         fields.insert_or_assign(field.name, quart::StructField { field.name, type, field.flags, field.index });
@@ -888,7 +889,7 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
     for (auto& argument : m_arguments) {
         auto iterator = fields.find(argument.name);
         if (iterator == fields.end()) {
-            return err(argument.span, "Unknown field '{0}' for struct '{1}'", argument.name, structure->name());
+            return err(argument.span, "Unknown field '{}' for struct '{}'", argument.name, structure->name());
         }
 
         auto& field = iterator->second;
@@ -896,7 +897,7 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
 
         auto value = TRY(ensure(state, *argument.value, {}));
 
-        value = TRY(state.type_check_and_cast(argument.value->span(), value, field.type, "Cannot assign a value of type '{0}' to a field of type '{1}'"));
+        value = TRY(state.type_check_and_cast(argument.value->span(), value, field.type, "Cannot assign a value of type '{}' to a field of type '{}'"));
         arguments[field.index] = value;
 
         state.set_type_context(nullptr);
@@ -987,11 +988,11 @@ BytecodeResult PathExpr::generate(State& state, Optional<bytecode::Register> dst
     auto* symbol = scope->resolve(m_path.name());
 
     if (!symbol) {
-        return err(span(), "Unknown identifier '{0}'", m_path.format());
+        return err(span(), "Unknown identifier '{}'", m_path.format());
     }
 
     if (!symbol->is_public() && symbol->module() != state.module()) {
-        return err(span(), "Cannot access private symbol '{0}'", m_path.format());
+        return err(span(), "Cannot access private symbol '{}'", m_path.format());
     }
 
     auto reg = select_dst(state, dst);
@@ -1010,7 +1011,7 @@ BytecodeResult PathExpr::generate(State& state, Optional<bytecode::Register> dst
             return reg;
         }
         default:
-            return err(span(), "'{0}' does not refer to a value", m_path.format());
+            return err(span(), "'{}' does not refer to a value", m_path.format());
     }
 
     return {};
@@ -1049,7 +1050,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     auto prev_scope = current_scope;
     if (module) {
         if (module->is_importing()) {
-            return err(span(), "Could not import '{0}' because a circular dependency was detected", m_path.name());
+            return err(span(), "Could not import '{}' because a circular dependency was detected", m_path.name());
         }
 
         current_scope->add_symbol(module);
@@ -1074,7 +1075,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
             path = state.search_import_paths(fullpath);
 
             if (path.empty()) {
-                return err(span(), "Could not find module '{0}'", m_path.name());
+                return err(span(), "Could not find module '{}'", m_path.name());
             }
 
             fullpath = fullpath.substr(0, fullpath.size() - segment.size()) + String(path);
@@ -1117,7 +1118,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
         if (!dir.exists()) {
             dir = state.search_import_paths(dir);
             if (dir.empty()) {
-                return err(span(), "Could not find module '{0}'", m_path.name());
+                return err(span(), "Could not find module '{}'", m_path.name());
             }
         }
 
@@ -1182,7 +1183,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     for (auto& sym : m_symbols) {
         auto* symbol = current_scope->resolve(sym);
         if (!symbol) {
-            return err(span(), "Unknown symbol '{0}' for '{1}'", sym, m_path.format());
+            return err(span(), "Unknown symbol '{}' for '{}'", sym, m_path.format());
         }
 
         prev_scope->add_symbol(current_scope->symbols().at(sym));   
@@ -1197,7 +1198,7 @@ BytecodeResult UsingExpr::generate(State& state, Optional<bytecode::Register>) c
     auto* module = scope->resolve<Module>(m_path.name());
 
     if (!module) {
-        return err("Could not find module '{0}'", m_path.format());
+        return err("Could not find module '{}'", m_path.format());
     }
 
     scope = module->scope();
@@ -1206,7 +1207,7 @@ BytecodeResult UsingExpr::generate(State& state, Optional<bytecode::Register>) c
     for (auto& name : m_symbols) {
         auto* symbol = scope->resolve(name);
         if (!symbol) {
-            return err(span(), "Unknown symbol '{0}' for '{1}'", name, m_path.format());
+            return err(span(), "Unknown symbol '{}' for '{}'", name, m_path.format());
         }
 
         current_scope->add_symbol(scope->symbols().at(name));
@@ -1408,7 +1409,7 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 }
 
 BytecodeResult TraitExpr::generate(State&, Optional<bytecode::Register>) const {
-    outln("Defining trait '{0}'", m_name);
+    outln("Defining trait '{}'", m_name);
     return {};
 }
 

@@ -78,7 +78,7 @@ String SourceCode::format_generic_message(const Span& span, StringView message, 
     auto column = span.start() - start;
 
     StringView view = source_code->line(span);
-    String line = format("{0} | {1}", lineno + 1, view);
+    String line = format("{} | {}", lineno + 1, view);
 
     size_t spaces = column + (line.size() - view.size()) - 1;
     size_t size = std::max(span.size(), 1ul);
@@ -89,7 +89,7 @@ String SourceCode::format_generic_message(const Span& span, StringView message, 
     line.insert(pos, "\x1b[0m");
 
     return format(
-        "\x1b[1;37m{0}:{1}:{2}: {3}{4}:\x1b[0m {5}\n{6}\n{7}{8}{9}{10}", 
+        "\x1b[1;37m{}:{}:{}: {}{}:\x1b[0m {}\n{}\n{}{}{}{}", 
         source_code->filename(), lineno + 1, column + 1,
         color, name, message,
         line,

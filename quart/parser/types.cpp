@@ -49,11 +49,11 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
     auto* symbol = scope->resolve(m_path.name());
 
     if (!symbol) {
-        return err(span(), "Unknown identifier '{0}'", m_path.format());
+        return err(span(), "Unknown identifier '{}'", m_path.format());
     }
 
     if (!symbol->is_public() && symbol->module() != state.module()) {
-        return err(span(), "Cannot access private symbol '{0}'", m_path.format());
+        return err(span(), "Cannot access private symbol '{}'", m_path.format());
     }
 
     switch (symbol->type()) {
@@ -72,7 +72,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
             auto& last = m_path.last();
             if (!underlying_type && !alias->all_parameters_have_default()) {
                 if (!last.has_generic_arguments()) {
-                    return err(span(), "Type '{0}' is generic and requires type arguments", m_path.format());
+                    return err(span(), "Type '{}' is generic and requires type arguments", m_path.format());
                 }
 
                 underlying_type = TRY(alias->evaluate(state, last.arguments()));
@@ -89,13 +89,13 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
         default: break;
     }
 
-    return err(span(), "'{0}' does not refer to a type", m_path.format());
+    return err(span(), "'{}' does not refer to a type", m_path.format());
 }
 
 ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) {
     Constant* constant = TRY(state.constant_evaluator().evaluate(*m_size));
     if (!constant->is<ConstantInt>()) {
-        return err(m_size->span(), "Array size must be an integer not {0}", constant->type()->str());
+        return err(m_size->span(), "Array size must be an integer not {}", constant->type()->str());
     }
 
     u64 size = constant->as<ConstantInt>()->value();
@@ -168,7 +168,7 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
 
     auto* symbol = scope->resolve(path.name());
     if (!symbol) {
-        return err(m_parent->span(), "Unknown identifier '{0}'", path.name());
+        return err(m_parent->span(), "Unknown identifier '{}'", path.name());
     }
 
     Vector<Type*> args;
@@ -180,7 +180,7 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
         case Symbol::TypeAlias: {
             auto* type_alias = symbol->as<TypeAlias>();
             if (!type_alias->is_generic()) {
-                return err(span(), "Type '{0}' is not generic", type_alias->name());
+                return err(span(), "Type '{}' is not generic", type_alias->name());
             }
 
             return type_alias->evaluate(state, args);

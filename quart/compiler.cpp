@@ -22,7 +22,7 @@
         auto result = (expr);                               \
         if (result.is_err()) {                              \
             auto& err = result.error();                     \
-            errln("{0}", SourceCode::format_error(err));    \
+            errln("{}", SourceCode::format_error(err));    \
                                                             \
             return 1;                                       \
         }                                                   \
@@ -38,17 +38,17 @@ Compiler::TimePoint Compiler::now() {
 void Compiler::dump() const {
     std::stringstream stream;
 
-    stream << format("Input file: '{0}'", m_options.file.filename()) << '\n';
-    stream << format("Output file: '{0}'", m_options.output) << '\n';
-    stream << format("Program entry point: '{0}'", m_options.entry) << '\n';
+    stream << format("Input file: '{}'", m_options.file.filename()) << '\n';
+    stream << format("Output file: '{}'", m_options.output) << '\n';
+    stream << format("Program entry point: '{}'", m_options.entry) << '\n';
 
-    stream << format("Optimization level: 'O{0}'", (u32)m_options.opts.level) << '\n';
+    stream << format("Optimization level: 'O{}'", (u32)m_options.opts.level) << '\n';
 
     StringView fmt = OUTPUT_FORMATS_TO_STR.at(m_options.format);
-    stream << format("Output format: '{0}'", fmt) << '\n';
+    stream << format("Output format: '{}'", fmt) << '\n';
 
     if (!m_options.target.empty()) {
-        stream << format("Target: '{0}'", m_options.target) << '\n';
+        stream << format("Target: '{}'", m_options.target) << '\n';
     }
 
     if (!m_options.imports.empty()) {
@@ -64,16 +64,16 @@ void Compiler::dump() const {
     }
 
     if (!m_options.library_names.empty()) {
-        auto libnames = llvm::make_range(m_options.library_names.begin(), m_options.library_names.end());
-        stream << "    - " << quart::format("Library names: {0}", libnames) << '\n';
-    }
-        
-    if (!m_options.library_paths.empty()) {
-        auto libpaths = llvm::make_range(m_options.library_paths.begin(), m_options.library_paths.end());
-        stream << "    - " << quart::format("Library paths: {0}", libpaths) << '\n';
+        String libs = "..."; // TODO: Format library names
+        stream << "    - " << format("Library names: {}", libs) << '\n';
     }
 
-    stream << format("Linker: '{0}'", m_options.linker) << '\n';
+    if (!m_options.library_paths.empty()) {
+        String libpaths = "..."; // TODO: Format library paths
+        stream << "    - " << quart::format("Library paths: {}", libpaths) << '\n';
+    }
+
+    stream << format("Linker: '{}'", m_options.linker) << '\n';
     if (!m_options.extras.empty()) {
         stream << "Extra linker options: " << '\n';
         for (auto& pair : m_options.extras) {
@@ -111,11 +111,11 @@ Vector<String> Compiler::get_linker_arguments() const {
     }
 
     for (auto& name : m_options.library_names) {
-        args.push_back(format("-l{0}", name));
+        args.push_back(format("-l{}", name));
     }
 
     for (auto& path : m_options.library_paths) {
-        args.push_back(format("-L{0}", path));
+        args.push_back(format("-L{}", path));
     }
 
     if (m_options.format == OutputFormat::SharedLibrary) {
@@ -152,7 +152,7 @@ int Compiler::compile() const {
 
     if (result.is_err()) {
         auto& err = result.error();
-        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{0}", err.message());
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{}", err.message());
 
         return 1;
     }

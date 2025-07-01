@@ -98,11 +98,11 @@ void State::add_global_module(RefPtr<Module> module) {
 ErrorOr<RefPtr<Scope>> State::resolve_scope(Span span, Scope& current_scope, const String& name) {
     auto* symbol = current_scope.resolve(name);
     if (!symbol) {
-        return err(span, "namespace '{0}' not found", name);
+        return err(span, "namespace '{}' not found", name);
     }
 
     if (!symbol->is(Symbol::Module, Symbol::Struct)) {
-        return err(span, "'{0}' is not a valid namespace", name);
+        return err(span, "'{}' is not a valid namespace", name);
     }
 
     RefPtr<Scope> scope = nullptr;
@@ -144,7 +144,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(
 ) {
     auto* symbol = scope.resolve(name);
     if (!symbol) {
-        return err(span, "Unknown identifier '{0}'", name);
+        return err(span, "Unknown identifier '{}'", name);
     }
 
     bytecode::Register reg;
@@ -217,7 +217,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(
 
             Type* type = this->type(*option);
             if (!type->is_reference()) {
-                return err(expr.span(), "Expected a reference type but got '{0}'", type->str());
+                return err(expr.span(), "Expected a reference type but got '{}'", type->str());
             }
 
             if (is_mutable && !type->is_mutable()) {
@@ -240,7 +240,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
             auto* symbol = m_current_scope->resolve(identifier->name());
 
             if (!symbol) {
-                return err(expr.span(), "Unknown identifier '{0}'", identifier->name());
+                return err(expr.span(), "Unknown identifier '{}'", identifier->name());
             }
 
             return symbol;
@@ -251,7 +251,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
 
             auto* symbol = scope->resolve(path.name());
             if (!symbol) {
-                return err(expr.span(), "Unknown identifier '{0}'", path.name());
+                return err(expr.span(), "Unknown identifier '{}'", path.name());
             }
 
             return symbol;
@@ -264,7 +264,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
 ErrorOr<Struct*> State::resolve_struct(ast::Expr const& expr) {
     auto* symbol = TRY(this->resolve_symbol(expr));
     if (!symbol->is<Struct>()) {
-        return err(expr.span(), "'{0}' does not name a struct", symbol->name());
+        return err(expr.span(), "'{}' does not name a struct", symbol->name());
     }
 
     return symbol->as<Struct>();
@@ -273,7 +273,8 @@ ErrorOr<Struct*> State::resolve_struct(ast::Expr const& expr) {
 ErrorOr<bytecode::Register> State::type_check_and_cast(Span span, bytecode::Register value, Type* target, StringView error_message) {
     Type* type = this->type(value);
     if (!type->can_safely_cast_to(target)) {
-        return err(span, error_message.data(), type->str(), target->str());
+        String error = dyn_format(error_message, type->str(), target->str());
+        return Error { span, move(error) };
     } else if (type == target) {
         return value;
     }
@@ -361,7 +362,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
             }
 
             if (!scope) {
-                return err(parent.span(), "Cannot access attributes of type '{0}'", value_type->str());
+                return err(parent.span(), "Cannot access attributes of type '{}'", value_type->str());
             }
         } else {
             auto& impl = *m_impls[value_type];
@@ -377,7 +378,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     if (method) {
         // FIXME: Handle the case where the function comes from an impl not a struct
         if (!method->is_public() && m_current_struct != structure && method->module() != m_current_module) {
-            return err(expr.span(), "Cannot access private method '{0}' of struct '{1}'", method->name(), structure->qualified_name());
+            return err(expr.span(), "Cannot access private method '{}' of struct '{}'", method->name(), structure->qualified_name());
         }
 
         if (!dst) {
@@ -386,7 +387,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
 
         auto& self = method->parameters().front();
         if (self.is_mutable() && !is_mutable) {
-            return err(parent.span(), "Function '{0}' requires a mutable reference to self but self is immutable", method->name());
+            return err(parent.span(), "Function '{}' requires a mutable reference to self but self is immutable", method->name());
         }
 
         emit<bytecode::GetFunction>(*dst, method);
@@ -397,14 +398,14 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     }
 
     if (!structure) {
-        return err("Type '{0}' has no attribute named '{1}'", value_type->str(), attr);
+        return err("Type '{}' has no attribute named '{}'", value_type->str(), attr);
     }
 
     auto* field = structure->find(attr);
     if (!field) {
-        return err(expr.span(), "Unknown attribute '{0}' for struct '{1}'", attr, structure->name());
+        return err(expr.span(), "Unknown attribute '{}' for struct '{}'", attr, structure->name());
     } else if (!field->is_public() && m_current_struct != structure && structure->module() != m_current_module) {
-        return err(expr.span(), "Cannot access private field '{0}'", field->name);
+        return err(expr.span(), "Cannot access private field '{}'", field->name);
     }
 
     if (!dst.has_value()) {
@@ -440,7 +441,7 @@ ErrorOr<bytecode::Register> State::generate_index_access(
 
         type = this->type(*option);
         if (!type->is_array() && !type->is_pointer()) {
-            return err(expr.value().span(), "Cannot index into type '{0}'", type->str());
+            return err(expr.value().span(), "Cannot index into type '{}'", type->str());
         }
 
         if (type->is_pointer()) {
@@ -454,7 +455,7 @@ ErrorOr<bytecode::Register> State::generate_index_access(
         type = this->type(reg)->get_reference_type();
 
         if (!type->is_array() && !type->is_pointer()) {
-            return err(expr.span(), "Cannot index into type '{0}'", type->str());
+            return err(expr.span(), "Cannot index into type '{}'", type->str());
         }
 
         deref = true;
@@ -522,7 +523,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             if (!symbol) {
                 auto iterator = STR_TO_TYPE.find(ident->name());
                 if (iterator == STR_TO_TYPE.end()) {
-                    return err(expr.span(), "Unknown identifier '{0}'", ident->name());
+                    return err(expr.span(), "Unknown identifier '{}'", ident->name());
                 }
 
                 Type* type = this->get_type_from_builtin(iterator->second);
@@ -539,7 +540,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             symbol = scope->resolve(path.name());
 
             if (!symbol) {
-                return err(expr.span(), "Unknown identifier '{0}'", path.format());
+                return err(expr.span(), "Unknown identifier '{}'", path.format());
             }
 
             break;
@@ -570,7 +571,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             return alias->underlying_type()->size();
         }
         default:
-            return err(expr.span(), "Cannot determine the size of '{0}'", symbol->name());
+            return err(expr.span(), "Cannot determine the size of '{}'", symbol->name());
     }
 
     return {};

@@ -57,29 +57,29 @@ private:
     ErrorType m_type = ErrorType::Generic;
 };
 
-template<typename ...Args> requires(formatable_v<Args...>)
-Error err(Span span, const char* fmt, Args... args) {
+template<typename ...Args>
+Error err(Span span, std::format_string<Args...> fmt, Args... args) {
     return { span, format(fmt, std::forward<Args>(args)...) };
 }
 
-template<typename ...Args> requires(formatable_v<Args...>)
-Error err(ErrorType type, Span span, const char* fmt, Args... args) {
+template<typename ...Args>
+Error err(ErrorType type, Span span, std::format_string<Args...> fmt, Args... args) {
     return { span, type, format(fmt, std::forward<Args>(args)...) };
 }
 
-template<typename ...Args> requires(formatable_v<Args...>)
-Error err(const char* fmt, Args... args) {
+template<typename ...Args>
+Error err(std::format_string<Args...> fmt, Args... args) {
     return { Span {}, format(fmt, std::forward<Args>(args)...) };
 }
 
-template<typename ...Args> requires(formatable_v<Args...>)
-void warn(Span span, const char* fmt, Args... args) {
+template<typename ...Args>
+void warn(Span span, std::format_string<Args...> fmt, Args... args) {
     String message = format(fmt, std::forward<Args>(args)...);
     outln(SourceCode::format_warning(span, message));
 }
 
-template<typename ...Args> requires(formatable_v<Args...>)
-void note(Span span, const char* fmt, Args... args) {
+template<typename ...Args>
+void note(Span span, std::format_string<Args...> fmt, Args... args) {
     String message = format(fmt, std::forward<Args>(args)...);
     outln(SourceCode::format_note(span, message));
 }

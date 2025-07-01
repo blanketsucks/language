@@ -1,4 +1,5 @@
 #include <quart/assert.h>
+#include <quart/format.h>
 
 namespace quart {
 
@@ -8,7 +9,7 @@ bool has_color_support() {
 
 void assertion_failed(StringView message, StringView condition, StringView file, u32 line, StringView function) {
     String fmt = format(
-        "{0}:{1} in `{2}`: Assertion failed ({3})",
+        "{}:{} in `{}`: Assertion failed ({})",
         file, line, function, condition
     );
 
