@@ -31,7 +31,7 @@ TokenKind get_keyword_kind(StringView word) {
     return it->second;
 }
 
-llvm::StringRef get_unary_op_value(UnaryOp type) {
+StringView get_unary_op_value(UnaryOp type) {
     switch (type) {
         case UnaryOp::Inc: return "++";
         case UnaryOp::Dec: return "--";
@@ -46,7 +46,7 @@ llvm::StringRef get_unary_op_value(UnaryOp type) {
     return {};
 }
 
-llvm::StringRef get_binary_op_value(BinaryOp type) {
+StringView get_binary_op_value(BinaryOp type) {
     switch (type) {
         case BinaryOp::Add: return "+";
         case BinaryOp::Sub: return "-";

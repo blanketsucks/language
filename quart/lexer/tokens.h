@@ -185,8 +185,8 @@ enum class BinaryOp : u8 {
     Assign
 };
 
-llvm::StringRef get_binary_op_value(BinaryOp);
-llvm::StringRef get_unary_op_value(UnaryOp);
+StringView get_binary_op_value(BinaryOp);
+StringView get_unary_op_value(UnaryOp);
 
 bool is_comparison_operator(BinaryOp);
 
