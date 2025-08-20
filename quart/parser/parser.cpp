@@ -1709,7 +1709,9 @@ ParseResult<ast::Expr> Parser::primary() {
 
             if (m_current.is(TokenKind::DoubleColon)) {
                 Path path = TRY(this->parse_path(name));
-                expr = make<ast::PathExpr>(start, move(path));
+                Span span { start, m_current.span() };
+
+                expr = make<ast::PathExpr>(span, move(path));
             } else {
                 expr = make<ast::IdentifierExpr>(start, name);
             }
