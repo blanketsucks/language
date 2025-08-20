@@ -115,7 +115,6 @@ public:
     }
 
 private:
-
     PathSegment m_last;
     std::deque<PathSegment> m_segments;
 };

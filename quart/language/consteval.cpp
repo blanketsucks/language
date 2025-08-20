@@ -274,6 +274,25 @@ bool ConstantEvaluator::is_constant_expression(ast::BinaryOpExpr const& expr) co
 }
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
+    if (expr.op() == BinaryOp::Assign) {
+        if (!expr.lhs().is<ast::IdentifierExpr>()) {
+            return err(expr.lhs().span(), "Cannot assign to non-identifier");
+        }
+
+        auto scope = m_state.scope();
+        auto* ident = expr.lhs().as<ast::IdentifierExpr>();
+
+        auto* variable = scope->resolve<Variable>(ident->name());
+        if (!variable) {
+            return err(ident->span(), "Unknown identifier '{}'", ident->name());
+        }
+
+        Constant* value = TRY(this->evaluate(expr.rhs()));
+        variable->set_initializer(value);
+
+        return value;
+    }
+
     Constant* clhs = TRY(this->evaluate(expr.lhs()));
     Constant* crhs = TRY(this->evaluate(expr.rhs()));
 
@@ -327,7 +346,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
         case BinaryOp::Lte:
             result = lhs <= rhs; break;
         default:
-            err(expr.span(), "Unimplemented OP");
+            return err(expr.span(), "Unimplemented OP");
     }
 
     Type* type = clhs->type();

@@ -90,6 +90,12 @@ public:
 
     HashMap<String, RefPtr<Function>> const& functions() const { return m_all_functions; }
 
+    Vector<RefPtr<Variable>> const& globals() const { return m_globals; }
+
+    void add_global(RefPtr<Variable> variable) {
+        m_globals.push_back(move(variable));
+    }
+
     bool has_global_function(const String& name) const;
     void add_global_function(RefPtr<Function> function);
     Function const* get_global_function(const String& name) const;
@@ -170,6 +176,8 @@ private:
     HashMap<String, RefPtr<Function>> m_all_functions;
 
     HashMap<String, RefPtr<Module>> m_modules;
+
+    Vector<RefPtr<Variable>> m_globals;
 
     Optional<bytecode::Register> m_self;
     Optional<bytecode::Register> m_return; // Used for constructor functions

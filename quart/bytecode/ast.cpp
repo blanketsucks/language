@@ -256,8 +256,8 @@ BytecodeResult ConstExpr::generate(State& state, Optional<bytecode::Register>) c
 
     variable->set_initializer(constant);
 
-    state.emit<bytecode::SetGlobal>(global_index, constant);
     state.scope()->add_symbol(variable);
+    state.add_global(move(variable));
 
     return {};
 }

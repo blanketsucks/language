@@ -608,6 +608,17 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
 }
 
 ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
+    for (auto& global : m_state.globals()) {
+        llvm::Type* type = global->value_type()->to_llvm_type(*m_context);
+        String name = format("global.{}", global->index());
+
+        m_module->getOrInsertGlobal(name, type);
+        llvm::GlobalVariable* var = m_module->getGlobalVariable(name);
+
+        var->setInitializer(llvm::cast<llvm::Constant>(valueof(global->initializer())));
+        m_globals[global->index()] = var;
+    }
+
     for (auto& instruction : m_state.global_instructions()) {
         this->generate(instruction.get());
     }
