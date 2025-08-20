@@ -609,7 +609,7 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
 
 ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     for (auto& instruction : m_state.global_instructions()) {
-        this->generate(instruction);
+        this->generate(instruction.get());
     }
 
     auto& basic_blocks = m_state.generator().blocks();
@@ -617,7 +617,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         m_ir_builder->SetInsertPoint(this->create_block_from(&*block));
 
         for (auto& instruction : block->instructions()) {
-            this->generate(instruction);
+            this->generate(instruction.get());
         }
     }
 

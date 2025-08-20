@@ -11,14 +11,12 @@ class Instruction;
 
 class BasicBlock {
 public:
-    static OwnPtr<BasicBlock> create(String name) {
-        return OwnPtr<BasicBlock>(new BasicBlock(move(name)));
-    }
+    static OwnPtr<BasicBlock> create(String name);
 
     String const& name() const { return m_name; }
 
-    Vector<Instruction*>& instructions() { return m_instructions; }
-    Vector<Instruction*> const& instructions() const { return m_instructions; }
+    Vector<OwnPtr<Instruction>>& instructions() { return m_instructions; }
+    Vector<OwnPtr<Instruction>> const& instructions() const { return m_instructions; }
 
     void add_instruction(Instruction*);
 
@@ -28,10 +26,10 @@ public:
     void dump() const;
 
 private:
-    explicit BasicBlock(String name) : m_name(move(name)) {}
+    explicit BasicBlock(String name);
 
     String m_name;
-    Vector<Instruction*> m_instructions;
+    Vector<OwnPtr<Instruction>> m_instructions;
 
     bool m_terminated = false;
 };

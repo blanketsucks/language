@@ -4,8 +4,14 @@
 
 namespace quart::bytecode {
 
+BasicBlock::BasicBlock(String name) : m_name(move(name)) {}
+
+OwnPtr<BasicBlock> BasicBlock::create(String name) {
+    return OwnPtr<BasicBlock>(new BasicBlock(move(name)));
+}
+
 void BasicBlock::add_instruction(Instruction* inst) {
-    m_instructions.push_back(inst);
+    m_instructions.push_back(OwnPtr<Instruction>(inst));
     if (inst->is_terminator()) {
         m_terminated = true;
     }

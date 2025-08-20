@@ -22,6 +22,7 @@ struct RegisterState {
 class State {
 public:
     State();
+    ~State() = default;
 
     void dump() const;
 
@@ -51,8 +52,8 @@ public:
 
     ErrorOr<RefPtr<Scope>> resolve_scope(Span, Scope& current_scope, const String& name);
     ErrorOr<RefPtr<Scope>> resolve_scope_path(Span, const Path&, bool allow_generic_arguments = false);
-    
-    Vector<bytecode::Instruction*> const& global_instructions() const { return m_generator.global_instructions(); }
+
+    Vector<OwnPtr<bytecode::Instruction>> const& global_instructions() const { return m_generator.global_instructions(); }
 
     bytecode::BasicBlock* create_block(String name = {}) { return m_generator.create_block(move(name)); }
     void switch_to(bytecode::BasicBlock* block);

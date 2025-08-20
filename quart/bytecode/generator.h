@@ -12,7 +12,7 @@ public:
     BasicBlock* create_block(String name = {});
     void switch_to(BasicBlock* block);
 
-    Vector<Instruction*> const& global_instructions() const { return m_global_instructions; }
+    Vector<OwnPtr<Instruction>> const& global_instructions() const { return m_global_instructions; }
     Vector<OwnPtr<BasicBlock>>& blocks() { return m_blocks; }
 
     BasicBlock* current_block() { return m_current_block; }
@@ -26,7 +26,7 @@ public:
         if (m_current_block) {
             m_current_block->add_instruction(op);
         } else {
-            m_global_instructions.push_back(op);
+            m_global_instructions.push_back(OwnPtr<Instruction>(op));
         }
 
         return op;
@@ -35,7 +35,7 @@ public:
 private:
     BasicBlock* m_current_block = nullptr;
 
-    Vector<Instruction*> m_global_instructions;
+    Vector<OwnPtr<Instruction>> m_global_instructions;
     Vector<OwnPtr<BasicBlock>> m_blocks;
     
     u32 m_next_block_id = 0;
