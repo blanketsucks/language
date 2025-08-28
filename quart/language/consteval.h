@@ -29,6 +29,11 @@ private:
     ENUMERATE_EXPR_KINDS(Op)
 #undef Op
 
+    template<typename T>
+    Optional<T> evaluate_binary_operation(BinaryOp op, T lhs, T rhs) const;
+
+    Constant* evaluate_binary_operation(BinaryOp op, Constant* lhs, Constant* rhs) const;
+
     State& m_state; // NOLINT
 
     bool m_in_loop = false;

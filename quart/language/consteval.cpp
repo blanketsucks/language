@@ -2,6 +2,8 @@
 #include <quart/language/state.h>
 #include <quart/temporary_change.h>
 
+#include <cmath>
+
 // These are expressions that are always not constant no matter what
 // NOTE: Call, Return, EmptyConstructor, Cast and Ternary could be implemented in the future.
 #define ENUMERATE_NON_CONSTANT_EXPR(Op)         \
@@ -10,7 +12,6 @@
     Op(TupleAssignment)                         \
     Op(Const)                                   \
     Op(Reference)                               \
-    Op(InplaceBinaryOp)                         \
     Op(Call)                                    \
     Op(Return)                                  \
     Op(FunctionDecl)                            \
@@ -37,6 +38,113 @@
 namespace quart {
 
 static constexpr size_t MAX_LOOP_COUNT = 1'000'000;
+
+template<typename T>
+Optional<T> ConstantEvaluator::evaluate_binary_operation(BinaryOp op, T lhs, T rhs) const {
+    switch (op) {
+        case BinaryOp::Add:
+            return lhs + rhs;
+        case BinaryOp::Sub:
+            return lhs - rhs;
+        case BinaryOp::Mul:
+            return lhs * rhs;
+        case BinaryOp::Div:
+            return lhs / rhs;
+        case BinaryOp::Mod:
+            if constexpr (std::is_floating_point_v<T>) {
+                return std::fmod(lhs, rhs);
+            } else {
+                return lhs % rhs;
+            }
+        case BinaryOp::Or:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs | rhs;
+            }
+        case BinaryOp::And:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs & rhs;
+            }
+        case BinaryOp::LogicalOr:
+            return lhs || rhs;
+        case BinaryOp::LogicalAnd:
+            return lhs && rhs;
+        case BinaryOp::Xor:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs ^ rhs;
+            }
+        case BinaryOp::Rsh:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs >> rhs;
+            }
+        case BinaryOp::Lsh:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs << rhs;
+            }
+        case BinaryOp::Eq:
+            return lhs == rhs;
+        case BinaryOp::Neq:
+            return lhs != rhs;
+        case BinaryOp::Gt:
+            return lhs > rhs;
+        case BinaryOp::Lt:
+            return lhs < rhs;
+        case BinaryOp::Gte:
+            return lhs >= rhs;
+        case BinaryOp::Lte:
+            return lhs <= rhs;
+    }
+
+    return {};
+}
+
+Constant* ConstantEvaluator::evaluate_binary_operation(BinaryOp op, Constant* lhs, Constant* rhs) const {
+    switch (lhs->kind()) {
+        case Constant::Kind::Int: {
+            if (!rhs->is<ConstantInt>()) {
+                return nullptr;
+            }
+
+            i64 lvalue = static_cast<i64>(lhs->as<ConstantInt>()->value());
+            i64 rvalue = static_cast<i64>(rhs->as<ConstantInt>()->value());
+
+            i64 result = *this->evaluate_binary_operation(op, lvalue, rvalue);
+            if (is_comparison_operator(op)) {
+                return ConstantInt::get(m_state.context(), m_state.context().i1(), result);
+            }
+
+            return ConstantInt::get(m_state.context(), lhs->type(), result);
+        }
+        case Constant::Kind::Float: {
+            f64 lvalue = static_cast<f64>(lhs->as<ConstantFloat>()->value());
+            f64 rvalue = static_cast<f64>(rhs->as<ConstantFloat>()->value());
+
+            Optional<f64> result = this->evaluate_binary_operation(op, lvalue, rvalue);
+            if (!result) {
+                return nullptr;
+            }
+
+            if (is_comparison_operator(op)) {
+                return ConstantInt::get(m_state.context(), m_state.context().i1(), static_cast<bool>(*result));
+            }
+
+            return ConstantFloat::get(m_state.context(), lhs->type(), *result);
+        }
+
+        default: break;
+    }
+
+    return nullptr;
+}
 
 bool ConstantEvaluator::is_constant_expression(ast::Expr const& expr) const {
     switch (expr.kind()) {
@@ -293,68 +401,44 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
         return value;
     }
 
-    Constant* clhs = TRY(this->evaluate(expr.lhs()));
-    Constant* crhs = TRY(this->evaluate(expr.rhs()));
+    Constant* lhs = TRY(this->evaluate(expr.lhs()));
+    Constant* rhs = TRY(this->evaluate(expr.rhs()));
 
-    // TODO: Float support
-    if (!clhs->is<ConstantInt>()) {
-        return err(expr.lhs().span(), "Expected an integer");
-    } else if (!crhs->is<ConstantInt>()) {
-        return err(expr.rhs().span(), "Expected an integer");
+    Constant* result = this->evaluate_binary_operation(expr.op(), lhs, rhs);
+    if (!result) {
+        return err(expr.span(), "Cannot perform binary operation on operands of type '{}' and '{}'", lhs->type()->str(), rhs->type()->str());
     }
 
-    i64 lhs = static_cast<i64>(clhs->as<ConstantInt>()->value());
-    i64 rhs = static_cast<i64>(crhs->as<ConstantInt>()->value());
+    return result;
+}
 
-    i64 result = 0;
+bool ConstantEvaluator::is_constant_expression(ast::InplaceBinaryOpExpr const& expr) const {
+    return this->is_constant_expression(expr.lhs()) && this->is_constant_expression(expr.rhs());
+}
 
-    switch (expr.op()) {
-        case BinaryOp::Add:
-            result = lhs + rhs; break;
-        case BinaryOp::Sub:
-            result = lhs - rhs; break;
-        case BinaryOp::Mul:
-            result = lhs * rhs; break;
-        case BinaryOp::Div:
-            result = lhs / rhs; break;
-        case BinaryOp::Mod:
-            result = lhs % rhs; break;
-        case BinaryOp::Or:
-            result = lhs | rhs; break;
-        case BinaryOp::And:
-            result = lhs & rhs; break;
-        case BinaryOp::LogicalOr:
-            result = lhs || rhs; break;
-        case BinaryOp::LogicalAnd:
-            result = lhs && rhs; break;
-        case BinaryOp::Xor:
-            result = lhs ^ rhs; break;
-        case BinaryOp::Rsh:
-            result = lhs << rhs; break;
-        case BinaryOp::Lsh:
-            result = lhs >> rhs; break;
-        case BinaryOp::Eq:
-            result = lhs == rhs; break;
-        case BinaryOp::Neq:
-            result = lhs != rhs; break;
-        case BinaryOp::Gt:
-            result = lhs > rhs; break;
-        case BinaryOp::Lt:
-            result = lhs < rhs; break;
-        case BinaryOp::Gte:
-            result = lhs >= rhs; break;
-        case BinaryOp::Lte:
-            result = lhs <= rhs; break;
-        default:
-            return err(expr.span(), "Unimplemented OP");
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::InplaceBinaryOpExpr const& expr) {
+    if (!expr.lhs().is<ast::IdentifierExpr>()) {
+        return err(expr.lhs().span(), "Cannot assign to non-identifier");
     }
 
-    Type* type = clhs->type();
-    if (is_comparison_operator(expr.op())) {
-        type = m_state.context().i1();
+    auto scope = m_state.scope();
+    auto* ident = expr.lhs().as<ast::IdentifierExpr>();
+
+    auto* variable = scope->resolve<Variable>(ident->name());
+    if (!variable) {
+        return err(ident->span(), "Unknown identifier '{}'", ident->name());
     }
 
-    return ConstantInt::get(m_state.context(), type, result);
+    Constant* lhs = variable->initializer();
+    Constant* rhs = TRY(this->evaluate(expr.rhs()));
+
+    Constant* result = this->evaluate_binary_operation(expr.op(), lhs, rhs);
+    if (!result) {
+        return err(expr.span(), "Cannot perform binary operation on operands of type '{}' and '{}'", lhs->type()->str(), rhs->type()->str());
+    }
+
+    variable->set_initializer(result);
+    return result;
 }
 
 bool ConstantEvaluator::is_constant_expression(ast::IfExpr const& expr) const {
