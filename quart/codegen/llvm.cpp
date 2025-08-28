@@ -539,7 +539,11 @@ llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
         }
         case Constant::Kind::Float: {
             auto* fp = constant->as<ConstantFloat>();
-            return llvm::ConstantFP::get(*m_context, llvm::APFloat(fp->value()));
+            if (fp->type()->is_float()) {
+                return llvm::ConstantFP::get(*m_context, llvm::APFloat(static_cast<f32>(fp->value())));
+            } else {
+                return llvm::ConstantFP::get(*m_context, llvm::APFloat(fp->value()));
+            }
         }
         case Constant::Kind::String: {
             auto* string = constant->as<ConstantString>();
