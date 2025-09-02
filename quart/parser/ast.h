@@ -5,6 +5,7 @@
 
 #include <quart/errors.h>
 #include <quart/bytecode/register.h>
+#include <quart/bytecode/instruction.h>
 
 #include <quart/language/functions.h>
 
@@ -69,14 +70,14 @@ namespace ast {
     class TypeExpr;
 }
 
-class BytecodeResult : public ErrorOr<Optional<bytecode::Register>> {
+class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
 public:
     BytecodeResult() = default;
 
-    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Register>>(move(error)) {}
+    BytecodeResult(Error error) : ErrorOr<Optional<bytecode::Operand>>(move(error)) {}
 
-    BytecodeResult(bytecode::Register value) : ErrorOr<Optional<bytecode::Register>>(value) {}
-    BytecodeResult(Optional<bytecode::Register> value) : ErrorOr<Optional<bytecode::Register>>(value) {}
+    BytecodeResult(bytecode::Operand value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
+    BytecodeResult(Optional<bytecode::Operand> value) : ErrorOr<Optional<bytecode::Operand>>(value) {}
 };
 
 class State;

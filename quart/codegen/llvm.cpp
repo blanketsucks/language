@@ -1,4 +1,3 @@
-#include <llvm-20/llvm/Support/Threading.h>
 #include <quart/codegen/llvm.h>
 #include <quart/compiler.h>
 
@@ -183,7 +182,7 @@ void LLVMCodeGen::generate(bytecode::GetLocalRef* inst) {
 
 void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
     auto& local = m_local_scope->local(inst->index());
-    Optional<bytecode::Register> src = inst->src();
+    Optional<bytecode::Operand> src = inst->src();
 
     if (local.needs_store()) {
         local.store = valueof(*src);
@@ -340,7 +339,7 @@ void LLVMCodeGen::generate(bytecode::GetFunction* inst) {
 }
 
 void LLVMCodeGen::generate(bytecode::Return* inst) {
-    Optional<bytecode::Register> value = inst->value();
+    Optional<bytecode::Operand> value = inst->value();
     if (value.has_value()) {
         m_ir_builder->CreateRet(valueof(*value));
     } else {

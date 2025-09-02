@@ -224,7 +224,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(
                 return err(ErrorType::MutabilityMismatch, expr.span(), "Cannot take a mutable reference to an immutable value");
             }
 
-            return *option;
+            return option->reg();
         }
     }
 
@@ -270,7 +270,7 @@ ErrorOr<Struct*> State::resolve_struct(ast::Expr const& expr) {
     return symbol->as<Struct>();
 }
 
-ErrorOr<bytecode::Register> State::type_check_and_cast(Span span, bytecode::Register value, Type* target, StringView error_message) {
+ErrorOr<bytecode::Operand> State::type_check_and_cast(Span span, bytecode::Operand value, Type* target, StringView error_message) {
     Type* type = this->type(value);
     if (!type->can_safely_cast_to(target)) {
         String error = dyn_format(error_message, type->str(), target->str());
@@ -292,7 +292,7 @@ ErrorOr<bytecode::Register> State::type_check_and_cast(Span span, bytecode::Regi
     emit<bytecode::Cast>(reg, value, target);
 
     this->set_register_state(reg, target);
-    return reg;
+    return bytecode::Operand(reg);
 }
 
 ErrorOr<bytecode::Register> State::generate_attribute_access(
@@ -316,7 +316,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
             return err(parent.span(), "Expected an expression");
         }
 
-        bytecode::Register value = option.value();
+        bytecode::Operand value = option.value();
         Type* type = this->type(value);
 
         if (!type->is_pointer() && !type->is_reference()) {
@@ -326,7 +326,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
             emit<bytecode::Alloca>(reg, type);
             emit<bytecode::Write>(reg, value);
         } else {
-            reg = value;
+            reg = value.reg();
             value_type = type->underlying_type();
         }
     } else {
@@ -445,7 +445,7 @@ ErrorOr<bytecode::Register> State::generate_index_access(
         }
 
         if (type->is_pointer()) {
-            reg = *option;
+            reg = option->reg();
         } else {
             // FIXME: Use extractvalue in the LLVM backend for arrays
             return err(expr.value().span(), "Indexing into array immediates is not yet supported");

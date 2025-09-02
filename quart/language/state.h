@@ -130,7 +130,7 @@ public:
     ErrorOr<Symbol*> resolve_symbol(ast::Expr const&);
     ErrorOr<Struct*> resolve_struct(ast::Expr const&);
 
-    ErrorOr<bytecode::Register> type_check_and_cast(Span, bytecode::Register, Type* target, StringView error_message);
+    ErrorOr<bytecode::Operand> type_check_and_cast(Span, bytecode::Operand, Type* target, StringView error_message);
 
     ErrorOr<bytecode::Register> generate_attribute_access(
         ast::AttributeExpr const&,

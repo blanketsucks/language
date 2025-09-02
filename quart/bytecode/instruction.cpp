@@ -43,11 +43,11 @@ static inline String fmt(Operand const& operand) {
     }
 }
 
-static String fmt(Vector<Register> registers) {
+static String fmt(Vector<Operand> operands) {
     String str = "[";
-    for (auto [index, reg] : llvm::enumerate(registers)) {
-        str.append(fmt(reg));
-        if (index == registers.size() - 1) {
+    for (auto [index, operand] : llvm::enumerate(operands)) {
+        str.append(fmt(operand));
+        if (index == operands.size() - 1) {
             continue;
         }
 
