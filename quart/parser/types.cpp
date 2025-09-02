@@ -40,11 +40,11 @@ Type* State::get_type_from_builtin(ast::BuiltinType value) {
 
 namespace quart::ast {
 
-ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> BuiltinTypeExpr::evaluate(State& state) const {
     return state.get_type_from_builtin(m_value);
 }
 
-ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
     auto scope = TRY(state.resolve_scope_path(span(), m_path));
     auto* symbol = scope->resolve(m_path.name());
 
@@ -92,7 +92,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) {
     return err(span(), "'{}' does not refer to a type", m_path.format());
 }
 
-ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) const {
     Constant* constant = TRY(state.constant_evaluator().evaluate(*m_size));
     if (!constant->is<ConstantInt>()) {
         return err(m_size->span(), "Array size must be an integer not {}", constant->type()->str());
@@ -108,7 +108,7 @@ ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) {
     return ArrayType::get(state.context(), element_type, size);
 }
 
-ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) const{
     Vector<Type*> parameters;
     parameters.reserve(m_parameters.size());
 
@@ -127,7 +127,7 @@ ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) {
     return type->get_pointer_to();
 }
 
-ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) const {
     Vector<Type*> elements;
     elements.reserve(m_types.size());
 
@@ -143,12 +143,12 @@ ErrorOr<Type*> TupleTypeExpr::evaluate(State& state) {
     return TupleType::get(state.context(), elements);
 }
 
-ErrorOr<Type*> PointerTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> PointerTypeExpr::evaluate(State& state) const {
     Type* pointee = TRY(m_pointee->evaluate(state));
     return pointee->get_pointer_to(m_is_mutable);
 }
 
-ErrorOr<Type*> ReferenceTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> ReferenceTypeExpr::evaluate(State& state) const {
     Type* type = TRY(m_type->evaluate(state));
     if (type->is_void()) {
         return err(m_type->span(), "Cannot create a reference to void type");
@@ -157,12 +157,12 @@ ErrorOr<Type*> ReferenceTypeExpr::evaluate(State& state) {
     return type->get_reference_to(m_is_mutable);
 }
 
-ErrorOr<Type*> IntegerTypeExpr::evaluate(State&) {
+ErrorOr<Type*> IntegerTypeExpr::evaluate(State&) const {
     // FIXME: Implement
     return nullptr;
 }
 
-ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) {
+ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) const {
     auto& path = m_parent->path();
     auto scope = TRY(state.resolve_scope_path(m_parent->span(), path));
 

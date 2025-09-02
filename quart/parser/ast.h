@@ -1140,6 +1140,7 @@ public:
 
 private:
     OwnPtr<TypeExpr> m_trait;
+
     OwnPtr<TypeExpr> m_type;
     ExprList<> m_body;
 };
@@ -1209,7 +1210,7 @@ public:
         return T::classof(this) ? static_cast<T const*>(this) : nullptr;
     }
 
-    virtual ErrorOr<Type*> evaluate(State&) = 0;
+    virtual ErrorOr<Type*> evaluate(State&) const = 0;
 
 private:
     Span m_span;
@@ -1227,7 +1228,7 @@ public:
 class BuiltinTypeExpr : public TypeExprBase<TypeKind::Builtin> {
 public:
     BuiltinTypeExpr(Span span, BuiltinType value) : TypeExprBase(span), m_value(value) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     BuiltinType value() const { return m_value; }
 
@@ -1238,7 +1239,7 @@ private:
 class IntegerTypeExpr : public TypeExprBase<TypeKind::Integer> {
 public:
     IntegerTypeExpr(Span span, OwnPtr<Expr> size) : TypeExprBase(span), m_size(move(size)) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     Expr const& size() const { return *m_size; }
 
@@ -1249,7 +1250,7 @@ private:
 class NamedTypeExpr : public TypeExprBase<TypeKind::Named> {
 public:
     NamedTypeExpr(Span span, Path path) : TypeExprBase(span), m_path(move(path)) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     Path const& path() const { return m_path; }
     
@@ -1260,7 +1261,7 @@ private:
 class TupleTypeExpr : public TypeExprBase<TypeKind::Tuple> {
 public:
     TupleTypeExpr(Span span, ExprList<TypeExpr> types) : TypeExprBase(span), m_types(move(types)) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     ExprList<TypeExpr> const& types() const { return m_types; }
 
@@ -1271,7 +1272,7 @@ private:
 class ArrayTypeExpr : public TypeExprBase<TypeKind::Array> {
 public:
     ArrayTypeExpr(Span span, OwnPtr<TypeExpr> type, OwnPtr<Expr> size) : TypeExprBase(span), m_type(move(type)), m_size(move(size)) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     TypeExpr const& type() const { return *m_type; }
     Expr const& size() const { return *m_size; }
@@ -1284,7 +1285,7 @@ private:
 class PointerTypeExpr : public TypeExprBase<TypeKind::Pointer> {
 public:
     PointerTypeExpr(Span span, OwnPtr<TypeExpr> pointee, bool is_mutable) : TypeExprBase(span), m_pointee(move(pointee)), m_is_mutable(is_mutable) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     TypeExpr const& pointee() const { return *m_pointee; }
     bool is_mutable() const { return m_is_mutable; }
@@ -1297,7 +1298,7 @@ private:
 class ReferenceTypeExpr : public TypeExprBase<TypeKind::Reference> {
 public:
     ReferenceTypeExpr(Span span, OwnPtr<TypeExpr> type, bool is_mutable) : TypeExprBase(span), m_type(move(type)), m_is_mutable(is_mutable) {}
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     TypeExpr const& type() const { return *m_type; }
     bool is_mutable() const { return m_is_mutable; }
@@ -1313,7 +1314,7 @@ public:
         Span span, ExprList<TypeExpr> parameters, OwnPtr<TypeExpr> return_type
     ) : TypeExprBase(span), m_parameters(move(parameters)), m_return_type(move(return_type)) {}
 
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     ExprList<TypeExpr> const& parameters() const { return m_parameters; }
     TypeExpr const& return_type() const { return *m_return_type; }
@@ -1329,7 +1330,7 @@ public:
         Span span, OwnPtr<NamedTypeExpr> parent, ExprList<TypeExpr> args
     ) : TypeExprBase(span), m_parent(move(parent)), m_args(move(args)) {}
 
-    ErrorOr<Type*> evaluate(State&) override;
+    ErrorOr<Type*> evaluate(State&) const override;
 
     NamedTypeExpr const& parent() const { return *m_parent; }
     ExprList<TypeExpr> const& args() const { return m_args; }
