@@ -121,9 +121,12 @@ ErrorOr<Type*> FunctionTypeExpr::evaluate(State& state) const{
         parameters.push_back(type);
     }
 
-    Type* return_type = TRY(m_return_type->evaluate(state));
-    auto* type = FunctionType::get(state.context(), return_type, parameters, false);
+    Type* return_type = state.context().void_type();
+    if (m_return_type) {
+        return_type = TRY(m_return_type->evaluate(state));
+    }
 
+    auto* type = FunctionType::get(state.context(), return_type, parameters, false);
     return type->get_pointer_to();
 }
 
