@@ -209,6 +209,10 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
                 type = type->get_pointee_type();
             }
         }
+
+        if (state.self()) {
+            return err(span(), "Cannot assign to a struct method");
+        }
     }
 
     size_t local_index = current_function->allocate_local();
@@ -440,6 +444,9 @@ ErrorOr<void> generate_function_call(
             state.set_type_context(parameter.type);
 
             auto operand = TRY(ensure(state, *arg, {}));
+            if (state.self()) {
+                return err(arg->span(), "Cannot use a struct method as a value");
+            }
 
             operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
             arguments.push_back(operand);
