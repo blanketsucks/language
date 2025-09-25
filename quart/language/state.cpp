@@ -3,7 +3,7 @@
 
 namespace quart {
 
-State::State() : m_constant_evaluator(*this) {
+State::State() : m_constant_evaluator(*this), m_type_checker(*this) {
     m_context = Context::create();
     m_current_scope = m_global_scope = Scope::create({}, ScopeType::Global, nullptr);
 }

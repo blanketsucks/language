@@ -1440,16 +1440,25 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 
 BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) const {
     auto scope = state.scope();
-    auto trait = Trait::create(m_name);
+
+    auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, scope));
+    auto trait = Trait::create(m_name, type);
+
+    state.set_self_type(type);
+    state.add_trait(trait);
 
     for (auto& expr : m_body) {
         if (!expr->is<FunctionDeclExpr>()) {
+            TRY(state.type_checker().type_check(*expr));
             trait->add_predefined_function(expr->as<FunctionExpr>());
+
             continue;
         }
 
         auto* decl = expr->as<FunctionDeclExpr>();
+
         Vector<FunctionParameter> parameters;
+        Vector<Type*> types;
 
         bool has_self = false;
         for (auto [index, param] : llvm::enumerate(decl->parameters())) {
@@ -1457,9 +1466,11 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
                 has_self = true;
             }
 
-            Type* type = state.context().void_type();
+            Type* type = nullptr;
             if (param.type) {
                 type = TRY(param.type->evaluate(state));
+            } else {
+                type = trait->underlying_type()->get_pointer_to(param.flags & FunctionParameter::Mutable);
             }
             
             if (type->is_aggregate()) {
@@ -1467,6 +1478,7 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
             }
 
             parameters.push_back({ param.name, type, param.flags, static_cast<u32>(index), param.span });
+            types.push_back(type);
         }
 
         if (!has_self) {
@@ -1478,10 +1490,13 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
             return_type = TRY(decl->return_type()->evaluate(state));
         }
 
-        trait->add_function({ decl->name(), move(parameters), return_type });
+        auto* function_type = FunctionType::get(state.context(), return_type, types, decl->is_c_variadic());
+        trait->add_function({ decl->name(), move(parameters), return_type, function_type });
     }
 
     scope->add_symbol(trait);
+    state.set_self_type(nullptr);
+
     return {};
 }
 

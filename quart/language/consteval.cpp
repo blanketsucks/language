@@ -623,4 +623,12 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const& expr) {
     return nullptr;
 }
 
+bool ConstantEvaluator::is_constant_expression(ast::ConstEvalExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ConstEvalExpr const&) {
+    return {};
+}
+
 }
