@@ -62,7 +62,8 @@
     Op(ImplTrait)                    \
     Op(Match)                        \
     Op(RangeFor)                     \
-    Op(Bool)
+    Op(Bool)                         \
+    Op(ConstEval)
 
 namespace quart {
 
