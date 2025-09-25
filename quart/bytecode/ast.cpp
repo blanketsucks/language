@@ -828,7 +828,7 @@ BytecodeResult ContinueExpr::generate(State& state, Optional<bytecode::Register>
 
 BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) const {
     if (m_opaque) {
-        auto* type = StructType::get(state.context(), m_name, {});
+        auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope()), {});
         auto structure = Struct::create(m_name, type, state.scope(), m_is_public);
 
         state.scope()->add_symbol(structure);
@@ -838,7 +838,7 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
         return {};
     }
 
-    auto* type = StructType::get(state.context(), m_name, {});
+    auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope()), {});
     auto scope = Scope::create(m_name, ScopeType::Struct, state.scope());
 
     auto structure = Struct::create(m_name, type, {}, scope, m_is_public);
