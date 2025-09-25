@@ -25,7 +25,7 @@ void Function::set_qualified_name() {
     } else if (m_linkage_specifier == LinkageSpecifier::C) {
         m_qualified_name = name();
     } else {
-        m_qualified_name = Symbol::parse_qualified_name(this, m_scope->parent());
+        m_qualified_name = Symbol::parse_qualified_name(name(), m_scope->parent());
     }
 }
 

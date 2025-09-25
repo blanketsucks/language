@@ -76,6 +76,10 @@ FunctionType* Context::create_function_type(Type* return_type, const Vector<Type
     return CREATE_TYPE(m_function_types, FunctionType, key, return_type, parameters, is_var_arg);
 }
 
+TraitType* Context::create_trait_type(const String& name) {
+    return CREATE_TYPE(m_trait_types, TraitType, name, name);
+}
+
 ConstantInt* Context::create_int_constant(::u64 value, Type* type) {
     auto key = std::make_pair(type, value);
     return CREATE_CONSTANT(m_int_constants, ConstantInt, key, type, value);

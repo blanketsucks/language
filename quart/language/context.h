@@ -29,6 +29,7 @@ public:
     PointerType* create_pointer_type(Type* pointee, bool is_mutable);
     ReferenceType* create_reference_type(Type* type, bool is_mutable);
     FunctionType* create_function_type(Type* return_type, const Vector<Type*>& parameters, bool is_var_arg = false);
+    TraitType* create_trait_type(const String& name);
 
     ConstantInt* create_int_constant(u64 value, Type* type);
     ConstantFloat* create_float_constant(f64 value, Type* type);
@@ -75,6 +76,8 @@ private:
     TypeMap<TupleTypeStorageKey, OwnPtr<TupleType>> m_tuple_types;
 
     TypeMap<FunctionTypeStorageKey, OwnPtr<FunctionType>> m_function_types;
+
+    TypeMap<String, OwnPtr<TraitType>> m_trait_types;
 
     ConstantMap<ConstantInt> m_int_constants;
     ConstantMap<ConstantFloat> m_float_constants;

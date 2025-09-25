@@ -19,7 +19,7 @@ void Struct::set_qualified_name(RefPtr<Scope> parent) {
         parent = m_scope->parent();
     }
 
-    m_qualified_name = Symbol::parse_qualified_name(this, parent);
+    m_qualified_name = Symbol::parse_qualified_name(name(), parent);
 }
 
 }

@@ -24,7 +24,7 @@ public:
         Trait
     };
 
-    static String parse_qualified_name(Symbol*, RefPtr<Scope>);
+    static String parse_qualified_name(const String& name, RefPtr<Scope>);
 
     Symbol(String name, SymbolType type, bool is_public) : m_name(move(name)), m_type(type), m_is_public(is_public) {}
     virtual ~Symbol() = default;
