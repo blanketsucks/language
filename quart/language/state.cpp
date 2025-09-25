@@ -134,6 +134,21 @@ ErrorOr<RefPtr<Scope>> State::resolve_scope_path(Span span, const Path& path, bo
     return scope;
 }
 
+ErrorOr<Symbol*> State::access_symbol(Span span, const Path& path) {
+    auto scope = TRY(this->resolve_scope_path(span, path));
+    auto* symbol = scope->resolve(path.name());
+
+    if (!symbol) {
+        return err(span, "Unknown identifier '{}'", path.format());
+    }
+
+    if (!symbol->is_public() && symbol->module() != this->module()) {
+        return err(span, "Cannot access private symbol '{}'", path.format());
+    }
+
+    return symbol;
+}
+
 ErrorOr<bytecode::Register> State::resolve_reference(
     Scope& scope,
     Span span,
