@@ -939,8 +939,8 @@ ParseResult<ast::CallExpr> Parser::parse_call(OwnPtr<ast::Expr> callee) {
         this->next();
     }
 
-    Span end = TRY(this->expect(TokenKind::RParen)).span();
-    Span span = { callee->span(), end };
+    TRY(this->expect(TokenKind::RParen));
+    Span span = { callee->span(), m_current.span() };
 
     return { make<ast::CallExpr>(span, move(callee), move(args), move(kwargs)) };
 }
