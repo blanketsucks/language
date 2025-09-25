@@ -117,6 +117,8 @@ BytecodeResult BoolExpr::generate(State& state, Optional<bytecode::Register> dst
         }
     }
 
+    ASSERT(false, "Unreachable");
+    return {};
 }
 
 BytecodeResult ArrayExpr::generate(State& state, Optional<bytecode::Register> dst) const {
@@ -614,7 +616,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
             if (type->is_mutable() && !is_mutable) {
                 flags |= FunctionParameter::Mutable;
             } else if (is_mutable && !type->is_mutable()) {
-                return err(param.span, "Cannot declare a mutable paramater that takes an immutable reference");
+                return err(param.span, "Cannot declare a mutable parameter that takes an immutable reference");
             }
         }
 
