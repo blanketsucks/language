@@ -626,7 +626,7 @@ public:
     ReturnExpr(Span span, OwnPtr<Expr> value) : ExprBase(span), m_value(move(value)) {}
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
-    Expr const& value() const { return *m_value; }
+    Expr const* value() const { return m_value.get(); }
 
 private:
     OwnPtr<Expr> m_value;
