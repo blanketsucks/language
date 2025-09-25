@@ -202,6 +202,10 @@ bool Type::is_function_var_arg() const {
     return this->as<FunctionType>()->is_var_arg();
 }
 
+String const& Type::get_trait_name() const {
+    return this->as<TraitType>()->name();
+}
+
 String Type::str() const {
     switch (this->kind()) {
         case TypeKind::Void: return "void";
@@ -258,6 +262,9 @@ String Type::str() const {
             }
 
             return format("func({}) -> {}", format_range(params), return_type);
+        }
+        case TypeKind::Trait: {
+            return this->get_trait_name();
         }
     }
 
@@ -410,6 +417,10 @@ EnumType* EnumType::get(Context& context, const String& name, Type* inner) {
 
 FunctionType* FunctionType::get(Context& context, Type* return_type, const Vector<Type*>& params, bool is_var_arg) {
     return context.create_function_type(return_type, params, is_var_arg);
+}
+
+TraitType* TraitType::get(Context& context, const String& name) {
+    return context.create_trait_type(name);
 }
 
 void StructType::set_fields(const Vector<Type*>& fields) {

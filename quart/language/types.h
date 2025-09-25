@@ -27,7 +27,8 @@ enum class TypeKind : u8 {
     Enum,
     Pointer,
     Reference,
-    Function
+    Function,
+    Trait
 };
 
 class Type {
@@ -68,12 +69,13 @@ public:
     bool is_pointer() const { return m_kind == TypeKind::Pointer; }
     bool is_reference() const { return m_kind == TypeKind::Reference; }
     bool is_function() const { return m_kind == TypeKind::Function; }
+    bool is_trait() const { return m_kind == TypeKind::Trait; }
 
     bool is_aggregate() const { return this->is_struct() || this->is_array() || this->is_tuple(); }
     bool is_floating_point() const { return this->is_float() || this->is_double(); }
     bool is_numeric() const { return this->is_int() || this->is_floating_point(); }
 
-    bool is_sized_type() const { return !this->is_void() && !this->is_function(); }
+    bool is_sized_type() const { return !this->is_void() && !this->is_function() && !this->is_trait(); }
 
     // Checks whether either the pointee type or the inner reference type is `kind`
     bool is_underlying_type_of(TypeKind kind) const;
@@ -112,6 +114,8 @@ public:
     Vector<Type*> const& get_function_params() const;
     Type* get_function_param(size_t index) const;
     bool is_function_var_arg() const;
+
+    String const& get_trait_name() const;
 
     size_t size() const;
 
@@ -316,6 +320,7 @@ public:
 
     Type* return_type() const { return m_return_type; }
     Vector<Type*> const& parameters() const { return m_params; }
+    size_t parameter_count() const { return m_params.size(); }
 
     Type* get_parameter_at(size_t index) const {
         if (index >= m_params.size()) {
@@ -337,6 +342,21 @@ private:
     Vector<Type*> m_params;
 
     bool m_is_var_arg;
+};
+
+class TraitType : public Type {
+public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Trait; }
+
+    static TraitType* get(Context&, const String& name);
+
+    String const& name() const { return m_name; }
+
+    friend Context;
+private:
+    TraitType(Context* context, String name) : Type(context, TypeKind::Trait), m_name(move(name)) {}
+
+    String m_name;
 };
 
 // Returns true if `type` is a struct or a pointer to a struct
