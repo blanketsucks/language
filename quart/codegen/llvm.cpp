@@ -316,10 +316,17 @@ void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
 
     auto r = llvm::map_range(parameters, [this](auto& type) { return type->to_llvm_type(*m_context); });
     llvm::FunctionType* function_type = llvm::FunctionType::get(
-        return_type->to_llvm_type(*m_context), Vector<llvm::Type*>(r.begin(), r.end()), false
+        return_type->to_llvm_type(*m_context),
+        Vector<llvm::Type*>(r.begin(), r.end()),
+        function->underlying_type()->is_function_var_arg()
     );
 
-    auto* llvm_function = llvm::Function::Create(function_type, llvm::Function::ExternalLinkage, normalize(function->qualified_name()), &*m_module);
+    auto* llvm_function = llvm::Function::Create(
+        function_type,
+        llvm::Function::ExternalLinkage,
+        normalize(function->qualified_name()),
+        &*m_module
+    );
     
     llvm_function->setDSOLocal(!function->is_decl());
     if (!function->is_extern() && !function->is_main()) {
@@ -353,6 +360,14 @@ void LLVMCodeGen::generate(bytecode::Call* inst) {
 
     auto* function_type = llvm::cast<llvm::FunctionType>(inst->function_type()->to_llvm_type(*m_context));
     llvm::Value* function = valueof(inst->function());
+
+    if (llvm::isa<llvm::Function>(function)) {
+        auto* fn = llvm::cast<llvm::Function>(function);
+        llvm::Value* value = m_ir_builder->CreateCall(fn, arguments);
+
+        this->set_register(inst->dst(), value);
+        return;
+    }
 
     llvm::Value* value = m_ir_builder->CreateCall({ function_type, function }, arguments);
     this->set_register(inst->dst(), value);
