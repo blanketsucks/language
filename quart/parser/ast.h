@@ -71,7 +71,7 @@ namespace ast {
     class TypeExpr;
 }
 
-class BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
+class [[nodiscard]] BytecodeResult : public ErrorOr<Optional<bytecode::Operand>> {
 public:
     BytecodeResult() = default;
 

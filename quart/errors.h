@@ -85,7 +85,7 @@ void note(Span span, std::format_string<Args...> fmt, Args... args) {
 }
 
 template<typename T, typename E>
-class Result {
+class [[nodiscard]] Result {
 public:
     Result() : m_value(), m_error(), has_value(true) {}
 
@@ -102,6 +102,7 @@ public:
     E& error() { return m_error; }
 
     T release_value() { return move(m_value); }
+    E release_error() { return move(m_error); }
 
 protected:
     void set_value(T&& value) {
@@ -122,7 +123,7 @@ private:
 };
 
 template<typename E>
-class Result<void, E> {
+class [[nodiscard]] Result<void, E> {
 public:
     Result() : m_error(), has_err(false) {}
     Result(const E& error) : m_error(error), has_err(true) {}
