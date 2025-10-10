@@ -499,11 +499,11 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
     }
 
     for (auto& argument : arguments) {
+        Type* type = TRY(this->type_check(*argument));
         if (index >= function_type->parameter_count()) {
             continue;
         }
 
-        Type* type = TRY(this->type_check(*argument));
         Type* parameter = function_type->get_parameter_at(index);
 
         if (!type->can_safely_cast_to(parameter)) {
