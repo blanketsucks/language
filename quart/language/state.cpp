@@ -413,7 +413,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     }
 
     if (!structure) {
-        return err("Type '{}' has no attribute named '{}'", value_type->str(), attr);
+        return err(parent.span(), "Type '{}' has no attribute named '{}'", value_type->str(), attr);
     }
 
     auto* field = structure->find(attr);
