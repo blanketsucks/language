@@ -1504,7 +1504,92 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
     return {};
 }
 
-BytecodeResult ImplTraitExpr::generate(State&, Optional<bytecode::Register>) const {
+BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Type* trait_type = TRY(m_trait->evaluate(state));
+    if (!trait_type->is_trait()) {
+        return err(m_trait->span(), "Expected a trait type");
+    }
+
+    auto trait = state.get_trait(trait_type);
+    Type* type = TRY(m_type->evaluate(state));
+
+    if (!type->is_struct()) {
+        ASSERT(false, "Only structs can implement traits for now");
+    }
+
+    auto current_scope = state.scope();
+    auto structure = state.get_global_struct(type);
+
+    state.set_current_scope(structure->scope());
+    state.set_self_type(type);
+    
+    for (auto& expr : m_body) {
+        if (!expr->is<FunctionExpr>()) {
+            return err(expr->span(), "Only function implementations are allowed in trait impls");
+        }
+
+        TRY(expr->generate(state, {}));
+
+        String name = expr->as<FunctionExpr>()->decl().name();
+        TraitFunction const* trait_function = trait->get_function(name);
+
+        if (!trait_function) {
+            return err(expr->span(), "Function '{}' is not part of the trait '{}'", name, trait->name());
+        }
+
+        auto* function = structure->scope()->resolve<Function>(name);
+        auto& impl_parameters = function->parameters();
+
+        size_t index = 0;
+
+        for (auto& parameter : trait_function->parameters) {
+            if (index >= impl_parameters.size()) {
+                auto error = err(function->span(), "Impl function '{}' has fewer parameters than the trait function", function->name());
+                error.add_note(trait_function->span, "Trait function defined here");
+
+                return error;
+            }
+
+            auto& impl_parameter = impl_parameters[index];
+            if (index == 0) {
+                if (!impl_parameter.is_self()) {
+                    return err(function->span(), "The first parameter of an impl method must be 'self'");
+                }
+
+                index++;
+                continue;
+            }
+
+            if (parameter.flags != impl_parameter.flags) {
+                auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same mutability as the trait function", parameter.name, function->name());
+                error.add_note(trait_function->span, "Trait function defined here");
+
+                return error;
+            } else if (parameter.type != impl_parameter.type) {
+                auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same type as the trait function", parameter.name, function->name());
+                error.add_note(trait_function->span, "Trait function defined here");
+
+                return error;
+            }
+
+            index++;
+        }
+
+        if (index < impl_parameters.size()) {
+            auto error = err(function->span(), "Impl function '{}' has more parameters than the trait function", function->name());
+            error.add_note(trait_function->span, "Trait function defined here");
+            
+            return error;
+        }
+    }
+    
+    for (auto& function : trait->predefined_functions()) {
+        TRY(function->generate(state, {}));
+    }
+
+    state.set_current_scope(current_scope);
+    state.set_self_type(nullptr);
+
     return {};
 }
 
