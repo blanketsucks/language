@@ -54,11 +54,11 @@ private:
 class Impl {
 public:
     static OwnPtr<Impl> create(Type* underlying_type, RefPtr<Scope> scope) {
-        return OwnPtr<Impl>(new Impl(underlying_type, scope));
+        return OwnPtr<Impl>(new Impl(underlying_type, move(scope)));
     }
 
     static OwnPtr<Impl> create(RefPtr<Scope> parent_scope, ast::TypeExpr* type, ast::BlockExpr* body, Vector<OwnPtr<ImplCondition>> conditions) {
-        return OwnPtr<Impl>(new Impl(parent_scope, type, body, move(conditions)));
+        return OwnPtr<Impl>(new Impl(move(parent_scope), type, body, move(conditions)));
     }
 
     Type* underlying_type() const { return m_underlying_type; }
@@ -74,7 +74,7 @@ public:
     ErrorOr<RefPtr<Scope>> make(State&, Type*);
 
 private:
-    Impl(Type* underlying_type, RefPtr<Scope> scope) : m_underlying_type(underlying_type), m_scope(move(scope)), m_parent_scope(scope->parent()) {}
+    Impl(Type* underlying_type, RefPtr<Scope> scope) : m_underlying_type(underlying_type), m_scope(scope), m_parent_scope(scope->parent()) {}
     Impl(
         RefPtr<Scope> parent_scope, ast::TypeExpr* type, ast::BlockExpr* body, Vector<OwnPtr<ImplCondition>> conditions
     ) : m_parent_scope(move(parent_scope)), m_conditions(move(conditions)), m_type(type), m_body(body) {}
