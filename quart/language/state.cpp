@@ -317,7 +317,9 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     auto result = this->resolve_reference(parent, as_mutable, {}, false, true);
 
     bytecode::Register reg;
+
     Type* value_type = nullptr;
+    Type* type = nullptr;
 
     bool is_mutable = false;
     if (result.is_err()) {
@@ -332,7 +334,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
         }
 
         bytecode::Operand value = option.value();
-        Type* type = this->type(value);
+        type = this->type(value);
 
         if (!type->is_pointer() && !type->is_reference()) {
             value_type = type;
@@ -343,11 +345,13 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
         } else {
             reg = value.reg();
             value_type = type->underlying_type();
+
+            is_mutable = type->is_mutable();
         }
     } else {
         bytecode::Register value = result.value();
 
-        Type* type = this->type(value);
+        type = this->type(value);
         is_mutable = type->is_mutable();
 
         type = type->get_reference_type();
@@ -368,19 +372,19 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     RefPtr<Scope> scope = nullptr;
 
     if (!structure) {
-        if (!this->has_impl(value_type)) {
+        if (!this->has_impl(type)) {
             for (auto& impl : m_generic_impls) {
-                scope = TRY(impl->make(*this, value_type));
+                scope = TRY(impl->make(*this, type));
                 if (scope) {
                     break;
                 }
             }
 
             if (!scope) {
-                return err(parent.span(), "Cannot access attributes of type '{}'", value_type->str());
+                return err(parent.span(), "Cannot access attributes of type '{}'", type->str());
             }
         } else {
-            auto& impl = *m_impls[value_type];
+            auto& impl = *m_impls[type];
             scope = impl.scope();
         }
     } else {
