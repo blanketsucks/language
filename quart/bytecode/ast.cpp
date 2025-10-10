@@ -611,6 +611,10 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
             type = TRY(param.type->evaluate(state));
         }
 
+        if (!type->is_sized_type()) {
+            return err(param.span, "Parameter '{}' of type '{}' has no size", param.name, type->str());
+        }
+
         if (type->is_reference()) {
             bool is_mutable = flags & FunctionParameter::Mutable;
             if (type->is_mutable() && !is_mutable) {
