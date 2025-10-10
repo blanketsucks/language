@@ -86,6 +86,10 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
 
             return underlying_type;
         }
+        case Symbol::Trait: {
+            auto* trait = symbol->as<Trait>();
+            return trait->underlying_type();
+        }
         default: break;
     }
 
