@@ -402,7 +402,7 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
 
         auto& self = method->parameters().front();
         if (self.is_mutable() && !is_mutable) {
-            return err(parent.span(), "Function '{}' requires a mutable reference to self but self is immutable", method->name());
+            return err(parent.span(), "Method '{}' requires a mutable reference to self but self is immutable", method->name());
         }
 
         emit<bytecode::GetFunction>(*dst, method);

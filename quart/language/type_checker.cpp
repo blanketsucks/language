@@ -122,7 +122,7 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
 
         auto& self = method->parameters().front();
         if (self.is_mutable() && !is_mutable) {
-            return err(expr.parent().span(), "Function '{}' requires a mutable reference to self but self is immutable", method->name());
+            return err(expr.parent().span(), "Method '{}' requires a mutable reference to self but self is immutable", method->name());
         }
 
         m_has_self = true;
