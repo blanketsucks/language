@@ -1431,7 +1431,7 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 
     auto impl = Impl::create(underlying_type, scope);
     state.set_self_type(impl->underlying_type());
-
+    
     state.set_current_scope(scope);
     TRY(m_body->generate(state, {}));
 
@@ -1495,7 +1495,7 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
         }
 
         auto* function_type = FunctionType::get(state.context(), return_type, types, decl->is_c_variadic());
-        trait->add_function({ decl->name(), move(parameters), return_type, function_type });
+        trait->add_function({ decl->name(), move(parameters), return_type, function_type, decl->span() });
     }
 
     scope->add_symbol(trait);
