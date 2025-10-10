@@ -11,6 +11,7 @@ struct TraitFunction {
     Type* return_type;
 
     FunctionType* type;
+    Span span;
 };
 
 class Trait : public Symbol {
@@ -28,6 +29,15 @@ public:
 
     void add_function(TraitFunction function) { m_functions[function.name] = move(function); }
     void add_predefined_function(ast::FunctionExpr const* function) { m_predefined_functions.push_back(function); }
+
+    TraitFunction const* get_function(const String& name) const {
+        auto iterator = m_functions.find(name);
+        if (iterator == m_functions.end()) {
+            return nullptr;
+        }
+
+        return &iterator->second;
+    }
 
 private:
     Trait(String name, TraitType* type) : Symbol(move(name), Symbol::Trait, false), m_underlying_type(type) {}
