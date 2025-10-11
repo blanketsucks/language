@@ -82,15 +82,20 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
             return err(expr.parent().span(), "Cannot access attributes of type '{}'", parent->str());
         }
 
-        auto& functions = trait->functions();
+        auto scope = trait->scope();
+        auto* function = scope->resolve<Function>(expr.attribute());
 
-        auto iterator = functions.find(expr.attribute());
-        if (iterator == functions.end()) {
-            return err(expr.span(), "Unknown attribute '{}' for trait '{}'", expr.attribute(), trait->name());
+        if (!function) {
+            return err(expr.span(), "Trait '{}' has no attribute named '{}'", trait->name(), expr.attribute());
+        }
+
+        auto& self = function->parameters().front();
+        if (self.is_mutable() && !is_mutable) {
+            return err(expr.parent().span(), "Method '{}' requires a mutable reference to self but self is immutable", function->name());
         }
 
         m_has_self = true;
-        return iterator->second.type;
+        return function->underlying_type()->get_pointer_to();
     }
 
     if (!structure) {

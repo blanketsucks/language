@@ -1443,63 +1443,34 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 }
 
 BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) const {
-    auto scope = state.scope();
+    auto current_scope = state.scope();
 
-    auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, scope));
-    auto trait = Trait::create(m_name, type);
+    auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, current_scope));
+    auto scope = Scope::create(type->name(), ScopeType::Namespace, current_scope);
+
+    auto trait = Trait::create(m_name, type, move(scope));
 
     state.set_self_type(type);
     state.add_trait(trait);
 
+    state.set_current_scope(trait->scope());
     for (auto& expr : m_body) {
         if (!expr->is<FunctionDeclExpr>()) {
+            auto* function = expr->as<FunctionExpr>();
+
             TRY(state.type_checker().type_check(*expr));
-            trait->add_predefined_function(expr->as<FunctionExpr>());
+            trait->add_predefined_function(function);
 
             continue;
         }
 
-        auto* decl = expr->as<FunctionDeclExpr>();
-
-        Vector<FunctionParameter> parameters;
-        Vector<Type*> types;
-
-        bool has_self = false;
-        for (auto [index, param] : llvm::enumerate(decl->parameters())) {
-            if (param.flags & FunctionParameter::Self) {
-                has_self = true;
-            }
-
-            Type* type = nullptr;
-            if (param.type) {
-                type = TRY(param.type->evaluate(state));
-            } else {
-                type = trait->underlying_type()->get_pointer_to(param.flags & FunctionParameter::Mutable);
-            }
-            
-            if (type->is_aggregate()) {
-                type = type->get_pointer_to();
-            }
-
-            parameters.push_back({ param.name, type, param.flags, static_cast<u32>(index), param.span });
-            types.push_back(type);
-        }
-
-        if (!has_self) {
-            return err(decl->span(), "Trait functions must have 'self' as the first parameter");
-        }
-
-        Type* return_type = state.context().void_type();
-        if (decl->return_type()) {
-            return_type = TRY(decl->return_type()->evaluate(state));
-        }
-
-        auto* function_type = FunctionType::get(state.context(), return_type, types, decl->is_c_variadic());
-        trait->add_function({ decl->name(), move(parameters), return_type, function_type, decl->span() });
+        TRY(state.type_checker().type_check(*expr));
     }
 
-    scope->add_symbol(trait);
+    current_scope->add_symbol(trait);
+
     state.set_self_type(nullptr);
+    state.set_current_scope(current_scope);
 
     return {};
 }
@@ -1531,7 +1502,7 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
         TRY(expr->generate(state, {}));
 
         String name = expr->as<FunctionExpr>()->decl().name();
-        TraitFunction const* trait_function = trait->get_function(name);
+        Function const* trait_function = trait->scope()->resolve<Function>(name);
 
         if (!trait_function) {
             return err(expr->span(), "Function '{}' is not part of the trait '{}'", name, trait->name());
@@ -1542,10 +1513,10 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
 
         size_t index = 0;
 
-        for (auto& parameter : trait_function->parameters) {
+        for (auto& parameter : trait_function->parameters()) {
             if (index >= impl_parameters.size()) {
                 auto error = err(function->span(), "Impl function '{}' has fewer parameters than the trait function", function->name());
-                error.add_note(trait_function->span, "Trait function defined here");
+                error.add_note(trait_function->span(), "Trait function defined here");
 
                 return error;
             }
@@ -1562,12 +1533,12 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
 
             if (parameter.flags != impl_parameter.flags) {
                 auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same mutability as the trait function", parameter.name, function->name());
-                error.add_note(trait_function->span, "Trait function defined here");
+                error.add_note(trait_function->span(), "Trait function defined here");
 
                 return error;
             } else if (parameter.type != impl_parameter.type) {
                 auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same type as the trait function", parameter.name, function->name());
-                error.add_note(trait_function->span, "Trait function defined here");
+                error.add_note(trait_function->span(), "Trait function defined here");
 
                 return error;
             }
@@ -1577,7 +1548,7 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
 
         if (index < impl_parameters.size()) {
             auto error = err(function->span(), "Impl function '{}' has more parameters than the trait function", function->name());
-            error.add_note(trait_function->span, "Trait function defined here");
+            error.add_note(trait_function->span(), "Trait function defined here");
             
             return error;
         }

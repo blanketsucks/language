@@ -5,47 +5,31 @@
 
 namespace quart {
 
-struct TraitFunction {
-    String name;
-    Vector<FunctionParameter> parameters;
-    Type* return_type;
-
-    FunctionType* type;
-    Span span;
-};
-
 class Trait : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Trait; }
 
-    static RefPtr<Trait> create(String name, TraitType* type) {
-        return RefPtr<Trait>(new Trait(move(name), type));
+    static RefPtr<Trait> create(String name, TraitType* type, RefPtr<Scope> scope) {
+        return RefPtr<Trait>(new Trait(move(name), type, move(scope)));
     }
 
     TraitType* underlying_type() const { return m_underlying_type; }
 
-    HashMap<String, TraitFunction> const& functions() const { return m_functions; }
-    Vector<ast::FunctionExpr const*> const& predefined_functions() const { return m_predefined_functions; }
+    RefPtr<Scope> scope() const { return m_scope; }
 
-    void add_function(TraitFunction function) { m_functions[function.name] = move(function); }
+    Vector<ast::FunctionExpr const*> const& predefined_functions() const { return m_predefined_functions; }
     void add_predefined_function(ast::FunctionExpr const* function) { m_predefined_functions.push_back(function); }
 
-    TraitFunction const* get_function(const String& name) const {
-        auto iterator = m_functions.find(name);
-        if (iterator == m_functions.end()) {
-            return nullptr;
-        }
-
-        return &iterator->second;
-    }
-
 private:
-    Trait(String name, TraitType* type) : Symbol(move(name), Symbol::Trait, false), m_underlying_type(type) {}
+    Trait(
+        String name, TraitType* type, RefPtr<Scope> scope
+    ) : Symbol(move(name), Symbol::Trait, false), m_underlying_type(type), m_scope(move(scope)) {}
 
     TraitType* m_underlying_type;
 
+    RefPtr<Scope> m_scope;
+
     Vector<ast::FunctionExpr const*> m_predefined_functions;
-    HashMap<String, TraitFunction> m_functions;
 };
 
 }
