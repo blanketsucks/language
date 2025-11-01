@@ -109,7 +109,7 @@ public:
     Function const* get_global_function(const String& name) const;
 
     void add_global_struct(RefPtr<Struct> structure);
-    Struct const* get_global_struct(Type* type) const;
+    Struct* get_global_struct(Type* type);
 
     bool has_global_module(const String& name) const;
     RefPtr<Module> get_global_module(const String& name) const;

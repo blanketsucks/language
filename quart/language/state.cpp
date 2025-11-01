@@ -71,7 +71,7 @@ bool State::has_impl(Type* type) {
     return m_impls.contains(type);
 }
 
-Struct const* State::get_global_struct(Type* type) const {
+Struct* State::get_global_struct(Type* type) {
     if (auto iterator = m_all_structs.find(type); iterator != m_all_structs.end()) {
         return iterator->second.get();
     }
