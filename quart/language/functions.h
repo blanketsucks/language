@@ -10,6 +10,7 @@
 namespace quart {
 
 class Scope;
+class State;
 
 struct FunctionParameter {
     enum Flags : u8 {
@@ -33,11 +34,23 @@ struct FunctionParameter {
     bool is_mutable() const { return this->flags & Flags::Mutable; }
     bool is_byval() const { return this->flags & Flags::Byval; }
     bool is_self() const { return this->flags & Flags::Self; }
+
+    FunctionParameter clone(Type* type = nullptr) const {
+        return FunctionParameter { name, type ? type : this->type, flags, index, span };
+    }
 };
 
 struct Loop {
     bytecode::BasicBlock* start;
     bytecode::BasicBlock* end;
+};
+
+struct SpecializedFunctionKey {
+    Vector<Type*> parameters;
+
+    auto operator<=>(SpecializedFunctionKey const& other) const {
+        return parameters <=> other.parameters;
+    }
 };
 
 class Function : public Symbol {
@@ -52,7 +65,8 @@ public:
         RefPtr<Scope>,
         LinkageSpecifier,
         RefPtr<LinkInfo>,
-        bool is_public
+        bool is_public,
+        bool is_async = false
     );
 
     Span span() const { return m_span; }
@@ -72,9 +86,16 @@ public:
     bool is_decl() const { return !m_entry_block; }
     bool is_extern() const { return m_linkage_specifier > LinkageSpecifier::None; }
     bool is_main() const { return m_qualified_name == "main"; }
+    bool is_async() const { return m_is_async; }
 
     bool is_struct_return() const { return m_underlying_type->return_type()->is_struct(); }
     bool is_member_method() const { return m_parameters.size() > 0 && m_parameters[0].is_self(); }
+
+    bool has_trait_parameter() const {
+        return std::any_of(m_parameters.begin(), m_parameters.end(), [](auto const& parameter) {
+            return parameter.type->is_underlying_type_of(TypeKind::Trait);
+        });
+    }
 
     size_t local_count() const { return m_locals.size(); }
     Vector<Type*> const& locals() const { return m_locals; }
@@ -85,6 +106,18 @@ public:
 
     Loop const& current_loop() const { return m_loop; }
     Loop& current_loop() { return m_loop; }
+
+    HashMap<SpecializedFunctionKey, RefPtr<Function>>& specializations() { return m_specializations; }
+    RefPtr<Function> get_specialization(SpecializedFunctionKey const& key) {
+        auto it = m_specializations.find(key);
+        if (it == m_specializations.end()) {
+            return {};
+        }
+
+        return it->second;
+    }
+
+    ErrorOr<RefPtr<Function>> specialize(State& state, Vector<FunctionParameter> const& parameters);
     
     size_t allocate_local() {
         m_locals.push_back(nullptr);
@@ -102,10 +135,16 @@ public:
         m_entry_block = block;
     }
 
+    void set_body(ast::Expr* body) { m_body = body; }
+    ast::Expr* const& body() const { return m_body; }
+
     void insert_block(bytecode::BasicBlock* block) { m_basic_blocks.push_back(block); }
     void set_current_loop(Loop loop) { m_loop = loop; }
 
     void dump() const;
+
+    void set_local_parameters();
+    ErrorOr<void> finalize_body(State& state);
 
 private:
     void set_qualified_name();
@@ -118,11 +157,12 @@ private:
         RefPtr<Scope> scope,
         LinkageSpecifier linkage_specifier,
         RefPtr<LinkInfo> link_info,
-        bool is_public
+        bool is_public,
+        bool is_async
     ) : Symbol(move(name), Symbol::Function, is_public), m_span(span),
         m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
-        m_link_info(move(link_info)), m_scope(move(scope)) {
-            
+        m_link_info(move(link_info)), m_scope(move(scope)), m_is_async(is_async) {
+
         this->set_qualified_name();
     }
 
@@ -142,12 +182,18 @@ private:
     bytecode::BasicBlock* m_entry_block = nullptr;
     Vector<bytecode::BasicBlock*> m_basic_blocks;
 
+    HashMap<SpecializedFunctionKey, RefPtr<Function>> m_specializations;
+
+    ast::Expr* m_body = nullptr;
+
     Vector<Type*> m_locals;
     Set<size_t> m_struct_locals;
 
     Loop m_loop = {};
     
     RefPtr<Scope> m_scope = nullptr;
+
+    bool m_is_async = false;
 };
 
 }

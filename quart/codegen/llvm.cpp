@@ -104,8 +104,8 @@ void LLVMCodeGen::generate(bytecode::NewLocalScope* inst) {
     LocalScope local_scope(function, function->local_count());
 
     llvm::Function* llvm_function = m_functions[function];
-    m_ir_builder->SetInsertPoint(m_basic_blocks[function->entry_block()]);
 
+    m_ir_builder->SetInsertPoint(m_basic_blocks[function->entry_block()]);
     if (function->is_struct_return()) {
         llvm::Type* type = function->return_type()->to_llvm_type(*m_context);
 
@@ -303,6 +303,10 @@ void LLVMCodeGen::generate(bytecode::JumpIf* inst) {
 
 void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     auto* function = inst->function();
+    if (function->has_trait_parameter()) {
+        return;
+    }
+
     auto range = llvm::map_range(function->parameters(), [](auto& parameter) { return parameter.type; });
 
     Vector<Type*> parameters(range.begin(), range.end());
@@ -650,12 +654,39 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         }
     }
 
+    String triple, error;
+    if (options.has_target()) {
+        triple = options.target;
+    } else {
+        triple = llvm::sys::getDefaultTargetTriple();
+    }
+
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
+    auto* target = llvm::TargetRegistry::lookupTarget(triple, error);
+    if (!target) {
+        return err("Failed to lookup target '{}'", triple);
+    }
+
+    llvm::TargetOptions target_options;
+    auto reloc = Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
+
+    OwnPtr<llvm::TargetMachine> machine(
+        target->createTargetMachine(triple, "generic", "", target_options, reloc)
+    );
+
+    m_module->setDataLayout(machine->createDataLayout());
+    m_module->setTargetTriple(machine->getTargetTriple().str());
+
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
     llvm::PassBuilder builder;
+    machine->registerPassBuilderCallbacks(builder);
 
     builder.registerModuleAnalyses(mam);
     builder.registerCGSCCAnalyses(cgam);
@@ -732,32 +763,6 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         llvm::raw_fd_ostream stream(out, ec);
         m_module->print(stream, nullptr);
     }
-
-    String triple, error;
-    if (options.has_target()) {
-        triple = options.target;
-    } else {
-        triple = llvm::sys::getDefaultTargetTriple();
-    }
-
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmParsers();
-    llvm::InitializeAllAsmPrinters();
-
-    auto* target = llvm::TargetRegistry::lookupTarget(triple, error);
-    if (!target) {
-        return err("Failed to lookup target '{}'", triple);
-    }
-
-    llvm::TargetOptions target_options;
-    auto reloc = Optional<llvm::Reloc::Model>(llvm::Reloc::Model::PIC_);
-
-    OwnPtr<llvm::TargetMachine> machine(
-        target->createTargetMachine(triple, "generic", "", target_options, reloc)
-    );
-
-    m_module->setDataLayout(machine->createDataLayout());
-    m_module->setTargetTriple(triple);
 
     String output = options.file.with_extension("o");
 

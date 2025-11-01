@@ -1,3 +1,4 @@
+#include "quart/language/functions.h"
 #include <quart/language/state.h>
 #include <quart/parser/parser.h>
 #include <quart/parser/ast.h>
@@ -489,6 +490,110 @@ ErrorOr<void> generate_function_call(
     return {};
 }
 
+ErrorOr<RefPtr<Function>> generate_trait_function_call(
+    State& state,
+    Vector<bytecode::Operand>& arguments,
+    Function* function,
+    FunctionType const* function_type,
+    Vector<OwnPtr<Expr>> const& args,
+    size_t index,
+    size_t params
+) {
+    Vector<FunctionParameter> parameters;
+    for (auto& arg : args) {
+        if (index >= params && function_type->is_var_arg()) {
+            auto operand = TRY(ensure(state, *arg, {}));
+            arguments.push_back(operand);
+
+            continue;
+        }
+
+        FunctionParameter const& parameter = function->parameters()[index];
+        if (!parameter.is_byval()) {
+            state.set_type_context(parameter.type);
+
+            auto operand = TRY(ensure(state, *arg, {}));
+            if (state.self()) {
+                return err(arg->span(), "Cannot use a struct method as a value");
+            }
+
+            if (parameter.type->is_underlying_type_of(quart::TypeKind::Trait)) {
+                Type* ty = state.type(operand);
+                if (!ty->is_pointer() && !ty->is_reference()) {
+                    return err(
+                        arg->span(),
+                        "Cannot pass a value of type '{}' to a parameter that expects '{}'",
+                        ty->str(),
+                        parameter.type->str()
+                    );
+                }
+
+                ty = ty->underlying_type();
+                auto* trait_type = parameter.type->underlying_type()->as<TraitType>();
+
+                if (!ty->is<StructType>()) { // TODO: Allow non-struct types to implement traits
+                    return err(
+                        arg->span(),
+                        "Type '{}' does not implement trait '{}'",
+                        ty->str(),
+                        parameter.type->str()
+                    );
+                }
+
+                auto structure = ty->as<StructType>()->get_struct();
+                if (!structure->impls_trait(trait_type)) {
+                    return err(
+                        arg->span(),
+                        "Type '{}' does not implement trait '{}'",
+                        ty->str(),
+                        parameter.type->str()
+                    );
+                }
+            } else {
+                operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));              
+            }
+
+            arguments.push_back(operand);
+            parameters.push_back(parameter.clone(state.type(operand)));
+
+            state.set_type_context(nullptr);
+            index++;
+
+            continue;
+        }
+
+        Type* underlying_type = parameter.type->get_pointee_type();
+        auto result = state.resolve_reference(*arg, false, {}, false);
+
+        bytecode::Register reg = state.allocate_register();
+        state.set_register_state(reg, parameter.type);
+
+        if (result.is_err()) {
+            auto operand = TRY(ensure(state, *arg, {}));
+            Type* type = state.type(operand);
+
+            if (type != underlying_type) {
+                return err(arg->span(), "Cannot pass a value of type '{}' to a parameter that expects '{}'", type->str(), underlying_type->str());
+            }
+
+            state.emit<bytecode::Alloca>(reg, underlying_type);
+            state.emit<bytecode::Write>(reg, operand);
+        } else {
+            bytecode::Register src = result.value();
+
+            state.emit<bytecode::Alloca>(reg, underlying_type);
+            state.emit<bytecode::Memcpy>(reg, src, underlying_type->size());
+        }
+
+        arguments.emplace_back(reg);
+        parameters.push_back(parameter.clone(state.type(reg)));
+
+        index++;
+    }
+
+    return TRY(function->specialize(state, parameters));
+}
+
 BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst) const {
     bytecode::Operand callee = TRY(ensure(state, *m_callee, {}));
     ASSERT(callee.is_register(), "Callee must be a register");
@@ -531,12 +636,25 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
 
     Vector<bytecode::Operand> arguments;
     if (self.has_value()) {
-        arguments.push_back(self.value());
+        arguments.emplace_back(self.value());
         state.reset_self();
     }
 
     Optional<bytecode::Register> constructor_register = {};
     if (function) {
+        if (function->has_trait_parameter()) {
+            auto specialized = TRY(generate_trait_function_call(state, arguments, function, function_type, m_args, index, params));
+
+            auto reg = state.allocate_register();
+            state.emit<bytecode::GetFunction>(reg, specialized.get());
+
+            auto return_register = select_dst(state, dst);
+            state.emit<bytecode::Call>(return_register, reg, specialized->underlying_type(), arguments);
+
+            state.set_register_state(return_register, specialized->return_type());
+            return bytecode::Operand(return_register);
+        }
+
         if (function->is_struct_return()) {
             auto return_register = state.return_register();
             if (return_register.has_value()) {
@@ -612,7 +730,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
         }
 
         if (!type->is_sized_type()) {
-            return err(param.span, "Parameter '{}' of type '{}' has no size", param.name, type->str());
+            return err(param.span, "Parameter '{}' of type '{}' has no size. Consider using a pointer or reference", param.name, type->str());
         }
 
         if (type->is_reference()) {
@@ -650,9 +768,19 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
         link_info = attr.value<RefPtr<LinkInfo>>();
     }
 
-    auto function = Function::create(span(), m_name, parameters, underlying_type, scope, m_linkage, move(link_info), m_is_public);
-    function->set_module(state.module());
+    auto function = Function::create(
+        span(),
+        m_name,
+        parameters,
+        underlying_type,
+        scope,
+        m_linkage,
+        move(link_info),
+        m_is_public,
+        m_is_async
+    );
 
+    function->set_module(state.module());
     if (auto* original = state.get_global_function(function->qualified_name())) {
         auto error = err(span(), "Function '{}' is already defined", function->qualified_name());
         error.add_note(original->span(), "Previous definition is here");
@@ -680,26 +808,22 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     state.switch_to(entry_block);
 
     auto previous_scope = state.scope();
-    for (auto& param : function->parameters()) {
-        size_t index = function->allocate_local();
-        function->set_local_type(index, param.type);
+    function->set_local_parameters();
 
-        u8 flags = Variable::None;
-        if (param.is_mutable()) {
-            flags |= Variable::Mutable;
-        }
-
-        Type* type = param.type;
-        if (param.is_byval()) {
-            type = type->get_pointee_type();
-        }
-
-        auto variable = Variable::create(param.name, index, type, flags);
-        function->scope()->add_symbol(variable);
-    }
-    
     state.set_current_scope(function->scope());
     state.set_current_function(function);
+
+    if (function->has_trait_parameter()) {
+        TRY(state.type_checker().type_check(*m_body));
+
+        state.set_current_function(previous_function);
+        state.set_current_scope(previous_scope);
+
+        state.switch_to(previous_block);
+
+        function->set_body(m_body.get());
+        return {};
+    }
 
     state.emit<bytecode::NewLocalScope>(function);
 
@@ -711,18 +835,8 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
         state.inject_return(return_register);
     }
 
-    for (auto& expr : m_body) {
-        TRY(expr->generate(state, {}));
-    }
-
-    for (auto& block : function->basic_blocks()) {
-        if (!block->is_terminated() && !function->return_type()->is_void()) {
-            return err(span(), "Function '{}' does not return from all paths", function->name());
-        } else if (!block->is_terminated()) {
-            state.switch_to(block);
-            state.emit<bytecode::Return>();
-        }
-    }
+    TRY(m_body->generate(state, {}));
+    TRY(function->finalize_body(state));
 
     state.switch_to(previous_block);
     state.set_current_scope(previous_scope);
@@ -1568,14 +1682,26 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
             return error;
         }
     }
-    
+
     for (auto& function : trait->predefined_functions()) {
         TRY(function->generate(state, {}));
+    }
+
+    for (auto& [name, symbol] : trait->scope()->symbols()) {
+        if (!symbol->is<Function>()) {
+            continue;
+        }
+
+        auto* function = structure->scope()->resolve<Function>(name);
+        if (!function) {
+            return err(span(), "Struct '{}' does not implement required function '{}' of trait '{}'", structure->name(), name, trait->name());
+        }
     }
 
     state.set_current_scope(current_scope);
     state.set_self_type(nullptr);
 
+    structure->add_impl_trait(trait->underlying_type());
     return {};
 }
 
