@@ -62,6 +62,14 @@ public:
     StructField const* find(const String& name) const;
     bool has_method(const String& name) const;
 
+    void add_impl_trait(TraitType* trait) {
+        m_impl_traits.push_back(trait);
+    }
+
+    bool impls_trait(TraitType* trait) const {
+        return std::find(m_impl_traits.begin(), m_impl_traits.end(), trait) != m_impl_traits.end();
+    }
+
 private:
     void set_qualified_name(RefPtr<Scope> = nullptr);
 
@@ -88,6 +96,8 @@ private:
 
     HashMap<String, StructField> m_fields;
     RefPtr<Scope> m_scope = nullptr;
+
+    Vector<TraitType*> m_impl_traits;
 };
 
 }
