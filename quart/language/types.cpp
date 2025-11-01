@@ -11,7 +11,7 @@ bool Type::is_underlying_type_of(TypeKind kind) const {
     } else if (this->is_reference()) {
         return this->get_reference_type()->kind() == kind;
     } else {
-        return this->kind() == kind;
+        return false;
     }
 }
 

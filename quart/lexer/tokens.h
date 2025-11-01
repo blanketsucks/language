@@ -89,6 +89,7 @@ enum class TokenKind : u8 {
     Trait,
     Match,
     ConstEval,
+    Async,
 
     True,
     False,
@@ -259,7 +260,8 @@ static const std::map<StringView, TokenKind> KEYWORDS = {
     { "true", TokenKind::True },
     { "false", TokenKind::False },
     { "null", TokenKind::Null },
-    { "consteval", TokenKind::ConstEval }
+    { "consteval", TokenKind::ConstEval },
+    { "async", TokenKind::Async }
 };
 
 static const std::map<TokenKind, u8> PRECEDENCES = {
