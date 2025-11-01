@@ -1353,8 +1353,23 @@ BytecodeResult TypeAliasExpr::generate(State& state, Optional<bytecode::Register
     return {};
 }
 
-BytecodeResult StaticAssertExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
+BytecodeResult StaticAssertExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Constant* constant = TRY(state.constant_evaluator().evaluate(*m_condition));
+    if (!constant->is<ConstantInt>()) {
+        return err(m_condition->span(), "Static assert condition must be a constant boolean expression");
+    }
+
+    auto* condition = constant->as<ConstantInt>();
+    if (condition->value() != 0) {
+        return {};
+    }
+
+    if (m_message.empty()) {
+        return err(span(), "Static assert failed");
+    } else {
+        return err(span(), "Static assert failed: {}", m_message);
+    }
+
     return {};
 }
 
