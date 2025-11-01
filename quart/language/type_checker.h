@@ -12,12 +12,12 @@ public:
 
     ErrorOr<Type*> type_check(ast::Expr const& expr);
 
-private:
+    // NOLINTNEXTLINE
+    #define Op(x) ErrorOr<Type*> type_check(ast::x##Expr const&);
+        ENUMERATE_EXPR_KINDS(Op)
+    #undef Op
 
-// NOLINTNEXTLINE
-#define Op(x) ErrorOr<Type*> type_check(ast::x##Expr const&);
-    ENUMERATE_EXPR_KINDS(Op)
-#undef Op
+private:
 
     ErrorOr<Type*> resolve_reference(Scope& scope, Span span, const String& name, bool is_mutable);
     ErrorOr<Type*> resolve_reference(ast::Expr const& expr, bool is_mutable = false);

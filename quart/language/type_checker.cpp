@@ -71,6 +71,7 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
     parent = parent->get_reference_type();
     if (parent->is_reference() || parent->is_pointer()) {
         parent = parent->underlying_type();
+        is_mutable = parent->is_mutable();
     }
 
     auto* structure = m_state.get_global_struct(parent);
@@ -641,9 +642,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::FunctionExpr const& expr) {
     m_state.set_current_function(function);
     m_state.set_current_scope(function->scope());
 
-    for (auto& statement : expr.body()) {
-        TRY(this->type_check(*statement));
-    }
+    TRY(this->type_check(expr.body()));
 
     // TODO: Ensure all code paths return
 
