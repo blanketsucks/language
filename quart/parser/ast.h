@@ -177,7 +177,7 @@ enum class ExprKind : u8 {
     Match,
     RangeFor,
     Bool,
-    ConstEval,
+    ConstEval
 };
 
 enum class TypeKind : u8 {
@@ -602,8 +602,8 @@ private:
 class CallExpr : public ExprBase<ExprKind::Call> {
 public:
     CallExpr(
-        Span span, 
-        OwnPtr<ast::Expr> callee, 
+        Span span,
+        OwnPtr<ast::Expr> callee,
         ExprList<Expr> args,
         HashMap<String, OwnPtr<Expr>> kwargs
     ) : ExprBase(span), m_callee(move(callee)), m_args(move(args)), m_kwargs(move(kwargs)) {}
@@ -642,9 +642,10 @@ public:
         OwnPtr<TypeExpr> return_type,
         LinkageSpecifier linkage,
         bool is_c_variadic,
-        bool is_public
+        bool is_public,
+        bool is_async
     ) : ExprBase(span), m_name(move(name)), m_parameters(move(parameters)), m_return_type(move(return_type)),
-        m_is_c_variadic(is_c_variadic), m_is_public(is_public), m_linkage(linkage) {}
+        m_is_c_variadic(is_c_variadic), m_is_public(is_public), m_is_async(is_async), m_linkage(linkage) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
@@ -655,6 +656,7 @@ public:
 
     bool is_c_variadic() const { return m_is_c_variadic; }
     bool is_public() const { return m_is_public; }
+    bool is_async() const { return m_is_async; }
 
     LinkageSpecifier linkage() const { return m_linkage; }
 
@@ -665,6 +667,7 @@ private:
 
     bool m_is_c_variadic = false;
     bool m_is_public = false;
+    bool m_is_async = false;
 
     LinkageSpecifier m_linkage;
 };
@@ -672,17 +675,17 @@ private:
 class FunctionExpr : public ExprBase<ExprKind::Function> {
 public:
     FunctionExpr(
-        Span span, OwnPtr<FunctionDeclExpr> decl, Vector<OwnPtr<Expr>> body
+        Span span, OwnPtr<FunctionDeclExpr> decl, OwnPtr<BlockExpr> body
     ) : ExprBase(span), m_decl(move(decl)), m_body(move(body)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     const FunctionDeclExpr& decl() const { return *m_decl; }
-    const Vector<OwnPtr<Expr>>& body() const { return m_body; }
+    const BlockExpr& body() const { return *m_body; }
 
 private:
     OwnPtr<FunctionDeclExpr> m_decl;
-    Vector<OwnPtr<Expr>> m_body;
+    OwnPtr<BlockExpr> m_body;
 };
 
 class DeferExpr : public ExprBase<ExprKind::Defer> {

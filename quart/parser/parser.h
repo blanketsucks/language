@@ -7,9 +7,6 @@
 
 namespace quart {
 
-// template<typename T>
-// using ParseResult = ErrorOr<OwnPtr<T>>;
-
 template<typename T>
 class ParseResult : public ErrorOr<OwnPtr<T>> {
 public:
@@ -21,9 +18,9 @@ public:
     template<typename U> requires(std::is_base_of_v<T, U>)
     ParseResult(ParseResult<U> other) {
         if (other.is_ok()) {
-            this->set_value(move(other.value()));
+            this->set_value(move(other.release_value()));
         } else {
-            this->set_error(move(other.error()));
+            this->set_error(move(other.release_error()));
         }
     }
 };
@@ -89,8 +86,15 @@ public:
     ParseResult<ast::BlockExpr> parse_block();
 
     ErrorOr<ast::FunctionParameters> parse_function_parameters();
-    ParseResult<ast::FunctionDeclExpr> parse_function_decl(LinkageSpecifier linkage, bool with_name = true, bool is_public = false);
-    ParseResult<ast::Expr> parse_function(LinkageSpecifier linkage = LinkageSpecifier::None, bool is_public = false);
+    ParseResult<ast::FunctionDeclExpr> parse_function_decl(
+        LinkageSpecifier linkage,
+        bool with_name = true,
+        bool is_public = false,
+        bool is_async = false
+    );
+    ParseResult<ast::Expr> parse_function(
+        LinkageSpecifier linkage = LinkageSpecifier::None, bool is_public = false, bool is_async = false
+    );
 
     ErrorOr<Vector<ast::GenericParameter>> parse_generic_parameters();
     ErrorOr<ast::ExprList<ast::TypeExpr>> parse_generic_arguments();
@@ -122,6 +126,7 @@ public:
     ParseResult<ast::TraitExpr> parse_trait();
 
     ParseResult<ast::Expr> parse_pub();
+    ParseResult<ast::Expr> parse_async();
 
     ParseResult<ast::CallExpr> parse_call(OwnPtr<ast::Expr> callee);
 

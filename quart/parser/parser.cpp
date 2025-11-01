@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <quart/parser/parser.h>
 #include <quart/attributes/attributes.h>
 #include <quart/parser/ast.h>
@@ -470,7 +469,7 @@ end:
     return ast::FunctionParameters { move(params), is_c_variadic };
 }
 
-ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier linkage, bool with_name, bool is_public) {
+ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier linkage, bool with_name, bool is_public, bool is_async) {
     Span start = m_current.span();
     String name = "<anonymous>";
 
@@ -497,12 +496,12 @@ ParseResult<ast::FunctionDeclExpr> Parser::parse_function_decl(LinkageSpecifier 
     if (!span.start()) {
         span = { start, end };
     }
-    
-    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic, is_public) };
+
+    return { make<ast::FunctionDeclExpr>(span, move(name), move(params), move(return_type), linkage, is_c_variadic, is_public, is_async) };
 }
 
-ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage, bool is_public) {
-    auto decl = TRY(this->parse_function_decl(linkage, true, is_public));
+ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage, bool is_public, bool is_async) {
+    auto decl = TRY(this->parse_function_decl(linkage, true, is_public, is_async));
     if (m_current.is(TokenKind::SemiColon)) {
         this->next();
         return { move(decl) };
@@ -511,7 +510,7 @@ ParseResult<ast::Expr> Parser::parse_function(LinkageSpecifier linkage, bool is_
     TRY(this->expect(TokenKind::LBrace));
     m_in_function = true;
 
-    auto [body, _] = TRY(this->parse_expr_block());
+    auto body = TRY(this->parse_block());
     m_in_function = false;
 
     return { make<ast::FunctionExpr>(decl->span(), move(decl), move(body)) };
@@ -905,10 +904,10 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
 
     Span span = { start, end };
     auto decl = make<ast::FunctionDeclExpr>(
-        span, "<anonymous>", move(params), move(return_type), LinkageSpecifier::None, false, true
+        span, "<anonymous>", move(params), move(return_type), LinkageSpecifier::None, false, true, false
     );
 
-    return { make<ast::FunctionExpr>(span, move(decl), move(body)) };
+    return { make<ast::FunctionExpr>(span, move(decl), make<ast::BlockExpr>(span, move(body))) };
 }
 
 ParseResult<ast::CallExpr> Parser::parse_call(OwnPtr<ast::Expr> callee) {
@@ -1125,6 +1124,15 @@ ParseResult<ast::Expr> Parser::parse_pub() {
         default:
             return err(m_current.span(), "Invalid token for 'pub' keyword");
     }
+}
+
+ParseResult<ast::Expr> Parser::parse_async() {
+    if (!m_current.is(TokenKind::Func)) {
+        return err(m_current.span(), "Expected function definition after 'async' keyword");
+    }
+
+    this->next();
+    return this->parse_function(LinkageSpecifier::None, false, true);
 }
 
 ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last) {
@@ -1416,6 +1424,10 @@ ParseResult<ast::Expr> Parser::statement() {
         case TokenKind::Pub: {
             this->next();
             return this->parse_pub();
+        }
+        case TokenKind::Async: {
+            this->next();
+            return this->parse_async();
         }
         case TokenKind::ConstEval: {
             this->next();
