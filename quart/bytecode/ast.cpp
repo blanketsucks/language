@@ -394,7 +394,7 @@ BytecodeResult ReferenceExpr::generate(State& state, Optional<bytecode::Register
     return bytecode::Operand(reg);
 }
 
-ErrorOr<void> generate_generic_function_call(
+static ErrorOr<void> generate_generic_function_call(
     State& state,
     Vector<bytecode::Operand>& arguments,
     FunctionType const* function_type, 
@@ -425,7 +425,7 @@ ErrorOr<void> generate_generic_function_call(
     return {};
 }
 
-ErrorOr<void> generate_function_call(
+static ErrorOr<void> generate_function_call(
     State& state,
     Vector<bytecode::Operand>& arguments,
     Function* function,
@@ -490,7 +490,42 @@ ErrorOr<void> generate_function_call(
     return {};
 }
 
-ErrorOr<RefPtr<Function>> generate_trait_function_call(
+static ErrorOr<bytecode::Operand> generate_trait_call_argument(
+    State& state,
+    FunctionParameter const& parameter,
+    Expr const& argument
+) {
+    auto operand = TRY(ensure(state, argument, {}));
+    if (state.self()) {
+        return err(argument.span(), "Cannot use a struct method as a value");
+    }
+
+    bool is_trait_type = parameter.type->is_underlying_type_of(quart::TypeKind::Trait);
+    if (is_trait_type) {
+        Type* ty = state.type(operand);
+        if (!ty->is_pointer() && !ty->is_reference()) {
+            return err(argument.span(), "Cannot pass a value of type '{}' to a parameter that expects '{}'", ty->str(), parameter.type->str());
+        }
+
+        ty = ty->underlying_type();
+        auto* trait_type = parameter.type->underlying_type()->as<TraitType>();
+
+        if (!ty->is<StructType>()) { // TODO: Allow non-struct types to implement traits
+            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
+        }
+
+        auto structure = ty->as<StructType>()->get_struct();
+        if (!structure->impls_trait(trait_type)) {
+            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
+        }
+
+        return operand;
+    }
+
+    return TRY(state.type_check_and_cast(argument.span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
+}
+
+static ErrorOr<RefPtr<Function>> generate_trait_function_call(
     State& state,
     Vector<bytecode::Operand>& arguments,
     Function* function,
@@ -512,46 +547,7 @@ ErrorOr<RefPtr<Function>> generate_trait_function_call(
         if (!parameter.is_byval()) {
             state.set_type_context(parameter.type);
 
-            auto operand = TRY(ensure(state, *arg, {}));
-            if (state.self()) {
-                return err(arg->span(), "Cannot use a struct method as a value");
-            }
-
-            if (parameter.type->is_underlying_type_of(quart::TypeKind::Trait)) {
-                Type* ty = state.type(operand);
-                if (!ty->is_pointer() && !ty->is_reference()) {
-                    return err(
-                        arg->span(),
-                        "Cannot pass a value of type '{}' to a parameter that expects '{}'",
-                        ty->str(),
-                        parameter.type->str()
-                    );
-                }
-
-                ty = ty->underlying_type();
-                auto* trait_type = parameter.type->underlying_type()->as<TraitType>();
-
-                if (!ty->is<StructType>()) { // TODO: Allow non-struct types to implement traits
-                    return err(
-                        arg->span(),
-                        "Type '{}' does not implement trait '{}'",
-                        ty->str(),
-                        parameter.type->str()
-                    );
-                }
-
-                auto structure = ty->as<StructType>()->get_struct();
-                if (!structure->impls_trait(trait_type)) {
-                    return err(
-                        arg->span(),
-                        "Type '{}' does not implement trait '{}'",
-                        ty->str(),
-                        parameter.type->str()
-                    );
-                }
-            } else {
-                operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));              
-            }
+            auto operand = TRY(generate_trait_call_argument(state, parameter, *arg));
 
             arguments.push_back(operand);
             parameters.push_back(parameter.clone(state.type(operand)));
