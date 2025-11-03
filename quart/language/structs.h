@@ -44,11 +44,11 @@ public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
     static RefPtr<Struct> create(String name, StructType* underlying_type, RefPtr<Scope> parent, bool is_public) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type, parent, is_public));
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(parent), is_public));
     }
 
     static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, RefPtr<Scope> scope, bool is_public) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), scope, is_public));
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), move(scope), is_public));
     }
 
     String const& qualified_name() const { return m_qualified_name; }
@@ -60,7 +60,9 @@ public:
     HashMap<String, StructField> const& fields() const { return m_fields; }
 
     StructField const* find(const String& name) const;
+
     bool has_method(const String& name) const;
+    class Function const* get_method(const String& name) const;
 
     void add_impl_trait(TraitType* trait) {
         m_impl_traits.push_back(trait);

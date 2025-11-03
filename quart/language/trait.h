@@ -20,6 +20,8 @@ public:
     Vector<ast::FunctionExpr const*> const& predefined_functions() const { return m_predefined_functions; }
     void add_predefined_function(ast::FunctionExpr const* function) { m_predefined_functions.push_back(function); }
 
+    class Function const* get_method(const String& name) const;
+
 private:
     Trait(
         String name, TraitType* type, RefPtr<Scope> scope

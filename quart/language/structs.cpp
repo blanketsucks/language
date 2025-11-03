@@ -14,6 +14,10 @@ bool Struct::has_method(const String& name) const {
     return m_scope->resolve<quart::Function>(name) != nullptr;
 }
 
+Function const* Struct::get_method(const String& name) const {
+    return m_scope->resolve<quart::Function>(name);
+}
+
 void Struct::set_qualified_name(RefPtr<Scope> parent) {
     if (!parent) {
         parent = m_scope->parent();
