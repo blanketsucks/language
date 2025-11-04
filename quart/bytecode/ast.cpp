@@ -996,6 +996,7 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
 
     state.set_current_scope(previous_scope);
     state.set_self_type(nullptr);
+    state.set_current_struct(nullptr);
     
     return {};
 }
@@ -1552,6 +1553,23 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
     }
 
     Type* underlying_type = TRY(m_type->evaluate(state));
+    if (underlying_type->is_struct()) {
+        auto* structure = state.get_global_struct(underlying_type);
+        auto previous_scope = state.scope();
+
+        state.set_current_scope(structure->scope());
+        state.set_current_struct(structure);
+        state.set_self_type(underlying_type);
+
+        TRY(m_body->generate(state, {}));
+
+        state.set_current_scope(previous_scope);
+        state.set_self_type(nullptr);
+        state.set_current_struct(nullptr);
+
+        return {};
+    }
+
     auto scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope);
 
     auto impl = Impl::create(underlying_type, scope);
@@ -1600,6 +1618,60 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
     return {};
 }
 
+static ErrorOr<void> verify_trait_implementation(Function const* function, Function const* impl) {
+    auto ordering = function->parameters().size() <=> impl->parameters().size();
+    if (ordering != 0) {
+        auto error = err(impl->span(), "Impl function '{}' has {} parameters than the trait function", impl->name(), ordering > 0 ? "fewer" : "more");
+        error.add_note(function->span(), "Trait function defined here");
+
+        return error;
+    }
+
+    if (function->is_variadic() != impl->is_variadic()) {
+        auto error = err(impl->span(), "Impl function '{}' must {}be variadic", impl->name(), function->is_variadic() ? "" : "not ");
+        error.add_note(function->span(), "Trait function defined here");
+
+        return error;
+    }
+
+    static auto verify_mutability = [](FunctionParameter const& p1, FunctionParameter const& p2) -> ErrorOr<void> {
+        if (p1.flags != p2.flags) {
+            auto error = err(p2.span, "Parameter '{}' of impl function must have the same mutability as the trait function", p2.name);
+            error.add_note(p1.span, "Trait parameter defined here");
+
+            return error;
+        }
+
+        return {};
+    };
+
+    for (auto [p1, p2] : llvm::zip_equal(function->parameters(), impl->parameters())) {
+        if (p1.is_self() && !p2.is_self()) {
+            return err(p2.span, "The first parameter of a method must be 'self'");
+        } else if (p1.is_self() && p2.is_self()) {
+            TRY(verify_mutability(p1, p2));
+            continue;
+        }
+
+        TRY(verify_mutability(p1, p2));
+        if (p1.type != p2.type) {
+            auto error = err(p2.span, "Parameter '{}' of impl function '{}' must have the same type as the trait function", p2.name, impl->name());
+            error.add_note(p1.span, "Trait parameter defined here");
+
+            return error;
+        }
+    }
+
+    if (function->return_type() != impl->return_type()) {
+        auto error = err(impl->span(), "Return type of impl function '{}' must be the same as the trait function", impl->name());
+        error.add_note(function->span(), "Trait function defined here");
+
+        return error;
+    }
+
+    return {};
+}
+
 BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register>) const {
     Type* trait_type = TRY(m_trait->evaluate(state));
     if (!trait_type->is_trait()) {
@@ -1625,58 +1697,14 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
         }
 
         TRY(expr->generate(state, {}));
-
         String name = expr->as<FunctionExpr>()->decl().name();
-        Function const* trait_function = trait->scope()->resolve<Function>(name);
 
-        if (!trait_function) {
+        Function const* function = trait->get_method(name);
+        if (!function) {
             return err(expr->span(), "Function '{}' is not part of the trait '{}'", name, trait->name());
         }
 
-        auto* function = structure->scope()->resolve<Function>(name);
-        auto& impl_parameters = function->parameters();
-
-        size_t index = 0;
-
-        for (auto& parameter : trait_function->parameters()) {
-            if (index >= impl_parameters.size()) {
-                auto error = err(function->span(), "Impl function '{}' has fewer parameters than the trait function", function->name());
-                error.add_note(trait_function->span(), "Trait function defined here");
-
-                return error;
-            }
-
-            auto& impl_parameter = impl_parameters[index];
-            if (index == 0) {
-                if (!impl_parameter.is_self()) {
-                    return err(function->span(), "The first parameter of an impl method must be 'self'");
-                }
-
-                index++;
-                continue;
-            }
-
-            if (parameter.flags != impl_parameter.flags) {
-                auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same mutability as the trait function", parameter.name, function->name());
-                error.add_note(trait_function->span(), "Trait function defined here");
-
-                return error;
-            } else if (parameter.type != impl_parameter.type) {
-                auto error = err(function->span(), "Parameter '{}' of impl function '{}' must have the same type as the trait function", parameter.name, function->name());
-                error.add_note(trait_function->span(), "Trait function defined here");
-
-                return error;
-            }
-
-            index++;
-        }
-
-        if (index < impl_parameters.size()) {
-            auto error = err(function->span(), "Impl function '{}' has more parameters than the trait function", function->name());
-            error.add_note(trait_function->span(), "Trait function defined here");
-            
-            return error;
-        }
+        TRY(verify_trait_implementation(function, structure->get_method(name)));
     }
 
     for (auto& function : trait->predefined_functions()) {
@@ -1688,9 +1716,12 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
             continue;
         }
 
-        auto* function = structure->scope()->resolve<Function>(name);
+        auto* function = structure->get_method(name);
         if (!function) {
-            return err(span(), "Struct '{}' does not implement required function '{}' of trait '{}'", structure->name(), name, trait->name());
+            auto error = err(span(), "Struct '{}' does not implement required function '{}' of trait '{}'", structure->name(), name, trait->name());
+            error.add_note(symbol->as<Function>()->span(), "Trait function defined here");
+
+            return error;
         }
     }
 
