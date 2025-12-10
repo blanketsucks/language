@@ -246,14 +246,16 @@ private:
 
 class NewLocalScope : public InstructionBase<Instruction::NewLocalScope> {
 public:
-    NewLocalScope(Function* function) : m_function(function) {}
+    NewLocalScope(Function* function, bool set = true) : m_function(function), m_set(set) {}
 
     Function* function() const { return m_function; }
+    bool set() const { return m_set; }
 
     void dump() const override;
 
 private:
     Function* m_function;
+    bool m_set;
 };
 
 class GetLocal : public InstructionBase<Instruction::GetLocal> {

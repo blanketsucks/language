@@ -66,6 +66,8 @@ ErrorOr<void> Function::finalize_body(State& state) {
 
 ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionParameter> const& parameters) {
     SpecializedFunctionKey key;
+
+    key.parameters.reserve(parameters.size());
     for (auto& param : parameters) {
         key.parameters.push_back(param.type);
     }
@@ -104,11 +106,13 @@ ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionPara
     function->set_local_parameters();
 
     m_specializations.insert_or_assign(key, function);
-    state.emit<bytecode::NewFunction>(function.get());
-
+    
     auto previous_scope = state.scope();
     auto previous_function = state.function();
     auto previous_block = state.current_block();
+    
+    state.switch_to(nullptr);
+    state.emit<bytecode::NewFunction>(function.get());
 
     auto entry_block = state.create_block();
     function->set_entry_block(entry_block);
@@ -125,6 +129,8 @@ ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionPara
     state.set_current_scope(previous_scope);
     state.set_current_function(previous_function);
     state.switch_to(previous_block);
+
+    state.add_global_function(function);
 
     return function;
 }

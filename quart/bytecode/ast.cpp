@@ -796,6 +796,22 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     auto* function = state.scope()->resolve<Function>(m_decl->name());
 
     auto* previous_function = state.function();
+    auto previous_scope = state.scope();
+
+    if (function->has_trait_parameter()) {
+        state.set_current_function(function);
+        state.set_current_scope(function->scope());
+
+        function->set_local_parameters();
+
+        TRY(state.type_checker().type_check(*m_body));
+
+        state.set_current_function(previous_function);
+        state.set_current_scope(previous_scope);
+
+        function->set_body(m_body.get());
+        return {};
+    }
 
     auto* entry_block = state.create_block();
     function->set_entry_block(entry_block);
@@ -803,23 +819,10 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     auto* previous_block = state.current_block();
     state.switch_to(entry_block);
 
-    auto previous_scope = state.scope();
     function->set_local_parameters();
 
     state.set_current_scope(function->scope());
     state.set_current_function(function);
-
-    if (function->has_trait_parameter()) {
-        TRY(state.type_checker().type_check(*m_body));
-
-        state.set_current_function(previous_function);
-        state.set_current_scope(previous_scope);
-
-        state.switch_to(previous_block);
-
-        function->set_body(m_body.get());
-        return {};
-    }
 
     state.emit<bytecode::NewLocalScope>(function);
 
@@ -1034,7 +1037,7 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
             auto reg = *return_value;
 
             for (size_t i = 0; i < arguments.size(); i++) {
-                bytecode::Operand index = { i, state.context().i32() };
+                bytecode::Operand index { i, state.context().i32() };
                 state.emit<bytecode::SetMember>(reg, index, arguments[i]);
             }
 

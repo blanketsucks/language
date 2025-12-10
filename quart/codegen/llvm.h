@@ -50,6 +50,8 @@ public:
     LLVMCodeGen(State&, String module_name);
     
     ErrorOr<void> generate(CompilerOptions const&);
+    
+    void generate(bytecode::BasicBlock*);
     void generate(bytecode::Instruction*);
 
     llvm::Module& module() { return *m_module; }

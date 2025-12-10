@@ -1,3 +1,4 @@
+#include <llvm-20/llvm/IR/Constants.h>
 #include <quart/codegen/llvm.h>
 #include <quart/compiler.h>
 
@@ -165,10 +166,14 @@ void LLVMCodeGen::generate(bytecode::NewLocalScope* inst) {
     }
 
     m_local_scopes[function] = move(local_scope);
-    m_local_scope = &m_local_scopes[function];
+    if (inst->set()) {
+        m_local_scope = &m_local_scopes[function];
+    }
 }
 
 void LLVMCodeGen::generate(bytecode::GetLocal* inst) {
+    ASSERT(inst->index() < m_local_scope->local_count(), "Local index out of bounds");
+
     auto const& local = m_local_scope->local(inst->index());
     llvm::Value* value = m_ir_builder->CreateLoad(local.type, local.store);
 
@@ -176,11 +181,15 @@ void LLVMCodeGen::generate(bytecode::GetLocal* inst) {
 }
 
 void LLVMCodeGen::generate(bytecode::GetLocalRef* inst) {
+    ASSERT(inst->index() < m_local_scope->local_count(), "Local index out of bounds");
+
     auto const& local = m_local_scope->local(inst->index());
     this->set_register(inst->dst(), local.store);
 }
 
 void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
+    ASSERT(inst->index() < m_local_scope->local_count(), "Local index out of bounds");
+
     auto& local = m_local_scope->local(inst->index());
     Optional<bytecode::Operand> src = inst->src();
 
@@ -200,17 +209,22 @@ void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
 }
 
 void LLVMCodeGen::generate(bytecode::GetGlobal* inst) {
+    ASSERT(inst->index() < m_globals.size(), "Global index out of bounds");
+
     auto* global = m_globals[inst->index()];
     this->set_register(inst->dst(), global->getInitializer());
 }
 
 void LLVMCodeGen::generate(bytecode::GetGlobalRef* inst) {
+    ASSERT(inst->index() < m_globals.size(), "Global index out of bounds");
+
     auto* global = m_globals[inst->index()];
     this->set_register(inst->dst(), global);
 }
 
-
 void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
+    ASSERT(inst->index() < m_globals.size(), "Global index out of bounds");
+
     auto* global = m_globals[inst->index()];
     String name = format("global.{}", inst->index());
 
@@ -467,6 +481,13 @@ void LLVMCodeGen::generate(bytecode::Construct* inst) {
     Struct* structure = inst->structure();
     llvm::StructType* type = m_structs[structure];
 
+    if (inst->arguments().empty()) {
+        llvm::Value* value = llvm::ConstantAggregateZero::get(type);
+        this->set_register(inst->dst(), value);
+
+        return;
+    }
+
     auto range = llvm::map_range(inst->arguments(), [this](auto& operand) {
         return valueof(operand);
     });
@@ -629,6 +650,13 @@ void LLVMCodeGen::generate(bytecode::Instruction* inst) {
     }
 }
 
+void LLVMCodeGen::generate(bytecode::BasicBlock* block) {
+    m_ir_builder->SetInsertPoint(this->create_block_from(&*block));
+    for (auto& instruction : block->instructions()) {
+        this->generate(instruction.get());
+    }
+}
+
 ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     for (auto& global : m_state.globals()) {
         llvm::Type* type = global->value_type()->to_llvm_type(*m_context);
@@ -645,12 +673,10 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         this->generate(instruction.get());
     }
 
-    auto& basic_blocks = m_state.generator().blocks();
-    for (auto& block : basic_blocks) {
-        m_ir_builder->SetInsertPoint(this->create_block_from(&*block));
-
-        for (auto& instruction : block->instructions()) {
-            this->generate(instruction.get());
+    auto& functions = m_state.functions();
+    for (auto& [_, function] : functions) {
+        for (auto& block : function->basic_blocks()) {
+            this->generate(block);
         }
     }
 
