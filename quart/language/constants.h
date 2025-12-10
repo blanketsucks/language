@@ -2,6 +2,7 @@
 
 #include <quart/common.h>
 #include <quart/language/types.h>
+#include <quart/bytecode/instruction.h>
 
 namespace quart {
 
@@ -57,6 +58,10 @@ public:
     static ConstantInt* get(Context&, Type*, u64 value);
     
     u64 value() const { return m_value; }
+
+    bytecode::Operand to_operand() const {
+        return { m_value, type() };
+    }
     
 private:
     ConstantInt(Context* context, Type* type, u64 value) : Constant(context, Kind::Int, type), m_value(value) {}
