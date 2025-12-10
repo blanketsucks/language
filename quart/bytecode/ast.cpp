@@ -216,6 +216,18 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
         if (state.self()) {
             return err(span(), "Cannot assign to a struct method");
         }
+    } else {
+        if (type->is_reference()) {
+            return err(m_identifier.span, "Cannot declare a reference variable without an initializer");
+        }
+    }
+
+    if (!type->is_sized_type()) {
+        if (m_value) {
+            return err(m_value->span(), "Cannot assign value of unsized type '{}'", type->str());
+        } else {
+            return err(m_type->span(), "Cannot declare variable of unsized type '{}'", type->str());
+        }
     }
 
     size_t local_index = current_function->allocate_local();
