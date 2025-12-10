@@ -87,6 +87,7 @@ public:
     bool is_extern() const { return m_linkage_specifier > LinkageSpecifier::None; }
     bool is_main() const { return m_qualified_name == "main"; }
     bool is_async() const { return m_is_async; }
+    bool is_variadic() const { return m_underlying_type->is_function_var_arg(); }
 
     bool is_struct_return() const { return m_underlying_type->return_type()->is_struct(); }
     bool is_member_method() const { return m_parameters.size() > 0 && m_parameters[0].is_self(); }
