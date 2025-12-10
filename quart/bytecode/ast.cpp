@@ -1504,8 +1504,124 @@ BytecodeResult MaybeExpr::generate(State&, Optional<bytecode::Register>) const {
     return {};
 }
 
-BytecodeResult MatchExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
+BytecodeResult MatchExpr::generate(State& state, Optional<bytecode::Register>) const {
+    auto current_function = state.function();
+
+    bytecode::Operand match = TRY(ensure(state, *m_value, {}));
+    Type* type = state.type(match);
+
+    // TODO: Support enums
+    if (!type->is_int()) {
+        return err(m_value->span(), "Match expressions can only be performed on integer types");
+    }
+
+    Vector<bytecode::BasicBlock*> blocks;
+    blocks.reserve(m_arms.size());
+
+    bytecode::BasicBlock* default_block = nullptr;
+
+    for (auto& arm : m_arms) {
+        auto* block = state.create_block();
+        current_function->insert_block(block);
+
+        if (arm.is_wildcard()) {
+            default_block = block;
+            continue;
+        }
+
+        blocks.push_back(block);
+    }
+    
+    bytecode::BasicBlock* end = state.create_block();
+
+    auto generate_pattern_match = [&](
+        MatchArm const& arm,
+        bytecode::BasicBlock* block,
+        bytecode::BasicBlock* next
+    ) -> ErrorOr<void> {
+        state.switch_to(block);
+
+        auto* body = state.create_block();
+        current_function->insert_block(body);
+
+        auto& pattern = arm.pattern;
+        if (pattern.is_conditional) {
+            auto operand = TRY(ensure(state, *pattern.values[0], {}));
+            state.emit<bytecode::JumpIf>(operand, block, next);
+
+            return {};
+        }
+
+        bytecode::Register reg = state.allocate_register();
+        if (pattern.values.size() > 1) {
+            state.set_register_state(reg, state.context().i1());
+            state.emit<bytecode::Move>(reg, 0);
+
+            for (auto& value : pattern.values) {
+                Constant* constant = TRY(state.constant_evaluator().evaluate(*value));
+                if (!constant->is<ConstantInt>()) {
+                    return err(value->span(), "Match patterns must be constant integer expressions");
+                }
+    
+                auto operand = constant->as<ConstantInt>()->to_operand();
+    
+                bytecode::Register temp = state.allocate_register();
+        
+                state.emit<bytecode::Eq>(temp, match, operand);
+                state.emit<bytecode::Or>(reg, reg, bytecode::Operand(temp));
+            }
+        } else {
+            auto& value = *pattern.values[0];
+
+            Constant* constant = TRY(state.constant_evaluator().evaluate(value));
+            if (!constant->is<ConstantInt>()) {
+                return err(value.span(), "Match patterns must be constant integer expressions");
+            }
+
+            auto operand = constant->as<ConstantInt>()->to_operand();
+            state.emit<bytecode::Eq>(reg, match, operand);
+        }
+
+        state.emit<bytecode::JumpIf>(bytecode::Operand(reg), body, next);
+
+        state.switch_to(body);
+        TRY(arm.body->generate(state, {}));
+
+        if (!body->is_terminated()) {
+            state.emit<bytecode::Jump>(end);
+        }
+
+        return {};
+    };
+
+    auto iterator = blocks.begin();
+    state.emit<bytecode::Jump>(*iterator);
+
+    for (auto& arm : m_arms) {
+        if (arm.is_wildcard()) {
+            state.switch_to(default_block);
+            TRY(arm.body->generate(state, {}));
+
+            if (!default_block->is_terminated()) {
+                state.emit<bytecode::Jump>(end);
+            }
+
+            ++iterator;
+            continue;
+        }
+
+        auto* next = default_block ? default_block : end;
+        if ((iterator + 1) != blocks.end()) {
+            next = (*(iterator + 1));
+        }
+
+        TRY(generate_pattern_match(arm, *iterator, next));
+        ++iterator;
+    }
+
+    current_function->insert_block(end);
+    state.switch_to(end);
+
     return {};
 }
 
