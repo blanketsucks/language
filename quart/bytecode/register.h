@@ -9,8 +9,8 @@ public:
     Register() = default;
     constexpr explicit Register(u32 index) : m_index(index) {}
 
-    constexpr bool operator==(const Register& other) const {
-        return m_index == other.m_index;
+    constexpr std::strong_ordering operator<=>(const Register& other) const {
+        return m_index <=> other.m_index;
     }
 
     constexpr u32 index() const { return m_index; }
