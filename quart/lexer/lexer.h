@@ -24,8 +24,8 @@ class Lexer {
 public:
     Lexer(RefPtr<SourceCode>);
 
-    [[nodiscard]] ErrorOr<char> next();
-    [[nodiscard]] ErrorOr<void> skip(size_t n = 1);
+    char next();
+    void skip(size_t n = 1);
 
     char prev();
 
@@ -44,8 +44,8 @@ public:
         return option.value();
     }
 
-    ErrorOr<size_t> lex_while(
-        std::string& buffer,
+    size_t lex_while(
+        String& buffer,
         const std::function<bool(char)>& predicate
     );
 
@@ -54,7 +54,7 @@ public:
 
     bool is_valid_identifier(char current);
 
-    ErrorOr<Token> lex_identifier(bool allow_keywords = true);
+    Token lex_identifier(bool allow_keywords = true);
     ErrorOr<Token> lex_string();
     ErrorOr<Token> lex_number();
 

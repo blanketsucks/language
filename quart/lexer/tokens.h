@@ -287,7 +287,7 @@ static const std::map<TokenKind, u8> PRECEDENCES = {
     { TokenKind::Sub, 30 },
     { TokenKind::Mod, 35 },
     { TokenKind::Div, 40 },
-    { TokenKind::Mul, 40 }
+    { TokenKind::Mul, 40 } 
 };
 
 static const std::map<TokenKind, UnaryOp> UNARY_OPS = {

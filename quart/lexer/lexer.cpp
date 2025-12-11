@@ -24,7 +24,7 @@ Lexer::Lexer(RefPtr<SourceCode> source_code) : m_source_code(source_code) {
 }
 
 ErrorOr<char> Lexer::espace_next() {
-    return this->escape(TRY(this->next()));
+    return this->escape(this->next());
 }
 
 ErrorOr<char> Lexer::escape(char current) {
@@ -32,7 +32,7 @@ ErrorOr<char> Lexer::escape(char current) {
         return current;
     }
 
-    char c = TRY(this->next());
+    char c = this->next();
     switch (c) {
         case 'n':
             return '\n';
@@ -57,11 +57,11 @@ bool Lexer::is_valid_identifier(char c) {
     return std::isalnum(c) || c == '_';
 }
 
-ErrorOr<size_t> Lexer::lex_while(String& buffer, const std::function<bool(char)>& predicate) {
+size_t Lexer::lex_while(String& buffer, const std::function<bool(char)>& predicate) {
     size_t n = 0;
     while (predicate(m_current)) {
         buffer.push_back(m_current);
-        TRY(this->next());
+        this->next();
 
         n++;
     }
@@ -69,13 +69,14 @@ ErrorOr<size_t> Lexer::lex_while(String& buffer, const std::function<bool(char)>
     return n;
 }
 
-ErrorOr<Token> Lexer::lex_identifier(bool allow_keywords) {
+Token Lexer::lex_identifier(bool allow_keywords) {
     String value;
     size_t start = m_offset;
 
-    TRY(this->lex_while(value, [this](char c) {
-        return this->is_valid_identifier(c);
-    }));
+    this->lex_while(
+        value,
+        [this](char c) { return this->is_valid_identifier(c); }
+    );
 
     Span span = { start, m_offset, m_source_code->index() };
     if (is_keyword(value) && allow_keywords) {
@@ -91,23 +92,23 @@ ErrorOr<Token> Lexer::lex_string() {
 
     if (m_current == '\'') {
         char c = TRY(this->espace_next());
-        TRY(this->skip(2));
+        this->skip(2);
 
         value.push_back(c);
         return Token { TokenKind::Char, move(value), { start, m_offset, m_source_code->index() } };
     }
 
-    char next = TRY(this->next());
+    char next = this->next();
     while (next && next != '"') {
         value.push_back(TRY(this->escape(m_current)));
-        next = TRY(this->next());
+        next = this->next();
     }
 
     if (m_current != '"') {
         return err({ m_offset, m_offset, m_source_code->index() }, "Expected end of string");
     }
 
-    TRY(this->next());
+    this->next();
     return Token { TokenKind::String, move(value), { start, m_offset, m_source_code->index() } };
 }
 
@@ -117,18 +118,18 @@ ErrorOr<Token> Lexer::lex_number() {
 
     value.push_back(m_current);
 
-    char next = TRY(this->next());
+    char next = this->next();
     bool is_float = false;
 
     if (value == "0") {
         if (next == 'x' || next == 'b') {
             value.push_back(next);
-            TRY(this->next());
+            this->next();
 
             if (next == 'x') {
-                TRY(this->lex_while(value, isxdigit));
+                this->lex_while(value, isxdigit);
             } else {
-                TRY(this->lex_while(value, [](char c) { return c == '0' || c == '1'; }));
+                this->lex_while(value, [](char c) { return c == '0' || c == '1'; });
             }
 
             return Token { TokenKind::Integer, move(value), { start, m_offset, m_source_code->index() } };
@@ -143,7 +144,7 @@ ErrorOr<Token> Lexer::lex_number() {
         }
 
         is_float = true;
-        next = TRY(this->next());
+        next = this->next();
 
         if (m_current == '.') {
             this->rewind(2);
@@ -163,12 +164,12 @@ ErrorOr<Token> Lexer::lex_number() {
                 return err({ start, m_offset, m_source_code->index() }, "Invalid integer literal");
             }
 
-            next = TRY(this->next());
+            next = this->next();
             continue;
         }
 
         value.push_back(next);
-        next = TRY(this->next());
+        next = this->next();
     }
 
     if (value.back() == '.' && m_current == '.') {
@@ -212,24 +213,24 @@ ErrorOr<Token> Lexer::once() {
         TokenKind kind = SINGLE_CHAR_TOKENS.at(m_current);
         char c = m_current;
         
-        TRY(this->next());
+        this->next();
         return Token { kind, String(1, c), { start, start, m_source_code->index() } };
     }
 
     switch (m_current) {
         case '`': {
-            TRY(this->next());
-            auto token = TRY(this->lex_identifier(false));
+            this->next();
+            auto token = this->lex_identifier(false);
 
             if (m_current != '`') {
                 return err({ start, m_offset, m_source_code->index() }, "Expected end of identifier");
             }
 
-            TRY(this->next());
+            this->next();
             return token;
         }
         case '+': {
-            TRY(this->next());
+            this->next();
             Optional<Token> option = this->expect('+',
                 ExpectedToken { TokenKind::Inc, '+'}, 
                 ExpectedToken { TokenKind::IAdd, '='}
@@ -237,7 +238,7 @@ ErrorOr<Token> Lexer::once() {
 
             return option.value_or(Token { TokenKind::Add, "+", { start, m_offset, m_source_code->index() } });
         } case '-': {
-            TRY(this->next());
+            this->next();
             Optional<Token> option = this->expect('-',
                 ExpectedToken { TokenKind::Arrow, '>' },
                 ExpectedToken { TokenKind::Dec, '-' },
@@ -246,17 +247,17 @@ ErrorOr<Token> Lexer::once() {
 
             return option.value_or(Token { TokenKind::Sub, "-", { start, m_offset, m_source_code->index() } });
         } case '*': {
-            TRY(this->next());
+            this->next();
 
             Optional<Token> option = this->expect('*', { TokenKind::IMul, '=' });
             return option.value_or(Token { TokenKind::Mul, "*", { start, m_offset, m_source_code->index() } });
         } case '/': {
-            TRY(this->next());
+            this->next();
 
             Optional<Token> option = this->expect('/', { TokenKind::IDiv, '=' });
             return option.value_or(Token { TokenKind::Mul, "*", { start, m_offset, m_source_code->index() } });
         } case '=': {
-            TRY(this->next());
+            this->next();
             Optional<Token> option = this->expect('=',
                 ExpectedToken { TokenKind::Eq, '=' },
                 ExpectedToken { TokenKind::FatArrow, '>' }
@@ -264,7 +265,7 @@ ErrorOr<Token> Lexer::once() {
 
             return option.value_or(Token { TokenKind::Assign, "=", { start, m_offset, m_source_code->index() } });
         } case '>': {
-            TRY(this->next());
+            this->next();
             
             Optional<Token> option = this->expect('>', 
                 ExpectedToken { TokenKind::Gte, '=' },
@@ -274,7 +275,7 @@ ErrorOr<Token> Lexer::once() {
             if (option.has_value()) {
                 auto& token = option.value();
                 if (token.kind() == TokenKind::Rsh && m_current == '=') {
-                    TRY(this->next());
+                    this->next();
                     return Token { TokenKind::IRsh, ">>=", { start, m_offset, m_source_code->index() } };
                 }
 
@@ -283,7 +284,7 @@ ErrorOr<Token> Lexer::once() {
 
             return Token { TokenKind::Gt, ">", { start, m_offset, m_source_code->index() } };
         } case '<': {
-            TRY(this->next());
+            this->next();
             Optional<Token> option = this->expect('<',
                 ExpectedToken { TokenKind::Lte, '=' },
                 ExpectedToken { TokenKind::Lsh, '<' }
@@ -292,7 +293,7 @@ ErrorOr<Token> Lexer::once() {
             if (option.has_value()) {
                 auto& token = option.value();
                 if (token.kind() == TokenKind::Lsh && m_current == '=') {
-                    TRY(this->next());
+                    this->next();
                     return Token { TokenKind::ILsh, "<<=", { start, m_offset, m_source_code->index() } };
                 }
 
@@ -301,12 +302,12 @@ ErrorOr<Token> Lexer::once() {
 
             return Token { TokenKind::Lt, "<", { start, m_offset, m_source_code->index() } };
         } case '!': {
-            TRY(this->next());
+            this->next();
             
             Optional<Token> option = this->expect('!', { TokenKind::Neq, '=' });
             return option.value_or(Token { TokenKind::Not, "!", { start, m_offset, m_source_code->index() } });
         } case '|': {
-            TRY(this->next());
+            this->next();
             
             Optional<Token> option = this->expect('|', 
                 ExpectedToken { TokenKind::LogicalOr, '|' },
@@ -315,7 +316,7 @@ ErrorOr<Token> Lexer::once() {
 
             return option.value_or(Token { TokenKind::Or, "|", { start, m_offset, m_source_code->index() } });
         } case '&': {
-            TRY(this->next());
+            this->next();
             
             Optional<Token> option = this->expect('&',
                 ExpectedToken { TokenKind::LogicalAnd, '&' },
@@ -324,16 +325,16 @@ ErrorOr<Token> Lexer::once() {
 
             return option.value_or(Token { TokenKind::And, "&", { start, m_offset, m_source_code->index() } });
         } case '.': {
-            TRY(this->next());
+            this->next();
             if (m_current == '.' && this->peek() == '.') {
-                TRY(this->skip(2));
+                this->skip(2);
                 return Token { TokenKind::Ellipsis, "...", { start, m_offset, m_source_code->index() } };
             }
 
             Optional<Token> option = this->expect('.', { TokenKind::DoubleDot, '.' });
             return option.value_or(Token { TokenKind::Dot, ".", { start, m_offset, m_source_code->index() } });
         } case ':': {
-            TRY(this->next());
+            this->next();
 
             Optional<Token> option = this->expect(':', { TokenKind::DoubleColon, ':' });
             return option.value_or(Token { TokenKind::Colon, ":", { start, m_offset, m_source_code->index() } });
@@ -354,11 +355,11 @@ ErrorOr<Vector<Token>> Lexer::lex() {
         }
 
         if (std::isspace(m_current)) {
-            TRY(this->next());
+            this->next();
             continue;
         } else if (m_current == '#') {
             while (m_current != '\n' && m_current != 0) {
-                TRY(this->next());
+                this->next();
             }
 
             continue;
@@ -373,11 +374,7 @@ ErrorOr<Vector<Token>> Lexer::lex() {
     return tokens;
 }
 
-ErrorOr<char> Lexer::next() {
-    if (m_offset == SIZE_MAX) {
-        return err({ m_offset, m_offset, m_source_code->index() }, "Lexer offset overflow");
-    }
-
+char Lexer::next() {
     if (m_offset > m_code.size()) {
         m_eof = true;
         return '\0';
@@ -389,12 +386,10 @@ ErrorOr<char> Lexer::next() {
     return m_current;
 }
 
-ErrorOr<void> Lexer::skip(size_t n) {
+void Lexer::skip(size_t n) {
     for (size_t i = 0; i < n; i++) {
-        TRY(this->next());
+        this->next();
     }
-
-    return {};
 }
 
 char Lexer::peek(u32 offset) { 
