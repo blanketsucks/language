@@ -83,7 +83,7 @@ public:
 
     RefPtr<Scope> scope() const { return m_scope; }
 
-    bool is_decl() const { return !m_entry_block; }
+    bool is_decl() const { return m_is_decl; }
     bool is_extern() const { return m_linkage_specifier > LinkageSpecifier::None; }
     bool is_main() const { return m_qualified_name == "main"; }
     bool is_async() const { return m_is_async; }
@@ -142,6 +142,8 @@ public:
     void insert_block(bytecode::BasicBlock* block) { m_basic_blocks.push_back(block); }
     void set_current_loop(Loop loop) { m_loop = loop; }
 
+    void set_is_decl(bool is_decl) { m_is_decl = is_decl; }
+
     void dump() const;
 
     void set_local_parameters();
@@ -195,6 +197,7 @@ private:
     RefPtr<Scope> m_scope = nullptr;
 
     bool m_is_async = false;
+    bool m_is_decl = true;
 };
 
 }

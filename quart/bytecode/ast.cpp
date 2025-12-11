@@ -837,6 +837,7 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     state.set_current_function(function);
 
     state.emit<bytecode::NewLocalScope>(function);
+    function->set_is_decl(false);
 
     if (function->is_struct_return()) {
         auto return_register = state.allocate_register();
@@ -1838,22 +1839,27 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
         TRY(verify_trait_implementation(function, structure->get_method(name)));
     }
 
-    for (auto& function : trait->predefined_functions()) {
-        TRY(function->generate(state, {}));
-    }
-
     for (auto& [name, symbol] : trait->scope()->symbols()) {
         if (!symbol->is<Function>()) {
             continue;
         }
 
-        auto* function = structure->get_method(name);
-        if (!function) {
+        auto* function = symbol->as<Function>();
+        if (!function->is_decl()) {
+            continue;
+        }
+        
+        auto* impl = structure->get_method(name);
+        if (!impl) {
             auto error = err(span(), "Struct '{}' does not implement required function '{}' of trait '{}'", structure->name(), name, trait->name());
-            error.add_note(symbol->as<Function>()->span(), "Trait function defined here");
-
+            error.add_note(function->span(), "Trait function defined here");
+            
             return error;
         }
+    }
+
+    for (auto& function : trait->predefined_functions()) {
+        TRY(function->generate(state, {}));
     }
 
     state.set_current_scope(current_scope);

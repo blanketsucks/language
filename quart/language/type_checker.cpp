@@ -629,6 +629,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::FunctionExpr const& expr) {
     auto* previous_function = m_state.function();
     auto previous_scope = m_state.scope();
 
+    function->set_is_decl(false);
     for (auto& parameter : function->parameters()) {
         u8 flags = Variable::None;
         if (parameter.is_mutable()) {
