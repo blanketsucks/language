@@ -1548,7 +1548,14 @@ BytecodeResult MatchExpr::generate(State& state, Optional<bytecode::Register>) c
         auto& pattern = arm.pattern;
         if (pattern.is_conditional) {
             auto operand = TRY(ensure(state, *pattern.values[0], {}));
-            state.emit<bytecode::JumpIf>(operand, block, next);
+            state.emit<bytecode::JumpIf>(operand, body, next);
+
+            state.switch_to(body);
+            TRY(arm.body->generate(state, {}));
+
+            if (!body->is_terminated()) {
+                state.emit<bytecode::Jump>(end);
+            }
 
             return {};
         }
