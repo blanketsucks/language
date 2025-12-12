@@ -513,6 +513,45 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
         }
 
         Type* parameter = function_type->get_parameter_at(index);
+        if (parameter->is_underlying_type_of(quart::TypeKind::Trait)) {
+            bool match_reference = parameter->is_reference() && type->is_reference();
+            bool match_pointer = parameter->is_pointer() && type->is_pointer();
+            bool match_mutability = parameter->is_mutable() == type->is_mutable();
+
+            if ((!match_reference && !match_pointer) || !match_mutability) {
+                return err(
+                    argument->span(),
+                    "Cannot pass value of type '{}' to parameter of type '{}'", 
+                    type->str(), 
+                    parameter->str()
+                );
+            }
+
+            parameter = parameter->underlying_type();
+            type = type->underlying_type();
+
+            if (!type->is<StructType>()) {
+                return err(
+                    argument->span(),
+                    "Cannot pass value of type '{}' to parameter of type '{}'", 
+                    type->str(), 
+                    parameter->str()
+                );
+            }
+
+            auto* structure = m_state.get_global_struct(type);
+            if (!structure->impls_trait(parameter->as<TraitType>())) {
+                return err(
+                    argument->span(),
+                    "Type '{}' does not implement trait '{}'", 
+                    type->str(), 
+                    parameter->str()
+                );
+            }
+
+            index++;
+            continue;
+        }
 
         if (!type->can_safely_cast_to(parameter)) {
             return err(

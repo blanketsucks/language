@@ -515,8 +515,18 @@ static ErrorOr<bytecode::Operand> generate_trait_call_argument(
     bool is_trait_type = parameter.type->is_underlying_type_of(quart::TypeKind::Trait);
     if (is_trait_type) {
         Type* ty = state.type(operand);
-        if (!ty->is_pointer() && !ty->is_reference()) {
-            return err(argument.span(), "Cannot pass a value of type '{}' to a parameter that expects '{}'", ty->str(), parameter.type->str());
+        
+        bool match_reference = parameter.type->is_reference() && ty->is_reference();
+        bool match_pointer = parameter.type->is_pointer() && ty->is_pointer();
+        bool match_mutability = parameter.type->is_mutable() == ty->is_mutable();
+
+        if ((!match_reference && !match_pointer) || !match_mutability) {
+            return err(
+                argument.span(),
+                "Cannot pass value of type '{}' to parameter of type '{}'", 
+                ty->str(), 
+                parameter.type->str()
+            );
         }
 
         ty = ty->underlying_type();
