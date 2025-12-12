@@ -49,7 +49,6 @@ void Function::set_local_parameters() {
 }
 
 ErrorOr<void> Function::finalize_body(State& state) {
-    this->dump();
     for (auto& block : m_basic_blocks) {
         if (!block->is_terminated() && !this->return_type()->is_void()) {
             return err(span(), "Function '{}' does not return from all paths", this->name());
