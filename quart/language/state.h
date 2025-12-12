@@ -12,7 +12,8 @@ namespace quart {
 struct RegisterState {
     enum Flags {
         None,
-        Constructor = 1 << 0
+        Constructor = 1 << 0,
+        Struct = 1 << 1
     };
 
     Type* type = nullptr;

@@ -195,7 +195,7 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
     }
 
     Type* type = m_type ? TRY(m_type->evaluate(state)) : nullptr;
-    bool is_constructor_value = false;
+    bool is_struct_value = false;
 
     if (value) {
         if (!type) {
@@ -206,9 +206,9 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
 
         if (value->is_register()) {
             auto& register_state = state.register_state(value->reg());
-            is_constructor_value = register_state.flags & RegisterState::Constructor;
+            is_struct_value = register_state.flags & RegisterState::Struct;
     
-            if (is_constructor_value) {
+            if (is_struct_value) {
                 type = type->get_pointee_type();
             }
         }
@@ -231,7 +231,7 @@ BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Registe
     }
 
     size_t local_index = current_function->allocate_local();
-    if (is_constructor_value) {
+    if (is_struct_value) {
         current_function->add_struct_local(local_index);
     }
 
@@ -671,7 +671,7 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
                 constructor_register = state.allocate_register();
                 state.emit<bytecode::Alloca>(*constructor_register, function->return_type());
 
-                state.set_register_state(*constructor_register, function->return_type()->get_pointer_to(), nullptr, RegisterState::Constructor);
+                state.set_register_state(*constructor_register, function->return_type()->get_pointer_to(), nullptr, RegisterState::Struct);
                 arguments.emplace_back(*constructor_register);
             }
         }
@@ -692,23 +692,62 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
     return bytecode::Operand(reg);
 }
 
+static ErrorOr<void> generate_struct_return(State& state, Function* function, ast::Expr const& value) {
+    auto result = state.resolve_reference(value, false);
+    bytecode::Register reg;
+
+    Type* return_type = function->return_type();
+    if (result.is_err()) {
+        auto operand = TRY(ensure(state, value, {}));
+        Type* type = state.type(operand);
+
+        if (!operand.is_register()) {
+            return err(value.span(), "Cannot return a value of type '{}' from a function that expects '{}'", type->str(), return_type->str());
+        }
+        
+        reg = operand.reg();
+
+        auto& register_state = state.register_state(reg);
+        // TODO: Handle more sophisticated cases
+        if (!(register_state.flags & RegisterState::Struct)) {
+            return err(value.span(), "Cannot return a value of type '{}' from a function that expects '{}'", type->str(), return_type->str());
+        }
+    } else {
+        reg = result.value();
+        Type* type = state.type(reg)->get_reference_type();
+
+        if (type != return_type) {
+            return err(value.span(), "Cannot return a value of type '{}' from a function that expects '{}'", type->str(), return_type->str());
+        }
+    }
+
+    auto return_register = *state.return_register();
+
+    state.emit<bytecode::Memcpy>(return_register, reg, return_type->size());
+    state.emit<bytecode::Return>();
+
+    return {};
+}
+
 BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
 
     Type* return_type = current_function->return_type();
+    if (current_function->is_struct_return()) {
+        if (!m_value) {
+            return err(span(), "Cannot return void from a function that expects '{}'", return_type->str());
+        }
+
+        TRY(generate_struct_return(state, current_function, *m_value));
+        return {};
+    }
+
     if (m_value) {
         if (return_type->is_void()) {
             return err(m_value->span(), "Cannot return a value from a function that expects void");
         }
 
         auto operand = TRY(ensure(state, *m_value, {}));
-        if (operand.is_register()) {
-            auto& register_state = state.register_state(operand.reg());
-            if (register_state.flags & RegisterState::Constructor || state.return_register().has_value()) {
-                state.emit<bytecode::Return>();
-                return {};
-            }
-        }
 
         operand = TRY(state.type_check_and_cast(m_value->span(), operand, return_type, "Cannot return a value of type '{}' from a function that expects '{}'"));
         state.emit<bytecode::Return>(operand);
@@ -1041,28 +1080,21 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
         state.set_type_context(nullptr);
     }
 
-    auto return_value = state.return_register();
-    if (return_value.has_value()) {
-        auto& register_state = state.register_state(*return_value);
-        auto* type = register_state.type->get_pointee_type();
-
-        if (type == structure->underlying_type()) {
-            auto reg = *return_value;
-
-            for (size_t i = 0; i < arguments.size(); i++) {
-                bytecode::Operand index { i, state.context().i32() };
-                state.emit<bytecode::SetMember>(reg, index, arguments[i]);
-            }
-
-            state.set_register_flags(reg, RegisterState::Constructor);
-            return bytecode::Operand(reg);
-        }
-    }
-
     auto reg = select_dst(state, dst);
-    state.emit<bytecode::Construct>(reg, structure, arguments);
+    state.emit<bytecode::Alloca>(reg, structure->underlying_type());
 
-    state.set_register_state(reg, structure->underlying_type());
+    for (size_t i = 0; i < arguments.size(); i++) {
+        bytecode::Operand index { i, state.context().i32() };
+        state.emit<bytecode::SetMember>(reg, index, arguments[i]);
+    }
+    
+    state.set_register_state(
+        reg,
+        structure->underlying_type()->get_pointer_to(),
+        nullptr,
+        RegisterState::Struct
+    );
+
     return bytecode::Operand(reg);
 }
 
