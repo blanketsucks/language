@@ -102,8 +102,17 @@ public:
     Vector<Type*> const& locals() const { return m_locals; }
 
     bytecode::BasicBlock* entry_block() { return m_entry_block; }
+    bytecode::BasicBlock* return_block() { return m_return_block; }
     bytecode::BasicBlock* current_block() { return m_current_block; }
     Vector<bytecode::BasicBlock*> const& basic_blocks() const { return m_basic_blocks; }
+
+    Vector<ast::Expr*> const& defers() const { return m_defers; }
+    void add_defer(ast::Expr* expr) { m_defers.push_back(expr); }
+
+    bool has_defers() const { return !m_defers.empty(); }
+
+    bool new_defer_block_needed() const { return m_new_defer_block_needed; }
+    void set_new_defer_block_needed(bool value) { m_new_defer_block_needed = value; }
 
     Loop const& current_loop() const { return m_loop; }
     Loop& current_loop() { return m_loop; }
@@ -136,6 +145,11 @@ public:
         m_entry_block = block;
     }
 
+    void set_return_block(bytecode::BasicBlock* block) {
+        m_basic_blocks.push_back(block);
+        m_return_block = block;
+    }
+
     void set_body(ast::Expr* body) { m_body = body; }
     ast::Expr* const& body() const { return m_body; }
 
@@ -148,6 +162,8 @@ public:
 
     void set_local_parameters();
     ErrorOr<void> finalize_body(State& state);
+
+    void emit_return_block_body(State& state) const;
 
 private:
     void set_qualified_name();
@@ -183,6 +199,7 @@ private:
     bytecode::BasicBlock* m_current_block = nullptr;
 
     bytecode::BasicBlock* m_entry_block = nullptr;
+    bytecode::BasicBlock* m_return_block = nullptr;
     Vector<bytecode::BasicBlock*> m_basic_blocks;
 
     HashMap<SpecializedFunctionKey, RefPtr<Function>> m_specializations;
@@ -195,6 +212,9 @@ private:
     Loop m_loop = {};
     
     RefPtr<Scope> m_scope = nullptr;
+
+    Vector<ast::Expr*> m_defers;
+    bool m_new_defer_block_needed = true;
 
     bool m_is_async = false;
     bool m_is_decl = true;

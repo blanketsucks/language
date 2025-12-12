@@ -15,6 +15,8 @@
 
 #define PANIC_OBJ_FILE QUART_PATH "/panic.o"
 
+static constexpr bool DEBUG = false;
+
 // We define our own TRY macro here because we need it to be slightly different from the one in quart/errors.h
 #undef TRY
 #define TRY(expr)                                           \
@@ -142,10 +144,16 @@ int Compiler::compile() const {
         TRY(expr->generate(state));
     }
 
-    // for (auto& [_, function] : state.functions()) {
-    //     if (function->is_decl()) continue;
-    //     function->dump();
-    // }
+if constexpr (DEBUG) {
+    for (auto& [_, function] : state.functions()) {
+        if (function->is_decl()) {
+            continue;
+        }
+
+        function->dump();
+        outln();
+    }
+}
  
     codegen::LLVMCodeGen codegen(state, m_options.file.filename());
     auto result = codegen.generate(m_options);

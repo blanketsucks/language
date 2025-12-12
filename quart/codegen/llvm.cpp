@@ -133,12 +133,12 @@ void LLVMCodeGen::generate(bytecode::NewLocalScope* inst) {
             llvm::Attribute attribute = llvm::Attribute::get(
                 *m_context,
                 llvm::Attribute::ByVal,
-                parameter.type->get_pointee_type()->to_llvm_type(*m_context)          
+                parameter.type->to_llvm_type(*m_context)          
             );
 
             arg->addAttr(attribute);
 
-            local_scope.set_local(parameter.index, arg, type);
+            local_scope.set_local(parameter.index, arg, llvm::PointerType::get(type, 0));
             continue;
         }
 
@@ -321,7 +321,16 @@ void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
         return;
     }
 
-    auto range = llvm::map_range(function->parameters(), [](auto& parameter) { return parameter.type; });
+    auto range = llvm::map_range(
+        function->parameters(),
+        [](auto& parameter) -> Type* {
+            if (parameter.is_byval()) {
+                return parameter.type->get_pointer_to();
+            }
+
+            return parameter.type; 
+        }
+    );
 
     Vector<Type*> parameters(range.begin(), range.end());
     Type* return_type = function->return_type();

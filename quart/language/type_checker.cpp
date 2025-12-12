@@ -115,6 +115,8 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
             auto& impl = *m_state.impls().at(parent);
             scope = impl.scope();
         }
+    } else {
+        scope = structure->scope();
     }
 
     String const& attr = expr.attribute();

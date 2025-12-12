@@ -472,11 +472,11 @@ static ErrorOr<void> generate_function_call(
             continue;
         }
 
-        Type* underlying_type = parameter.type->get_pointee_type();
+        Type* underlying_type = parameter.type;
         auto result = state.resolve_reference(*arg, false, {}, false);
 
         bytecode::Register reg = state.allocate_register();
-        state.set_register_state(reg, parameter.type);
+        state.set_register_state(reg, parameter.type->get_pointer_to());
 
         if (result.is_err()) {
             auto operand = TRY(ensure(state, *arg, {}));
@@ -570,11 +570,11 @@ static ErrorOr<RefPtr<Function>> generate_trait_function_call(
             continue;
         }
 
-        Type* underlying_type = parameter.type->get_pointee_type();
+        Type* underlying_type = parameter.type;
         auto result = state.resolve_reference(*arg, false, {}, false);
 
         bytecode::Register reg = state.allocate_register();
-        state.set_register_state(reg, parameter.type);
+        state.set_register_state(reg, parameter.type->get_pointer_to());
 
         if (result.is_err()) {
             auto operand = TRY(ensure(state, *arg, {}));
@@ -664,16 +664,11 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
         }
 
         if (function->is_struct_return()) {
-            auto return_register = state.return_register();
-            if (return_register.has_value()) {
-                arguments.emplace_back(*return_register);
-            } else {
-                constructor_register = state.allocate_register();
-                state.emit<bytecode::Alloca>(*constructor_register, function->return_type());
+            constructor_register = state.allocate_register();
+            state.emit<bytecode::Alloca>(*constructor_register, function->return_type());
 
-                state.set_register_state(*constructor_register, function->return_type()->get_pointer_to(), nullptr, RegisterState::Struct);
-                arguments.emplace_back(*constructor_register);
-            }
+            state.set_register_state(*constructor_register, function->return_type()->get_pointer_to(), nullptr, RegisterState::Struct);
+            arguments.emplace_back(*constructor_register);
         }
 
         TRY(generate_function_call(state, arguments, function, function_type, m_args, index, params));
@@ -722,15 +717,32 @@ static ErrorOr<void> generate_struct_return(State& state, Function* function, as
     }
 
     auto return_register = *state.return_register();
-
     state.emit<bytecode::Memcpy>(return_register, reg, return_type->size());
-    state.emit<bytecode::Return>();
 
     return {};
 }
 
 BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) const {
     Function* current_function = state.function();
+    auto* previous_block = state.current_block();
+
+    bytecode::BasicBlock* return_block = current_function->return_block();
+    if (current_function->has_defers()) {
+        if (current_function->new_defer_block_needed()) {
+            return_block = state.create_block();
+            state.switch_to(return_block);
+
+            current_function->set_return_block(return_block);
+            current_function->set_new_defer_block_needed(false);
+
+            for (auto& defer : current_function->defers()) {
+                TRY(defer->generate(state, {}));
+            }
+
+            state.switch_to(previous_block);
+            current_function->emit_return_block_body(state);
+        }
+    }
 
     Type* return_type = current_function->return_type();
     if (current_function->is_struct_return()) {
@@ -739,6 +751,12 @@ BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) 
         }
 
         TRY(generate_struct_return(state, current_function, *m_value));
+        if (!current_function->has_defers()) {
+            state.emit<bytecode::Return>();
+            return {};
+        }
+
+        state.emit<bytecode::Jump>(return_block);
         return {};
     }
 
@@ -747,16 +765,29 @@ BytecodeResult ReturnExpr::generate(State& state, Optional<bytecode::Register>) 
             return err(m_value->span(), "Cannot return a value from a function that expects void");
         }
 
-        auto operand = TRY(ensure(state, *m_value, {}));
+        auto return_register = *state.return_register();
 
+        auto operand = TRY(ensure(state, *m_value, {}));
         operand = TRY(state.type_check_and_cast(m_value->span(), operand, return_type, "Cannot return a value of type '{}' from a function that expects '{}'"));
-        state.emit<bytecode::Return>(operand);
+        
+        if (!current_function->has_defers()) {
+            state.emit<bytecode::Return>(operand);
+            return {};
+        }
+
+        state.emit<bytecode::Write>(return_register, operand);
+        state.emit<bytecode::Jump>(return_block);
     } else {
         if (!return_type->is_void()) {
             return err(span(), "Cannot return void from a function that expects '{}'", return_type->str());
         }
 
-        state.emit<bytecode::Return>();
+        if (!current_function->has_defers()) {
+            state.emit<bytecode::Return>();
+            return {};
+        }
+
+        state.emit<bytecode::Jump>(return_block);
     }
 
     return {};
@@ -791,7 +822,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state, Optional<bytecode::Regis
 
         if (type->is_aggregate()) {
             flags |= FunctionParameter::Byval;
-            type = type->get_pointer_to();
+            // type = type->get_pointer_to();
         }
 
         parameters.push_back({ param.name, type, flags, static_cast<u32>(index), param.span });
@@ -884,7 +915,19 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
 
         state.set_register_state(return_register, function->return_type()->get_pointer_to());
         state.inject_return(return_register);
+    } else if (!function->return_type()->is_void()) {
+        auto return_register = state.allocate_register();
+
+        state.emit<bytecode::Alloca>(return_register, function->return_type());
+
+        state.set_register_state(return_register, function->return_type()->get_pointer_to());
+        state.inject_return(return_register);
     }
+    
+    auto* return_block = state.create_block();
+
+    function->set_return_block(return_block);
+    function->emit_return_block_body(state);
 
     TRY(m_body->generate(state, {}));
     TRY(function->finalize_body(state));
@@ -898,8 +941,14 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     return {};
 }
 
-BytecodeResult DeferExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
+BytecodeResult DeferExpr::generate(State& state, Optional<bytecode::Register>) const {
+    Function* current_function = state.function();
+
+    TRY(state.type_checker().type_check(*m_expr));
+
+    current_function->add_defer(m_expr.get());
+    current_function->set_new_defer_block_needed(true);
+
     return {};
 }
 

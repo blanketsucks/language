@@ -42,9 +42,6 @@ void Function::set_local_parameters() {
         }
 
         Type* type = param.type;
-        if (param.is_byval()) {
-            type = type->get_pointee_type();
-        }
 
         auto variable = Variable::create(param.name, index, type, flags);
         m_scope->add_symbol(variable);
@@ -52,6 +49,7 @@ void Function::set_local_parameters() {
 }
 
 ErrorOr<void> Function::finalize_body(State& state) {
+    this->dump();
     for (auto& block : m_basic_blocks) {
         if (!block->is_terminated() && !this->return_type()->is_void()) {
             return err(span(), "Function '{}' does not return from all paths", this->name());
@@ -62,6 +60,27 @@ ErrorOr<void> Function::finalize_body(State& state) {
     }
 
     return {};
+}
+
+void Function::emit_return_block_body(State& state) const {
+    auto previous_block = state.current_block();
+    state.switch_to(m_return_block);
+
+    Type* return_type = this->return_type();
+    if (return_type->is_void() || return_type->is_struct()) {
+        state.switch_to(m_return_block);
+        state.emit<bytecode::Return>();
+    } else {
+        state.switch_to(m_return_block);
+
+        auto return_register = *state.return_register();
+        auto reg = state.allocate_register();
+
+        state.emit<bytecode::Read>(reg, return_register);
+        state.emit<bytecode::Return>(reg);
+    }
+
+    state.switch_to(previous_block);
 }
 
 ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionParameter> const& parameters) {
