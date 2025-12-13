@@ -44,8 +44,8 @@ IntType* Context::create_int_type(::u32 bits, bool is_signed) {
     return CREATE_TYPE(m_integer_types, IntType, key, bits, is_signed);
 }
 
-StructType* Context::create_struct_type(const String& name, const Vector<Type*>& fields, llvm::StructType* llvm_type) {
-    return CREATE_TYPE(m_struct_types, StructType, name, name, fields, llvm_type, nullptr);
+StructType* Context::create_struct_type(const String& name, const Vector<Type*>& fields) {
+    return CREATE_TYPE(m_struct_types, StructType, name, name, fields, nullptr);
 }
 
 ArrayType* Context::create_array_type(Type* element, size_t size) {

@@ -74,9 +74,12 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
         is_mutable = parent->is_mutable();
     }
 
-    auto* structure = m_state.get_global_struct(parent);
-    RefPtr<Scope> scope = nullptr;
+    Struct* structure = nullptr;
+    if (parent->is<StructType>()) {
+        structure = parent->as<StructType>()->decl();
+    }
 
+    RefPtr<Scope> scope = nullptr;
     if (parent->is_trait()) {
         auto* trait = m_state.get_trait(parent);
         if (!trait) {
@@ -539,7 +542,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
                 );
             }
 
-            auto* structure = m_state.get_global_struct(type);
+            auto* structure = type->as<StructType>()->decl();
             if (!structure->impls_trait(parameter->as<TraitType>())) {
                 return err(
                     argument->span(),
@@ -750,7 +753,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::StructExpr const& expr) {
     auto structure = Struct::create(expr.name(), type, {}, scope, expr.is_public());
     structure->set_module(m_state.module());
 
-    type->set_struct(structure.get());
+    type->set_decl(structure.get());
     m_state.scope()->add_symbol(structure);
 
     HashMap<String, StructField> fields;

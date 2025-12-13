@@ -149,10 +149,10 @@ Type* Type::get_struct_field_at(size_t index) const {
 
 String const& Type::get_struct_name() const {
     auto* type = this->as<StructType>();
-    auto* structure = type->get_struct();
+    auto* decl = type->decl();
 
-    if (structure) {
-        return structure->qualified_name();
+    if (decl) {
+        return decl->qualified_name();
     }
 
     return type->name();
@@ -289,12 +289,6 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
         }
         case TypeKind::Struct: {
             const auto* type = this->as<StructType>();
-
-            llvm::StructType* structure = type->get_llvm_struct_type();
-            if (structure) {
-                return structure;
-            }
-
             Vector<llvm::Type*> fields;
 
             for (auto& field : type->fields()) {
@@ -322,10 +316,7 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
             return llvm::StructType::get(context, types);
         }
         case TypeKind::Pointer: {
-            const auto* type = this->as<PointerType>();
-
-            llvm::Type* pointee = type->get_pointee_type()->to_llvm_type(context);
-            return llvm::PointerType::get(pointee, 0);
+            return llvm::PointerType::get(context, 0);
         }
         case TypeKind::Reference: {
             const auto* type = this->as<ReferenceType>();
@@ -391,8 +382,8 @@ IntType* IntType::get(Context& context, u32 bit_width, bool is_unsigned) {
     return context.create_int_type(bit_width, is_unsigned);
 }
 
-StructType* StructType::get(Context& context, const String& name, const Vector<Type*>& fields, llvm::StructType* type) {
-    return context.create_struct_type(name, fields, type);
+StructType* StructType::get(Context& context, const String& name, const Vector<Type*>& fields) {
+    return context.create_struct_type(name, fields);
 }
 
 ArrayType* ArrayType::get(Context& context, Type* element, size_t size) {

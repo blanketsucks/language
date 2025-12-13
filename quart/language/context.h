@@ -22,7 +22,7 @@ public:
     static OwnPtr<Context> create();
 
     IntType* create_int_type(u32 bits, bool is_signed);
-    StructType* create_struct_type(const String& name, const Vector<Type*>& fields, llvm::StructType* type = nullptr);
+    StructType* create_struct_type(const String& name, const Vector<Type*>& fields);
     EnumType* create_enum_type(const String& name, Type* type);
     ArrayType* create_array_type(Type* element, size_t size);
     TupleType* create_tuple_type(const Vector<Type*>& types);

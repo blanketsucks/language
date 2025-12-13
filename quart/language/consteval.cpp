@@ -349,7 +349,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::AttributeExpr const& expr) {
     }
 
     auto* type = parent->type()->as<StructType>();
-    auto* structure = type->get_struct();
+    auto* structure = type->decl();
 
     auto& fields = structure->fields();
 

@@ -109,9 +109,6 @@ public:
     void add_global_function(RefPtr<Function> function);
     Function const* get_global_function(const String& name) const;
 
-    void add_global_struct(RefPtr<Struct> structure);
-    Struct* get_global_struct(Type* type);
-
     bool has_global_module(const String& name) const;
     RefPtr<Module> get_global_module(const String& name) const;
 
@@ -196,7 +193,6 @@ private:
 
     Type* m_self_type = nullptr;
 
-    HashMap<Type*, RefPtr<Struct>> m_all_structs;
     HashMap<String, RefPtr<Function>> m_all_functions;
 
     HashMap<String, RefPtr<Module>> m_modules;

@@ -467,15 +467,12 @@ void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
     Struct* structure = inst->structure();
     if (structure->opaque()) {
         auto* type = llvm::StructType::create(*m_context, normalize(structure->qualified_name()));
-        structure->underlying_type()->set_llvm_struct_type(type);
-
         m_structs[structure] = type;
+
         return;
     }
 
     auto* type = llvm::StructType::create(*m_context, {}, normalize(structure->qualified_name()));
-    structure->underlying_type()->set_llvm_struct_type(type);
-
     auto range = llvm::map_range(structure->underlying_type()->fields(), [this](auto& entry) {
         return entry->to_llvm_type(*m_context);
     });
@@ -615,7 +612,9 @@ llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
             });
 
             Vector<llvm::Constant*> elements(range.begin(), range.end());
-            llvm::Type* type = structure->type()->to_llvm_type(*m_context);
+
+            auto* decl = structure->type()->as<StructType>()->decl();
+            llvm::Type* type = m_structs[decl];
 
             return llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(type), elements);
         }

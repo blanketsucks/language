@@ -54,10 +54,6 @@ Function const* State::get_global_function(const String& name) const {
     return nullptr;
 }
 
-void State::add_global_struct(RefPtr<Struct> structure) {
-    m_all_structs[structure->underlying_type()] = structure;
-}
-
 void State::add_impl(OwnPtr<Impl> impl) {
     if (impl->is_generic()) {
         m_generic_impls.push_back(move(impl));
@@ -69,14 +65,6 @@ void State::add_impl(OwnPtr<Impl> impl) {
 
 bool State::has_impl(Type* type) {
     return m_impls.contains(type);
-}
-
-Struct* State::get_global_struct(Type* type) {
-    if (auto iterator = m_all_structs.find(type); iterator != m_all_structs.end()) {
-        return iterator->second.get();
-    }
-
-    return nullptr;
 }
 
 bool State::has_global_module(const String& name) const {
@@ -368,9 +356,12 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
 
     this->set_register_state(reg, value_type->get_pointer_to());
 
-    auto* structure = this->get_global_struct(value_type);
-    RefPtr<Scope> scope = nullptr;
+    Struct* structure = nullptr;
+    if (value_type->is<StructType>()) {
+        structure = value_type->as<StructType>()->decl();
+    }
 
+    RefPtr<Scope> scope = nullptr;
     if (!structure) {
         if (!this->has_impl(type)) {
             for (auto& impl : m_generic_impls) {

@@ -536,7 +536,7 @@ static ErrorOr<bytecode::Operand> generate_trait_call_argument(
             return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
         }
 
-        auto structure = ty->as<StructType>()->get_struct();
+        auto structure = ty->as<StructType>()->decl();
         if (!structure->impls_trait(trait_type)) {
             return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
         }
@@ -1074,7 +1074,7 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
     auto structure = Struct::create(m_name, type, {}, scope, m_is_public);
     structure->set_module(state.module());
 
-    type->set_struct(&*structure);
+    type->set_decl(structure.get());
     state.scope()->add_symbol(structure);
 
     HashMap<String, quart::StructField> fields;
@@ -1100,7 +1100,6 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
     state.set_current_scope(scope);
     state.set_current_struct(structure.get());
 
-    state.add_global_struct(structure);
     state.set_self_type(structure->underlying_type());
 
     state.emit<bytecode::NewStruct>(structure.get());
@@ -1784,7 +1783,7 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 
     Type* underlying_type = TRY(m_type->evaluate(state));
     if (underlying_type->is_struct()) {
-        auto* structure = state.get_global_struct(underlying_type);
+        auto* structure = underlying_type->as<StructType>()->decl();
         auto previous_scope = state.scope();
 
         state.set_current_scope(structure->scope());
@@ -1916,7 +1915,7 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     }
 
     auto current_scope = state.scope();
-    auto structure = state.get_global_struct(type);
+    auto structure = type->as<StructType>()->decl();
 
     state.set_current_scope(structure->scope());
     state.set_self_type(type);

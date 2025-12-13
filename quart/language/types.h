@@ -166,10 +166,13 @@ class StructType : public Type {
 public:
     static bool classof(const Type* type) { return type->kind() == TypeKind::Struct; }
 
-    static StructType* get(Context&, const String& name, const Vector<Type*>& fields, llvm::StructType* type = nullptr);
+    static StructType* get(Context&, const String& name, const Vector<Type*>& fields);
 
     Vector<Type*> const& fields() const { return m_fields; }
     String const& name() const { return m_name; }
+
+    Struct const* decl() const { return m_decl; }
+    Struct* decl() { return m_decl; }
 
     Type* get_field_at(size_t index) const {
         if (index >= m_fields.size()) {
@@ -180,12 +183,7 @@ public:
     }
 
     void set_fields(const Vector<Type*>& fields);
-
-    llvm::StructType* get_llvm_struct_type() const { return m_type; }
-    void set_llvm_struct_type(llvm::StructType* type) { m_type = type; }
-
-    void set_struct(Struct* structure) { m_struct = structure; }
-    Struct* get_struct() const { return m_struct; }
+    void set_decl(Struct* decl) { m_decl = decl; }
 
     friend Context;
 private:
@@ -193,15 +191,13 @@ private:
         Context* context, 
         String name,
         Vector<Type*> fields,
-        llvm::StructType* type,
-        Struct* structure
-    ) : Type(context, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_type(type), m_struct(structure) {}
+        Struct* decl
+    ) : Type(context, TypeKind::Struct), m_name(move(name)), m_fields(move(fields)), m_decl(decl) {}
 
     String m_name;
     Vector<Type*> m_fields;
 
-    llvm::StructType* m_type;
-    Struct* m_struct;
+    Struct* m_decl;
 };
 
 class ArrayType : public Type {
