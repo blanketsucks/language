@@ -594,7 +594,7 @@ private:
     bool m_value;
 };
 
-class Not : public InstructionBase<Instruction::Boolean> {
+class Not : public InstructionBase<Instruction::Not> {
 public:
     Not(Register dst, Operand src) : m_dst(dst), m_src(src) {}
 
