@@ -181,9 +181,11 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
             auto* function = symbol->as<Function>();
             auto reg = select_dst(state, dst);
 
-            state.emit<bytecode::GetFunction>(reg, function);
-            state.set_register_state(reg, function->underlying_type()->get_pointer_to(), function);
+            if (!function->has_trait_parameter()) {
+                state.emit<bytecode::GetFunction>(reg, function);
+            }
 
+            state.set_register_state(reg, function->underlying_type()->get_pointer_to(), function);
             return bytecode::Operand(reg);
         }
         default:
