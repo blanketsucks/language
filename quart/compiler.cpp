@@ -6,6 +6,8 @@
 #include <quart/codegen/llvm.h>
 #include <quart/target.h>
 
+#include <quart/bytecode/passes/eliminate_unreachable_blocks.h>
+
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Program.h>
 #include <llvm/ADT/StringExtras.h>
@@ -15,7 +17,7 @@
 
 #define PANIC_OBJ_FILE QUART_PATH "/panic.o"
 
-static constexpr bool DEBUG = false;
+static constexpr bool DEBUG = true;
 
 // We define our own TRY macro here because we need it to be slightly different from the one in quart/errors.h
 #undef TRY
@@ -127,6 +129,22 @@ Vector<String> Compiler::get_linker_arguments() const {
     return args;
 }
 
+void Compiler::run_bytecode_passes(State& state) const {
+    auto passes = bytecode::PassManager::create_default();
+    for (auto& [_, function] : state.functions()) {
+        if (function->is_decl()) {
+            continue;
+        }
+
+        passes.run(function.get());
+
+        if constexpr (DEBUG) {
+            function->dump();
+            outln();
+        }
+    }
+}
+
 int Compiler::compile() const {
     String target = m_options.has_target() ? Target::normalize(m_options.target) : llvm::sys::getDefaultTargetTriple();
     Target::set_build_target(target);
@@ -144,16 +162,7 @@ int Compiler::compile() const {
         TRY(expr->generate(state));
     }
 
-if constexpr (DEBUG) {
-    for (auto& [_, function] : state.functions()) {
-        if (function->is_decl()) {
-            continue;
-        }
-
-        function->dump();
-        outln();
-    }
-}
+    this->run_bytecode_passes(state);
  
     codegen::LLVMCodeGen codegen(state, m_options.file.filename());
     auto result = codegen.generate(m_options);

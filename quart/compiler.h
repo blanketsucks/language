@@ -10,6 +10,8 @@
 
 namespace quart {
 
+class State;
+
 enum class OutputFormat : u8 {
     Object,
     LLVM,    // Refers to LLVM IR
@@ -189,6 +191,8 @@ public:
     int compile() const;
 
 private:
+    void run_bytecode_passes(State&) const;
+
     CompilerOptions m_options;
 };
 

@@ -317,7 +317,7 @@ void LLVMCodeGen::generate(bytecode::JumpIf* inst) {
 
 void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     auto* function = inst->function();
-    if (function->has_trait_parameter()) {
+    if (function->has_trait_parameter() || function->should_eliminate()) {
         return;
     }
 
@@ -682,7 +682,11 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     }
 
     auto& functions = m_state.functions();
-    for (auto& [_, function] : functions) {
+    for (auto& [name, function] : functions) {
+        if (function->should_eliminate()) {
+            continue;
+        }
+
         for (auto& block : function->basic_blocks()) {
             this->generate(block);
         }
