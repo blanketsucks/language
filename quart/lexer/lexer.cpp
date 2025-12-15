@@ -347,6 +347,29 @@ ErrorOr<Token> Lexer::once() {
     }
 }
 
+void Lexer::single_line_comment() {
+    this->skip(2);
+    while (m_current != '\n' && m_current != '\0') {
+        this->next();
+    }
+}
+
+void Lexer::multi_line_comment() {
+    this->skip(2);
+    while (true) {
+        if (m_current == '\0') {
+            break;
+        }
+
+        if (m_current == '*' && this->peek() == '/') {
+            this->skip(2);
+            break;
+        }
+
+        this->next();
+    }
+}
+
 ErrorOr<Vector<Token>> Lexer::lex() {
     Vector<Token> tokens;
     while (!m_eof) {
@@ -357,12 +380,16 @@ ErrorOr<Vector<Token>> Lexer::lex() {
         if (std::isspace(m_current)) {
             this->next();
             continue;
-        } else if (m_current == '#') {
-            while (m_current != '\n' && m_current != 0) {
-                this->next();
+        }
+        
+        if (m_current == '/') {
+            if (this->peek() == '/') {
+                this->single_line_comment();
+                continue;
+            } else if (this->peek() == '*') {
+                this->multi_line_comment();
+                continue;
             }
-
-            continue;
         }
 
         tokens.push_back(TRY(this->once()));

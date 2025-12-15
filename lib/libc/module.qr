@@ -68,7 +68,7 @@ pub struct hostent {
     pub h_addr_list: **i8;
 }
 
-# TODO: Some syntax to allow for all fields to be public would be nice
+// TODO: Some syntax to allow for all fields to be public would be nice
 pub struct addrinfo {
     pub ai_flags: i32;
     pub ai_family: i32;

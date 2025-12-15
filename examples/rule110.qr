@@ -1,9 +1,9 @@
-# Definitely not stolen from https://gist.github.com/rexim/c595009436f87ca076e7c4a2fb92ce10 
+// Definitely not stolen from https://gist.github.com/rexim/c595009436f87ca076e7c4a2fb92ce10 
 
 import libc;
 
 func main() -> i32 {
-    const SIZE = 100;
+    const SIZE = 30;
     let mut state: [i32; SIZE];
 
     state[SIZE - 2] = 1;

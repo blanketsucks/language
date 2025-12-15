@@ -58,6 +58,9 @@ public:
     ErrorOr<Token> lex_string();
     ErrorOr<Token> lex_number();
 
+    void single_line_comment();
+    void multi_line_comment();
+
     ErrorOr<Token> once();
     ErrorOr<Vector<Token>> lex();
 
