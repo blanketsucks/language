@@ -538,7 +538,7 @@ void LLVMCodeGen::generate(bytecode::Null* inst) {
 
 void LLVMCodeGen::generate(bytecode::Not* inst) {
     llvm::Value* value = valueof(inst->src());
-    llvm::Value* result = m_ir_builder->CreateIsNull(value);
+    llvm::Value* result = m_ir_builder->CreateIsNotNull(value);
 
     this->set_register(inst->dst(), result);
 }
