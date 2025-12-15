@@ -11,6 +11,12 @@ OwnPtr<BasicBlock> BasicBlock::create(String name) {
 }
 
 void BasicBlock::add_instruction(Instruction* inst) {
+    if (m_terminated) {
+        return;
+    }
+
+    inst->set_parent(this);
+
     m_instructions.push_back(OwnPtr<Instruction>(inst));
     if (inst->is_terminator()) {
         m_terminated = true;

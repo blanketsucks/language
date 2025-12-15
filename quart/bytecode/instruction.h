@@ -113,6 +113,7 @@ public:
     };
 
     InstructionType type() const { return m_type; }
+    BasicBlock* parent() const { return m_parent; }
 
     template<typename T> requires(std::is_base_of_v<Instruction, T>)
     bool is() const {
@@ -136,6 +137,8 @@ public:
         return {};
     }
 
+    void set_parent(BasicBlock* parent) { m_parent = parent; }
+
     virtual void dump() const = 0;
 
 protected:
@@ -143,6 +146,7 @@ protected:
 
 private:
     InstructionType m_type;
+    BasicBlock* m_parent = nullptr;
 };
 
 template<Instruction::InstructionType Ty>

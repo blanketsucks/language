@@ -88,6 +88,11 @@ public:
     bool is_main() const { return m_qualified_name == "main"; }
     bool is_async() const { return m_is_async; }
     bool is_variadic() const { return m_underlying_type->is_function_var_arg(); }
+    bool used() const { return m_used; }
+
+    bool should_eliminate() const {
+        return !is_main() && !used();
+    }
 
     bool is_struct_return() const { return m_underlying_type->return_type()->is_struct(); }
     bool is_member_method() const { return m_parameters.size() > 0 && m_parameters[0].is_self(); }
@@ -141,22 +146,36 @@ public:
 
     void set_current_block(bytecode::BasicBlock* block) { m_current_block = block; }
     void set_entry_block(bytecode::BasicBlock* block) {
-        m_basic_blocks.push_back(block);
+        this->insert_block(block);
         m_entry_block = block;
     }
 
     void set_return_block(bytecode::BasicBlock* block) {
-        m_basic_blocks.push_back(block);
+        this->insert_block(block);
         m_return_block = block;
     }
 
     void set_body(ast::Expr* body) { m_body = body; }
     ast::Expr* const& body() const { return m_body; }
 
-    void insert_block(bytecode::BasicBlock* block) { m_basic_blocks.push_back(block); }
+    void insert_block(bytecode::BasicBlock* block) {
+        block->set_parent(this);
+        m_basic_blocks.push_back(block);
+    }
+
+    void remove_block(bytecode::BasicBlock* block) {
+        if (block->parent() != this) {
+            return;
+        }
+
+        auto iterator = std::remove(m_basic_blocks.begin(), m_basic_blocks.end(), block);
+        m_basic_blocks.erase(iterator, m_basic_blocks.end());
+    }
+
     void set_current_loop(Loop loop) { m_loop = loop; }
 
     void set_is_decl(bool is_decl) { m_is_decl = is_decl; }
+    void set_used(bool used) { m_used = used; }
 
     void dump() const;
 
@@ -218,6 +237,7 @@ private:
 
     bool m_is_async = false;
     bool m_is_decl = true;
+    bool m_used = false;
 };
 
 }

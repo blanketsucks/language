@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+namespace quart {
+    class Function;
+}
+
 namespace quart::bytecode {
 
 class Instruction;
@@ -14,6 +18,7 @@ public:
     static OwnPtr<BasicBlock> create(String name);
 
     String const& name() const { return m_name; }
+    Function* parent() const { return m_parent; }
 
     Vector<OwnPtr<Instruction>>& instructions() { return m_instructions; }
     Vector<OwnPtr<Instruction>> const& instructions() const { return m_instructions; }
@@ -22,6 +27,8 @@ public:
 
     bool is_terminated() const { return m_terminated; }
     void terminate() { m_terminated = true; }
+
+    void set_parent(Function* function) { m_parent = function; }
 
     void dump() const;
 
@@ -32,6 +39,7 @@ private:
     Vector<OwnPtr<Instruction>> m_instructions;
 
     bool m_terminated = false;
+    Function* m_parent = nullptr;
 };
 
 }
