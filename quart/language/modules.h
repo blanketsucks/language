@@ -19,7 +19,7 @@ public:
     };
 
     static RefPtr<Module> create(String name, String qualified_name, fs::Path path, RefPtr<Scope> scope, RefPtr<Module> parent = nullptr) {
-        return RefPtr<Module>(new Module(move(name), move(qualified_name), move(path), scope, move(parent)));
+        return RefPtr<Module>(new Module(move(name), move(qualified_name), move(path), move(scope), move(parent)));
     }
 
     String const& qualified_name() const { return m_qualified_name; }
