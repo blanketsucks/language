@@ -41,7 +41,7 @@ pub const SO_KEEPALIVE = 9;
 pub const SO_LINGER = 13;
 pub const SO_RCVBUF = 8;
     
-struct FILE;
+pub struct FILE;
 
 pub struct sockaddr {
     pub sa_len: i8;
