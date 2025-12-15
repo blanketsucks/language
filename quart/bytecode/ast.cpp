@@ -58,7 +58,17 @@ static inline ErrorOr<Vector<GenericTypeParameter>> parse_generic_parameters(Sta
 }
 
 BytecodeResult BlockExpr::generate(State& state, Optional<bytecode::Register>) const {
+    bool returned = false;
     for (auto& expr : m_block) {
+        if (returned) {
+            String warning = SourceCode::format_warning(expr->span(), "Unreachable code");
+            outln(warning);
+        }
+
+        if (expr->is<ast::ReturnExpr>()) {
+            returned = true;
+        }
+
         TRY(expr->generate(state, {}));
     }
 
