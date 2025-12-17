@@ -192,9 +192,10 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) const {
 
             return type_alias->evaluate(state, args);
         }
+        default: break;
     }
 
-    return nullptr;
+    return err(m_parent->span(), "'{}' is not a generic type", path.format());
 }
 
 }
