@@ -231,7 +231,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type() {
                 return { make<ast::BuiltinTypeExpr>(span, iterator->second) };
             }
 
-            Path path = TRY(this->parse_path(name));
+            Path path = TRY(this->parse_path(name, {}, false, false));
             Span span { start, m_current.span() };
 
             auto type = make<ast::NamedTypeExpr>(span, move(path));
@@ -1135,20 +1135,20 @@ ParseResult<ast::Expr> Parser::parse_async() {
     return this->parse_function(LinkageSpecifier::None, false, true);
 }
 
-ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last) {
+ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last, bool allow_generic_arguments) {
     PathSegment segment = {};
     if (!name.has_value()) {
         String name = TRY(this->expect(TokenKind::Identifier)).value();
         ast::ExprList<ast::TypeExpr> arguments;
 
-        if (m_current.is(TokenKind::Lt)) {
+        if (m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             arguments = TRY(this->parse_generic_arguments());
         }
 
         segment = { move(name), move(arguments) };
     } else {
         ast::ExprList<ast::TypeExpr> args;
-        if (arguments.empty() && m_current.is(TokenKind::Lt)) {
+        if (arguments.empty() && m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             args = TRY(this->parse_generic_arguments());
         } else {
             args = move(arguments);
@@ -1169,7 +1169,7 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeE
         }
 
         ast::ExprList<ast::TypeExpr> arguments;
-        if (m_current.is(TokenKind::Lt)) {
+        if (m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             arguments = TRY(this->parse_generic_arguments());
         }
 
