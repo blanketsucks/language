@@ -62,6 +62,8 @@ private:
 
     llvm::Value* valueof(Constant*);
 
+    llvm::Type* type_of(Type*);
+
     // Turns :: into . to make the LLVM IR cleaner
     String normalize(String qualifed_name);
 
