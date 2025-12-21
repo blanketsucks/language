@@ -16,6 +16,10 @@ bool EliminateUnreachableBlocksPass::is_called(Function* function) const {
             return false;
         }
 
+        if (caller->is_main()) {
+            return true;
+        }
+
         return is_called(caller);
     }
 
