@@ -11,6 +11,15 @@ RefPtr<Scope> Scope::create(String name, ScopeType type, RefPtr<Scope> parent) {
     return scope;
 }
 
+RefPtr<Scope> Scope::clone(String name) {
+    auto scope = Scope::create(move(name), m_type, m_parent);
+    for (auto& [symbol_name, symbol] : m_symbols) {
+        scope->m_symbols[symbol_name] = symbol;
+    }
+
+    return scope;
+}
+
 Symbol* Scope::resolve(const String& name) {
     auto iterator = m_symbols.find(name);
     if (iterator == m_symbols.end()) {

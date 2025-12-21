@@ -80,6 +80,10 @@ TraitType* Context::create_trait_type(const String& name) {
     return CREATE_TYPE(m_trait_types, TraitType, name, name);
 }
 
+EmptyType* Context::create_empty_type(const String& name) {
+    return CREATE_TYPE(m_empty_types, EmptyType, name, name);
+}
+
 ConstantInt* Context::create_int_constant(::u64 value, Type* type) {
     auto key = std::make_pair(type, value);
     return CREATE_CONSTANT(m_int_constants, ConstantInt, key, type, value);

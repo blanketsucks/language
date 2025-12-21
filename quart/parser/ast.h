@@ -1121,21 +1121,31 @@ private:
 
 class TraitExpr : public ExprBase<ExprKind::Trait> {
 public:
-    TraitExpr(Span span, String name, ExprList<> body) : ExprBase(span), m_name(move(name)), m_body(move(body)) {}
+    TraitExpr(
+        Span span, String name, ExprList<> body, Vector<GenericParameter> parameters
+    ) : ExprBase(span), m_name(move(name)), m_body(move(body)), m_parameters(move(parameters)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 
     String const& name() const { return m_name; }
     ExprList<> const& body() const { return m_body; }
+    Vector<GenericParameter> const& parameters() const { return m_parameters; }
 
 private:
     String m_name;
     ExprList<> m_body;
+
+    Vector<GenericParameter> m_parameters;
 };
 
 class ImplTraitExpr : public ExprBase<ExprKind::ImplTrait> {
 public:
-    ImplTraitExpr(Span span, OwnPtr<TypeExpr> trait, OwnPtr<TypeExpr> type, ExprList<> body) : ExprBase(span), m_trait(move(trait)), m_type(move(type)), m_body(move(body)) {}
+    ImplTraitExpr(
+        Span span,
+        OwnPtr<TypeExpr> trait,
+        OwnPtr<TypeExpr> type,
+        ExprList<> body
+    ) : ExprBase(span), m_trait(move(trait)), m_type(move(type)), m_body(move(body)) {}
 
     BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
 

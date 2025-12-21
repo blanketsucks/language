@@ -50,6 +50,7 @@ public:
     Token next();
     void skip(size_t n = 1);
 
+    Token const& back();
     Token rewind(size_t n = 1);
 
     Token const& peek(size_t offset = 1) const;
@@ -81,7 +82,7 @@ public:
 
     ErrorOr<ExprBlock> parse_expr_block();
     
-    ParseResult<ast::TypeExpr> parse_type();
+    ParseResult<ast::TypeExpr> parse_type(bool allow_generic_arguments = true);
 
     ParseResult<ast::BlockExpr> parse_block();
 

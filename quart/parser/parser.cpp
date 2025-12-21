@@ -99,6 +99,14 @@ Token& Parser::peek(size_t offset) {
     return m_tokens[m_offset + offset];
 }
 
+Token const& Parser::back() {
+    if (m_offset == 0 || m_offset > m_tokens.size()) {
+        return m_tokens.front();
+    }
+
+    return m_tokens[m_offset - 1];
+}
+
 ErrorOr<Token> Parser::expect(TokenKind kind, StringView value) {
     auto span = m_current.span();
     auto option = this->try_expect(kind);
@@ -157,7 +165,7 @@ AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& a
     return AttributeHandler::Ok;
 }
 
-ParseResult<ast::TypeExpr> Parser::parse_type() {
+ParseResult<ast::TypeExpr> Parser::parse_type(bool allow_generic_arguments) {
     Span start = m_current.span();
 
     switch (m_current.kind()) {
@@ -235,9 +243,9 @@ ParseResult<ast::TypeExpr> Parser::parse_type() {
             Span span { start, m_current.span() };
 
             auto type = make<ast::NamedTypeExpr>(span, move(path));
-            if (m_current.is(TokenKind::Lt)) {
+            if (m_current.is(TokenKind::Lt) && allow_generic_arguments) {
                 auto args = TRY(this->parse_generic_arguments());
-                span = { start, m_current.span() };
+                span = { start, back().span() };
 
                 return { make<ast::GenericTypeExpr>(span, move(type), move(args)) };
             }
@@ -1013,6 +1021,8 @@ ParseResult<ast::MatchExpr> Parser::parse_match() {
 }
 
 ParseResult<ast::Expr> Parser::parse_impl() {
+    Span span = m_current.span();
+
     Vector<ast::GenericParameter> parameters;
     if (m_current.is(TokenKind::Lt)) {
         parameters = TRY(this->parse_generic_parameters());
@@ -1022,6 +1032,10 @@ ParseResult<ast::Expr> Parser::parse_impl() {
     OwnPtr<ast::TypeExpr> trait = nullptr;
 
     if (m_current.is(TokenKind::For)) {
+        if (!parameters.empty()) {
+            return err(span, "Generic parameters are not allowed in this context");
+        }
+
         trait = move(type);
         this->next();
 
@@ -1052,7 +1066,7 @@ ParseResult<ast::Expr> Parser::parse_impl() {
     }
 
     TRY(this->expect(TokenKind::RBrace));
-    Span span = type->span();
+    span = type->span();
 
     if (trait) {
         return { make<ast::ImplTraitExpr>(span, move(trait), move(type), move(body)) };
@@ -1064,6 +1078,11 @@ ParseResult<ast::Expr> Parser::parse_impl() {
 
 ParseResult<ast::TraitExpr> Parser::parse_trait() {
     Token token = TRY(this->expect(TokenKind::Identifier));
+
+    Vector<ast::GenericParameter> parameters;
+    if (m_current.is(TokenKind::Lt)) {
+        parameters = TRY(this->parse_generic_parameters());
+    }
 
     String name = token.value();
     Span span = token.span();
@@ -1089,7 +1108,7 @@ ParseResult<ast::TraitExpr> Parser::parse_trait() {
     }
 
     TRY(this->expect(TokenKind::RBrace));
-    return { make<ast::TraitExpr>(span, move(name), move(body)) };
+    return { make<ast::TraitExpr>(span, move(name), move(body), move(parameters)) };
 }
  
 ParseResult<ast::Expr> Parser::parse_pub() {

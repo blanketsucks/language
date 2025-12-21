@@ -206,6 +206,10 @@ String const& Type::get_trait_name() const {
     return this->as<TraitType>()->name();
 }
 
+String const& Type::get_empty_name() const {
+    return this->as<EmptyType>()->name();
+}
+
 String Type::str() const {
     switch (this->kind()) {
         case TypeKind::Void: return "void";
@@ -265,6 +269,9 @@ String Type::str() const {
         }
         case TypeKind::Trait: {
             return this->get_trait_name();
+        }
+        case TypeKind::Empty: {
+            return this->get_empty_name();
         }
     }
 
@@ -412,6 +419,10 @@ FunctionType* FunctionType::get(Context& context, Type* return_type, const Vecto
 
 TraitType* TraitType::get(Context& context, const String& name) {
     return context.create_trait_type(name);
+}
+
+EmptyType* EmptyType::get(Context& context, const String& name) {
+    return context.create_empty_type(name);
 }
 
 void StructType::set_fields(const Vector<Type*>& fields) {

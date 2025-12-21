@@ -32,6 +32,8 @@ class Scope {
 public:
     static RefPtr<Scope> create(String name, ScopeType type, RefPtr<Scope> parent = nullptr);
 
+    RefPtr<Scope> clone(String name);
+
     String const& name() const { return m_name; }
     ScopeType type() const { return m_type; }
 
@@ -57,6 +59,8 @@ public:
         m_symbols[symbol->name()] = move(symbol);
     }
 
+    void remove_symbol(const String& name) { m_symbols.erase(name); }
+
     void finalize(bool eliminate_dead_functions = true);
 
 private:
@@ -70,7 +74,6 @@ private:
 
     HashMap<String, RefPtr<Symbol>> m_symbols;
     
-    Vector<ast::Expr*> m_defers;
     Module* m_module = nullptr;
 };
 

@@ -28,7 +28,8 @@ enum class TypeKind : u8 {
     Pointer,
     Reference,
     Function,
-    Trait
+    Trait,
+    Empty
 };
 
 class Type {
@@ -70,6 +71,7 @@ public:
     bool is_reference() const { return m_kind == TypeKind::Reference; }
     bool is_function() const { return m_kind == TypeKind::Function; }
     bool is_trait() const { return m_kind == TypeKind::Trait; }
+    bool is_empty() const { return m_kind == TypeKind::Empty; }
 
     bool is_aggregate() const { return this->is_struct() || this->is_array() || this->is_tuple(); }
     bool is_floating_point() const { return this->is_float() || this->is_double(); }
@@ -116,6 +118,8 @@ public:
     bool is_function_var_arg() const;
 
     String const& get_trait_name() const;
+
+    String const& get_empty_name() const;
 
     size_t size() const;
 
@@ -351,6 +355,21 @@ public:
     friend Context;
 private:
     TraitType(Context* context, String name) : Type(context, TypeKind::Trait), m_name(move(name)) {}
+
+    String m_name;
+};
+
+class EmptyType : public Type {
+public:
+    static bool classof(const Type* type) { return type->kind() == TypeKind::Empty; }
+
+    static EmptyType* get(Context&, const String& name);
+
+    String const& name() const { return m_name; }
+
+    friend Context;
+private:
+    EmptyType(Context* context, String name) : Type(context, TypeKind::Empty), m_name(move(name)) {}
 
     String m_name;
 };

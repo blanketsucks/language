@@ -122,6 +122,7 @@ ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionPara
     ));
 
     function->set_local_parameters();
+    function->set_is_decl(false);
 
     m_specializations.insert_or_assign(key, function);
     

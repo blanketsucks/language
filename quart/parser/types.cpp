@@ -88,6 +88,10 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
         }
         case Symbol::Trait: {
             auto* trait = symbol->as<Trait>();
+            if (trait->has_generic_parameters()) {
+                return err(span(), "Trait '{}' requires type arguments", trait->name());
+            }
+
             return trait->underlying_type();
         }
         default: break;
@@ -191,6 +195,23 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) const {
             }
 
             return type_alias->evaluate(state, args);
+        }
+        case Symbol::Trait: {
+            auto* trait = symbol->as<Trait>();
+            if (!trait->has_generic_parameters()) {
+                return err(span(), "Trait '{}' is not generic", trait->name());
+            } else if (args.size() != trait->generic_parameters().size()) {
+                return err(
+                    m_parent->span(),
+                    "Trait '{}' expects {} generic arguments but {} were provided",
+                    trait->name(),
+                    trait->generic_parameters().size(),
+                    args.size()
+                );
+            }
+
+            auto [_, type] = TRY(trait->create_scope(state, args));
+            return type;
         }
         default: break;
     }

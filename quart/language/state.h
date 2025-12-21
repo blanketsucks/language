@@ -117,14 +117,13 @@ public:
     void add_impl(OwnPtr<Impl>);
     bool has_impl(Type*);
 
-    void add_trait(RefPtr<Trait> trait) {
-        m_traits[trait->underlying_type()] = move(trait);
-    }
+    void add_trait(RefPtr<Trait> trait) { m_traits[trait->underlying_type()] = move(trait); }
+    void add_trait(Type* type, RefPtr<Trait> trait) { m_traits[type] = move(trait); }
 
-    Trait const* get_trait(Type* type) const {
+    RefPtr<Trait> get_trait(Type* type) const {
         auto iterator = m_traits.find(type);
         if (iterator != m_traits.end()) {
-            return iterator->second.get();
+            return iterator->second;
         }
 
         return nullptr;

@@ -81,14 +81,17 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
 
     RefPtr<Scope> scope = nullptr;
     if (parent->is_trait()) {
-        auto* trait = m_state.get_trait(parent);
+        auto trait = m_state.get_trait(parent);
         if (!trait) {
             return err(expr.parent().span(), "Cannot access attributes of type '{}'", parent->str());
         }
 
-        auto scope = trait->scope();
-        auto* function = scope->resolve<Function>(expr.attribute());
+        RefPtr<Scope> scope = trait->scope();
+        if (trait->underlying_type() != parent) {
+            scope = trait->scopes().at(parent).scope;
+        }
 
+        auto* function = scope->resolve<Function>(expr.attribute());
         if (!function) {
             return err(expr.span(), "Trait '{}' has no attribute named '{}'", trait->name(), expr.attribute());
         }

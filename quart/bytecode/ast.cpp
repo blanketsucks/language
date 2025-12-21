@@ -545,12 +545,12 @@ static ErrorOr<bytecode::Operand> generate_trait_call_argument(
         auto* trait_type = parameter.type->underlying_type()->as<TraitType>();
 
         if (!ty->is<StructType>()) { // TODO: Allow non-struct types to implement traits
-            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
+            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), trait_type->str());
         }
 
         auto structure = ty->as<StructType>()->decl();
         if (!structure->impls_trait(trait_type)) {
-            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), parameter.type->str());
+            return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), trait_type->str());
         }
 
         return operand;
@@ -1831,14 +1831,26 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
 
     auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, current_scope));
     auto scope = Scope::create(type->name(), ScopeType::Namespace, current_scope);
+    
+    auto trait = Trait::create(m_name, type, scope);
+    for (auto& parameter : m_parameters) {
+        auto alias = TypeAlias::create(
+            parameter.name,
+            EmptyType::get(state.context(), parameter.name), 
+            false
+        );
 
-    auto trait = Trait::create(m_name, type, move(scope));
+        scope->add_symbol(move(alias));
+        trait->add_generic_parameter(parameter.name, parameter.span);
+    }
 
     state.set_self_type(type);
     state.add_trait(trait);
 
     state.set_current_scope(trait->scope());
     for (auto& expr : m_body) {
+        trait->add_body_expr(expr.get());
+    
         if (!expr->is<FunctionDeclExpr>()) {
             auto* function = expr->as<FunctionExpr>();
 
@@ -1859,7 +1871,10 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
     return {};
 }
 
-static ErrorOr<void> verify_trait_implementation(Function const* function, Function const* impl) {
+static ErrorOr<void> verify_trait_implementation(
+    Function const* function,
+    Function const* impl
+) {
     auto ordering = function->parameters().size() <=> impl->parameters().size();
     if (ordering != 0) {
         auto error = err(impl->span(), "Impl function '{}' has {} parameters than the trait function", impl->name(), ordering > 0 ? "fewer" : "more");
@@ -1876,7 +1891,7 @@ static ErrorOr<void> verify_trait_implementation(Function const* function, Funct
     }
 
     static auto verify_mutability = [](FunctionParameter const& p1, FunctionParameter const& p2) -> ErrorOr<void> {
-        if (p1.flags != p2.flags) {
+        if (p1.is_mutable() != p2.is_mutable()) {
             auto error = err(p2.span, "Parameter '{}' of impl function must have the same mutability as the trait function", p2.name);
             error.add_note(p1.span, "Trait parameter defined here");
 
@@ -1922,12 +1937,14 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     auto trait = state.get_trait(trait_type);
     Type* type = TRY(m_type->evaluate(state));
 
+    RefPtr<Scope> scope = trait->resolve_scope(trait_type->as<TraitType>());
     if (!type->is_struct()) {
         ASSERT(false, "Only structs can implement traits for now");
     }
 
-    auto current_scope = state.scope();
     auto structure = type->as<StructType>()->decl();
+
+    auto current_scope = state.scope();
 
     state.set_current_scope(structure->scope());
     state.set_self_type(type);
@@ -1940,12 +1957,28 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
         TRY(expr->generate(state, {}));
         String name = expr->as<FunctionExpr>()->decl().name();
 
-        Function const* function = trait->get_method(name);
+        Function const* function = scope->resolve<Function>(name);
         if (!function) {
             return err(expr->span(), "Function '{}' is not part of the trait '{}'", name, trait->name());
         }
 
-        TRY(verify_trait_implementation(function, structure->get_method(name)));
+        auto result = verify_trait_implementation(function, structure->get_method(name));
+        if (result.is_err() && trait->has_generic_parameters()) {
+            auto error = result.error();
+
+            Vector<String> generic_arguments;
+            for (auto& [name, span] : trait->generic_parameters()) {
+                auto* type_alias = scope->resolve<TypeAlias>(name);
+                generic_arguments.push_back(format("{}='{}'", name, type_alias->underlying_type()->str()));
+            }
+
+            error.add_note(
+                m_trait->span(),
+                format("Trait '{}' instantiated here with generic arguments: {}", trait->name(), format_range(generic_arguments))
+            );
+
+            return error;
+        }
     }
 
     for (auto& [name, symbol] : trait->scope()->symbols()) {
@@ -1967,14 +2000,32 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
         }
     }
 
+    if (trait->has_generic_parameters()) {
+        auto& parameters = trait->generic_parameters();
+
+        auto target = structure->scope();
+        for (auto& [name, span] : parameters) {
+            target->add_symbol(scope->symbols().at(name));
+        }
+    }
+
     for (auto& function : trait->predefined_functions()) {
         TRY(function->generate(state, {}));
+    }
+
+    if (trait->has_generic_parameters()) {
+        auto& parameters = trait->generic_parameters();
+        auto scope = structure->scope();
+
+        for (auto& [name, span] : parameters) {
+            scope->remove_symbol(name);
+        }
     }
 
     state.set_current_scope(current_scope);
     state.set_self_type(nullptr);
 
-    structure->add_impl_trait(trait->underlying_type());
+    structure->add_impl_trait(trait_type->as<TraitType>());
     return {};
 }
 
