@@ -193,9 +193,15 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
     }
 }
 
-BytecodeResult FloatExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
-    return {};
+BytecodeResult FloatExpr::generate(State& state, Optional<bytecode::Register> dst) const {
+    u64 value = *(u64*)&m_value;
+    quart::Type* type = m_is_double ? state.context().f64() : state.context().f32();
+
+    auto reg = select_dst(state, dst);
+    state.emit<bytecode::Move>(reg, value);
+
+    state.set_register_state(reg, type);
+    return bytecode::Operand(reg);
 }
 
 BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Register>) const {

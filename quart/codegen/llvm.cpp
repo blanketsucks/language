@@ -26,7 +26,16 @@ LLVMCodeGen::LLVMCodeGen(State& state, String module_name) : m_state(state) {
 void LLVMCodeGen::generate(bytecode::Move* inst) {
     Type* type = m_state.type(inst->dst());
 
-    llvm::Value* src = m_ir_builder->getInt({ type->get_int_bit_width(), inst->src(), !type->is_int_unsigned() }); 
+    llvm::Value* src = nullptr;
+    if (type->is_float()) {
+        u64 v = inst->src();
+        f64 value = *(f64*)&v;
+
+        src = llvm::ConstantFP::get(type_of(type), value);
+    } else {
+        src = m_ir_builder->getInt({ type->get_int_bit_width(), inst->src(), !type->is_int_unsigned() }); 
+    }
+
     this->set_register(inst->dst(), src);
 }
 
