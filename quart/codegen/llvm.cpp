@@ -221,7 +221,9 @@ void LLVMCodeGen::generate(bytecode::GetGlobal* inst) {
     ASSERT(inst->index() < m_globals.size(), "Global index out of bounds");
 
     auto* global = m_globals[inst->index()];
-    this->set_register(inst->dst(), global->getInitializer());
+    llvm::Value* value = m_ir_builder->CreateLoad(global->getValueType(), global);
+
+    this->set_register(inst->dst(), value);
 }
 
 void LLVMCodeGen::generate(bytecode::GetGlobalRef* inst) {

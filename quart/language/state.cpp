@@ -160,7 +160,12 @@ ErrorOr<bytecode::Register> State::resolve_reference(
     switch (symbol->type()) {
         case Symbol::Variable: {
             auto* variable = symbol->as<Variable>();
-            emit<bytecode::GetLocalRef>(reg, variable->index());
+
+            if (variable->flags() & Variable::Global) {
+                emit<bytecode::GetGlobalRef>(reg, variable->index());
+            } else {
+                emit<bytecode::GetLocalRef>(reg, variable->index());
+            }
 
             if (!variable->is_mutable() && is_mutable) {
                 return err(ErrorType::MutabilityMismatch, span, "Cannot take a mutable reference to an immutable variable");

@@ -22,6 +22,7 @@ public:
         Mutated   = 1 << 3,
         Constant  = 1 << 4,
         Public    = 1 << 5,
+        Global    = 1 << 6
     };
 
     static RefPtr<Variable> create(String name, size_t index, Type* type, u8 flags = None) {

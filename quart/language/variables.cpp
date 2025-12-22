@@ -4,7 +4,7 @@
 namespace quart {
 
 void Variable::emit(State& state, bytecode::Register dst) {
-    if (m_flags & Constant) {
+    if (m_flags & Global) {
         state.emit<bytecode::GetGlobal>(dst, m_index);
     } else {
         state.emit<bytecode::GetLocal>(dst, m_index);

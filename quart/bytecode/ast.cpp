@@ -204,15 +204,45 @@ BytecodeResult FloatExpr::generate(State& state, Optional<bytecode::Register> ds
     return bytecode::Operand(reg);
 }
 
+static ErrorOr<void> create_global_variable(State& state, String const& name, ast::Expr& value, Type* type, u8 flags) {
+    state.set_type_context(type);
+
+    Constant* constant = TRY(state.constant_evaluator().evaluate(value));
+    size_t global_index = state.allocate_global();
+
+    auto variable = Variable::create(name, global_index, constant->type(), flags);
+    variable->set_module(state.module());
+
+    variable->set_initializer(constant);
+
+    state.scope()->add_symbol(variable);
+    state.add_global(move(variable));
+
+    state.set_type_context(nullptr);
+    return {};
+}
+
 BytecodeResult AssignmentExpr::generate(State& state, Optional<bytecode::Register>) const {
     Optional<bytecode::Operand> value;
     Function* current_function = state.function();
+
+    Type* type = m_type ? TRY(m_type->evaluate(state)) : nullptr;
+    if (!current_function) {
+        u8 flags = Variable::Global;
+        if (m_identifier.is_mutable) {
+            flags |= Variable::Mutable;
+        } if (m_is_public) {
+            flags |= Variable::Public;
+        }
+
+        TRY(create_global_variable(state, m_identifier.value, *m_value, type, flags));
+        return {};
+    }
 
     if (m_value) {
         value = TRY(ensure(state, *m_value, {}));
     }
 
-    Type* type = m_type ? TRY(m_type->evaluate(state)) : nullptr;
     bool is_struct_value = false;
 
     if (value) {
@@ -277,22 +307,14 @@ BytecodeResult TupleAssignmentExpr::generate(State&, Optional<bytecode::Register
 }
 
 BytecodeResult ConstExpr::generate(State& state, Optional<bytecode::Register>) const {
-    Constant* constant = TRY(state.constant_evaluator().evaluate(*m_value));
-    size_t global_index = state.allocate_global();
+    Type* type = m_type ? TRY(m_type->evaluate(state)) : nullptr;
 
-    u8 flags = Variable::Constant;
+    u8 flags = Variable::Constant | Variable::Global;
     if (m_is_public) {
         flags |= Variable::Public;
     }
 
-    auto variable = Variable::create(m_name, global_index, constant->type(), flags);
-    variable->set_module(state.module());
-
-    variable->set_initializer(constant);
-
-    state.scope()->add_symbol(variable);
-    state.add_global(move(variable));
-
+    TRY(create_global_variable(state, m_name, *m_value, type, flags));
     return {};
 }
 
