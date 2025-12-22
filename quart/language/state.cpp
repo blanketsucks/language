@@ -464,11 +464,42 @@ ErrorOr<bytecode::Register> State::generate_index_access(
         reg = result.value();
         type = this->type(reg)->get_reference_type();
 
-        if (!type->is_array() && !type->is_pointer()) {
+        if (!type->is_array() && !type->is_pointer() && !type->is_tuple()) {
             return err(expr.span(), "Cannot index into type '{}'", type->str());
         }
 
         deref = true;
+    }
+
+    if (type->is_tuple()) {
+        auto* constant = TRY(m_constant_evaluator.evaluate(expr.index()));
+        if (!constant->is<ConstantInt>()) {
+            return err(expr.index().span(), "Tuple index must be an integer constant");
+        }
+
+        auto* index = constant->as<ConstantInt>();
+
+        if (!dst.has_value()) {
+            dst = this->allocate_register();
+        }
+
+        if (index->value() >= type->get_tuple_size()) {
+            return err(expr.index().span(), "Index {} out of bounds for tuple of size {}", index->value(), type->get_tuple_size());
+        }
+
+        Type* inner = type->get_tuple_element(index->value());
+        bytecode::Operand idx { index->value(), index->type() };
+
+        this->set_register_state(reg, type->get_pointer_to());
+        if (as_reference) {
+            emit<bytecode::GetMemberRef>(*dst, reg, idx);
+            this->set_register_state(*dst, inner->get_reference_to(as_mutable));
+        } else {
+            emit<bytecode::GetMember>(*dst, reg, idx);
+            this->set_register_state(*dst, inner);
+        }
+
+        return *dst;
     }
 
     Type* inner = nullptr;
