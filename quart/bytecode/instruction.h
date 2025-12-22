@@ -558,7 +558,7 @@ public:
     TupleType* type() const { return m_type; }
     Vector<Operand> const& elements() const { return m_elements; }
 
-    void dump() const override {}
+    void dump() const override;
 
 private:
     Register m_dst;

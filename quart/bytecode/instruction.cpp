@@ -43,8 +43,8 @@ static inline String fmt(Operand const& operand) {
     }
 }
 
-static String fmt(Vector<Operand> operands) {
-    String str = "[";
+static String fmt(Vector<Operand> operands, char open = '[', char close = ']') {
+    String str = { open };
     for (auto [index, operand] : llvm::enumerate(operands)) {
         str.append(fmt(operand));
         if (index == operands.size() - 1) {
@@ -54,7 +54,7 @@ static String fmt(Vector<Operand> operands) {
         str.append(", ");
     }
 
-    str.push_back(']');
+    str.push_back(close);
     return str;
 }
 
@@ -194,6 +194,10 @@ void Memcpy::dump() const {
 
 void GetReturn::dump() const {
     outln("GetReturn {}", fmt(m_dst));
+}
+
+void NewTuple::dump() const {
+    outln("NewTuple {}, {}", fmt(m_dst), fmt(m_elements, '(', ')'));
 }
 
 }
