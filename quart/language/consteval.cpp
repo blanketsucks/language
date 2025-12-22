@@ -616,8 +616,14 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const& expr) {
             return ConstantInt::get(m_state.context(), type, 0);
         case BoolExpr::True:
             return ConstantInt::get(m_state.context(), type, 1);
-        case BoolExpr::Null:
-            ASSERT(false, "Not Implemented");
+        case BoolExpr::Null: {
+            auto* type = m_state.type_context();
+            if (!type) {
+                type = m_state.context().void_type()->get_pointer_to();
+            }
+
+            return ConstantNull::get(m_state.context(), type);
+        }
     }
 
     return nullptr;

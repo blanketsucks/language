@@ -109,6 +109,10 @@ ConstantStruct* Context::create_struct_constant(const Vector<Constant*>& fields,
     return CREATE_CONSTANT(m_aggregate_constants, ConstantStruct, key, type, fields); // NOLINT
 }
 
+ConstantNull* Context::create_null_constant(Type* type) {
+    return CREATE_CONSTANT(m_null_constants, ConstantNull, type, type);
+}
+
 PointerType* Context::cstr() {
     return this->create_pointer_type(&m_i8, false);
 }

@@ -37,6 +37,7 @@ public:
     ConstantString* create_string_constant(const String& value, Type* type);
     ConstantArray* create_array_constant(const Vector<Constant*>& elements, Type* type);
     ConstantStruct* create_struct_constant(const Vector<Constant*>& fields, Type* type);
+    ConstantNull* create_null_constant(Type* type);
 
     Type* void_type() { return &m_void_type; }
 
@@ -85,6 +86,8 @@ private:
     ConstantMap<ConstantFloat> m_float_constants;
     
     ConstantMap<ConstantString> m_string_constants;
+
+    HashMap<Type*, OwnPtr<ConstantNull>> m_null_constants;
 
     HashMap<Pair<Type*, Vector<Constant*>>, OwnPtr<Constant>> m_aggregate_constants;
 };

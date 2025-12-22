@@ -13,7 +13,8 @@ public:
         Float,
         String,
         Array,
-        Struct
+        Struct,
+        Null
     };
 
     NO_COPY(Constant)
@@ -156,6 +157,18 @@ private:
     ) : Constant(context, Kind::Struct, type), m_fields(move(fields)) {}
 
     Vector<Constant*> m_fields;
+};
+
+class ConstantNull : public Constant {
+public:
+    friend Context;
+    
+    static bool classof(const Constant* constant) { return constant->kind() == Kind::Null; }
+
+    static ConstantNull* get(Context&, Type* type);
+
+private:
+    ConstantNull(Context* context, Type* type) : Constant(context, Kind::Null, type) {}
 };
 
 

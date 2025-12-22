@@ -23,4 +23,8 @@ ConstantStruct* ConstantStruct::get(Context &context, Type *type, const Vector<C
     return context.create_struct_constant(fields, type);
 }
 
+ConstantNull* ConstantNull::get(Context& context, Type* type) {
+    return context.create_null_constant(type);
+}
+
 }

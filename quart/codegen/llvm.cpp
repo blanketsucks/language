@@ -627,6 +627,12 @@ llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
 
             return llvm::ConstantStruct::get(llvm::cast<llvm::StructType>(type), elements);
         }
+        case Constant::Kind::Null: {
+            auto* null = constant->as<ConstantNull>();
+            llvm::Type* type = type_of(null->type());
+
+            return llvm::Constant::getNullValue(type);
+        }
     }
 
     return nullptr;
