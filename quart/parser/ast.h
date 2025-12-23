@@ -1332,7 +1332,7 @@ public:
     ErrorOr<Type*> evaluate(State&) const override;
 
     ExprList<TypeExpr> const& parameters() const { return m_parameters; }
-    TypeExpr const& return_type() const { return *m_return_type; }
+    TypeExpr const* return_type() const { return m_return_type.get(); }
 
 private:
     ExprList<TypeExpr> m_parameters;
