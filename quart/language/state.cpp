@@ -368,6 +368,10 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
 
     RefPtr<Scope> scope = nullptr;
     if (!structure) {
+        if (type->is_underlying_type_of(quart::TypeKind::Function)) {
+            type = type->underlying_type();
+        }
+
         if (!this->has_impl(type)) {
             for (auto& impl : m_generic_impls) {
                 scope = TRY(impl->make(*this, type));

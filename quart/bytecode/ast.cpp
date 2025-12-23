@@ -1770,59 +1770,38 @@ BytecodeResult MatchExpr::generate(State& state, Optional<bytecode::Register>) c
     return {};
 }
 
-String extract_name_from_type(ast::TypeExpr const& type) {
-    if (type.kind() != TypeKind::Named) {
-        return {};
-    }
-
-    auto* named = type.as<ast::NamedTypeExpr>();
-    auto& path = named->path();
-
-    return path.name();
-}
-
-void create_impl_conditions(Vector<OwnPtr<ImplCondition>>& conditions, Set<String>& parameters, ast::TypeExpr& type) {
-    switch (type.kind()) {
-        case TypeKind::Pointer: {
-            // FIXME: Handle double pointers and more
-            auto* ptr = type.as<ast::PointerTypeExpr>();
-            String name = extract_name_from_type(ptr->pointee());
-
-            if (name.empty() || !parameters.contains(name)) {
-                return;
-            }
-
-            conditions.push_back(ImplCondition::create(name, ImplCondition::Pointer));
-            break;
-        }
-        case TypeKind::Reference: {
-            auto* ref = type.as<ast::ReferenceTypeExpr>();
-            String name = extract_name_from_type(ref->type());
-
-            if (name.empty() || !parameters.contains(name)) {
-                return;
-            }
-
-            conditions.push_back(ImplCondition::create(name, ImplCondition::Reference));
-            break;
-        }
-    }
-}
-
 BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) const {
     auto current_scope = state.scope();
     if (!m_parameters.empty()) {
+        auto scope = Scope::create({}, ScopeType::Impl, current_scope);
+
         auto range = llvm::map_range(m_parameters, [](auto& param) { return param.name; });
-        Set<String> parameters(range.begin(), range.end());
+        Set<String> parameters = { range.begin(), range.end() };
 
-        Vector<OwnPtr<ImplCondition>> conditions;
-        create_impl_conditions(conditions, parameters, *m_type);
-
-        if (conditions.empty()) {
-            return err(span(), "Impl is generic but doesn't use generic parameters");
+        for (auto& parameter : parameters) {
+            scope->add_symbol(TypeAlias::create(
+                parameter,
+                EmptyType::get(state.context(), parameter),
+                false
+            ));
         }
         
-        auto impl = Impl::create(current_scope, &*m_type, &*m_body, move(conditions));
+        auto previous_scope = state.scope();
+        state.set_current_scope(scope);
+        
+        Type* type = TRY(m_type->evaluate(state));
+        if (type->is_underlying_type_of(quart::TypeKind::Function)) {
+            type = type->underlying_type();
+        }
+
+        state.set_self_type(type);
+
+        TRY(state.type_checker().type_check(*m_body));
+
+        state.set_current_scope(previous_scope);
+        state.set_self_type(nullptr);
+
+        auto impl = Impl::create(type, scope, m_body.get(), parameters);
         state.add_impl(move(impl));
 
         return {};
