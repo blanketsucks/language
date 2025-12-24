@@ -18,7 +18,6 @@
     Op(Function)                                \
     Op(Defer)                                   \
     Op(Struct)                                  \
-    Op(EmptyConstructor)                        \
     Op(Cast)                                    \
     Op(Using)                                   \
     Op(Enum)                                    \

@@ -40,7 +40,6 @@
     Op(Continue)                     \
     Op(Struct)                       \
     Op(Constructor)                  \
-    Op(EmptyConstructor)             \
     Op(Attribute)                    \
     Op(Index)                        \
     Op(Cast)                         \
@@ -154,7 +153,6 @@ enum class ExprKind : u8 {
     Continue,
     Struct,
     Constructor,
-    EmptyConstructor,
     Attribute,
     Index,
     Cast,
@@ -792,17 +790,6 @@ public:
 private:
     OwnPtr<Expr> m_parent;
     Vector<ConstructorArgument> m_arguments;
-};
-
-class EmptyConstructorExpr : public ExprBase<ExprKind::EmptyConstructor> {
-public:
-    EmptyConstructorExpr(Span span, OwnPtr<Expr> parent) : ExprBase(span), m_parent(move(parent)) {}
-    BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const override;
-
-    Expr const& parent() const { return *m_parent; }
-
-private:
-    OwnPtr<Expr> m_parent;
 };
 
 class AttributeExpr : public ExprBase<ExprKind::Attribute> {

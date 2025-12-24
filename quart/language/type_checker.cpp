@@ -822,12 +822,6 @@ ErrorOr<Type*> TypeChecker::type_check(ast::ConstructorExpr const& expr) {
     return structure->underlying_type();
 }
 
-ErrorOr<Type*> TypeChecker::type_check(ast::EmptyConstructorExpr const& expr) {
-    Struct* structure = TRY(m_state.resolve_struct(expr.parent()));
-    return structure->underlying_type();
-}
-
-
 ErrorOr<Type*> TypeChecker::type_check(ast::AttributeExpr const& expr) {
     return this->type_check_attribute_access(expr, false, false);
 }

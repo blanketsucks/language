@@ -1203,11 +1203,6 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
     return bytecode::Operand(reg);
 }
 
-BytecodeResult EmptyConstructorExpr::generate(State&, Optional<bytecode::Register>) const {
-    ASSERT(false, "Not implemented");
-    return {};
-}
-
 BytecodeResult AttributeExpr::generate(State& state, Optional<bytecode::Register> dst) const {
     auto reg = TRY(state.generate_attribute_access(*this, false, false, dst));
     return bytecode::Operand(reg);

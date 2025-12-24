@@ -1599,11 +1599,6 @@ ParseResult<ast::Expr> Parser::call() {
         this->next();
 
         Vector<ast::ConstructorArgument> arguments;
-        if (m_current.is(TokenKind::RBrace)) {
-            this->next();
-            return { make<ast::EmptyConstructorExpr>(expr->span(), move(expr)) };
-        }
-
         while (!m_current.is(TokenKind::RBrace)) {
             Token token = TRY(this->expect(TokenKind::Identifier));
             TRY(this->expect(TokenKind::Colon));
