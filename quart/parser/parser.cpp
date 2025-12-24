@@ -1643,6 +1643,11 @@ ParseResult<ast::Expr> Parser::attribute(OwnPtr<ast::Expr> expr) {
         Span span = { expr->span(), token.span() };
 
         expr = make<ast::AttributeExpr>(span, move(expr), value);
+
+        if (m_current.is(TokenKind::LParen)) {
+            this->next();
+            expr = TRY(this->parse_call(move(expr)));
+        }
     }
 
     if (m_current.is(TokenKind::LBracket)) {
