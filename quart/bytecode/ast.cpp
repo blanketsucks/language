@@ -745,7 +745,7 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
 }
 
 static ErrorOr<void> generate_struct_return(State& state, Function* function, ast::Expr const& value) {
-    auto result = state.resolve_reference(value, false);
+    auto result = state.resolve_reference(value, false, {}, false);
     bytecode::Register reg;
 
     Type* return_type = function->return_type();
