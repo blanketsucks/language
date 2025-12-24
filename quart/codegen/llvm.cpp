@@ -368,7 +368,7 @@ void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     auto* llvm_function = llvm::Function::Create(
         function_type,
         llvm::Function::ExternalLinkage,
-        normalize(function->qualified_name()),
+        function->qualified_name(),
         &*m_module
     );
     
@@ -483,13 +483,13 @@ void LLVMCodeGen::generate(bytecode::NewArray* inst) {
 void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
     Struct* structure = inst->structure();
     if (structure->opaque()) {
-        auto* type = llvm::StructType::create(*m_context, normalize(structure->qualified_name()));
+        auto* type = llvm::StructType::create(*m_context, structure->qualified_name());
         m_structs[structure] = type;
 
         return;
     }
 
-    auto* type = llvm::StructType::create(*m_context, {}, normalize(structure->qualified_name()));
+    auto* type = llvm::StructType::create(*m_context, {}, structure->qualified_name());
     auto range = llvm::map_range(structure->underlying_type()->fields(), [this](auto& entry) {
         return type_of(entry);
     });
@@ -653,19 +653,6 @@ llvm::Type* LLVMCodeGen::type_of(Type* type) {
     }
 
     return type->to_llvm_type(*m_context);
-}
-
-String LLVMCodeGen::normalize(String qualified_name) {
-    static constexpr StringView DOUBLE_COLON = "::";
-    static constexpr StringView DOT = ".";
-
-    auto pos = qualified_name.find(DOUBLE_COLON);
-    while (pos != String::npos) {
-        qualified_name.replace(pos, DOUBLE_COLON.size(), ".");
-        pos = qualified_name.find(DOUBLE_COLON, pos + DOT.size());
-    }
-
-    return qualified_name;
 }
 
 llvm::BasicBlock* LLVMCodeGen::create_block_from(bytecode::BasicBlock* block) {
