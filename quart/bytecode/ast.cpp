@@ -1165,8 +1165,8 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
     Struct* structure = TRY(state.resolve_struct(*m_parent));
     auto& fields = structure->fields();
 
-    Vector<bytecode::Operand> arguments;
-    arguments.resize(fields.size());
+    Vector<Pair<size_t, bytecode::Operand>> arguments;
+    arguments.reserve(fields.size());
 
     for (auto& argument : m_arguments) {
         auto iterator = fields.find(argument.name);
@@ -1180,7 +1180,7 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
         auto value = TRY(ensure(state, *argument.value, {}));
 
         value = TRY(state.type_check_and_cast(argument.value->span(), value, field.type, "Cannot assign a value of type '{}' to a field of type '{}'"));
-        arguments[field.index] = value;
+        arguments.emplace_back(field.index, value);
 
         state.set_type_context(nullptr);
     }
@@ -1188,9 +1188,9 @@ BytecodeResult ConstructorExpr::generate(State& state, Optional<bytecode::Regist
     auto reg = select_dst(state, dst);
     state.emit<bytecode::Alloca>(reg, structure->underlying_type());
 
-    for (size_t i = 0; i < arguments.size(); i++) {
-        bytecode::Operand index { i, state.context().i32() };
-        state.emit<bytecode::SetMember>(reg, index, arguments[i]);
+    for (auto& [index, argument] : arguments) {
+        bytecode::Operand field_index { index, state.context().i32() };
+        state.emit<bytecode::SetMember>(reg, field_index, argument);
     }
     
     state.set_register_state(

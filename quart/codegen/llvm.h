@@ -64,9 +64,6 @@ private:
 
     llvm::Type* type_of(Type*);
 
-    // Turns :: into . to make the LLVM IR cleaner
-    String normalize(String qualifed_name);
-
     llvm::BasicBlock* create_block_from(bytecode::BasicBlock*);
 
     llvm::Value* create_gep(bytecode::Register src, bytecode::Operand index);

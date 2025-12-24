@@ -339,7 +339,11 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
             reg = value.reg();
             value_type = type->underlying_type();
 
-            is_mutable = type->is_mutable();
+            if (register_state(reg).flags & RegisterState::Struct) {
+                is_mutable = true;
+            } else {
+                is_mutable = type->is_mutable();
+            }
         }
     } else {
         bytecode::Register value = result.value();
