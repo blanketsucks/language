@@ -291,6 +291,12 @@ void LLVMCodeGen::generate(bytecode::Alloca* inst) {
 
     llvm::IRBuilder<> tmp(&function->getEntryBlock(), function->getEntryBlock().begin());
     llvm::Value* alloca = tmp.CreateAlloca(type, nullptr);
+    tmp.CreateMemSet(
+        alloca,
+        llvm::Constant::getNullValue(llvm::Type::getInt8Ty(*m_context)),
+        inst->type()->size(),
+        {}
+    );
 
     this->set_register(inst->dst(), alloca);
 }
