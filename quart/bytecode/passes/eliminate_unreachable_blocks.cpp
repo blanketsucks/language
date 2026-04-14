@@ -4,6 +4,10 @@
 namespace quart::bytecode {
 
 bool EliminateUnreachableBlocksPass::is_called(Function* function) const {
+    if (function->is_main()) {
+        return true;
+    }
+
     auto iterator = m_function_use_count.find(function);
     if (iterator == m_function_use_count.end()) {
         return false;
@@ -16,10 +20,6 @@ bool EliminateUnreachableBlocksPass::is_called(Function* function) const {
             return false;
         }
 
-        if (caller->is_main()) {
-            return true;
-        }
-
         return is_called(caller);
     }
 
@@ -28,7 +28,7 @@ bool EliminateUnreachableBlocksPass::is_called(Function* function) const {
             continue;
         }
 
-        if (caller->is_main() || is_called(caller)) {
+        if (is_called(caller)) {
             return true;
         }
     }
@@ -48,7 +48,12 @@ void EliminateUnreachableBlocksPass::finalize() {
         }
 
         if (use.callers.size() == 1) {
-            function->set_used(!use.callers.contains(function));
+            if (use.callers.contains(function)) {
+                function->set_used(false);
+                continue;
+            }
+
+            function->set_used(is_called(*use.callers.begin()));
             continue;
         }
 
@@ -58,7 +63,7 @@ void EliminateUnreachableBlocksPass::finalize() {
                 continue;
             }
 
-            if (caller->is_main() || this->is_called(caller)) {
+            if (this->is_called(caller)) {
                 used = true;
                 break;
             }
