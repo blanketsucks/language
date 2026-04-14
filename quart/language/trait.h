@@ -46,6 +46,8 @@ public:
     bool has_generic_parameters() const { return !m_generic_parameters.empty(); }
 
     HashMap<Type*, GenericTrait>& scopes() { return m_scopes; }
+    bool has_scope(Type* type) const { return m_scopes.contains(type); }
+
     ErrorOr<GenericTraitScope> create_scope(State&, const Vector<Type*>& types);
 
     void add_body_expr(ast::Expr* expr) { m_body.push_back(expr); }

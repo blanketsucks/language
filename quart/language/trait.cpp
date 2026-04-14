@@ -21,7 +21,7 @@ ErrorOr<Trait::GenericTraitScope> Trait::create_scope(State& state, const Vector
     size_t index = 0;
 
     for (auto& [name, _] : m_generic_parameters) {
-        scope->add_symbol(TypeAlias::create(name, types[index], false));
+        scope->add_symbol(TypeAlias::create(name, types[index], true));
         index++;
     }
 

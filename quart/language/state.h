@@ -170,6 +170,8 @@ public:
 
     ErrorOr<size_t> size_of(ast::Expr const&);
 
+    HashMap<String, Type*> get_struct_generic_impl_arguments(Struct* structure, TraitType* trait) const;
+
 private:
     bytecode::Generator m_generator;
     OwnPtr<Context> m_context;

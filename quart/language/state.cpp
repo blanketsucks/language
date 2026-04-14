@@ -631,4 +631,25 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
     return {};
 }
 
+HashMap<String, Type*> State::get_struct_generic_impl_arguments(Struct* structure, TraitType* type) const {
+    HashMap<String, Type*> arguments;
+
+    auto trait = this->get_trait(type);
+    for (auto& impl : structure->impls()) {
+        if (!trait->has_scope(impl)) {
+            continue;
+        }
+
+        auto scope = trait->resolve_scope(impl);
+        for (auto& [name, span] : trait->generic_parameters()) {
+            auto* alias = scope->resolve<TypeAlias>(name);
+            arguments.insert({ name, alias->underlying_type() });
+        }
+
+        break;
+    }
+
+    return arguments;
+}
+
 }

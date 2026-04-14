@@ -59,6 +59,10 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
     switch (symbol->type()) {
         case Symbol::Struct: {
             auto* structure = symbol->as<Struct>();
+            if (structure->is_generic()) {
+                return err(span(), "Struct '{}' is generic and requires type arguments", m_path.format());
+            }
+
             return structure->underlying_type();
         }
         case Symbol::Enum: {

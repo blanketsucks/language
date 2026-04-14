@@ -106,6 +106,8 @@ public:
     PathSegment const& last() const { return m_last; }
     Deque<PathSegment> const& segments() const { return m_segments; }
 
+    bool has_segments() const { return !m_segments.empty(); }
+
     String const& name() const { return m_last.name(); }
 
     String format() const;

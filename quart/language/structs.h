@@ -2,15 +2,17 @@
 
 #include <quart/language/types.h>
 #include <quart/language/symbol.h>
+#include <quart/language/generics.h>
 #include <quart/common.h>
-
-#include <llvm/IR/Type.h>
-#include <llvm/IR/DerivedTypes.h>
 
 #include <map>
 #include <utility>
 
 namespace quart {
+
+namespace ast {
+    class Expr;
+}
 
 class Scope;
 
@@ -51,6 +53,10 @@ public:
         return RefPtr<Struct>(new Struct(move(name), underlying_type, move(fields), move(scope), is_public));
     }
 
+    static RefPtr<Struct> create(String name, StructType* underlying_type, RefPtr<Scope> scope, Vector<GenericTypeParameter> generic_parameters, bool is_public) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(scope), move(generic_parameters), is_public));
+    }
+
     String const& qualified_name() const { return m_qualified_name; }
     StructType* underlying_type() const { return m_underlying_type; }
     RefPtr<Scope> scope() const { return m_scope; }
@@ -59,14 +65,19 @@ public:
     void set_fields(HashMap<String, StructField> fields) { m_fields = move(fields); }
     HashMap<String, StructField> const& fields() const { return m_fields; }
 
+    Vector<GenericTypeParameter> const& generic_parameters() const { return m_generic_parameters; }
+    bool is_generic() const { return !m_generic_parameters.empty(); }
+
+    void set_body(Vector<ast::Expr*> body) { m_body = move(body); }
+    Vector<ast::Expr*> const& body() const { return m_body; }
+
     StructField const* find(const String& name) const;
 
     bool has_method(const String& name) const;
     class Function const* get_method(const String& name) const;
 
-    void add_impl_trait(TraitType* trait) {
-        m_impl_traits.push_back(trait);
-    }
+    Vector<TraitType*> const& impls() const { return m_impl_traits; }
+    void add_impl_trait(TraitType* trait) { m_impl_traits.push_back(trait); }
 
     bool impls_trait(TraitType* trait) const {
         return std::find(m_impl_traits.begin(), m_impl_traits.end(), trait) != m_impl_traits.end();
@@ -85,8 +96,22 @@ private:
     }
 
     Struct(
-        String name, StructType* underlying_type, HashMap<String, StructField> fields, RefPtr<Scope> scope, bool is_public
+        String name,
+        StructType* underlying_type,
+        HashMap<String, StructField> fields,
+        RefPtr<Scope> scope,
+        bool is_public
     ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(false), m_fields(move(fields)), m_scope(move(scope)) {
+        this->set_qualified_name();
+    }
+
+    Struct(
+        String name,
+        StructType* underlying_type,
+        RefPtr<Scope> scope,
+        Vector<GenericTypeParameter> generic_parameters,
+        bool is_public
+    ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(false), m_scope(move(scope)), m_generic_parameters(move(generic_parameters)) {
         this->set_qualified_name();
     }
     
@@ -100,6 +125,9 @@ private:
     RefPtr<Scope> m_scope = nullptr;
 
     Vector<TraitType*> m_impl_traits;
+
+    Vector<GenericTypeParameter> m_generic_parameters;
+    Vector<ast::Expr*> m_body;
 };
 
 }

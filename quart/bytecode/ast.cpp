@@ -20,6 +20,11 @@ struct ModuleQualifiedName {
     operator String() const { return name; }
 
     void append(String const& segment) {
+        if (name.empty()) {
+            name.append(segment);
+            return;
+        }
+
         name.append("::");
         name.append(segment);
     }
@@ -1103,6 +1108,83 @@ BytecodeResult ContinueExpr::generate(State& state, Optional<bytecode::Register>
     return {};
 }
 
+static ErrorOr<void> generate_generic_struct(State& state, StructExpr const& expr) {
+    Vector<GenericTypeParameter> generic_parameters;
+    Set<String> names;
+
+    auto scope = Scope::create(expr.name(), ScopeType::Struct, state.scope());
+
+    for (auto& parameter : expr.parameters()) {
+        generic_parameters.emplace_back(parameter.name, parameter.span);
+        names.insert(parameter.name);
+    
+        scope->add_symbol(
+            TypeAlias::create(
+                parameter.name,
+                EmptyType::get(state.context(), parameter.name),
+                false
+            )
+        );
+    }
+
+    auto* type = StructType::get(
+        state.context(),
+        Symbol::parse_qualified_name(expr.name(), state.scope()),
+        {}
+    );
+
+    HashMap<String, quart::StructField> fields;
+    Vector<Type*> types;
+
+    auto structure = Struct::create(expr.name(), type, scope, generic_parameters, expr.is_public());
+    structure->set_module(state.module());
+
+    for (auto& field : expr.fields()) {
+        Type* type = nullptr;
+        if (field.type->is<NamedTypeExpr>()) {
+            auto& path = field.type->as<NamedTypeExpr>()->path();
+            if (!path.has_segments() && names.contains(path.name())) {
+                type = EmptyType::get(state.context(), path.name());
+            }
+        }
+
+        if (!type) {
+            type = TRY(field.type->evaluate(state));
+        }
+
+        fields.insert_or_assign(field.name, quart::StructField { field.name, type, field.flags, field.index });
+        types.push_back(type);
+    }
+
+    type->set_fields(types);
+    type->set_decl(structure.get());
+
+    structure->set_fields(move(fields));
+
+    auto previous_scope = state.scope();
+    previous_scope->add_symbol(structure);
+
+    state.set_current_scope(scope);
+    state.set_current_struct(structure.get());
+
+    state.set_self_type(structure->underlying_type());
+
+    Vector<ast::Expr*> body;
+    for (auto& expr : expr.members()) {
+        TRY(state.type_checker().type_check(*expr));
+        body.push_back(expr.get());
+    }
+
+    structure->set_body(move(body));
+
+    state.set_current_scope(previous_scope);
+    state.set_self_type(nullptr);
+    state.set_current_struct(nullptr);
+
+    return {};
+}
+
+
 BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) const {
     if (m_opaque) {
         auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope()), {});
@@ -1112,6 +1194,11 @@ BytecodeResult StructExpr::generate(State& state, Optional<bytecode::Register>) 
         state.emit<bytecode::NewStruct>(&*structure);
 
         structure->set_module(state.module());
+        return {};
+    }
+
+    if (!m_parameters.empty()) {
+        TRY(generate_generic_struct(state, *this));
         return {};
     }
 
@@ -1313,15 +1400,16 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     String qualified_name = m_path.format();
 
     auto module = state.get_global_module(qualified_name);
-    auto current_scope = state.scope();
 
-    auto prev_scope = current_scope;
+    auto prev_scope = state.scope();
+    auto prev_module = state.module();
+
     if (module) {
         if (module->is_importing()) {
             return err(span(), "Could not import '{}' because a circular dependency was detected", m_path.name());
         }
 
-        current_scope->add_symbol(module);
+        prev_scope->add_symbol(module);
         return {};
     }
 
@@ -1329,6 +1417,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
     // FIXME: ModuleQualifiedName is reversed
     ModuleQualifiedName current_qualified_name;
 
+    auto current_scope = prev_scope;
     for (auto& seg : m_path.segments()) {
         if (seg.has_generic_arguments()) {
             return err(span(), "Generic arguments are not allowed in import paths");
@@ -1412,15 +1501,14 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
         }
     }
 
-    auto* prev_module = state.module();
-    current_scope = Scope::create(m_path.name(), ScopeType::Module);
+    auto scope = Scope::create(m_path.name(), ScopeType::Module);
 
-    module = Module::create(m_path.name(), qualified_name, path, current_scope);
+    module = Module::create(m_path.name(), qualified_name, path, scope);
     prev_scope->add_symbol(module);
 
     state.add_global_module(module);
 
-    state.set_current_scope(current_scope);
+    state.set_current_scope(scope);
     state.set_current_module(&*module);
 
     auto source_code = SourceCode::from_path(path);
@@ -1846,7 +1934,7 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
         auto alias = TypeAlias::create(
             parameter.name,
             EmptyType::get(state.context(), parameter.name), 
-            false
+            true
         );
 
         scope->add_symbol(move(alias));
