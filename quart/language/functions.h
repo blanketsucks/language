@@ -151,8 +151,13 @@ public:
     }
 
     void set_return_block(bytecode::BasicBlock* block) {
-        this->insert_block(block);
         m_return_block = block;
+    }
+
+    void insert_return_block() {
+        if (m_return_block) {
+            this->insert_block(m_return_block);
+        }
     }
 
     void set_body(ast::Expr* body) { m_body = body; }

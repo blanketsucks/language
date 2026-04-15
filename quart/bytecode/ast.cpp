@@ -994,6 +994,8 @@ BytecodeResult FunctionExpr::generate(State& state, Optional<bytecode::Register>
     TRY(m_body->generate(state, {}));
     TRY(function->finalize_body(state));
 
+    function->insert_return_block();
+
     state.switch_to(previous_block);
     state.set_current_scope(previous_scope);
 
