@@ -159,6 +159,11 @@ public:
     ast::Expr* const& body() const { return m_body; }
 
     void insert_block(bytecode::BasicBlock* block) {
+        if (!m_basic_blocks.empty()) {
+            auto* prev = m_basic_blocks.back();
+            prev->set_next(block);
+        }
+
         block->set_parent(this);
         m_basic_blocks.push_back(block);
     }

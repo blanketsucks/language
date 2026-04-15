@@ -30,6 +30,9 @@ public:
 
     void set_parent(Function* function) { m_parent = function; }
 
+    BasicBlock* next() const { return m_next; }
+    void set_next(BasicBlock* next) { m_next = next; }
+
     void dump() const;
 
 private:
@@ -40,6 +43,8 @@ private:
 
     bool m_terminated = false;
     Function* m_parent = nullptr;
+
+    BasicBlock* m_next = nullptr;
 };
 
 }

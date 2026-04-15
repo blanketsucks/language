@@ -16,6 +16,10 @@ void BasicBlock::add_instruction(Instruction* inst) {
     }
 
     inst->set_parent(this);
+    if (!m_instructions.empty()) {
+        auto* prev = m_instructions.back().get();
+        prev->set_next(inst);
+    }
 
     m_instructions.push_back(OwnPtr<Instruction>(inst));
     if (inst->is_terminator()) {

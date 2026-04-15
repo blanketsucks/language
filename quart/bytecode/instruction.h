@@ -139,6 +139,9 @@ public:
 
     void set_parent(BasicBlock* parent) { m_parent = parent; }
 
+    Instruction* next() const { return m_next; }
+    void set_next(Instruction* next) { m_next = next; }
+
     virtual void dump() const = 0;
 
 protected:
@@ -147,6 +150,8 @@ protected:
 private:
     InstructionType m_type;
     BasicBlock* m_parent = nullptr;
+
+    Instruction* m_next = nullptr;
 };
 
 template<Instruction::InstructionType Ty>
