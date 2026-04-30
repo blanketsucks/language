@@ -4,10 +4,10 @@
 #include <quart/parser/ast.h>
 #include <quart/temporary_change.h>
 #include <quart/lexer/lexer.h>
-
 #include <quart/language/trait.h>
-
 #include <quart/stacktrace.h>
+
+#include <unordered_set>
 
 namespace quart::ast {
 
@@ -469,7 +469,7 @@ static ErrorOr<void> generate_generic_function_call(
     for (auto& arg : args) {
         if (index >= params && function_type->is_var_arg()) {
             auto operand = TRY(ensure(state, *arg, {}));
-            arguments.push_back(operand);
+            arguments[index] = operand;
 
             continue;
         }
@@ -480,7 +480,7 @@ static ErrorOr<void> generate_generic_function_call(
         auto operand = TRY(ensure(state, *arg, {}));
 
         operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter_type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
-        arguments.push_back(operand);
+        arguments[index] = operand;
 
         state.set_type_context(nullptr);
         index++;
@@ -498,7 +498,44 @@ static ErrorOr<void> generate_function_call(
     size_t index,
     size_t params
 ) {
+    size_t i = index;
+    std::unordered_set<size_t> call_exprs;
+
     for (auto& arg : args) {
+        if (!arg->is<CallExpr>()) {
+            index++;
+            continue;
+        }
+
+        if (index >= params && function_type->is_var_arg()) {
+            auto operand = TRY(ensure(state, *arg, {}));
+            arguments[index] = operand;
+        } else {
+            FunctionParameter const& parameter = function->parameters()[index];
+            state.set_type_context(parameter.type);
+
+            auto operand = TRY(ensure(state, *arg, {}));
+            if (state.self()) {
+                return err(arg->span(), "Cannot use a struct method as a value");
+            }
+
+            operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
+            state.set_type_context(nullptr);
+
+            arguments[index] = operand;
+        }
+
+        call_exprs.emplace(index);
+        index++;
+    }
+
+    index = i;
+    for (auto& arg : args) {
+        if (call_exprs.contains(index)) {
+            index++;
+            continue;
+        }
+
         if (index >= params && function_type->is_var_arg()) {
             auto operand = TRY(ensure(state, *arg, {}));
             arguments.push_back(operand);
@@ -516,7 +553,7 @@ static ErrorOr<void> generate_function_call(
             }
 
             operand = TRY(state.type_check_and_cast(arg->span(), operand, parameter.type, "Cannot pass a value of type '{}' to a parameter that expects '{}'"));
-            arguments.push_back(operand);
+            arguments[index] = operand;
 
             state.set_type_context(nullptr);
             index++;
@@ -547,7 +584,7 @@ static ErrorOr<void> generate_function_call(
             state.emit<bytecode::Memcpy>(reg, src, underlying_type->size());
         }
 
-        arguments.emplace_back(reg);
+        arguments[index] = reg;
         index++;
     }
 
@@ -705,8 +742,10 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
     }
 
     Vector<bytecode::Operand> arguments;
+    arguments.resize(m_args.size() + self.has_value());
+
     if (self.has_value()) {
-        arguments.emplace_back(self.value());
+        arguments[0] = self.value();
         state.reset_self();
     }
 

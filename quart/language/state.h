@@ -27,12 +27,19 @@ public:
     State();
     ~State() = default;
 
+    NO_MOVE(State)
+    NO_COPY(State)
+
     void dump() const;
 
     Vector<OwnPtr<bytecode::Instruction>> const& global_instructions() const { return m_generator.global_instructions(); }
 
     bytecode::BasicBlock* current_block() { return m_generator.current_block(); }
     size_t register_count() { return m_generator.register_count(); }
+
+    bytecode::RegisterUse& register_uses(bytecode::Register reg) {
+        return m_generator.register_uses(reg);
+    }
 
     RefPtr<Scope> global_scope() const { return m_global_scope; }
 
