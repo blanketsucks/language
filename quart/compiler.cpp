@@ -3,7 +3,8 @@
 #include <quart/parser/parser.h>
 #include <quart/language/state.h>
 #include <quart/language/symbol.h>
-#include <quart/codegen/llvm.h>
+#include <quart/codegen/codegen.h>
+#include <quart/codegen/llvm/codegen.h>
 #include <quart/target.h>
 
 #include <quart/bytecode/passes/eliminate_unreachable_blocks.h>
@@ -146,7 +147,7 @@ void Compiler::run_bytecode_passes(State& state) const {
 }
 
 int Compiler::compile() const {
-    String target = m_options.has_target() ? Target::normalize(m_options.target) : llvm::sys::getDefaultTargetTriple();
+    String target = m_options.has_target() ? Target::normalize(m_options.target) : ::llvm::sys::getDefaultTargetTriple();
     Target::set_build_target(target);
 
     auto source_code = SourceCode::from_path(m_options.file);
@@ -163,8 +164,9 @@ int Compiler::compile() const {
     }
 
     this->run_bytecode_passes(state);
- 
-    codegen::LLVMCodeGen codegen(state, m_options.file.filename());
+
+#if 0
+    llvm::LLVMCodeGen codegen(state, m_options.file.filename());
     auto result = codegen.generate(m_options);
 
     if (result.is_err()) {
@@ -175,10 +177,23 @@ int Compiler::compile() const {
     }
 
     Vector<String> arguments = this->get_linker_arguments();
-    String command = llvm::join(arguments, " ");
+    String command = ::llvm::join(arguments, " ");
 
     int retcode = std::system(command.c_str());
     return retcode;
+#else
+    auto codegen = CodeGen::create(state, CodeGenType::x86_64, m_options.file.filename());
+    auto result = codegen->generate(m_options);
+    if (result.is_err()) {
+        auto& err = result.error();
+        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{}", err.message());
+
+        return 1;
+    }
+
+#endif
+
+    return 0;
 }
 
 }
