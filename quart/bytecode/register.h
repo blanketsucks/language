@@ -13,6 +13,10 @@ public:
         return m_index <=> other.m_index;
     }
 
+    constexpr bool operator==(const Register& other) const {
+        return m_index == other.m_index;
+    }
+
     constexpr u32 index() const { return m_index; }
     
 private:
