@@ -69,6 +69,7 @@ namespace quart {
 namespace quart::bytecode {
 
 class BasicBlock;
+class Generator;
 
 class Operand {
 public:
@@ -114,6 +115,7 @@ public:
 
     InstructionType type() const { return m_type; }
     BasicBlock* parent() const { return m_parent; }
+    Instruction* next() const { return m_next; }
 
     template<typename T> requires(std::is_base_of_v<Instruction, T>)
     bool is() const {
@@ -138,11 +140,10 @@ public:
     }
 
     void set_parent(BasicBlock* parent) { m_parent = parent; }
-
-    Instruction* next() const { return m_next; }
     void set_next(Instruction* next) { m_next = next; }
 
     virtual void dump() const = 0;
+    virtual void set_register_uses(Generator&) const = 0;
 
 protected:
     Instruction(InstructionType type) : m_type(type) {}
@@ -169,6 +170,7 @@ public:
     u64 src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -183,6 +185,7 @@ public:
     String const& value() const { return m_value; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -198,6 +201,7 @@ public:
     ArrayType* type() const { return m_type; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -214,6 +218,7 @@ public:
     Operand index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -230,6 +235,7 @@ public:
     Operand src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -246,6 +252,7 @@ public:
     Operand index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -261,6 +268,7 @@ public:
     bool set() const { return m_set; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Function* m_function;
@@ -275,6 +283,7 @@ public:
     u32 index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -289,6 +298,7 @@ public:
     u32 index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -303,6 +313,7 @@ public:
     Optional<Operand> src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     u32 m_index;
@@ -317,6 +328,7 @@ public:
     u32 index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -331,6 +343,7 @@ public:
     u32 index() const { return m_index; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -345,6 +358,7 @@ public:
     Constant* src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     u32 m_index;
@@ -359,6 +373,7 @@ public:
     Register src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -373,6 +388,7 @@ public:
     Operand src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -391,6 +407,7 @@ private:
         Operand rhs() const { return m_rhs; }                                                                           \
                                                                                                                         \
         void dump() const override;                                                                                     \
+        void set_register_uses(Generator&) const override;                                                                  \
     private:                                                                                                            \
         Register m_dst;                                                                                                 \
         Operand m_lhs;                                                                                                  \
@@ -410,6 +427,7 @@ public:
 
     bool is_terminator() const override { return true; }
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     BasicBlock* m_target;
@@ -430,6 +448,8 @@ public:
     bool is_terminator() const override { return true; }
     void dump() const override;
 
+    void set_register_uses(Generator&) const override;
+
 private:
     Operand m_condition;
     
@@ -444,6 +464,7 @@ public:
     Function* function() const { return m_function; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Function* m_function;
@@ -457,6 +478,7 @@ public:
     Function* function() const { return m_function; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -471,6 +493,8 @@ public:
 
     bool is_terminator() const override { return true; }
     void dump() const override;
+
+    void set_register_uses(Generator&) const override;
 
 private:
     Optional<Operand> m_value;
@@ -488,6 +512,7 @@ public:
     Vector<Operand> const& arguments() const { return m_arguments; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -505,6 +530,7 @@ public:
     Type* type() const { return m_type; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -520,6 +546,7 @@ public:
     Struct* structure() const { return m_structure; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Struct* m_structure;
@@ -534,6 +561,7 @@ public:
     Vector<Operand> const& arguments() const { return m_arguments; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -549,6 +577,7 @@ public:
     Type* type() const { return m_type; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -564,6 +593,7 @@ public:
     Vector<Operand> const& elements() const { return m_elements; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -579,6 +609,7 @@ public:
     Type* type() const { return m_type; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -593,6 +624,7 @@ public:
     bool value() const { return m_value; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
 
 private:
     Register m_dst;
@@ -607,6 +639,7 @@ public:
     Operand src() const { return m_src; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -622,6 +655,7 @@ public:
     size_t size() const { return m_size; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override;
 
 private:
     Register m_dst;
@@ -636,6 +670,8 @@ public:
     Register dst() const { return m_dst; }
 
     void dump() const override;
+    void set_register_uses(Generator&) const override {}
+
 private:
     Register m_dst;
 };

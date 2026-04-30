@@ -5,6 +5,33 @@
 
 namespace quart::bytecode {
 
+class RegisterUse {
+public:
+    RegisterUse() = default;
+
+    Vector<Instruction*> const& all_references() const { return m_references; }
+    void add(Instruction* instruction) { m_references.push_back(instruction); }
+
+    template<typename T> requires(std::is_base_of_v<Instruction, T>)
+    T* get() {
+        for (auto& ref : m_references) {
+            if (T::classof(ref)) {
+                return static_cast<T*>(ref);
+            }
+        }
+
+        return nullptr;
+    }
+
+    template<typename T> requires(std::is_base_of_v<Instruction, T>)
+    bool contains() {
+        return this->get<T>() ? true : false;
+    }
+
+private:
+    Vector<Instruction*> m_references;
+};
+
 class Generator {
 public:
     Generator() = default;
@@ -29,8 +56,12 @@ public:
             m_global_instructions.push_back(OwnPtr<Instruction>(op));
         }
 
+        op->set_register_uses(*this);
         return op;
     }
+
+    RegisterUse& register_uses(Register reg) { return m_register_uses[reg]; }
+    HashMap<Register, RegisterUse> const& all_register_uses() const { return m_register_uses; }
 
 private:
     BasicBlock* m_current_block = nullptr;
@@ -40,6 +71,8 @@ private:
     
     u32 m_next_block_id = 0;
     u32 m_next_register_id = 0;
+
+    HashMap<Register, RegisterUse> m_register_uses;
 };
 
 }

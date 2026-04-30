@@ -2,6 +2,7 @@
 #include <quart/bytecode/basic_block.h>
 #include <quart/language/functions.h>
 #include <quart/language/structs.h>
+#include <quart/language/state.h>
 
 namespace quart::bytecode {
 
@@ -58,6 +59,26 @@ static String fmt(Vector<Operand> operands, char open = '[', char close = ']') {
     return str;
 }
 
+static void set_register_use(Generator& gen, const Instruction* instruction, Register reg) {
+    // NOLINTNEXTLINE
+    gen.register_uses(reg).add(const_cast<Instruction*>(instruction));
+}
+
+static void set_operand_use(Generator& gen, const Instruction* instruction, Operand op) {
+    if (op.is_value()) {
+        return;
+    }
+
+    // NOLINTNEXTLINE
+    set_register_use(gen, instruction, op.reg());
+}
+
+static void set_operands_use(Generator& gen, const Instruction* instruction, const Vector<Operand>& ops) {
+    for (auto& op : ops) {
+        set_operand_use(gen, instruction, op);
+    }
+}
+
 void Move::dump() const {
     outln("Move {}, {}", fmt(m_dst), m_src);
 }
@@ -68,6 +89,10 @@ void NewString::dump() const {
 
 void NewArray::dump() const {
     outln("NewArray {}, {}", fmt(m_dst), fmt(m_elements));
+}
+
+void NewArray::set_register_uses(Generator& gen) const {
+    set_operands_use(gen, this, m_elements);
 }
 
 void NewLocalScope::dump() const {
@@ -90,6 +115,12 @@ void SetLocal::dump() const {
     }
 }
 
+void SetLocal::set_register_uses(Generator& gen) const {
+    if (m_src.has_value()) {
+        set_operand_use(gen, this, *m_src);
+    }
+}
+
 void GetGlobal::dump() const {
     outln("GetGlobal {}, {}", fmt(m_dst), m_index);
 }
@@ -106,26 +137,51 @@ void GetMember::dump() const {
     outln("GetMember {}, {}, {}", fmt(m_dst), fmt(m_src), fmt(m_index));
 }
 
+void GetMember::set_register_uses(Generator& gen) const {
+    set_register_use(gen, this, m_src);
+}
+
 void GetMemberRef::dump() const {
     outln("GetMemberRef {}, {}, {}", fmt(m_dst), fmt(m_src), fmt(m_index));
+}
+
+void GetMemberRef::set_register_uses(Generator& gen) const {
+    set_register_use(gen, this, m_src);
 }
 
 void SetMember::dump() const {
     outln("SetMember {}, {}, {}", fmt(m_src), fmt(m_dst), fmt(m_index));
 }
 
+void SetMember::set_register_uses(Generator& gen) const {
+    set_operand_use(gen, this, m_src);
+    set_operand_use(gen, this, m_index);
+}
+
 void Read::dump() const {
     outln("Read {}, {}", fmt(m_dst), fmt(m_src));
+}
+
+void Read::set_register_uses(Generator& gen) const {
+    set_register_use(gen, this, m_src);
 }
 
 void Write::dump() const {
     outln("Write {}, {}", fmt(m_dst), fmt(m_src));
 }
 
+void Write::set_register_uses(Generator& gen) const {
+    set_operand_use(gen, this, m_src);
+}
+
 // NOLINTNEXTLINE
-#define Op(x)                                                                                                                   \
-    void x::dump() const {                                                                                                      \
+#define Op(x)                                                           \
+    void x::dump() const {                                              \
         outln("{} {}, {}, {}", #x, fmt(m_dst), fmt(m_lhs), fmt(m_rhs)); \
+    }                                                                   \
+    void x::set_register_uses(Generator& gen) const {                   \
+        set_operand_use(gen, this, m_lhs);                              \
+        set_operand_use(gen, this, m_rhs);                              \
     }
 
 ENUMERATE_BINARY_OPS(Op)
@@ -138,6 +194,10 @@ void Jump::dump() const {
 
 void JumpIf::dump() const {
     outln("JumpIf {}, {}, {}", fmt(m_condition), m_true_target->name(), m_false_target->name());
+}
+
+void JumpIf::set_register_uses(Generator& gen) const {
+    set_operand_use(gen, this, m_condition);
 }
 
 void NewFunction::dump() const {
@@ -156,12 +216,27 @@ void Return::dump() const {
     }
 }
 
+void Return::set_register_uses(Generator& gen) const {
+    if (m_value.has_value()) {
+        set_operand_use(gen, this, *m_value);
+    }
+}
+
 void Call::dump() const {
     outln("Call {}, {}, {}", fmt(m_dst), fmt(m_function), fmt(m_arguments));
 }
 
+void Call::set_register_uses(Generator& gen) const {
+    set_register_use(gen, this, m_function);
+    set_operands_use(gen, this, m_arguments);
+}
+
 void Cast::dump() const {
     outln("Cast {}, {}, {}", fmt(m_dst), fmt(m_src), m_type->str());
+}
+
+void Cast::set_register_uses(Generator& gen) const {
+    set_operand_use(gen, this, m_src);
 }
 
 void NewStruct::dump() const {
@@ -170,6 +245,10 @@ void NewStruct::dump() const {
 
 void Construct::dump() const {
     outln("Construct {}, {}, {}", fmt(m_dst), m_structure->qualified_name(), fmt(m_arguments));
+}
+
+void Construct::set_register_uses(Generator& gen) const {
+    set_operands_use(gen, this, m_arguments);
 }
 
 void Alloca::dump() const {
@@ -188,8 +267,16 @@ void Not::dump() const {
     outln("Not {}, {}", fmt(m_dst), fmt(m_src));
 }
 
+void Not::set_register_uses(Generator& gen) const {
+    set_operand_use(gen, this, m_src);
+}
+
 void Memcpy::dump() const {
     outln("Memcpy {}, {}, {}", fmt(m_dst), fmt(m_src), m_size);
+}
+
+void Memcpy::set_register_uses(Generator& gen) const {
+    set_register_use(gen, this, m_src);
 }
 
 void GetReturn::dump() const {
@@ -198,6 +285,10 @@ void GetReturn::dump() const {
 
 void NewTuple::dump() const {
     outln("NewTuple {}, {}", fmt(m_dst), fmt(m_elements, '(', ')'));
+}
+
+void NewTuple::set_register_uses(Generator& gen) const {
+    set_operands_use(gen, this, m_elements);
 }
 
 }

@@ -19,6 +19,7 @@ public:
 
     String const& name() const { return m_name; }
     Function* parent() const { return m_parent; }
+    BasicBlock* next() const { return m_next; }
 
     Vector<OwnPtr<Instruction>>& instructions() { return m_instructions; }
     Vector<OwnPtr<Instruction>> const& instructions() const { return m_instructions; }
@@ -29,8 +30,6 @@ public:
     void terminate() { m_terminated = true; }
 
     void set_parent(Function* function) { m_parent = function; }
-
-    BasicBlock* next() const { return m_next; }
     void set_next(BasicBlock* next) { m_next = next; }
 
     void dump() const;
