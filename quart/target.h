@@ -15,7 +15,7 @@ public:
     static Target const& build();
     static void set_build_target(const Target&);
 
-    llvm::Triple const& triple() const { return m_triple; }
+    ::llvm::Triple const& triple() const { return m_triple; }
 
     StringView arch() const { return m_triple.getArchName(); }
     StringView os() const { return m_triple.getOSName(); }
@@ -27,7 +27,7 @@ public:
     size_t word_size() const;
 
 private:
-    llvm::Triple m_triple;
+    ::llvm::Triple m_triple;
 };
 
 
