@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 
 project(quart)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 
 set(NEEDED_LLVM_VERSION 20)
 find_package(LLVM CONFIG REQUIRED)

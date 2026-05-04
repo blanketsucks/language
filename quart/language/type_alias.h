@@ -32,7 +32,7 @@ public:
     bool all_parameters_have_default() const; // FIXME: Find a better name for this
 
     ErrorOr<Type*> evaluate(State&);
-    ErrorOr<Type*> evaluate(State&, const ast::ExprList<ast::TypeExpr>& args);
+    ErrorOr<Type*> evaluate(State&, const ExprList<ast::TypeExpr>& args);
     ErrorOr<Type*> evaluate(State&, const Vector<Type*>& args);
 
 private:

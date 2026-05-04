@@ -192,7 +192,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type(bool allow_generic_arguments) {
                 return err(m_current.span(), "Tuple types mist at least have a single element");
             }
 
-            ast::ExprList<ast::TypeExpr> elements;
+            ExprList<ast::TypeExpr> elements;
             while (!m_current.is(TokenKind::RParen)) {
                 elements.push_back(TRY(this->parse_type()));
                 if (!m_current.is(TokenKind::Comma)) {
@@ -256,7 +256,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type(bool allow_generic_arguments) {
             this->next();
             TRY(this->expect(TokenKind::LParen));
 
-            ast::ExprList<ast::TypeExpr> params;
+            ExprList<ast::TypeExpr> params;
             while (!m_current.is(TokenKind::RParen)) {
                 params.push_back(TRY(this->parse_type()));
                 if (!m_current.is(TokenKind::Comma)) {
@@ -282,7 +282,7 @@ ParseResult<ast::TypeExpr> Parser::parse_type(bool allow_generic_arguments) {
     }
 }
 ErrorOr<ExprBlock> Parser::parse_expr_block() {
-    ast::ExprList<> block;
+    ExprList<> block;
     Span start = m_current.span();
 
     while (!m_current.is(TokenKind::RBrace)) {
@@ -320,7 +320,7 @@ ErrorOr<Vector<ast::GenericParameter>> Parser::parse_generic_parameters() {
         String name = token.value();
         Span span = token.span();
 
-        ast::ExprList<ast::TypeExpr> constraints;
+        ExprList<ast::TypeExpr> constraints;
         OwnPtr<ast::TypeExpr> default_type = nullptr;
 
         if (m_current.is(TokenKind::Colon)) {
@@ -363,8 +363,8 @@ ErrorOr<Vector<ast::GenericParameter>> Parser::parse_generic_parameters() {
     return parameters;
 }
 
-ErrorOr<ast::ExprList<ast::TypeExpr>> Parser::parse_generic_arguments() {
-    ast::ExprList<ast::TypeExpr> arguments;
+ErrorOr<ExprList<ast::TypeExpr>> Parser::parse_generic_arguments() {
+    ExprList<ast::TypeExpr> arguments;
 
     TRY(this->expect(TokenKind::Lt));
     while (!m_current.is(TokenKind::Gt)) {
@@ -602,7 +602,7 @@ ParseResult<ast::StructExpr> Parser::parse_struct(bool is_public) {
 
     Vector<ast::GenericParameter> parameters;
     Vector<ast::StructField> fields;
-    ast::ExprList<> members;
+    ExprList<> members;
 
     if (m_current.is(TokenKind::SemiColon)) {
         this->next();
@@ -836,7 +836,7 @@ ParseResult<ast::Expr> Parser::parse_extern_block(bool is_public) {
     }
 
     if (m_current.is(TokenKind::LBrace)) {
-        ast::ExprList<> definitions;
+        ExprList<> definitions;
         this->next();
 
         while (!m_current.is(TokenKind::RBrace)) {
@@ -904,7 +904,7 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
 
     TRY(this->expect(TokenKind::FatArrow));
 
-    ast::ExprList<> body;
+    ExprList<> body;
     body.push_back(TRY(this->expr(false)));
 
     Span start = params.front().span;
@@ -919,7 +919,7 @@ ParseResult<ast::Expr> Parser::parse_anonymous_function() {
 }
 
 ParseResult<ast::CallExpr> Parser::parse_call(OwnPtr<ast::Expr> callee) {
-    ast::ExprList<> args;
+    ExprList<> args;
     HashMap<String, OwnPtr<ast::Expr>> kwargs;
 
     bool has_kwargs = false;
@@ -1044,7 +1044,7 @@ ParseResult<ast::Expr> Parser::parse_impl() {
 
     TRY(this->expect(TokenKind::LBrace));
 
-    ast::ExprList<> body;
+    ExprList<> body;
     m_self_allowed = true;
 
     while (!m_current.is(TokenKind::RBrace)) {
@@ -1087,7 +1087,7 @@ ParseResult<ast::TraitExpr> Parser::parse_trait() {
     String name = token.value();
     Span span = token.span();
 
-    ast::ExprList<> body;
+    ExprList<> body;
     m_self_allowed = true;
 
     TRY(this->expect(TokenKind::LBrace));
@@ -1154,11 +1154,11 @@ ParseResult<ast::Expr> Parser::parse_async() {
     return this->parse_function(LinkageSpecifier::None, false, true);
 }
 
-ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeExpr> arguments, bool ignore_last, bool allow_generic_arguments) {
+ErrorOr<Path> Parser::parse_path(Optional<String> name, ExprList<ast::TypeExpr> arguments, bool ignore_last, bool allow_generic_arguments) {
     PathSegment segment = {};
     if (!name.has_value()) {
         String name = TRY(this->expect(TokenKind::Identifier)).value();
-        ast::ExprList<ast::TypeExpr> arguments;
+        ExprList<ast::TypeExpr> arguments;
 
         if (m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             arguments = TRY(this->parse_generic_arguments());
@@ -1166,7 +1166,7 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeE
 
         segment = { move(name), move(arguments) };
     } else {
-        ast::ExprList<ast::TypeExpr> args;
+        ExprList<ast::TypeExpr> args;
         if (arguments.empty() && m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             args = TRY(this->parse_generic_arguments());
         } else {
@@ -1187,7 +1187,7 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeE
             return err(m_current.span(), "Expected 'identifier'");
         }
 
-        ast::ExprList<ast::TypeExpr> arguments;
+        ExprList<ast::TypeExpr> arguments;
         if (m_current.is(TokenKind::Lt) && allow_generic_arguments) {
             arguments = TRY(this->parse_generic_arguments());
         }
@@ -1199,12 +1199,12 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ast::ExprList<ast::TypeE
     return path;
 }
 
-ErrorOr<ast::ExprList<>> Parser::parse() {
+ErrorOr<ExprList<>> Parser::parse() {
     return this->statements();
 }
 
-ErrorOr<ast::ExprList<>> Parser::statements() {
-    ast::ExprList<> statements;
+ErrorOr<ExprList<>> Parser::statements() {
+    ExprList<> statements;
 
     while (!m_current.is(TokenKind::EOS)) {
         ast::Attributes attrs = TRY(this->parse_attributes());
@@ -1784,7 +1784,7 @@ ParseResult<ast::Expr> Parser::primary() {
 
             expr = TRY(this->expr(false));
             if (m_current.is(TokenKind::Comma)) {
-                ast::ExprList<> elements;
+                ExprList<> elements;
                 elements.push_back(move(expr));
 
                 this->next();
@@ -1810,7 +1810,7 @@ ParseResult<ast::Expr> Parser::primary() {
         }
         case TokenKind::LBracket: {
             this->next();
-            ast::ExprList<> elements;
+            ExprList<> elements;
 
             if (!m_current.is(TokenKind::RBracket)) {
                 auto element = TRY(this->expr(false));

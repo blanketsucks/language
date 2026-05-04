@@ -30,7 +30,7 @@ ErrorOr<Type*> TypeAlias::evaluate(State& state) {
     return this->evaluate(state, Vector<Type*>(range.begin(), range.end()));
 }
 
-ErrorOr<Type*> TypeAlias::evaluate(State& state, const ast::ExprList<ast::TypeExpr>& args) {
+ErrorOr<Type*> TypeAlias::evaluate(State& state, const ExprList<ast::TypeExpr>& args) {
     Vector<Type*> arguments;
     arguments.reserve(args.size());
 

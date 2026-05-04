@@ -1,6 +1,6 @@
 Checks: modernize-*, clang-analyzer-*, performance-*, cppcoreguidelines-*, bugprone-*, -readability-*,
         -modernize-use-trailing-return-type, -modernize-use-nodiscard, -bugprone-easily-swappable-parameters,
-        -modernize-use-designated-initializers
+        -modernize-use-designated-initializers, -cppcoreguidelines-pro-type-union-access
 
 CheckOptions:
   - key: cppcoreguidelines-avoid-do-while.IgnoreMacros

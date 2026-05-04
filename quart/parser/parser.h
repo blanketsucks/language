@@ -26,7 +26,7 @@ public:
 };
 
 struct ExprBlock {
-    ast::ExprList<> block;
+    ExprList<> block;
     Span span;
 };
 
@@ -98,7 +98,7 @@ public:
     );
 
     ErrorOr<Vector<ast::GenericParameter>> parse_generic_parameters();
-    ErrorOr<ast::ExprList<ast::TypeExpr>> parse_generic_arguments();
+    ErrorOr<ExprList<ast::TypeExpr>> parse_generic_arguments();
 
     ErrorOr<ast::Ident> parse_identifier();
 
@@ -134,7 +134,7 @@ public:
     // Parses `foo::bar::baz` into a deque of strings
     [[nodiscard]] ErrorOr<Path> parse_path(
         Optional<String> name = {},
-        ast::ExprList<ast::TypeExpr> arguments = {},
+        ExprList<ast::TypeExpr> arguments = {},
         bool ignore_last = false,
         bool allow_generic_arguments = true
     );
@@ -144,8 +144,8 @@ public:
 
     ErrorOr<ast::Attributes> parse_attributes();
 
-    ErrorOr<ast::ExprList<>> parse();
-    ErrorOr<ast::ExprList<>> statements();
+    ErrorOr<ExprList<>> parse();
+    ErrorOr<ExprList<>> statements();
 
     ParseResult<ast::Expr> statement();
     ParseResult<ast::Expr> expr(bool enforce_semicolon = true);

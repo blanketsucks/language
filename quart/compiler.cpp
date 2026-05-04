@@ -156,7 +156,7 @@ int Compiler::compile() const {
     Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));
-    ast::ExprList<> ast = TRY(parser.parse());
+    ExprList<> ast = TRY(parser.parse());
 
     State state;
     for (auto& expr : ast) {
