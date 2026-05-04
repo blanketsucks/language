@@ -1,4 +1,3 @@
-#include "quart/language/functions.h"
 #include <quart/language/state.h>
 #include <quart/parser/parser.h>
 #include <quart/parser/ast.h>
@@ -8,6 +7,7 @@
 #include <quart/stacktrace.h>
 
 #include <unordered_set>
+#include <ranges>
 
 namespace quart::ast {
 
@@ -2039,7 +2039,7 @@ static ErrorOr<void> verify_trait_implementation(
         return {};
     };
 
-    for (auto [p1, p2] : llvm::zip_equal(function->parameters(), impl->parameters())) {
+    for (auto [p1, p2] : std::views::zip(function->parameters(), impl->parameters())) {
         if (p1.is_self() && !p2.is_self()) {
             return err(p2.span, "The first parameter of a method must be 'self'");
         } else if (p1.is_self() && p2.is_self()) {
