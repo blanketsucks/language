@@ -11,7 +11,7 @@ ErrorOr<Type*> TypeChecker::resolve_reference(Scope& scope, Span span, const Str
 
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             if (is_mutable && !variable->is_mutable()) {
                 return err(span, "Cannot take a mutable reference to an immutable variable");
             }
@@ -283,11 +283,11 @@ ErrorOr<Type*> TypeChecker::type_check(ast::IdentifierExpr const& expr) {
 
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             return variable->value_type();
         }
         case Symbol::Function: {
-            auto* function = symbol->as<Function>();
+            auto* function = cast_unchecked<Function>(symbol);
             return function->underlying_type()->get_pointer_to();
         }
         default:
@@ -848,11 +848,11 @@ ErrorOr<Type*> TypeChecker::type_check(ast::PathExpr const& expr) {
     auto* symbol = TRY(m_state.access_symbol(expr.span(), expr.path()));
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             return variable->value_type();
         }
         case Symbol::Function: {
-            auto* function = symbol->as<Function>();
+            auto* function = cast_unchecked<Function>(symbol);
             return function->underlying_type()->get_pointer_to();
         }
         default:

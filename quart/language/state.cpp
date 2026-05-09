@@ -1,5 +1,6 @@
 #include <quart/language/state.h>
 #include <quart/parser/parser.h>
+#include <quart/casting.h>
 
 namespace quart {
 
@@ -94,10 +95,11 @@ ErrorOr<RefPtr<Scope>> State::resolve_scope(Span span, Scope& current_scope, con
     }
 
     RefPtr<Scope> scope = nullptr;
-    if (symbol->is<Module>()) {
-        scope = symbol->as<Module>()->scope();
+
+    if (symbol->type() == Symbol::Module) {
+        scope = cast_unchecked<Module>(symbol)->scope();
     } else {
-        scope = symbol->as<Struct>()->scope();
+        scope = cast_unchecked<Struct>(symbol)->scope();
     }
 
     return scope;
@@ -159,7 +161,7 @@ ErrorOr<bytecode::Register> State::resolve_reference(
 
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast<Variable>(symbol);
 
             if (variable->flags() & Variable::Global) {
                 emit<bytecode::GetGlobalRef>(reg, variable->index());
@@ -271,11 +273,11 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
 
 ErrorOr<Struct*> State::resolve_struct(ast::Expr const& expr) {
     auto* symbol = TRY(this->resolve_symbol(expr));
-    if (!symbol->is<Struct>()) {
-        return err(expr.span(), "'{}' does not name a struct", symbol->name());
+    if (auto* structure = cast<Struct>(symbol)) {
+        return structure;
     }
 
-    return symbol->as<Struct>();
+    return err(expr.span(), "'{}' does not name a struct", symbol->name());
 }
 
 ErrorOr<bytecode::Operand> State::type_check_and_cast(Span span, bytecode::Operand value, Type* target, StringView error_message) {
@@ -605,19 +607,19 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
 
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             return variable->value_type()->size();
         }
         case Symbol::Function: {
-            auto* function = symbol->as<Function>();
+            auto* function = cast_unchecked<Function>(symbol);
             return function->underlying_type()->size();
         }
         case Symbol::Struct: {
-            auto* structure = symbol->as<Struct>();
+            auto* structure = cast_unchecked<Struct>(symbol);
             return structure->underlying_type()->size();
         }
         case Symbol::TypeAlias: {
-            auto* alias = symbol->as<TypeAlias>();
+            auto* alias = cast_unchecked<TypeAlias>(symbol);
             if (alias->is_generic()) {
                 return err(expr.span(), "Cannot determine the size of a generic type alias");
             }

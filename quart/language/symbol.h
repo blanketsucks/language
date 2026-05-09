@@ -41,18 +41,6 @@ public:
     bool is_type_alias() const { return m_type == SymbolType::TypeAlias; }
     bool is_module() const { return m_type == SymbolType::Module; }
 
-    template<typename T> requires(std::is_base_of_v<Symbol, T>)
-    T* as() {
-        if (!T::classof(this)) {
-            return nullptr;
-        }
-        
-        return static_cast<T*>(this);
-    }
-
-    template<typename T> requires(std::is_base_of_v<Symbol, T>)
-    bool is() const { return T::classof(this); }
-
     bool is(SymbolType type) const { return m_type == type; }
 
     template<typename ...Args> requires(of_type_v<SymbolType, Args...>)

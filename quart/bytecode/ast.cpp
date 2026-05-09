@@ -5,6 +5,7 @@
 #include <quart/lexer/lexer.h>
 #include <quart/language/trait.h>
 #include <quart/stacktrace.h>
+#include <quart/casting.h>
 
 #include <unordered_set>
 #include <ranges>
@@ -176,14 +177,14 @@ BytecodeResult IdentifierExpr::generate(State& state, Optional<bytecode::Registe
 
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             auto reg = select_dst(state, dst);
 
             variable->emit(state, reg);
             return bytecode::Operand(reg);
         }
         case Symbol::Function: {
-            auto* function = symbol->as<Function>();
+            auto* function = cast_unchecked<Function>(symbol);
             auto reg = select_dst(state, dst);
 
             if (!function->has_trait_parameter()) {
@@ -1394,13 +1395,13 @@ BytecodeResult PathExpr::generate(State& state, Optional<bytecode::Register> dst
     auto reg = select_dst(state, dst);
     switch (symbol->type()) {
         case Symbol::Variable: {
-            auto* variable = symbol->as<Variable>();
+            auto* variable = cast_unchecked<Variable>(symbol);
             variable->emit(state, reg);
             
             return bytecode::Operand(reg);
         }
         case Symbol::Function: {
-            auto* function = symbol->as<Function>();
+            auto* function = cast_unchecked<Function>(symbol);
             state.emit<bytecode::GetFunction>(reg, function);
 
             state.set_register_state(reg, function->underlying_type()->get_pointer_to(), function);
@@ -1569,7 +1570,7 @@ BytecodeResult ImportExpr::generate(State& state, Optional<bytecode::Register>) 
 
     if (m_is_wildcard) {
         for (auto& [name, symbol] : current_scope->symbols()) {
-            if (symbol->is<Module>() || !symbol->is_public()) {
+            if (isa<Module>(symbol) || !symbol->is_public()) {
                 continue;
             }
 
@@ -2120,11 +2121,11 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     }
 
     for (auto& [name, symbol] : trait->scope()->symbols()) {
-        if (!symbol->is<Function>()) {
+        if (!isa<Function>(*symbol)) {
             continue;
         }
 
-        auto* function = symbol->as<Function>();
+        auto* function = cast_unchecked<Function>(*symbol);
         if (!function->is_decl()) {
             continue;
         }

@@ -58,7 +58,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
 
     switch (symbol->type()) {
         case Symbol::Struct: {
-            auto* structure = symbol->as<Struct>();
+            auto* structure = cast_unchecked<Struct>(symbol);
             if (structure->is_generic()) {
                 return err(span(), "Struct '{}' is generic and requires type arguments", m_path.format());
             }
@@ -66,11 +66,11 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
             return structure->underlying_type();
         }
         case Symbol::Enum: {
-            auto* enumeration = symbol->as<Enum>();
+            auto* enumeration = cast_unchecked<Enum>(symbol);
             return enumeration->underlying_type();
         }
         case Symbol::TypeAlias: {
-            auto* alias = symbol->as<TypeAlias>();
+            auto* alias = cast_unchecked<TypeAlias>(symbol);
             Type* underlying_type = alias->underlying_type();
 
             auto& last = m_path.last();
@@ -91,7 +91,7 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
             return underlying_type;
         }
         case Symbol::Trait: {
-            auto* trait = symbol->as<Trait>();
+            auto* trait = cast_unchecked<Trait>(symbol);
             if (trait->has_generic_parameters()) {
                 return err(span(), "Trait '{}' requires type arguments", trait->name());
             }
@@ -193,7 +193,7 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) const {
 
     switch (symbol->type()) {
         case Symbol::TypeAlias: {
-            auto* type_alias = symbol->as<TypeAlias>();
+            auto* type_alias = cast_unchecked<TypeAlias>(symbol);
             if (!type_alias->is_generic()) {
                 return err(span(), "Type '{}' is not generic", type_alias->name());
             }
@@ -201,7 +201,7 @@ ErrorOr<Type*> GenericTypeExpr::evaluate(State& state) const {
             return type_alias->evaluate(state, args);
         }
         case Symbol::Trait: {
-            auto* trait = symbol->as<Trait>();
+            auto* trait = cast_unchecked<Trait>(symbol);
             if (!trait->has_generic_parameters()) {
                 return err(span(), "Trait '{}' is not generic", trait->name());
             } else if (args.size() != trait->generic_parameters().size()) {

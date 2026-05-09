@@ -10,6 +10,7 @@
 #include <quart/language/variables.h>
 #include <quart/language/symbol.h>
 #include <quart/parser/ast.h>
+#include <quart/casting.h>
 
 #include <string>
 #include <vector>
@@ -52,7 +53,7 @@ public:
             return nullptr;
         }
 
-        return symbol->as<T>();
+        return cast<T>(symbol);
     }
 
     void add_symbol(RefPtr<Symbol> symbol) {
