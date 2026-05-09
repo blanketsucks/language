@@ -67,7 +67,7 @@ ConditionCode negate(ConditionCode cc);
 }
 
 // NOLINTNEXTLINE
-#define DEFINE_ENUM_FORMATTER(cls)                                                                                  \                
+#define DEFINE_ENUM_FORMATTER(cls)                                                                                  \
     template <>                                                                                                     \
     struct std::formatter<cls> {                                                                                    \
         constexpr auto parse(std::format_parse_context& ctx) {                                                      \
