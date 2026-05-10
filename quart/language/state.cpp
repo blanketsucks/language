@@ -198,21 +198,21 @@ ErrorOr<bytecode::Register> State::resolve_reference(
     
     switch (expr.kind()) {
         case ExprKind::Identifier: {
-            auto* ident = expr.as<ast::IdentifierExpr>();
+            auto* ident = cast_unchecked<ast::IdentifierExpr>(expr);
             return this->resolve_reference(*m_current_scope, expr.span(), ident->name(), is_mutable, dst, override_mutability);
         }
         case ExprKind::Path: {
-            auto& path = expr.as<ast::PathExpr>()->path();
+            auto& path = cast_unchecked<ast::PathExpr>(expr)->path();
             auto scope = TRY(this->resolve_scope_path(expr.span(), path));
 
             return this->resolve_reference(*scope, expr.span(), path.name(), is_mutable, dst, override_mutability);
         }
         case ExprKind::Attribute: {
-            auto* attribute = expr.as<ast::AttributeExpr>();
+            auto* attribute = cast_unchecked<ast::AttributeExpr>(expr);
             return TRY(this->generate_attribute_access(*attribute, true, is_mutable, dst));
         }
         case ExprKind::Index: {
-            auto index = expr.as<ast::IndexExpr>();
+            auto index = cast_unchecked<ast::IndexExpr>(expr);
             return TRY(this->generate_index_access(*index, true, is_mutable, dst));
         }
         default: {
@@ -246,7 +246,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
     
     switch (expr.kind()) {
         case ExprKind::Identifier: {
-            auto* identifier = expr.as<ast::IdentifierExpr>();
+            auto* identifier = cast_unchecked<ast::IdentifierExpr>(expr);
             auto* symbol = m_current_scope->resolve(identifier->name());
 
             if (!symbol) {
@@ -256,7 +256,7 @@ ErrorOr<Symbol*> State::resolve_symbol(ast::Expr const& expr) {
             return symbol;
         }
         case ExprKind::Path: {
-            auto& path = expr.as<ast::PathExpr>()->path();
+            auto& path = cast_unchecked<ast::PathExpr>(expr)->path();
             auto scope = TRY(this->resolve_scope_path(expr.span(), path));
 
             auto* symbol = scope->resolve(path.name());
@@ -368,8 +368,8 @@ ErrorOr<bytecode::Register> State::generate_attribute_access(
     this->set_register_state(reg, value_type->get_pointer_to());
 
     Struct* structure = nullptr;
-    if (value_type->is<StructType>()) {
-        structure = value_type->as<StructType>()->decl();
+    if (isa<StructType>(value_type)) {
+        structure = cast_unchecked<StructType>(value_type)->decl();
     }
 
     RefPtr<Scope> scope = nullptr;
@@ -488,11 +488,11 @@ ErrorOr<bytecode::Register> State::generate_index_access(
 
     if (type->is_tuple()) {
         auto* constant = TRY(m_constant_evaluator.evaluate(expr.index()));
-        if (!constant->is<ConstantInt>()) {
+        if (!isa<ConstantInt>(constant)) {
             return err(expr.index().span(), "Tuple index must be an integer constant");
         }
 
-        auto* index = constant->as<ConstantInt>();
+        auto* index = cast_unchecked<ConstantInt>(constant);
 
         if (!dst.has_value()) {
             dst = this->allocate_register();
@@ -573,7 +573,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
 
     switch (expr.kind()) {
         case ast::ExprKind::Identifier: {
-            auto* ident = expr.as<ast::IdentifierExpr>();
+            auto* ident = cast_unchecked<ast::IdentifierExpr>(expr);
             symbol = m_current_scope->resolve(ident->name());
 
             if (!symbol) {
@@ -589,7 +589,7 @@ ErrorOr<size_t> State::size_of(ast::Expr const& expr) {
             break;
         }
         case ast::ExprKind::Path: {
-            auto* p = expr.as<ast::PathExpr>();
+            auto* p = cast_unchecked<ast::PathExpr>(expr);
             auto& path = p->path();
 
             auto scope = TRY(this->resolve_scope_path(expr.span(), path));

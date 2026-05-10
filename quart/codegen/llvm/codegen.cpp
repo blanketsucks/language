@@ -597,11 +597,11 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
 ::llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
     switch (constant->kind()) {
         case Constant::Kind::Int: {
-            auto* integer = constant->as<ConstantInt>();
+            auto* integer = cast_unchecked<ConstantInt>(constant);
             return m_ir_builder->getIntN(integer->type()->get_int_bit_width(), integer->value());
         }
         case Constant::Kind::Float: {
-            auto* fp = constant->as<ConstantFloat>();
+            auto* fp = cast_unchecked<ConstantFloat>(constant);
             if (fp->type()->is_float()) {
                 return ::llvm::ConstantFP::get(*m_context, ::llvm::APFloat(static_cast<f32>(fp->value())));
             } else {
@@ -609,11 +609,11 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
             }
         }
         case Constant::Kind::String: {
-            auto* string = constant->as<ConstantString>();
+            auto* string = cast_unchecked<ConstantString>(constant);
             return m_ir_builder->CreateGlobalString(string->value(), ".str", 0, &*m_module);
         }
         case Constant::Kind::Array: {
-            auto* array = constant->as<ConstantArray>();
+            auto* array = cast_unchecked<ConstantArray>(constant);
             auto range = ::llvm::map_range(array->elements(), [this](auto& element) {
                 return ::llvm::cast<::llvm::Constant>(valueof(element));
             });
@@ -624,20 +624,20 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
             return ::llvm::ConstantArray::get(::llvm::cast<::llvm::ArrayType>(type), elements);
         }
         case Constant::Kind::Struct: {
-            auto* structure = constant->as<ConstantStruct>();
+            auto* structure = cast_unchecked<ConstantStruct>(constant);
             auto range = ::llvm::map_range(structure->fields(), [this](auto& field) {
                 return ::llvm::cast<::llvm::Constant>(valueof(field));
             });
 
             Vector<::llvm::Constant*> elements(range.begin(), range.end());
 
-            auto* decl = structure->type()->as<StructType>()->decl();
+            auto* decl = cast_unchecked<StructType>(structure->type())->decl();
             ::llvm::Type* type = m_structs[decl];
 
             return ::llvm::ConstantStruct::get(::llvm::cast<::llvm::StructType>(type), elements);
         }
         case Constant::Kind::Null: {
-            auto* null = constant->as<ConstantNull>();
+            auto* null = cast_unchecked<ConstantNull>(constant);
             ::llvm::Type* type = type_of(null->type());
 
             return ::llvm::Constant::getNullValue(type);
@@ -649,7 +649,7 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
 
 ::llvm::Type* LLVMCodeGen::type_of(Type* type) {
     if (type->is_struct()) {
-        auto* decl = type->as<StructType>()->decl();
+        auto* decl = cast_unchecked<StructType>(type)->decl();
         return m_structs[decl];
     }
 

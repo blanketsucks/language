@@ -1,5 +1,6 @@
 #include <quart/language/type_checker.h>
 #include <quart/language/state.h>
+#include <quart/casting.h>
 
 namespace quart {
 
@@ -30,21 +31,21 @@ ErrorOr<Type*> TypeChecker::resolve_reference(ast::Expr const& expr, bool is_mut
     
     switch (expr.kind()) {
         case ExprKind::Identifier: {
-            auto* ident = expr.as<ast::IdentifierExpr>();
+            auto* ident = cast_unchecked<ast::IdentifierExpr>(expr);
             return this->resolve_reference(*m_state.scope(), ident->span(), ident->name(), is_mutable);
         }
         case ExprKind::Path: {
-            auto& path = expr.as<ast::PathExpr>()->path();
+            auto& path = cast_unchecked<ast::PathExpr>(expr)->path();
             auto scope = TRY(this->m_state.resolve_scope_path(expr.span(), path));
 
             return this->resolve_reference(*scope, expr.span(), path.name(), is_mutable);
         }
         case ExprKind::Attribute: {
-            auto* attr = expr.as<ast::AttributeExpr>();
+            auto* attr = cast_unchecked<ast::AttributeExpr>(expr);
             return this->type_check_attribute_access(*attr, true, is_mutable);
         }
         case ExprKind::Index: {
-            auto* index = expr.as<ast::IndexExpr>();
+            auto* index = cast_unchecked<ast::IndexExpr>(expr);
             return this->type_check_index_access(*index, true, is_mutable);
         }
         default: {
@@ -75,8 +76,8 @@ ErrorOr<Type*> TypeChecker::type_check_attribute_access(ast::AttributeExpr const
     }
 
     Struct* structure = nullptr;
-    if (parent->is<StructType>()) {
-        structure = parent->as<StructType>()->decl();
+    if (isa<StructType>(parent)) {
+        structure = cast_unchecked<StructType>(parent)->decl();
     }
 
     RefPtr<Scope> scope = nullptr;
@@ -230,10 +231,10 @@ ErrorOr<Type*> TypeChecker::type_check(ast::IntegerExpr const& expr) {
     Type* context = m_state.type_context();
 
     if (context && context->is_int()) {
-        type = context->as<IntType>();
+        type = cast_unchecked<IntType>(context);
     } else if (expr.suffix().type != ast::BuiltinType::None) {
         // We are 100% sure we get an int type from get_type_from_builtin so casting here is ok
-        type = m_state.get_type_from_builtin(expr.suffix().type)->as<IntType>();
+        type = cast_unchecked<IntType>(m_state.get_type_from_builtin(expr.suffix().type));
     } else {
         type = m_state.context().i32();
     }
@@ -401,7 +402,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::UnaryOpExpr const& expr) {
 
 ErrorOr<Type*> TypeChecker::type_check(ast::BinaryOpExpr const& expr) {
     if (expr.op() == BinaryOp::Assign) {
-        if (!expr.lhs().is<ast::UnaryOpExpr>()) {
+        if (!isa<ast::UnaryOpExpr>(expr.lhs())) {
             Type* lhs = TRY(this->resolve_reference(expr.lhs()))->get_reference_type();
             Type* rhs = TRY(this->type_check(expr.rhs()));
 
@@ -417,7 +418,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::BinaryOpExpr const& expr) {
             return lhs;
         }
 
-        auto* unary = expr.lhs().as<ast::UnaryOpExpr>();
+        auto* unary = cast_unchecked<ast::UnaryOpExpr>(expr.lhs());
         if (unary->op() != UnaryOp::DeRef) {
             return err(unary->span(), "Invalid left-hand side of assignment");
         }
@@ -496,7 +497,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
     }
 
     auto& arguments = expr.args();
-    auto* function_type = callee->as<FunctionType>();
+    auto* function_type = cast_unchecked<FunctionType>(callee);
 
     size_t params = function_type->parameter_count();
     size_t index = 0;
@@ -536,7 +537,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
             parameter = parameter->underlying_type();
             type = type->underlying_type();
 
-            if (!type->is<StructType>()) {
+            if (!isa<StructType>(type)) {
                 return err(
                     argument->span(),
                     "Cannot pass value of type '{}' to parameter of type '{}'", 
@@ -545,8 +546,8 @@ ErrorOr<Type*> TypeChecker::type_check(ast::CallExpr const& expr) {
                 );
             }
 
-            auto* structure = type->as<StructType>()->decl();
-            if (!structure->impls_trait(parameter->as<TraitType>())) {
+            auto* structure = cast_unchecked<StructType>(type)->decl();
+            if (!structure->impls_trait(cast_unchecked<TraitType>(parameter))) {
                 return err(
                     argument->span(),
                     "Type '{}' does not implement trait '{}'", 

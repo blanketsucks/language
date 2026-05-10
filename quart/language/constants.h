@@ -27,18 +27,6 @@ public:
     Kind kind() const { return m_kind; }
     Type* type() const { return m_type; }
 
-    template<typename T> requires(std::is_base_of_v<Constant, T>)
-    bool is() const { return T::classof(this); }
-
-    template<typename T> requires(std::is_base_of_v<Constant, T>)
-    T* as() {
-        if (!T::classof(this)) {
-            return nullptr;
-        }
-
-        return static_cast<T*>(this); 
-    }
-
 protected:
     Constant(Context* context, Kind kind, Type* type) : m_context(context), m_kind(kind), m_type(type) {}
 

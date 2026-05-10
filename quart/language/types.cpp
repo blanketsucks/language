@@ -2,6 +2,7 @@
 #include <quart/language/context.h>
 #include <quart/language/structs.h>
 #include <quart/format.h>
+#include <quart/casting.h>
 
 namespace quart {
 
@@ -95,9 +96,9 @@ bool Type::can_safely_cast_to(Type* to) {
 
 bool Type::is_mutable() const {
     if (this->kind() == TypeKind::Pointer) {
-        return this->as<PointerType>()->is_mutable();
+        return cast_unchecked<PointerType>(this)->is_mutable();
     } else if (this->kind() == TypeKind::Reference) {
-        return this->as<ReferenceType>()->is_mutable();
+        return cast_unchecked<ReferenceType>(this)->is_mutable();
     } else {
         return true;
     }
@@ -112,19 +113,19 @@ ReferenceType* Type::get_reference_to(bool is_mutable) {
 }
 
 u32 Type::get_int_bit_width() const {
-    return this->as<IntType>()->bit_width();
+    return cast<IntType>(this)->bit_width();
 }
 
 bool Type::is_int_unsigned() const {
-    return this->as<IntType>()->is_unsigned();
+    return cast<IntType>(this)->is_unsigned();
 }
 
 Type* Type::get_pointee_type() const {
-    return this->as<PointerType>()->pointee();
+    return cast<PointerType>(this)->pointee();
 }
 
 Type* Type::get_reference_type() const {
-    return this->as<ReferenceType>()->reference_type();
+    return cast<ReferenceType>(this)->reference_type();
 }
 
 size_t Type::get_pointer_depth() const {
@@ -140,15 +141,15 @@ size_t Type::get_pointer_depth() const {
 }
 
 Vector<Type*> const& Type::get_struct_fields() const {
-    return this->as<StructType>()->fields();
+    return cast<StructType>(this)->fields();
 }
 
 Type* Type::get_struct_field_at(size_t index) const {
-    return this->as<StructType>()->get_field_at(index);
+    return cast<StructType>(this)->get_field_at(index);
 }
 
 String const& Type::get_struct_name() const {
-    auto* type = this->as<StructType>();
+    auto* type = cast<StructType>(this);
     auto* decl = type->decl();
 
     if (decl) {
@@ -159,55 +160,55 @@ String const& Type::get_struct_name() const {
 }
 
 Type* Type::get_array_element_type() const {
-    return this->as<ArrayType>()->element_type();
+    return cast<ArrayType>(this)->element_type();
 }
 
 size_t Type::get_array_size() const {
-    return this->as<ArrayType>()->size();
+    return cast<ArrayType>(this)->size();
 }
 
 Vector<Type*> const& Type::get_tuple_types() const {
-    return this->as<TupleType>()->types();
+    return cast<TupleType>(this)->types();
 }
 
 size_t Type::get_tuple_size() const {
-    return this->as<TupleType>()->size();
+    return cast<TupleType>(this)->size();
 }
 
 Type* Type::get_tuple_element(size_t index) const {
-    return this->as<TupleType>()->get_type_at(index);
+    return cast<TupleType>(this)->get_type_at(index);
 }
 
 Type* Type::get_inner_enum_type() const {
-    return this->as<EnumType>()->inner();
+    return cast<EnumType>(this)->inner();
 }
 
 String const& Type::get_enum_name() const {
-    return this->as<EnumType>()->name();
+    return cast<EnumType>(this)->name();
 }
 
 Type* Type::get_function_return_type() const {
-    return this->as<FunctionType>()->return_type();
+    return cast<FunctionType>(this)->return_type();
 }
 
 Vector<Type*> const& Type::get_function_params() const {
-    return this->as<FunctionType>()->parameters();
+    return cast<FunctionType>(this)->parameters();
 }
 
 Type* Type::get_function_param(size_t index) const {
-    return this->as<FunctionType>()->get_parameter_at(index);
+    return cast<FunctionType>(this)->get_parameter_at(index);
 }
 
 bool Type::is_function_var_arg() const {
-    return this->as<FunctionType>()->is_var_arg();
+    return cast<FunctionType>(this)->is_var_arg();
 }
 
 String const& Type::get_trait_name() const {
-    return this->as<TraitType>()->name();
+    return cast<TraitType>(this)->name();
 }
 
 String const& Type::get_empty_name() const {
-    return this->as<EmptyType>()->name();
+    return cast<EmptyType>(this)->name();
 }
 
 String Type::str() const {
@@ -295,7 +296,7 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
             return this->get_inner_enum_type()->to_llvm_type(context);
         }
         case TypeKind::Struct: {
-            const auto* type = this->as<StructType>();
+            const auto* type = cast_unchecked<StructType>(this);
             Vector<llvm::Type*> fields;
 
             for (auto& field : type->fields()) {
@@ -305,7 +306,7 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
             return llvm::StructType::get(context, fields);
         }
         case TypeKind::Array: {
-            const auto* type = this->as<ArrayType>();
+            const auto* type = cast_unchecked<ArrayType>(this);
 
             llvm::Type* element = type->element_type()->to_llvm_type(context);
             size_t size = type->size();
@@ -313,7 +314,7 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
             return llvm::ArrayType::get(element, size);
         }
         case TypeKind::Tuple: {
-            const auto* type = this->as<TupleType>();
+            const auto* type = cast_unchecked<TupleType>(this);
 
             Vector<llvm::Type*> types;
             for (auto& ty : type->types()) {
@@ -326,13 +327,13 @@ llvm::Type* Type::to_llvm_type(llvm::LLVMContext& context) const {
             return llvm::PointerType::get(context, 0);
         }
         case TypeKind::Reference: {
-            const auto* type = this->as<ReferenceType>();
+            const auto* type = cast_unchecked<ReferenceType>(this);
 
             llvm::Type* reference = type->get_reference_type()->to_llvm_type(context);
             return llvm::PointerType::get(reference, 0);
         }
         case TypeKind::Function: {
-            const auto* type = this->as<FunctionType>();
+            const auto* type = cast_unchecked<FunctionType>(this);
             llvm::Type* return_type = type->return_type()->to_llvm_type(context);
 
             Vector<llvm::Type*> params;

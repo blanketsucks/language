@@ -109,12 +109,12 @@ Optional<T> ConstantEvaluator::evaluate_binary_operation(BinaryOp op, T lhs, T r
 Constant* ConstantEvaluator::evaluate_binary_operation(BinaryOp op, Constant* lhs, Constant* rhs) const {
     switch (lhs->kind()) {
         case Constant::Kind::Int: {
-            if (!rhs->is<ConstantInt>()) {
+            if (!isa<ConstantInt>(rhs)) {
                 return nullptr;
             }
 
-            i64 lvalue = static_cast<i64>(lhs->as<ConstantInt>()->value());
-            i64 rvalue = static_cast<i64>(rhs->as<ConstantInt>()->value());
+            i64 lvalue = static_cast<i64>(cast_unchecked<ConstantInt>(lhs)->value());
+            i64 rvalue = static_cast<i64>(cast_unchecked<ConstantInt>(rhs)->value());
 
             i64 result = *this->evaluate_binary_operation(op, lvalue, rvalue);
             if (is_comparison_operator(op)) {
@@ -124,8 +124,8 @@ Constant* ConstantEvaluator::evaluate_binary_operation(BinaryOp op, Constant* lh
             return ConstantInt::get(m_state.context(), lhs->type(), result);
         }
         case Constant::Kind::Float: {
-            f64 lvalue = static_cast<f64>(lhs->as<ConstantFloat>()->value());
-            f64 rvalue = static_cast<f64>(rhs->as<ConstantFloat>()->value());
+            f64 lvalue = static_cast<f64>(cast_unchecked<ConstantFloat>(lhs)->value());
+            f64 rvalue = static_cast<f64>(cast_unchecked<ConstantFloat>(rhs)->value());
 
             Optional<f64> result = this->evaluate_binary_operation(op, lvalue, rvalue);
             if (!result) {
@@ -207,9 +207,9 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IntegerExpr const& expr) {
 
     IntType* type = nullptr;
     if (context && context->is_int()) {
-        type = context->as<IntType>();
+        type = cast_unchecked<IntType>(context);
     } else if (expr.suffix().type != ast::BuiltinType::None) {
-        type = m_state.get_type_from_builtin(expr.suffix().type)->as<IntType>();
+        type = cast_unchecked<IntType>(m_state.get_type_from_builtin(expr.suffix().type));
     } else {
         type = m_state.context().i32();
     }
@@ -286,17 +286,17 @@ bool ConstantEvaluator::is_constant_expression(ast::IndexExpr const& expr) const
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IndexExpr const& expr) {
     Constant* value = TRY(this->evaluate(expr.value()));
-    if (!value->is<ConstantArray>()) {
+    if (!isa<ConstantArray>(value)) {
         return err(expr.span(), "Cannot index a non-array value");
     }
 
     Constant* idx = TRY(this->evaluate(expr.index()));
-    if (!idx->is<ConstantInt>()) {
+    if (!isa<ConstantInt>(idx)) {
         return err(expr.span(), "Index must be an integer not {}", idx->type()->str());
     }
 
-    auto* array = value->as<ConstantArray>();
-    u64 index = idx->as<ConstantInt>()->value();
+    auto* array = cast_unchecked<ConstantArray>(value);
+    u64 index = cast_unchecked<ConstantInt>(idx)->value();
 
     if (index >= array->size()) {
         return err(expr.span(), "Index out of bounds. Array has {} elements", array->size());
@@ -343,11 +343,11 @@ bool ConstantEvaluator::is_constant_expression(ast::AttributeExpr const& expr) c
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::AttributeExpr const& expr) {
     Constant* parent = TRY(this->evaluate(expr.parent()));
-    if (!parent->is<ConstantStruct>()) {
+    if (!isa<ConstantStruct>(parent)) {
         return err(expr.span(), "Cannot access attribute of a non-struct value");
     }
 
-    auto* type = parent->type()->as<StructType>();
+    auto* type = cast_unchecked<StructType>(parent->type());
     auto* structure = type->decl();
 
     auto& fields = structure->fields();
@@ -358,7 +358,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::AttributeExpr const& expr) {
     }
 
     auto& field = iterator->second;
-    auto* value = parent->as<ConstantStruct>();
+    auto* value = cast_unchecked<ConstantStruct>(parent);
 
     return value->at(field.index);
 }
@@ -382,12 +382,12 @@ bool ConstantEvaluator::is_constant_expression(ast::BinaryOpExpr const& expr) co
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
     if (expr.op() == BinaryOp::Assign) {
-        if (!expr.lhs().is<ast::IdentifierExpr>()) {
+        if (!isa<ast::IdentifierExpr>(expr.lhs())) {
             return err(expr.lhs().span(), "Cannot assign to non-identifier");
         }
 
         auto scope = m_state.scope();
-        auto* ident = expr.lhs().as<ast::IdentifierExpr>();
+        auto* ident = cast_unchecked<ast::IdentifierExpr>(expr.lhs());
 
         auto* variable = scope->resolve<Variable>(ident->name());
         if (!variable) {
@@ -416,12 +416,12 @@ bool ConstantEvaluator::is_constant_expression(ast::InplaceBinaryOpExpr const& e
 }
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::InplaceBinaryOpExpr const& expr) {
-    if (!expr.lhs().is<ast::IdentifierExpr>()) {
+    if (!isa<ast::IdentifierExpr>(expr.lhs())) {
         return err(expr.lhs().span(), "Cannot assign to non-identifier");
     }
 
     auto scope = m_state.scope();
-    auto* ident = expr.lhs().as<ast::IdentifierExpr>();
+    auto* ident = cast_unchecked<ast::IdentifierExpr>(expr.lhs());
 
     auto* variable = scope->resolve<Variable>(ident->name());
     if (!variable) {
@@ -457,11 +457,11 @@ bool ConstantEvaluator::is_constant_expression(ast::IfExpr const& expr) const {
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IfExpr const& expr) {
     Constant* condition = TRY(this->evaluate(expr.condition()));
-    if (!condition->is<ConstantInt>()) {
+    if (!isa<ConstantInt>(condition)) {
         return err(expr.condition().span(), "Expected an integer");
     }
 
-    auto* integer = condition->as<ConstantInt>();
+    auto* integer = cast_unchecked<ConstantInt>(condition);
     u64 value = integer->value();
 
     if (value) {
@@ -479,11 +479,11 @@ bool ConstantEvaluator::is_constant_expression(ast::WhileExpr const& expr) const
 
 ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
     Constant* condition = TRY(this->evaluate(expr.condition()));
-    if (!condition->is<ConstantInt>()) {
+    if (!isa<ConstantInt>(condition)) {
         return err(expr.condition().span(), "Expected an integer");
     }
 
-    auto* integer = condition->as<ConstantInt>();
+    auto* integer = cast_unchecked<ConstantInt>(condition);
     u64 value = integer->value();
 
     TemporaryChange<bool> change(m_in_loop, true);
@@ -498,7 +498,7 @@ ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
         }
 
         Constant* condition = TRY(this->evaluate(expr.condition()));
-        value = condition->as<ConstantInt>()->value();
+        value = cast_unchecked<ConstantInt>(condition)->value();
 
         i++;
         if (i >= MAX_LOOP_COUNT) {

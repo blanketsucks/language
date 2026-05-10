@@ -355,16 +355,6 @@ public:
         return m_kind == kind || this->is(args...);
     }
 
-    template<typename T> requires(std::is_base_of_v<Expr, T>)
-    bool is() const {
-        return T::classof(this);
-    }
-
-    template<typename T> requires(std::is_base_of_v<Expr, T>)
-    T const* as() const {
-        return T::classof(this) ? static_cast<T const*>(this) : nullptr;
-    }
-
     bool is_function_decl() const { return this->is(ExprKind::FunctionDecl); }
 
     virtual BytecodeResult generate(State&, Optional<bytecode::Register> dst = {}) const = 0;

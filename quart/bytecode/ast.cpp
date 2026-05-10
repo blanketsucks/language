@@ -71,7 +71,7 @@ BytecodeResult BlockExpr::generate(State& state, Optional<bytecode::Register>) c
             outln(warning);
         }
 
-        if (expr->is<ast::ReturnExpr>()) {
+        if (isa<ReturnExpr>(expr)) {
             returned = true;
         }
 
@@ -94,10 +94,10 @@ BytecodeResult IntegerExpr::generate(State& state, Optional<bytecode::Register>)
     Type* context = state.type_context();
 
     if (context && context->is_int()) {
-        type = context->as<IntType>();
+        type = cast_unchecked<IntType>(context);
     } else if (m_suffix.type != ast::BuiltinType::None) {
         // We are 100% sure we get an int type from get_type_from_builtin so casting here is ok
-        type = state.get_type_from_builtin(m_suffix.type)->as<IntType>();
+        type = cast_unchecked<IntType>(state.get_type_from_builtin(m_suffix.type));
     } else {
         type = state.context().i32();
     }
@@ -363,8 +363,8 @@ BytecodeResult UnaryOpExpr::generate(State& state, Optional<bytecode::Register> 
 
 BytecodeResult BinaryOpExpr::generate(State& state, Optional<bytecode::Register> dst) const {
     if (m_op == BinaryOp::Assign) {
-        if (m_lhs->is<UnaryOpExpr>()) {
-            auto* unary = m_lhs->as<UnaryOpExpr>();
+        if (isa<UnaryOpExpr>(m_lhs)) {
+            auto* unary = cast_unchecked<UnaryOpExpr>(m_lhs);
 
             if (unary->op() == UnaryOp::DeRef) {
                 auto& value = unary->value();
@@ -503,7 +503,7 @@ static ErrorOr<void> generate_function_call(
     std::unordered_set<size_t> call_exprs;
 
     for (auto& arg : args) {
-        if (!arg->is<CallExpr>()) {
+        if (!isa<CallExpr>(arg)) {
             index++;
             continue;
         }
@@ -620,13 +620,13 @@ static ErrorOr<bytecode::Operand> generate_trait_call_argument(
         }
 
         ty = ty->underlying_type();
-        auto* trait_type = parameter.type->underlying_type()->as<TraitType>();
+        auto* trait_type = cast_unchecked<TraitType>(parameter.type->underlying_type());
 
-        if (!ty->is<StructType>()) { // TODO: Allow non-struct types to implement traits
+        if (!isa<StructType>(ty)) { // TODO: Allow non-struct types to implement traits
             return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), trait_type->str());
         }
 
-        auto structure = ty->as<StructType>()->decl();
+        auto structure = cast_unchecked<StructType>(ty)->decl();
         if (!structure->impls_trait(trait_type)) {
             return err(argument.span(), "Type '{}' does not implement trait '{}'", ty->str(), trait_type->str());
         }
@@ -718,9 +718,9 @@ BytecodeResult CallExpr::generate(State& state, Optional<bytecode::Register> dst
             return err(span(), "Cannot call a value of type '{}'", type->str());
         }
 
-        function_type = pointee->as<FunctionType>();
+        function_type = cast_unchecked<FunctionType>(pointee);
     } else if (type->is_function()) {
-        function_type = type->as<FunctionType>();
+        function_type = cast_unchecked<FunctionType>(type);
     } else {
         return err(span(), "Cannot call a value of type '{}'", type->str());
     }
@@ -1183,8 +1183,8 @@ static ErrorOr<void> generate_generic_struct(State& state, StructExpr const& exp
 
     for (auto& field : expr.fields()) {
         Type* type = nullptr;
-        if (field.type->is<NamedTypeExpr>()) {
-            auto& path = field.type->as<NamedTypeExpr>()->path();
+        if (isa<NamedTypeExpr>(field.type)) {
+            auto& path = cast_unchecked<NamedTypeExpr>(field.type)->path();
             if (!path.has_segments() && names.contains(path.name())) {
                 type = EmptyType::get(state.context(), path.name());
             }
@@ -1367,7 +1367,7 @@ BytecodeResult SizeofExpr::generate(State& state, Optional<bytecode::Register>) 
 
     Type* type = nullptr;
     if (context && context->is_int()) {
-        type = context->as<IntType>();
+        type = cast_unchecked<IntType>(context);
     } else {
         type = state.context().u32();
     }
@@ -1744,11 +1744,11 @@ BytecodeResult TypeAliasExpr::generate(State& state, Optional<bytecode::Register
 
 BytecodeResult StaticAssertExpr::generate(State& state, Optional<bytecode::Register>) const {
     Constant* constant = TRY(state.constant_evaluator().evaluate(*m_condition));
-    if (!constant->is<ConstantInt>()) {
+    if (!isa<ConstantInt>(constant)) {
         return err(m_condition->span(), "Static assert condition must be a constant boolean expression");
     }
 
-    auto* condition = constant->as<ConstantInt>();
+    auto* condition = cast_unchecked<ConstantInt>(constant);
     if (condition->value() != 0) {
         return {};
     }
@@ -1829,11 +1829,11 @@ BytecodeResult MatchExpr::generate(State& state, Optional<bytecode::Register>) c
 
             for (auto& value : pattern.values) {
                 Constant* constant = TRY(state.constant_evaluator().evaluate(*value));
-                if (!constant->is<ConstantInt>()) {
+                if (!isa<ConstantInt>(constant)) {
                     return err(value->span(), "Match patterns must be constant integer expressions");
                 }
     
-                auto operand = constant->as<ConstantInt>()->to_operand();
+                auto operand = cast_unchecked<ConstantInt>(constant)->to_operand();
     
                 bytecode::Register temp = state.allocate_register();
         
@@ -1844,11 +1844,11 @@ BytecodeResult MatchExpr::generate(State& state, Optional<bytecode::Register>) c
             auto& value = *pattern.values[0];
 
             Constant* constant = TRY(state.constant_evaluator().evaluate(value));
-            if (!constant->is<ConstantInt>()) {
+            if (!isa<ConstantInt>(constant)) {
                 return err(value.span(), "Match patterns must be constant integer expressions");
             }
 
-            auto operand = constant->as<ConstantInt>()->to_operand();
+            auto operand = cast_unchecked<ConstantInt>(constant)->to_operand();
             state.emit<bytecode::Eq>(reg, match, operand);
         }
 
@@ -1934,7 +1934,7 @@ BytecodeResult ImplExpr::generate(State& state, Optional<bytecode::Register>) co
 
     Type* underlying_type = TRY(m_type->evaluate(state));
     if (underlying_type->is_struct()) {
-        auto* structure = underlying_type->as<StructType>()->decl();
+        auto* structure = cast_unchecked<StructType>(underlying_type)->decl();
         auto previous_scope = state.scope();
 
         state.set_current_scope(structure->scope());
@@ -1990,8 +1990,8 @@ BytecodeResult TraitExpr::generate(State& state, Optional<bytecode::Register>) c
     for (auto& expr : m_body) {
         trait->add_body_expr(expr.get());
     
-        if (!expr->is<FunctionDeclExpr>()) {
-            auto* function = expr->as<FunctionExpr>();
+        if (!isa<FunctionDeclExpr>(expr)) {
+            auto* function = cast_unchecked<FunctionExpr>(expr);
 
             TRY(state.type_checker().type_check(*expr));
             trait->add_predefined_function(function);
@@ -2076,12 +2076,12 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     auto trait = state.get_trait(trait_type);
     Type* type = TRY(m_type->evaluate(state));
 
-    RefPtr<Scope> scope = trait->resolve_scope(trait_type->as<TraitType>());
+    RefPtr<Scope> scope = trait->resolve_scope(cast_unchecked<TraitType>(trait_type));
     if (!type->is_struct()) {
         ASSERT(false, "Only structs can implement traits for now");
     }
 
-    auto structure = type->as<StructType>()->decl();
+    auto structure = cast<StructType>(type)->decl();
 
     auto current_scope = state.scope();
 
@@ -2089,12 +2089,12 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     state.set_self_type(type);
     
     for (auto& expr : m_body) {
-        if (!expr->is<FunctionExpr>()) {
+        if (!isa<FunctionExpr>(expr)) {
             return err(expr->span(), "Only function implementations are allowed in trait impls");
         }
 
         TRY(expr->generate(state, {}));
-        String name = expr->as<FunctionExpr>()->decl().name();
+        String name = cast_unchecked<FunctionExpr>(expr)->decl().name();
 
         Function const* function = scope->resolve<Function>(name);
         if (!function) {
@@ -2164,7 +2164,7 @@ BytecodeResult ImplTraitExpr::generate(State& state, Optional<bytecode::Register
     state.set_current_scope(current_scope);
     state.set_self_type(nullptr);
 
-    structure->add_impl_trait(trait_type->as<TraitType>());
+    structure->add_impl_trait(cast_unchecked<TraitType>(trait_type));
     return {};
 }
 

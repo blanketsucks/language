@@ -106,11 +106,11 @@ ErrorOr<Type*> NamedTypeExpr::evaluate(State& state) const {
 
 ErrorOr<Type*> ArrayTypeExpr::evaluate(State& state) const {
     Constant* constant = TRY(state.constant_evaluator().evaluate(*m_size));
-    if (!constant->is<ConstantInt>()) {
+    if (!isa<ConstantInt>(constant)) {
         return err(m_size->span(), "Array size must be an integer not {}", constant->type()->str());
     }
 
-    u64 size = constant->as<ConstantInt>()->value();
+    u64 size = cast_unchecked<ConstantInt>(constant)->value();
     auto* element_type = TRY(m_type->evaluate(state));
 
     if (element_type->is_void()) {

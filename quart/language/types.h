@@ -42,23 +42,6 @@ public:
     TypeKind kind() const { return m_kind; }
     Context* context() const { return m_context; }
 
-    template<typename T> requires(std::is_base_of_v<Type, T>)
-    bool is() const {
-        return T::classof(this);
-    }
-
-    template<typename T> requires(std::is_base_of_v<Type, T>) 
-    T const* as() const {
-        ASSERT(T::classof(this), "Cannot cast to type");
-        return static_cast<T const*>(this);
-    }
-
-    template<typename T> requires(std::is_base_of_v<Type, T>)
-    T* as() {
-        ASSERT(T::classof(this), "Cannot cast to type");
-        return static_cast<T*>(this);
-    }
-
     bool is_void() const { return m_kind == TypeKind::Void; }
     bool is_int() const { return m_kind == TypeKind::Int; }
     bool is_float() const { return m_kind == TypeKind::Float; }
