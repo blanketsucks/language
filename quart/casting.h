@@ -29,6 +29,11 @@ struct isa_impl<To, std::shared_ptr<From>> {
 };
 
 template<typename To, typename From>
+struct isa_impl<To, std::unique_ptr<From>> {
+    static bool isa(const std::unique_ptr<From>& v) { return isa_impl<To, From>::isa(*v); }
+};
+
+template<typename To, typename From>
 struct cast_impl {
     static To* cast(const From& v) { return (To*)&v; }
 };
@@ -40,7 +45,12 @@ struct cast_impl<To, From*> {
 
 template<typename To, typename From>
 struct cast_impl<To, std::shared_ptr<From>> {
-    static To* cast(const std::shared_ptr<From>& v) { return cast_impl<To, From>(*v); }
+    static To* cast(const std::shared_ptr<From>& v) { return cast_impl<To, From>::cast(*v); }
+};
+
+template<typename To, typename From>
+struct cast_impl<To, std::unique_ptr<From>> {
+    static To* cast(const std::unique_ptr<From>& v) { return cast_impl<To, From>::cast(*v); }
 };
 
 }
