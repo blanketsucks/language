@@ -137,55 +137,9 @@ namespace ast {
 class Expr;
 
 enum class ExprKind : u8 {
-    Block,
-    ExternBlock,
-    Integer,
-    Float,
-    String,
-    Identifier,
-    Assignment,
-    TupleAssignment,
-    Const,
-    Array,
-    UnaryOp,
-    Reference,
-    BinaryOp,
-    InplaceBinaryOp,
-    Call,
-    Return,
-    FunctionDecl,
-    Function,
-    Defer,
-    If,
-    While,
-    For,
-    Break,
-    Continue,
-    Struct,
-    Constructor,
-    Attribute,
-    Index,
-    Cast,
-    Sizeof,
-    Offsetof,
-    Path,
-    Using,
-    Tuple,
-    Enum,
-    Import,
-    Ternary,
-    ArrayFill,
-    TypeAlias,
-    StaticAssert,
-    Maybe,
-    Module,
-    Impl,
-    Trait,
-    ImplTrait,
-    Match,
-    RangeFor,
-    Bool,
-    ConstEval
+#define Op(x) x, // NOLINT
+    ENUMERATE_EXPR_KINDS(Op)
+#undef Op
 };
 
 enum class TypeKind : u8 {
