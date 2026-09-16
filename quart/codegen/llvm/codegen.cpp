@@ -13,67 +13,50 @@
 
 namespace quart::llvm {
 
+using bytecode::Value, bytecode::Constant;
+
+using bytecode::ConstantFloat, bytecode::ConstantInt, bytecode::ConstantString;
+using bytecode::ConstantNull, bytecode::ConstantArray, bytecode::ConstantStruct;
+
 LLVMCodeGen::LLVMCodeGen(State& state, String module_name) : m_state(state) {
     m_context = make<::llvm::LLVMContext>();
     m_module = make<::llvm::Module>(move(module_name), *m_context);
     m_ir_builder = make<::llvm::IRBuilder<>>(*m_context);
 
-    m_registers.resize(state.register_count());
     m_globals.resize(state.global_count());
 }
 
-void LLVMCodeGen::generate(bytecode::Move* inst) {
-    Type* type = m_state.type(inst->dst());
-
-    ::llvm::Value* src = nullptr;
-    if (type->is_float()) {
-        u64 v = inst->src();
-        f64 value = *(f64*)&v;
-
-        src = ::llvm::ConstantFP::get(type_of(type), value);
-    } else {
-        src = m_ir_builder->getInt({ type->get_int_bit_width(), inst->src(), !type->is_int_unsigned() }); 
-    }
-
-    this->set_register(inst->dst(), src);
-}
-
-void LLVMCodeGen::generate(bytecode::NewString* inst) {
-    ::llvm::Value* value = m_ir_builder->CreateGlobalString(inst->value(), ".str", 0, &*m_module);
-    this->set_register(inst->dst(), value);
-}
-
-#define GENERIC_ARITH(Name, Function) /* NOLINT */                      \
-    void LLVMCodeGen::generate(bytecode::Name* inst) {                  \
-        ::llvm::Value* lhs = valueof(inst->lhs());                        \
-        ::llvm::Value* rhs = valueof(inst->rhs());                        \
-                                                                        \
+#define GENERIC_ARITH(Name, Function) /* NOLINT */                        \
+    void LLVMCodeGen::generate(bytecode::Name* inst) {                    \
+        ::llvm::Value* lhs = value_of(inst->lhs());                        \
+        ::llvm::Value* rhs = value_of(inst->rhs());                        \
+                                                                          \
         ::llvm::Value* value = m_ir_builder->Create##Function(lhs, rhs);  \
-        this->set_register(inst->dst(), value);                         \
+        set_corresponding_value(inst, value);                             \
     }
 
 #define GENERIC_FLOAT_ARITH(Name, FFunction, IFunction) /* NOLINT */    \
     void LLVMCodeGen::generate(bytecode::Name* inst) {                  \
-        ::llvm::Value* lhs = valueof(inst->lhs());                        \
-        ::llvm::Value* rhs = valueof(inst->rhs());                        \
+        ::llvm::Value* lhs = value_of(inst->lhs());                      \
+        ::llvm::Value* rhs = value_of(inst->rhs());                      \
                                                                         \
-        ::llvm::Value* value = nullptr;                                   \
+        ::llvm::Value* value = nullptr;                                 \
         if (lhs->getType()->isFloatingPointTy()) {                      \
             value = m_ir_builder->Create##FFunction(lhs, rhs);          \
         } else {                                                        \
             value = m_ir_builder->Create##IFunction(lhs, rhs);          \
         }                                                               \
                                                                         \
-        this->set_register(inst->dst(), value);                         \
+        set_corresponding_value(inst, value);                           \
     }
 
 #define SIGNED_ARITH(Name, FFunction, UFunction, SFunction)/* NOLINT */ \
     void LLVMCodeGen::generate(bytecode::Name* inst) {                  \
-        ::llvm::Value* lhs = valueof(inst->lhs());                        \
-        ::llvm::Value* rhs = valueof(inst->rhs());                        \
+        ::llvm::Value* lhs = value_of(inst->lhs());                      \
+        ::llvm::Value* rhs = value_of(inst->rhs());                      \
                                                                         \
-        ::llvm::Value* value = nullptr;                                   \
-        quart::Type* type = m_state.type(inst->lhs());                  \
+        ::llvm::Value* value = nullptr;                                 \
+        quart::Type* type = inst->lhs()->type();                        \
                                                                         \
         if (type->is_float()) {                                         \
             value = m_ir_builder->Create##FFunction(lhs, rhs);          \
@@ -83,7 +66,7 @@ void LLVMCodeGen::generate(bytecode::NewString* inst) {
             value = m_ir_builder->Create##SFunction(lhs, rhs);          \
         }                                                               \
                                                                         \
-        this->set_register(inst->dst(), value);                         \
+        set_corresponding_value(inst, value);                           \
     }
 
 
@@ -185,32 +168,32 @@ void LLVMCodeGen::generate(bytecode::GetLocal* inst) {
     auto const& local = m_local_scope->local(inst->index());
     ::llvm::Value* value = m_ir_builder->CreateLoad(local.type, local.store);
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::GetLocalRef* inst) {
     ASSERT(inst->index() < m_local_scope->local_count(), "Local index out of bounds");
 
     auto const& local = m_local_scope->local(inst->index());
-    this->set_register(inst->dst(), local.store);
+    set_corresponding_value(inst, local.store);
 }
 
 void LLVMCodeGen::generate(bytecode::SetLocal* inst) {
     ASSERT(inst->index() < m_local_scope->local_count(), "Local index out of bounds");
 
     auto& local = m_local_scope->local(inst->index());
-    Optional<bytecode::Operand> src = inst->src();
+    Value* src = inst->src();
 
     if (local.needs_store()) {
-        local.store = valueof(*src);
+        local.store = value_of(src);
         return;
     }
 
     ::llvm::Value* value = nullptr;
-    if (!src.has_value()) {
+    if (!src) {
         value = ::llvm::Constant::getNullValue(local.type);
     } else {
-        value = valueof(*src);
+        value = value_of(src);
     }
 
     m_ir_builder->CreateStore(value, local.store);
@@ -222,14 +205,14 @@ void LLVMCodeGen::generate(bytecode::GetGlobal* inst) {
     auto* global = m_globals[inst->index()];
     ::llvm::Value* value = m_ir_builder->CreateLoad(global->getValueType(), global);
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::GetGlobalRef* inst) {
     ASSERT(inst->index() < m_globals.size(), "Global index out of bounds");
 
     auto* global = m_globals[inst->index()];
-    this->set_register(inst->dst(), global);
+    set_corresponding_value(inst, global);
 }
 
 void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
@@ -246,40 +229,40 @@ void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
         m_globals[inst->index()] = global;
     }
 
-    global->setInitializer(::llvm::cast<::llvm::Constant>(valueof(inst->src())));
+    global->setInitializer(::llvm::cast<::llvm::Constant>(value_of(inst->src())));
 }
 
-::llvm::Value* LLVMCodeGen::create_gep(bytecode::Register src, bytecode::Operand index) {
+::llvm::Value* LLVMCodeGen::create_gep(bytecode::Value* src, bytecode::Value* index) {
     Vector<::llvm::Value*> indices = {
         ::llvm::ConstantInt::get(::llvm::Type::getInt32Ty(*m_context),0),
-        valueof(index)
+        value_of(index)
     };
 
-    Type* type = m_state.type(src)->get_pointee_type();
+    Type* type = src->type()->get_pointee_type();
     if (type->is_pointer()) {
-        indices = { valueof(index) };
+        indices = { value_of(index) };
         type = type->get_pointee_type();
     }
 
-    return m_ir_builder->CreateGEP(type_of(type), valueof(src), indices);
+    return m_ir_builder->CreateGEP(type_of(type), value_of(src), indices);
 }
 
 void LLVMCodeGen::generate(bytecode::GetMember* inst) {
     ::llvm::Value* value = this->create_gep(inst->src(), inst->index());
-    ::llvm::Type* underlying_type = type_of(m_state.type(inst->dst()));
+    ::llvm::Type* underlying_type = type_of(inst->type());
 
     ::llvm::Value* result = m_ir_builder->CreateLoad(underlying_type, value);
-    this->set_register(inst->dst(), result);
+    set_corresponding_value(inst, result);
 }
 
 void LLVMCodeGen::generate(bytecode::SetMember* inst) {
     ::llvm::Value* value = this->create_gep(inst->dst(), inst->index());
-    m_ir_builder->CreateStore(valueof(inst->src()), value);
+    m_ir_builder->CreateStore(value_of(inst->src()), value);
 }
 
 void LLVMCodeGen::generate(bytecode::GetMemberRef* inst) {
     ::llvm::Value* value = this->create_gep(inst->src(), inst->index());
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::Alloca* inst) {
@@ -297,22 +280,22 @@ void LLVMCodeGen::generate(bytecode::Alloca* inst) {
         {}
     );
 
-    this->set_register(inst->dst(), alloca);
+    set_corresponding_value(inst, alloca);
 }
 
 void LLVMCodeGen::generate(bytecode::Read* inst) {
-    ::llvm::Value* src = valueof(inst->src());
-    Type* type = m_state.type(inst->src());
+    ::llvm::Value* src = value_of(inst->src());
+    Type* type = inst->src()->type();
 
     ::llvm::Type* pointee = type_of(type->underlying_type());
     ::llvm::Value* value = m_ir_builder->CreateLoad(pointee, src);
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::Write* inst) {
-    ::llvm::Value* src = valueof(inst->src());
-    ::llvm::Value* dst = valueof(inst->dst());
+    ::llvm::Value* src = value_of(inst->src());
+    ::llvm::Value* dst = value_of(inst->dst());
 
     m_ir_builder->CreateStore(src, dst);
 }
@@ -323,7 +306,7 @@ void LLVMCodeGen::generate(bytecode::Jump* inst) {
 }
 
 void LLVMCodeGen::generate(bytecode::JumpIf* inst) {
-    ::llvm::Value* condition = valueof(inst->condition());
+    ::llvm::Value* condition = value_of(inst->condition());
 
     ::llvm::BasicBlock* true_block = m_basic_blocks[inst->true_target()];
     ::llvm::BasicBlock* false_block = m_basic_blocks[inst->false_target()];
@@ -383,45 +366,38 @@ void LLVMCodeGen::generate(bytecode::NewFunction* inst) {
     }
 }
 
-void LLVMCodeGen::generate(bytecode::GetFunction* inst) {
-    ::llvm::Function* function = m_functions[inst->function()];
-    ASSERT(function, "Function not found in LLVM module");
-
-    this->set_register(inst->dst(), function);
-}
-
 void LLVMCodeGen::generate(bytecode::Return* inst) {
-    Optional<bytecode::Operand> value = inst->value();
-    if (value.has_value()) {
-        m_ir_builder->CreateRet(valueof(*value));
+    Value* value = inst->value();
+    if (value) {
+        m_ir_builder->CreateRet(value_of(value));
     } else {
         m_ir_builder->CreateRetVoid();
     }
 }
 
 void LLVMCodeGen::generate(bytecode::Call* inst) {
-    auto range = ::llvm::map_range(inst->arguments(), [&](auto& operand) { return valueof(operand); });
+    auto range = ::llvm::map_range(inst->arguments(), [&](auto& operand) { return value_of(operand); });
     Vector<::llvm::Value*> arguments(range.begin(), range.end());
 
     auto* function_type = ::llvm::cast<::llvm::FunctionType>(inst->function_type()->to_llvm_type(*m_context));
-    ::llvm::Value* function = valueof(inst->function());
+    ::llvm::Value* function = value_of(inst->function());
 
     if (::llvm::isa<::llvm::Function>(function)) {
         auto* fn = ::llvm::cast<::llvm::Function>(function);
         ::llvm::Value* value = m_ir_builder->CreateCall(fn, arguments);
 
-        this->set_register(inst->dst(), value);
+        set_corresponding_value(inst, value);
         return;
     }
 
     ::llvm::Value* value = m_ir_builder->CreateCall({ function_type, function }, arguments);
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::Cast* inst) {
-    ::llvm::Value* src = valueof(inst->src());
+    ::llvm::Value* src = value_of(inst->src());
 
-    Type* from = m_state.type(inst->src());
+    Type* from = inst->src()->type();
     Type* to = inst->type();
 
     ::llvm::Type* type = type_of(to);
@@ -467,18 +443,18 @@ void LLVMCodeGen::generate(bytecode::Cast* inst) {
         value = m_ir_builder->CreateBitCast(src, type);
     }
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::NewArray* inst) {
-    auto range = ::llvm::map_range(inst->elements(), [this](auto& operand) { return valueof(operand); });
+    auto range = ::llvm::map_range(inst->elements(), [this](auto& operand) { return value_of(operand); });
     ::llvm::Value* value = ::llvm::UndefValue::get(type_of(inst->type()));
 
     for (auto [index, field] : ::llvm::enumerate(range)) {
         value = m_ir_builder->CreateInsertValue(value, field, index);
     }
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::NewStruct* inst) {
@@ -507,13 +483,13 @@ void LLVMCodeGen::generate(bytecode::Construct* inst) {
 
     if (inst->arguments().empty()) {
         ::llvm::Value* value = ::llvm::ConstantAggregateZero::get(type);
-        this->set_register(inst->dst(), value);
+        set_corresponding_value(inst, value);
 
         return;
     }
 
     auto range = ::llvm::map_range(inst->arguments(), [this](auto& operand) {
-        return valueof(operand);
+        return value_of(operand);
     });
 
     ::llvm::Value* value = ::llvm::UndefValue::get(type);
@@ -521,11 +497,11 @@ void LLVMCodeGen::generate(bytecode::Construct* inst) {
         value = m_ir_builder->CreateInsertValue(value, field, index);
     }
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::NewTuple* inst) {
-    TupleType* type = inst->type();
+    TupleType* type = cast<TupleType>(inst->type());
     auto iterator = m_tuple_types.find(type);
 
     ::llvm::StructType* structure = nullptr;
@@ -541,66 +517,73 @@ void LLVMCodeGen::generate(bytecode::NewTuple* inst) {
 
     ::llvm::Value* value = ::llvm::UndefValue::get(structure);
     for (auto [index, operand] : ::llvm::enumerate(inst->elements())) {
-        value = m_ir_builder->CreateInsertValue(value, valueof(operand), index);
+        value = m_ir_builder->CreateInsertValue(value, value_of(operand), index);
     }
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::Null* inst) {
     ::llvm::Type* type = type_of(inst->type());
     ::llvm::Value* value = ::llvm::Constant::getNullValue(type);
 
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
 void LLVMCodeGen::generate(bytecode::Not* inst) {
-    ::llvm::Value* value = valueof(inst->src());
+    ::llvm::Value* value = value_of(inst->src());
     ::llvm::Value* result = m_ir_builder->CreateIsNull(value);
 
-    this->set_register(inst->dst(), result);
+    set_corresponding_value(inst, result);
 }
 
 void LLVMCodeGen::generate(bytecode::Boolean* inst) {
-    this->set_register(inst->dst(), m_ir_builder->getInt1(inst->value()));
+    set_corresponding_value(inst, m_ir_builder->getInt1(inst->value()));
 }
 
 void LLVMCodeGen::generate(bytecode::Memcpy* inst) {
-    ::llvm::Value* src = valueof(inst->src());
-    ::llvm::Value* dst = valueof(inst->dst());
+    ::llvm::Value* src = value_of(inst->src());
+    ::llvm::Value* dst = value_of(inst->dst());
 
     m_ir_builder->CreateMemCpy(dst, {}, src, {}, inst->size(), false);
 }
 
 void LLVMCodeGen::generate(bytecode::GetReturn* inst) {
     ::llvm::Value* value = m_local_scope->return_value();
-    this->set_register(inst->dst(), value);
+    set_corresponding_value(inst, value);
 }
 
-void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
-    m_registers[reg.index()] = value;
+void LLVMCodeGen::set_corresponding_value(Value* a, ::llvm::Value* b) {
+    m_value_map[a] = b;
 }
 
-::llvm::Value* LLVMCodeGen::valueof(bytecode::Register reg) {
-    return m_registers[reg.index()];
-}
+::llvm::Value* LLVMCodeGen::value_of(Value* value) {
+    switch (value->id()) {
+        case Value::FunctionID: {
+            auto* function = cast_unchecked<Function>(value);
+            return m_functions[function];
+        }
+        case Value::ConstantID: {
+            auto* constant = cast_unchecked<Constant>(value);
+            return value_of(constant);
+        }
+        case Value::InstructionID: {
+            return m_value_map[value];
+        }
 
-::llvm::Value* LLVMCodeGen::valueof(bytecode::Operand const& operand) {
-    if (operand.is_register()) {
-        return m_registers[operand.value()];
+        case Value::Unknown: __builtin_unreachable();
     }
-
-    ::llvm::Type* type = type_of(operand.value_type());
-    return ::llvm::ConstantInt::get(type, operand.value());
 }
 
-::llvm::Value* LLVMCodeGen::valueof(Constant* constant) {
+::llvm::Value* LLVMCodeGen::value_of(Constant* constant) {
     switch (constant->kind()) {
-        case Constant::Kind::Int: {
+        using bytecode::ConstantKind;
+
+        case ConstantKind::Int: {
             auto* integer = cast_unchecked<ConstantInt>(constant);
             return m_ir_builder->getIntN(integer->type()->get_int_bit_width(), integer->value());
         }
-        case Constant::Kind::Float: {
+        case ConstantKind::Float: {
             auto* fp = cast_unchecked<ConstantFloat>(constant);
             if (fp->type()->is_float()) {
                 return ::llvm::ConstantFP::get(*m_context, ::llvm::APFloat(static_cast<f32>(fp->value())));
@@ -608,14 +591,14 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
                 return ::llvm::ConstantFP::get(*m_context, ::llvm::APFloat(fp->value()));
             }
         }
-        case Constant::Kind::String: {
+        case ConstantKind::String: {
             auto* string = cast_unchecked<ConstantString>(constant);
             return m_ir_builder->CreateGlobalString(string->value(), ".str", 0, &*m_module);
         }
-        case Constant::Kind::Array: {
+        case ConstantKind::Array: {
             auto* array = cast_unchecked<ConstantArray>(constant);
             auto range = ::llvm::map_range(array->elements(), [this](auto& element) {
-                return ::llvm::cast<::llvm::Constant>(valueof(element));
+                return ::llvm::cast<::llvm::Constant>(value_of(element));
             });
 
             Vector<::llvm::Constant*> elements(range.begin(), range.end());
@@ -623,10 +606,10 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
 
             return ::llvm::ConstantArray::get(::llvm::cast<::llvm::ArrayType>(type), elements);
         }
-        case Constant::Kind::Struct: {
+        case ConstantKind::Struct: {
             auto* structure = cast_unchecked<ConstantStruct>(constant);
-            auto range = ::llvm::map_range(structure->fields(), [this](auto& field) {
-                return ::llvm::cast<::llvm::Constant>(valueof(field));
+            auto range = ::llvm::map_range(structure->elements(), [this](auto& field) {
+                return ::llvm::cast<::llvm::Constant>(value_of(field));
             });
 
             Vector<::llvm::Constant*> elements(range.begin(), range.end());
@@ -636,7 +619,7 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
 
             return ::llvm::ConstantStruct::get(::llvm::cast<::llvm::StructType>(type), elements);
         }
-        case Constant::Kind::Null: {
+        case ConstantKind::Null: {
             auto* null = cast_unchecked<ConstantNull>(constant);
             ::llvm::Type* type = type_of(null->type());
 
@@ -668,7 +651,7 @@ void LLVMCodeGen::set_register(bytecode::Register reg, ::llvm::Value* value) {
 }
 
 void LLVMCodeGen::generate(bytecode::Instruction* inst) {
-    switch (inst->type()) {
+    switch (inst->kind()) {
     #define Op(x) /* NOLINT */                                      \
         case bytecode::Instruction::x:                              \
             return this->generate(static_cast<bytecode::x*>(inst)); \
@@ -693,7 +676,7 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
         m_module->getOrInsertGlobal(name, type);
         ::llvm::GlobalVariable* var = m_module->getGlobalVariable(name);
 
-        var->setInitializer(::llvm::cast<::llvm::Constant>(valueof(global->initializer())));
+        var->setInitializer(::llvm::cast<::llvm::Constant>(value_of(global->initializer())));
         m_globals[global->index()] = var;
     }
 

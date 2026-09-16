@@ -3,14 +3,12 @@
 
 namespace quart {
 
-void Variable::emit(State& state, bytecode::Register dst) {
+bytecode::Instruction* Variable::emit(State& state) {
     if (m_flags & Global) {
-        state.emit<bytecode::GetGlobal>(dst, m_index);
+        return state.emit<bytecode::GetGlobal>(m_type, m_index);
     } else {
-        state.emit<bytecode::GetLocal>(dst, m_index);
+        return state.emit<bytecode::GetLocal>(m_type, m_index);
     }
-
-    state.set_register_state(dst, m_type);
 }
 
 }

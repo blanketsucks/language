@@ -96,7 +96,7 @@ void EliminateUnreachableBlocksPass::run(Function* function) {
 }
 
 void EliminateUnreachableBlocksPass::on_instruction(Instruction* instruction) {
-    switch (instruction->type()) {
+    switch (instruction->kind()) {
         case Instruction::Jump: {
             auto* jump = dynamic_cast<Jump*>(instruction);
             m_block_use_count[jump->target()]++;
@@ -109,14 +109,6 @@ void EliminateUnreachableBlocksPass::on_instruction(Instruction* instruction) {
             m_block_use_count[jump_if->true_target()]++;
             m_block_use_count[jump_if->false_target()]++;
 
-            break;
-        }
-        case Instruction::GetFunction: {
-            // TODO: Track if the function is used after this instruction.
-            auto* get_function = dynamic_cast<GetFunction*>(instruction);
-            auto& use = m_function_use_count[get_function->function()];
-
-            use.callers.insert(instruction->parent()->parent());
             break;
         }
         default:

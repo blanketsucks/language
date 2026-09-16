@@ -82,4 +82,6 @@ void errln(std::format_string<Args...> fmt, Args... args) {
     std::cerr << str << '\n';
 }
 
+String escape(const String& in);
+
 }

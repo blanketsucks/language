@@ -36,6 +36,11 @@
 
 namespace quart {
 
+using bytecode::Constant;
+
+using bytecode::ConstantFloat, bytecode::ConstantInt, bytecode::ConstantString;
+using bytecode::ConstantNull, bytecode::ConstantArray, bytecode::ConstantStruct;
+
 static constexpr size_t MAX_LOOP_COUNT = 1'000'000;
 
 template<typename T>
@@ -101,6 +106,8 @@ Optional<T> ConstantEvaluator::evaluate_binary_operation(BinaryOp op, T lhs, T r
             return lhs >= rhs;
         case BinaryOp::Lte:
             return lhs <= rhs;
+        case BinaryOp::Assign:
+            __builtin_unreachable();
     }
 
     return {};
@@ -108,26 +115,32 @@ Optional<T> ConstantEvaluator::evaluate_binary_operation(BinaryOp op, T lhs, T r
 
 Constant* ConstantEvaluator::evaluate_binary_operation(BinaryOp op, Constant* lhs, Constant* rhs) const {
     switch (lhs->kind()) {
-        case Constant::Kind::Int: {
+        using bytecode::ConstantKind;
+
+        case ConstantKind::Int: {
             if (!isa<ConstantInt>(rhs)) {
                 return nullptr;
             }
 
-            i64 lvalue = static_cast<i64>(cast_unchecked<ConstantInt>(lhs)->value());
-            i64 rvalue = static_cast<i64>(cast_unchecked<ConstantInt>(rhs)->value());
+            auto* c_lhs = cast_unchecked<ConstantInt>(lhs);
+            auto* c_rhs = cast_unchecked<ConstantInt>(rhs);
 
-            i64 result = *this->evaluate_binary_operation(op, lvalue, rvalue);
+            i64 result = static_cast<i64>(*this->evaluate_binary_operation(op, c_lhs->value(), c_rhs->value()));
             if (is_comparison_operator(op)) {
-                return ConstantInt::get(m_state.context(), m_state.context().i1(), result);
+                return ConstantInt::get(m_state.context(), m_state.i1(), result);
             }
 
             return ConstantInt::get(m_state.context(), lhs->type(), result);
         }
-        case Constant::Kind::Float: {
-            f64 lvalue = static_cast<f64>(cast_unchecked<ConstantFloat>(lhs)->value());
-            f64 rvalue = static_cast<f64>(cast_unchecked<ConstantFloat>(rhs)->value());
+        case ConstantKind::Float: {
+            if (!isa<ConstantFloat>(rhs)) {
+                return nullptr;
+            }
 
-            Optional<f64> result = this->evaluate_binary_operation(op, lvalue, rvalue);
+            auto* c_lhs = cast_unchecked<ConstantFloat>(lhs);
+            auto* c_rhs = cast_unchecked<ConstantFloat>(rhs);
+
+            Optional<f64> result = this->evaluate_binary_operation(op, c_lhs->value(), c_rhs->value());
             if (!result) {
                 return nullptr;
             }

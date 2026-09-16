@@ -16,6 +16,11 @@
 
 namespace quart {
 
+using bytecode::Constant;
+
+using bytecode::ConstantFloat, bytecode::ConstantInt, bytecode::ConstantString;
+using bytecode::ConstantNull, bytecode::ConstantArray, bytecode::ConstantStruct;
+
 Context::Context() : 
     m_void_type(this, TypeKind::Void), m_f32(this, TypeKind::Float), m_f64(this, TypeKind::Double),
     m_i1(this, 1, true), m_i8(this, 8, true), m_i16(this, 16, true), m_i32(this, 32, true), m_i64(this, 64, true),

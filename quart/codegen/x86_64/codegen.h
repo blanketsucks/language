@@ -30,24 +30,29 @@ private:
 
     Register generate_binary_op(
         BinaryInstruction instruction,
-        bytecode::Operand lhs,
-        bytecode::Operand rhs
+        bytecode::Value* lhs,
+        bytecode::Value* rhs
     );
 
     Register generate_binary_op_with_dst(
         BinaryInstruction instruction,
-        bytecode::Register dst,
-        bytecode::Operand lhs,
-        bytecode::Operand rhs
+        bytecode::Instruction* dst,
+        bytecode::Value* lhs,
+        bytecode::Value* rhs
     );
 
     void generate_condition(
         ConditionCode cc,
         bytecode::Instruction* instruction,
-        bytecode::Register dst,
-        bytecode::Operand lhs,
-        bytecode::Operand rhs
+        bytecode::Value* lhs,
+        bytecode::Value* rhs
     );
+
+    Register generate_memory_access(bytecode::Value* src, bytecode::Value* index, bool ref = false);
+
+    Register value_to_reg(bytecode::Value*, Optional<Register> dst = {});
+
+    void save(bytecode::Value* value, Register dst);
 
 #define Op(x) void generate(bytecode::x*); // NOLINT
     ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
@@ -70,7 +75,7 @@ private:
     std::stack<Register> m_available_registers;
     std::stack<Register> m_callee_saved_registers;
 
-    HashMap<bytecode::Register, Register> m_register_map;
+    HashMap<bytecode::Value*, Register> m_register_map;
 
     Vector<String> m_strings;
 };

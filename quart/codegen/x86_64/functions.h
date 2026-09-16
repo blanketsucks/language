@@ -35,7 +35,9 @@ public:
         return RefPtr<CodeGenFunction>(new CodeGenFunction(move(locals)));
     }
 
-    String const& code() const { return m_code; }
+    StringBuffer const& prologue() const { return m_prologue; }
+    StringBuffer const& code() const { return m_code; }
+    StringBuffer const& epilogue() const { return m_code; }
 
     Vector<Local> const& locals() const { return m_locals; }
     Optional<Local> local(size_t index) {
@@ -48,8 +50,8 @@ public:
 
     void add_local(Local local) { m_locals.push_back(local); }
 
-    void write(StringView code) { m_code.append(code); }
-    void writeln(StringView line) { m_code.append(line); m_code.push_back('\n'); }
+    void write(StringView code) { m_code.write(code); }
+    void writeln(StringView line) { m_code.writeln(line); }
 
     template<typename ...Args>
     void fwriteln(std::format_string<Args...> fmt, Args... args) {
@@ -62,9 +64,9 @@ private:
 
     Vector<Local> m_locals;
 
-    String m_prologue;
-    String m_code;
-    String m_epilogue;
+    StringBuffer m_prologue;
+    StringBuffer m_code;
+    StringBuffer m_epilogue;
 };
 
 }

@@ -2,10 +2,10 @@
 
 #include <quart/language/types.h>
 #include <quart/bytecode/basic_block.h>
+#include <quart/bytecode/value.h>
 #include <quart/language/symbol.h>
 #include <quart/parser/ast.h>
 #include <quart/common.h>
-#include <quart/llvm.h>
 
 namespace quart {
 
@@ -53,9 +53,10 @@ struct SpecializedFunctionKey {
     }
 };
 
-class Function : public Symbol {
+class Function : public Symbol, public bytecode::Value {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Function; }
+    static bool classof(const bytecode::Value* value) { return value->id() == FunctionID; }
 
     static RefPtr<Function> create(
         Span,
@@ -88,7 +89,7 @@ public:
     bool is_main() const { return m_qualified_name == "main"; }
     bool is_async() const { return m_is_async; }
     bool is_variadic() const { return m_underlying_type->is_function_var_arg(); }
-    bool used() const { return m_used; }
+    bool used() const { return !users().empty(); }
 
     bool should_eliminate() const {
         return !is_main() && !used();
@@ -194,6 +195,8 @@ public:
 
     void emit_return_block_body(State& state) const;
 
+    void print(std::ostream&) const override;
+
 private:
     void set_qualified_name();
 
@@ -207,8 +210,8 @@ private:
         RefPtr<LinkInfo> link_info,
         bool is_public,
         bool is_async
-    ) : Symbol(move(name), Symbol::Function, is_public), m_span(span),
-        m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
+    ) : Symbol(move(name), Symbol::Function, is_public), bytecode::Value(underlying_type, FunctionID),
+        m_span(span), m_linkage_specifier(linkage_specifier), m_underlying_type(underlying_type), m_parameters(move(parameters)), 
         m_link_info(move(link_info)), m_scope(move(scope)), m_is_async(is_async) {
 
         this->set_qualified_name();

@@ -56,7 +56,6 @@ public:
             m_global_instructions.push_back(OwnPtr<Instruction>(op));
         }
 
-        op->set_register_uses(*this);
         return op;
     }
 

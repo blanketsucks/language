@@ -2,8 +2,8 @@
 
 #include <quart/language/types.h>
 #include <quart/language/symbol.h>
-#include <quart/language/consteval.h>
 #include <quart/bytecode/register.h>
+#include <quart/bytecode/constant.h>
 #include <quart/common.h>
 
 namespace quart {
@@ -41,12 +41,12 @@ public:
     bool is_constant() { return m_flags & Constant; }
     bool is_public() { return m_flags & Public; }
 
-    class Constant* initializer() const { return m_initializer; }
-    void set_initializer(class Constant* initializer) {
+    bytecode::Constant* initializer() const { return m_initializer; }
+    void set_initializer(bytecode::Constant* initializer) {
         m_initializer = initializer;
     }
 
-    void emit(State&, bytecode::Register dst);
+    bytecode::Instruction* emit(State&);
 
 private:
     Variable(
@@ -59,7 +59,7 @@ private:
     size_t m_index;
     Type* m_type;
 
-    class Constant* m_initializer = nullptr;
+    bytecode::Constant* m_initializer = nullptr;
 
     u8 m_flags = None;
 };

@@ -5,6 +5,11 @@
 
 namespace quart::x86_64 {
 
+using bytecode::Value, bytecode::Constant;
+
+using bytecode::ConstantFloat, bytecode::ConstantInt, bytecode::ConstantString;
+using bytecode::ConstantNull, bytecode::ConstantArray, bytecode::ConstantStruct;
+
 static const Vector<Register::Type> SYS_V_CALL_REGISTERS = {
     Register::rdi, Register::rsi, Register::rdx, Register::rcx, Register::r8, Register::r9,
 };
@@ -50,6 +55,41 @@ void x86_64CodeGen::push_reg(Register reg) {
     m_available_registers.push(reg);
 }
 
+void x86_64CodeGen::save(Value* value, Register dst) {
+    if (!value->is_used()) {
+        // If this value is never used for anything, we don't need to hold it forever.
+        this->push_reg(dst);
+        return;
+    }
+
+    m_register_map[value] = dst;
+}
+
+Register x86_64CodeGen::value_to_reg(Value* value, Optional<Register> dst) {
+    auto cg = m_current_function;
+
+    // FIXME: This should be isa<Constant> and every other constant type should be handled
+    if (isa<ConstantInt>(value)) {
+        Register reg = opt_value_or(dst, [this]() { return this->pop_reg(); });
+        auto* constant = cast<ConstantInt>(value);
+
+        cg->fwriteln("  mov {}, {}", reg.as_qword(), constant->value());
+        return reg;
+    } else if(isa<ConstantString>(value)) {
+        auto* constant = cast<ConstantString>(value); 
+
+        size_t offset = m_strings.size();
+        m_strings.push_back(constant->value());
+
+        Register reg = opt_value_or(dst, [this]() { return this->pop_reg(); });
+        cg->fwriteln("  mov {}, __str.{}", reg.as_qword(), offset);
+
+        return reg;
+    } else {
+        return m_register_map[value];
+    }
+}
+
 String x86_64CodeGen::normalize(String qualified_name) {
     static constexpr StringView DOUBLE_COLON = "::";
     static constexpr StringView DOT = ".";
@@ -63,23 +103,55 @@ String x86_64CodeGen::normalize(String qualified_name) {
     return qualified_name;
 }
 
-Register x86_64CodeGen::generate_binary_op(BinaryInstruction instruction, bytecode::Operand lhs, bytecode::Operand rhs) {
+Register x86_64CodeGen::generate_memory_access(Value* src, Value* index, bool ref) {
     auto cg = m_current_function;
-    Register r1 = {};
 
-    if (lhs.is_value()) {
-        r1 = this->pop_reg();
-        cg->fwriteln("  mov {}, {}", r1.as_qword(), lhs.value());
-    } else {
-        r1 = m_register_map[lhs.reg()];
+    Register dst = this->pop_reg();
+    Register src_r = m_register_map[src];
+
+    auto type = src->type()->get_pointee_type();
+
+    size_t byte_size = type->size();
+    auto data_type = static_cast<DataType>(byte_size);
+
+    StringView instruction = "mov";
+    if (ref) {
+        instruction = "lea";
+    } else if (data_type != DataType::QWord) {
+        instruction = "movzx";
     }
+
+    if (isa<ConstantInt>(index)) {
+        u64 value = cast<ConstantInt>(index)->value();
+        cg->fwriteln(
+            "  {} {}, {} [{} + {} * {}]",
+            instruction, dst.as_qword(), data_type, src_r.as_qword(), value, byte_size
+        );
+    } else {
+        Register idx = m_register_map[index];
+        cg->fwriteln(
+            "  {} {}, {} [{} + {} * {}]",
+            instruction, dst.as_qword(), data_type, src_r.as_qword(), idx.as_qword(), byte_size
+        );
+
+        this->push_reg(idx);
+    }
+
+    this->push_reg(src_r);
+    return dst;
+}
+
+Register x86_64CodeGen::generate_binary_op(BinaryInstruction instruction, Value* lhs, Value* rhs) {
+    auto cg = m_current_function;
+    Register r1 = this->value_to_reg(lhs);
 
     // TODO: Optimize for some instructions like `imul` where r1 could be the accumulator
     //       and in such case the generated instruction could simply be `imul r2`
-    if (rhs.is_value()) {
-        cg->fwriteln("  {} {}, {}", instruction, r1.as_qword(), rhs.value());
+    if (isa<ConstantInt>(rhs)) {
+        u64 value = cast<ConstantInt>(rhs)->value();
+        cg->fwriteln("  {} {}, {}", instruction, r1.as_qword(), value);
     } else {
-        Register r2 = m_register_map[rhs.reg()];
+        Register r2 = m_register_map[rhs];
         cg->fwriteln("  {} {}, {}", instruction, r1.as_qword(), r2.as_qword());
 
         this->push_reg(r2);
@@ -89,7 +161,7 @@ Register x86_64CodeGen::generate_binary_op(BinaryInstruction instruction, byteco
 }
 
 Register x86_64CodeGen::generate_binary_op_with_dst(
-    BinaryInstruction instruction, bytecode::Register dst, bytecode::Operand lhs, bytecode::Operand rhs
+    BinaryInstruction instruction, bytecode::Instruction* dst, Value* lhs, Value* rhs
 ) {
     Register reg = this->generate_binary_op(instruction, lhs, rhs);
     m_register_map[dst] = reg;
@@ -98,12 +170,12 @@ Register x86_64CodeGen::generate_binary_op_with_dst(
 }
 
 void x86_64CodeGen::generate_condition(
-    ConditionCode cc, bytecode::Instruction* instruction, bytecode::Register dst, bytecode::Operand lhs, bytecode::Operand rhs
+    ConditionCode cc, bytecode::Instruction* instruction, Value* lhs, Value* rhs
 ) {
     auto cg = m_current_function;
     Register reg = this->generate_binary_op_with_dst(
         BinaryInstruction::cmp,
-        dst, lhs, rhs
+        instruction, lhs, rhs
     );
 
     if (instruction->next()->is<bytecode::JumpIf>()) {
@@ -122,6 +194,7 @@ ErrorOr<void> x86_64CodeGen::generate(const CompilerOptions& options) {
     }
 
     for (auto& [name, function] : functions) {
+        outln("{} {}", name, function->users().size());
         if (function->should_eliminate()) {
             continue;
         }
@@ -148,7 +221,7 @@ ErrorOr<void> x86_64CodeGen::generate(const CompilerOptions& options) {
             String name = normalize(fn->qualified_name());
             stream << "global" << ' ' << name << '\n';
             stream << name << ':' << '\n';
-            stream << cg->code() << '\n';
+            stream << cg->code().value() << '\n';
         }
     }
 
@@ -187,7 +260,7 @@ void x86_64CodeGen::generate(bytecode::BasicBlock* block) {
 }
 
 void x86_64CodeGen::generate(bytecode::Instruction* inst) {
-    switch (inst->type()) {
+    switch (inst->kind()) {
     #define Op(x) /* NOLINT */                                           \
         case bytecode::Instruction::x:                                   \
             return this->generate(static_cast<bytecode::x*>(inst)); \
@@ -245,15 +318,6 @@ void x86_64CodeGen::generate(bytecode::NewLocalScope* inst) {
     reset_all_registers();
 }
 
-void x86_64CodeGen::generate(bytecode::Move* inst) {
-    auto cg = m_current_function;
-
-    Register dst = this->pop_reg();
-    cg->fwriteln("  mov {}, {}", dst.as_qword(), inst->src());
-    
-    m_register_map[inst->dst()] = dst;
-}
-
 void x86_64CodeGen::generate(bytecode::GetLocal* inst) {
     auto cg = m_current_function;
     auto local = cg->local(inst->index());
@@ -263,7 +327,7 @@ void x86_64CodeGen::generate(bytecode::GetLocal* inst) {
     Register dst = this->pop_reg();
 
     cg->fwriteln("  mov {}, QWORD [rbp - {}]", dst.as_qword(), local->offset);
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::GetLocalRef* inst) {
@@ -275,7 +339,7 @@ void x86_64CodeGen::generate(bytecode::GetLocalRef* inst) {
     Register dst = this->pop_reg();
 
     cg->fwriteln("  lea {}, QWORD [rbp - {}]", dst.as_qword(), local->offset);
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::SetLocal* inst) {
@@ -286,18 +350,20 @@ void x86_64CodeGen::generate(bytecode::SetLocal* inst) {
 
     ASSERT(local.has_value(), "Local does not exist");
 
-    if (!src.has_value()) {
+    if (!src) {
         cg->fwriteln("  mov QWORD [rbp - {}], 0", local->offset);
         return;
-    } else if (src->is_register()) {
-        Register reg = m_register_map[src->reg()];
+    } else if (isa<ConstantInt>(src)) {
+        u64 value = cast<ConstantInt>(src)->value();
+
+        Register reg = this->pop_reg();
+        
+        cg->fwriteln("  mov {}, {}", reg.as_qword(), value);
         cg->fwriteln("  mov QWORD [rbp - {}], {}", local->offset, reg.as_qword());
 
         this->push_reg(reg);
     } else {
-        Register reg = this->pop_reg();
-        
-        cg->fwriteln("  mov {}, {}", reg.as_qword(), src->value());
+        Register reg = m_register_map[src];
         cg->fwriteln("  mov QWORD [rbp - {}], {}", local->offset, reg.as_qword());
 
         this->push_reg(reg);
@@ -320,14 +386,14 @@ void x86_64CodeGen::generate(bytecode::GetMember* inst) {
     auto cg = m_current_function;
 
     Register dst = this->pop_reg();
-    Register src = m_register_map[inst->src()];
+    Register src = value_to_reg(inst->src());
 
-    bytecode::Operand index = inst->index();
-    Type* type = m_state.type(inst->src())->get_pointee_type();
+    Value* index = inst->index();
+    Type* type = inst->src()->type()->get_pointee_type();
 
     if (type->is_pointer()) {
         type = type->get_pointee_type();
-    } else {
+    } else if (type->is_array()) {
         type = type->get_array_element_type();
     }
 
@@ -339,17 +405,18 @@ void x86_64CodeGen::generate(bytecode::GetMember* inst) {
         instruction = "movzx";
     }
 
-    if (index.is_register()) {
-        Register idx = m_register_map[index.reg()];
-        cg->fwriteln("  {} {}, {} [{} + {} * {}]", instruction, dst.as_qword(), data_type, src.as_qword(), idx.as_qword(), byte_size);
-
-        this->push_reg(idx);
+    if (isa<ConstantInt>(index)) {
+        u64 value = cast<ConstantInt>(index)->value();
+        cg->fwriteln("  {} {}, {} [{} + {} * {}]", instruction, dst.as_qword(), data_type, src.as_qword(), value, byte_size);
     } else {
-        cg->fwriteln("  {} {}, {} [{} + {} * {}]", instruction, dst.as_qword(), data_type, src.as_qword(), index.value(), byte_size);
+        Register idx = m_register_map[index];
+        cg->fwriteln("  {} {}, {} [{} + {} * {}]", instruction, dst.as_qword(), data_type, src.as_qword(), idx.as_qword(), byte_size);
+    
+        this->push_reg(idx);
     }
 
     this->push_reg(src);
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::SetMember*) {
@@ -360,23 +427,24 @@ void x86_64CodeGen::generate(bytecode::GetMemberRef* inst) {
     auto cg = m_current_function;
 
     Register dst = this->pop_reg();
-    Register src = m_register_map[inst->src()];
+    Register src = value_to_reg(inst->src());
 
-    bytecode::Operand index = inst->index();
-    Type* type = m_state.type(inst->src())->get_pointee_type();
+    Value* index = inst->index();
+    Type* type = inst->src()->type()->get_pointee_type();
 
     size_t byte_size = type->size();
-    if (index.is_register()) {
-        Register idx = m_register_map[index.reg()];
+    if (isa<ConstantInt>(index)) {
+        u64 value = cast<ConstantInt>(index)->value();
+        cg->fwriteln("  lea {}, QWORD [{} + {} * {}]", dst.as_qword(), src.as_qword(), value, byte_size);
+    } else {
+        Register idx = m_register_map[index];
         cg->fwriteln("  lea {}, QWORD [{} + {} * {}]", dst.as_qword(), src.as_qword(), idx.as_qword(), byte_size);
 
         this->push_reg(idx);
-    } else {
-        cg->fwriteln("  lea {}, QWORD [{} + {} * {}]", dst.as_qword(), src.as_qword(), index.value(), byte_size);
     }
 
     this->push_reg(src);
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::Alloca*) {}
@@ -390,26 +458,19 @@ void x86_64CodeGen::generate(bytecode::Read* inst) {
     cg->fwriteln("  mov {}, QWORD [{}]", dst.as_qword(), src.as_qword());
     this->push_reg(src);
 
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::Write* inst) {
     auto cg = m_current_function;
 
     Register dst = this->pop_reg();
-    Register src = {};
-
-    if (inst->src().is_value()) {
-        src = this->pop_reg();
-        cg->fwriteln("  mov {}, {}", src.as_qword(), inst->src().value());
-    } else {
-        src = m_register_map[inst->src().reg()];
-    }
+    Register src = this->value_to_reg(inst->src());
 
     cg->fwriteln("  mov QWORD [{}], {}", dst.as_qword(), src.as_qword());
     this->push_reg(src);
 
-    m_register_map[inst->dst()] = dst;
+    this->save(inst, dst);
 }
 
 void x86_64CodeGen::generate(bytecode::Jump* inst) {
@@ -421,13 +482,7 @@ void x86_64CodeGen::generate(bytecode::JumpIf* inst) {
     auto cg = m_current_function;
     auto condition = inst->condition();
 
-    Register reg = {};
-    if (condition.is_value()) {
-        reg = this->pop_reg();
-        cg->fwriteln("  mov {}, {}", reg.as_qword(), condition.value());
-    } else {
-        reg = m_register_map[condition.reg()];
-    }
+    Register reg = this->value_to_reg(condition);
 
     auto* block = m_current_block;
 
@@ -455,47 +510,26 @@ void x86_64CodeGen::generate(bytecode::JumpIf* inst) {
     this->push_reg(reg);
 }
 
-void x86_64CodeGen::generate(bytecode::GetFunction* inst) {
-    auto cg = m_current_function;
-    String name = normalize(inst->function()->qualified_name());
-
-    auto& uses = m_state.register_uses(inst->dst());
-    if (uses.contains<bytecode::Call>()) {
-        m_next_calls.push(inst->function());
-        return;
-    }
-
-    Register dst = this->pop_reg();
-
-    cg->fwriteln("  mov {}, {}", dst.as_qword(), name);
-    m_register_map[inst->dst()] = dst;
-}
-
 void x86_64CodeGen::generate(bytecode::Return* inst) {
     auto cg = m_current_function;
     auto value = inst->value();
 
-    if (!value.has_value()) {
-        cg->writeln("  leave");
-        cg->writeln("  ret");
-    } else if (value->is_register()) {
-        Register reg = m_register_map[value->reg()];
-        if (reg.type == Register::rax) {
-            cg->writeln("  leave");
-            cg->writeln("  ret");
-            
-            this->push_reg(reg);
-            return;
-        }
-
-        cg->fwriteln("  mov rax, {}", reg.as_qword());
-        cg->writeln("  leave");
-        cg->writeln("  ret");
+    if (!value) {
+        // fallthrough
+    } else if (isa<ConstantInt>(value)) {
+        auto* constant = cast<ConstantInt>(value);
+        cg->fwriteln("  mov rax, {}", constant->value());
     } else {
-        cg->fwriteln("  mov rax, {}", value->value());
-        cg->writeln("  leave");
-        cg->writeln("  ret");
+        Register reg = m_register_map[value];
+        if (reg.type != Register::rax) {
+            cg->fwriteln("  mov rax, {}", reg.as_qword());
+        }
+        
+        this->push_reg(reg);
     }
+
+    cg->writeln("  leave");
+    cg->writeln("  ret");
 }
 
 void x86_64CodeGen::generate(bytecode::Call* inst) {
@@ -504,14 +538,14 @@ void x86_64CodeGen::generate(bytecode::Call* inst) {
     size_t index = 0;
     for (auto& operand : inst->arguments()) {
         Register dst { SYS_V_CALL_REGISTERS[index] };
-        if (operand.is_value()) {
-            cg->fwriteln("  mov {}, {}", dst.as_qword(), operand.value());
+        if (isa<Constant>(operand)) {
+            this->value_to_reg(operand, dst);
             index++;
 
             continue;
         }
 
-        Register reg = m_register_map[operand.reg()];
+        Register reg = m_register_map[operand];
         if (reg.type == dst.type) {
             index++;
             continue;
@@ -523,18 +557,14 @@ void x86_64CodeGen::generate(bytecode::Call* inst) {
         this->push_reg(reg);
     }
 
-    if (!m_next_calls.empty()) {
-        Function* function = m_next_calls.top();
-        m_next_calls.pop();
-
+    auto* value = inst->function();
+    if (isa<Function>(value)) {
+        auto* function = cast<Function>(value);
         String name = normalize(function->qualified_name());
-        cg->fwriteln("  call {}", name);
 
-        if (m_next_calls.empty()) {
-            this->push_reg({ Register::rax });
-        }
+        cg->fwriteln("  call {}", name);
     } else {
-        Register function = m_register_map[inst->function()];
+        Register function = m_register_map[value];
         cg->fwriteln("  call {}", function.as_qword());
 
         this->push_reg(function);
@@ -547,7 +577,7 @@ void x86_64CodeGen::generate(bytecode::Call* inst) {
         cg->fwriteln("  mov {}, rax", dst.as_qword());
     }
 
-    m_register_map[inst->dst()] = dst;
+    m_register_map[inst] = dst;
 }
 
 void x86_64CodeGen::generate(bytecode::Cast*) {
@@ -590,30 +620,12 @@ void x86_64CodeGen::generate(bytecode::GetReturn*) {
     ASSERT(false, "Not implemented");
 }
 
-void x86_64CodeGen::generate(bytecode::NewString* inst) {
-    auto cg = m_current_function;
-    
-    size_t offset = m_strings.size();
-    m_strings.push_back(inst->value());
-
-    Register dst = this->pop_reg();
-    cg->fwriteln("  mov {}, __str.{}", dst.as_qword(), offset);
-
-    m_register_map[inst->dst()] = dst;
-}
-
 void x86_64CodeGen::generate(bytecode::Add* inst) {
-    this->generate_binary_op_with_dst(
-        BinaryInstruction::add,
-        inst->dst(), inst->lhs(), inst->rhs()
-    );
+    this->generate_binary_op_with_dst(BinaryInstruction::add, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Sub* inst) {
-    this->generate_binary_op_with_dst(
-        BinaryInstruction::sub,
-        inst->dst(), inst->lhs(), inst->rhs()
-    );
+    this->generate_binary_op_with_dst(BinaryInstruction::sub, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Mul*) {
@@ -657,27 +669,27 @@ void x86_64CodeGen::generate(bytecode::Lsh*) {
 }
 
 void x86_64CodeGen::generate(bytecode::Eq* inst) {
-    this->generate_condition(ConditionCode::e, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::e, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Neq* inst) {
-    this->generate_condition(ConditionCode::ne, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::ne, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Gt* inst) {
-    this->generate_condition(ConditionCode::g, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::g, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Lt* inst) {
-    this->generate_condition(ConditionCode::l, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::l, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Gte* inst) {
-    this->generate_condition(ConditionCode::ge, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::ge, inst, inst->lhs(), inst->rhs());
 }
 
 void x86_64CodeGen::generate(bytecode::Lte* inst) {
-    this->generate_condition(ConditionCode::le, inst, inst->dst(), inst->lhs(), inst->rhs());
+    this->generate_condition(ConditionCode::le, inst, inst->lhs(), inst->rhs());
 }
  
 }

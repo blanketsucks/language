@@ -88,8 +88,8 @@ StringView Register::as_byte() const {
 
 StringView Register::as(DataType data_type) const {
     switch (data_type) {
-        case DataType::Byte: return as_byte();
-        case DataType::Word: return as_word();
+        case DataType::Byte:  return as_byte();
+        case DataType::Word:  return as_word();
         case DataType::DWord: return as_dword();
         case DataType::QWord: return as_qword();
     }

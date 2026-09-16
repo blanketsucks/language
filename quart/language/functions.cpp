@@ -73,10 +73,9 @@ void Function::emit_return_block_body(State& state) const {
         state.switch_to(m_return_block);
 
         auto return_register = *state.return_register();
-        auto reg = state.allocate_register();
 
-        state.emit<bytecode::Read>(reg, return_register);
-        state.emit<bytecode::Return>(reg);
+        Value* value = state.emit<bytecode::Read>(return_register);
+        state.emit<bytecode::Return>(value);
     }
 
     state.switch_to(previous_block);
@@ -152,6 +151,10 @@ ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionPara
     state.add_global_function(function);
 
     return function;
+}
+
+void Function::print(std::ostream& stream) const {
+    stream << this->qualified_name();
 }
 
 void Function::dump() const {

@@ -3,6 +3,8 @@
 #include <quart/common.h>
 
 #include <quart/bytecode/register.h>
+#include <quart/bytecode/value.h>
+#include <quart/bytecode/constant.h>
 #include <quart/lexer/tokens.h>
 #include <quart/language/types.h>
 
@@ -10,8 +12,6 @@
 #include <vector>
 
 #define ENUMERATE_BYTECODE_INSTRUCTIONS(Op)         \
-    Op(Move)                                        \
-    Op(NewString)                                   \
     Op(NewArray)                                    \
     Op(NewLocalScope)                               \
     Op(GetLocal)                                    \
@@ -44,7 +44,6 @@
     Op(Gte)                                         \
     Op(Lte)                                         \
     Op(NewFunction)                                 \
-    Op(GetFunction)                                 \
     Op(Return)                                      \
     Op(Call)                                        \
     Op(Jump)                                        \
@@ -63,7 +62,6 @@
 namespace quart {
     class Function;
     class Struct;
-    class Constant;
 }
 
 namespace quart::bytecode {
@@ -71,49 +69,22 @@ namespace quart::bytecode {
 class BasicBlock;
 class Generator;
 
-class Operand {
-public:
-    enum class Type : u8 {
-        Value,
-        Register
-    };
-
-    Operand() = default;
-
-    Operand(Register reg) : m_value(reg.index()), m_type(Type::Register) {}
-    Operand(u64 value, quart::Type* type) : m_value(value), m_value_type(type) {}
-
-    bool is_register() const { return m_type == Type::Register; }
-    bool is_value() const { return m_type == Type::Value; }
-
-    Register reg() const { return Register(m_value); }
-    u64 value() const { return m_value; }
-
-    quart::Type* value_type() const { return m_value_type; }
-
-private:
-    u64 m_value = 0;
-    quart::Type* m_value_type = nullptr;
-
-    Type m_type = Type::Value;
-};
-
-class Instruction {
+class Instruction : public Value {
 public:
     NO_COPY(Instruction)
-    DEFAULT_MOVE(Instruction)
+    NO_MOVE(Instruction)
 
     static bool classof(Instruction const*) { return true; }
 
     virtual ~Instruction() = default;
 
-    enum InstructionType : u8 {
+    enum InstructionKind : u8 {
     #define Op(x) x, // NOLINT
         ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
     #undef Op
     };
 
-    InstructionType type() const { return m_type; }
+    InstructionKind kind() const { return m_kind; }
     BasicBlock* parent() const { return m_parent; }
     Instruction* next() const { return m_next; }
 
@@ -129,8 +100,8 @@ public:
 
     virtual bool is_terminator() const { return false; }
 
-    StringView type_name() const {
-        switch (m_type) {
+    StringView kind_name() const {
+        switch (m_kind) {
         #define Op(x) case x: return #x; // NOLINT
             ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
         #undef Op
@@ -142,134 +113,92 @@ public:
     void set_parent(BasicBlock* parent) { m_parent = parent; }
     void set_next(Instruction* next) { m_next = next; }
 
-    virtual void dump() const = 0;
-    virtual void set_register_uses(Generator&) const = 0;
+    virtual void print(std::ostream&) const = 0;
 
 protected:
-    Instruction(InstructionType type) : m_type(type) {}
+    Instruction(Type* type, InstructionKind kind) : Value(type, InstructionID), m_kind(kind) {}
 
 private:
-    InstructionType m_type;
+    InstructionKind m_kind;
     BasicBlock* m_parent = nullptr;
 
     Instruction* m_next = nullptr;
 };
 
-template<Instruction::InstructionType Ty>
+template<Instruction::InstructionKind Ty>
 class InstructionBase : public Instruction {
 public:
-    static bool classof(Instruction const* inst) { return inst->type() == Ty; }
-    InstructionBase() : Instruction(Ty) {}
-};
+    static bool classof(const Value* value) { return value->id() == InstructionID; }
+    static bool classof(const Instruction* inst) { return inst->kind() == Ty; }
 
-class Move : public InstructionBase<Instruction::Move> {
-public:
-    Move(Register dst, u64 src) : m_dst(dst), m_src(src) {}
-
-    Register dst() const { return m_dst; }
-    u64 src() const { return m_src; }
-
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
-    u64 m_src;
-};
-
-class NewString : public InstructionBase<Instruction::NewString> {
-public:
-    NewString(Register dst, String value) : m_dst(dst), m_value(move(value)) {}
-
-    Register dst() const { return m_dst; }
-    String const& value() const { return m_value; }
-
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
-    String m_value;
+protected:
+    InstructionBase(Type* type) : Instruction(type, Ty) {}
 };
 
 class NewArray : public InstructionBase<Instruction::NewArray> {
 public:
-    NewArray(Register dst, Vector<Operand> elements, ArrayType* type) : m_dst(dst), m_elements(move(elements)), m_type(type) {}
+    NewArray(Vector<Value*> elements, ArrayType* type);
 
-    Register dst() const { return m_dst; }
-    Vector<Operand> const& elements() const { return m_elements; }
-    ArrayType* type() const { return m_type; }
+    Vector<Value*> const& elements() const { return m_elements; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Vector<Operand> m_elements;
-    ArrayType* m_type;
+    Vector<Value*> m_elements;
 };
 
 class GetMember : public InstructionBase<Instruction::GetMember> {
 public:
-    GetMember(Register dst, Register src, Operand index) : m_dst(dst), m_src(src), m_index(index) {}
+    GetMember(Type* type, Value* src, Value* index);
 
-    Register dst() const { return m_dst; }
-    Register src() const { return m_src; }
-    Operand index() const { return m_index; }
+    Value* src() const { return m_src; }
+    Value* index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Register m_src;
-    Operand m_index;
+    Value* m_src;
+    Value* m_index;
 };
 
 class SetMember : public InstructionBase<Instruction::SetMember> {
 public:
-    SetMember(Register dst, Operand index, Operand src) : m_dst(dst), m_index(index), m_src(src) {}
+    SetMember(Value* dst, Value* index, Value* src);
 
-    Register dst() const { return m_dst; }
-    Operand index() const { return m_index; }
-    Operand src() const { return m_src; }
+    Value* dst() const { return m_dst; }
+    Value* index() const { return m_index; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Operand m_index;
-    Operand m_src;
+    Value* m_dst;
+    Value* m_index;
+    Value* m_src;
 };
 
 class GetMemberRef : public InstructionBase<Instruction::GetMemberRef> {
 public:
-    GetMemberRef(Register dst, Register src, Operand index) : m_dst(dst), m_src(src), m_index(index) {}
+    GetMemberRef(Type* type, Value* src, Value* index);
 
-    Register dst() const { return m_dst; }
-    Register src() const { return m_src; }
-    Operand index() const { return m_index; }
+    Value* src() const { return m_src; }
+    Value* index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Register m_src;
-    Operand m_index;
+    Value* m_src;
+    Value* m_index;
 };
 
 class NewLocalScope : public InstructionBase<Instruction::NewLocalScope> {
 public:
-    NewLocalScope(Function* function, bool set = true) : m_function(function), m_set(set) {}
+    NewLocalScope(Function* function, bool set = true);
 
     Function* function() const { return m_function; }
     bool set() const { return m_set; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
+    void print(std::ostream&) const override;
 private:
     Function* m_function;
     bool m_set;
@@ -277,88 +206,73 @@ private:
 
 class GetLocal : public InstructionBase<Instruction::GetLocal> {
 public:
-    GetLocal(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+    GetLocal(Type* type, u32 index) : InstructionBase(type), m_index(index) {}
 
-    Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
+    void print(std::ostream&) const override;
 private:
-    Register m_dst;
     u32 m_index;
 };
 
 class GetLocalRef : public InstructionBase<Instruction::GetLocalRef> {
 public:
-    GetLocalRef(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+    GetLocalRef(Type* type, u32 index) : InstructionBase(type), m_index(index) {}
 
-    Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
     u32 m_index;
 };
 
 class SetLocal : public InstructionBase<Instruction::SetLocal> {
 public:
-    SetLocal(u32 index, Optional<Operand> src) : m_index(index), m_src(src) {}
+    SetLocal(u32 index, Value* src);
 
     u32 index() const { return m_index; }
-    Optional<Operand> src() const { return m_src; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
     u32 m_index;
-    Optional<Operand> m_src;
+    Value* m_src;
 };
 
 class GetGlobal : public InstructionBase<Instruction::GetGlobal> {
 public:
-    GetGlobal(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+    GetGlobal(Type* type, u32 index) : InstructionBase(type), m_index(index) {}
 
-    Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
     u32 m_index;
 };
 
 class GetGlobalRef : public InstructionBase<Instruction::GetGlobalRef> {
 public:
-    GetGlobalRef(Register dst, u32 index) : m_dst(dst), m_index(index) {}
+    GetGlobalRef(Type* type, u32 index) : InstructionBase(type), m_index(index) {}
 
-    Register dst() const { return m_dst; }
     u32 index() const { return m_index; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
     u32 m_index;
 };
 
 class SetGlobal : public InstructionBase<Instruction::SetGlobal> {
 public:
-    SetGlobal(u32 index, Constant* src) : m_index(index), m_src(src) {}
+    SetGlobal(u32 index, Constant* src);
 
     u32 index() const { return m_index; }
     Constant* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
     u32 m_index;
@@ -367,32 +281,28 @@ private:
 
 class Read : public InstructionBase<Instruction::Read> {
 public:
-    Read(Register dst, Register src) : m_dst(dst), m_src(src) {}
+    Read(Value* src);
 
-    Register dst() const { return m_dst; }
-    Register src() const { return m_src; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Register m_src;
+    Value* m_src;
 };
 
 class Write : public InstructionBase<Instruction::Write> {
 public:
-    Write(Register dst, Operand src) : m_dst(dst), m_src(src) {}
+    Write(Value* dst, Value* src);
 
-    Register dst() const { return m_dst; }
-    Operand src() const { return m_src; }
+    Value* dst() const { return m_dst; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Operand m_src;
+    Value* m_dst;
+    Value* m_src;
 };
 
 
@@ -400,18 +310,19 @@ private:
 #define DEFINE_ARITHMETIC_INSTRUCTION(name)                                                                             \
     class name : public InstructionBase<Instruction::name> { /* NOLINT */                                               \
     public:                                                                                                             \
-        name(Register dst, Operand lhs, Operand rhs) : m_dst(dst), m_lhs(lhs), m_rhs(rhs) {}                            \
+        name(Value* lhs, Value* rhs) : InstructionBase(lhs->type()), m_lhs(lhs), m_rhs(rhs) {                           \
+            m_lhs->add_user(this);                                                                                      \
+            m_rhs->add_user(this);                                                                                      \
+        }                                                                                                               \
                                                                                                                         \
-        Register dst() const { return m_dst; }                                                                          \
-        Operand lhs() const { return m_lhs; }                                                                           \
-        Operand rhs() const { return m_rhs; }                                                                           \
+        Value* lhs() const { return m_lhs; }                                                                            \
+        Value* rhs() const { return m_rhs; }                                                                            \
                                                                                                                         \
-        void dump() const override;                                                                                     \
-        void set_register_uses(Generator&) const override;                                                                  \
+        void print(std::ostream&) const override;                                                                       \
+                                                                                                                        \
     private:                                                                                                            \
-        Register m_dst;                                                                                                 \
-        Operand m_lhs;                                                                                                  \
-        Operand m_rhs;                                                                                                  \
+        Value* m_lhs;                                                                                                   \
+        Value* m_rhs;                                                                                                   \
     };
 
 ENUMERATE_BINARY_OPS(DEFINE_ARITHMETIC_INSTRUCTION)
@@ -421,13 +332,12 @@ ENUMERATE_BINARY_OPS(DEFINE_ARITHMETIC_INSTRUCTION)
 // `goto target`
 class Jump : public InstructionBase<Instruction::Jump> {
 public:
-    Jump(BasicBlock* target) : m_target(target) {}
+    Jump(BasicBlock* target);
 
     BasicBlock* target() const { return m_target; }
 
     bool is_terminator() const override { return true; }
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
     BasicBlock* m_target;
@@ -436,22 +346,18 @@ private:
 // `if (condition) { goto true_target } else { goto false_target }`
 class JumpIf : public InstructionBase<Instruction::JumpIf> {
 public:
-    JumpIf(
-        Operand condition, BasicBlock* true_target, BasicBlock* false_target
-    ) : m_condition(condition), m_true_target(true_target), m_false_target(false_target) {}
+    JumpIf(Value* condition, BasicBlock* true_target, BasicBlock* false_target);
 
-    Operand condition() const { return m_condition; }
+    Value* condition() const { return m_condition; }
 
     BasicBlock* true_target() const { return m_true_target; }
     BasicBlock* false_target() const { return m_false_target; }
 
     bool is_terminator() const override { return true; }
-    void dump() const override;
-
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Operand m_condition;
+    Value* m_condition;
     
     BasicBlock* m_true_target;
     BasicBlock* m_false_target;
@@ -459,94 +365,73 @@ private:
 
 class NewFunction : public InstructionBase<Instruction::NewFunction> {
 public:
-    NewFunction(Function* function) : m_function(function) {}
+    NewFunction(Function* function);
 
     Function* function() const { return m_function; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream& stream) const override;
 
 private:
-    Function* m_function;
-};
-
-class GetFunction : public InstructionBase<Instruction::GetFunction> {
-public:
-    GetFunction(Register dst, Function* function) : m_dst(dst), m_function(function) {}
-
-    Register dst() const { return m_dst; }
-    Function* function() const { return m_function; }
-
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
     Function* m_function;
 };
 
 class Return : public InstructionBase<Instruction::Return> {
 public:
-    Return(Optional<Operand> value = {}) : m_value(value) {}
+    Return(Value* value = nullptr);
 
-    Optional<Operand> value() const { return m_value; }
+    Value* value() const { return m_value; }
 
     bool is_terminator() const override { return true; }
-    void dump() const override;
-
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Optional<Operand> m_value;
+    Value* m_value;
 };
 
 class Call : public InstructionBase<Instruction::Call> {
 public:
     Call(
-        Register dst, Register function, FunctionType const* function_type, Vector<Operand> arguments
-    ) : m_dst(dst), m_function(function), m_function_type(function_type), m_arguments(move(arguments)) {}
+        Value* function, FunctionType const* function_type, Vector<Value*> arguments
+    ) : InstructionBase(function_type->return_type()), m_function(function), m_function_type(function_type), m_arguments(move(arguments)) {
+        function->add_user(this);
+        for (auto& value : m_arguments) {
+            value->add_user(this);
+        }
+    }
 
-    Register dst() const { return m_dst; }
-    Register function() const { return m_function; }
+    Value* function() const { return m_function; }
     FunctionType const* function_type() const { return m_function_type; }
-    Vector<Operand> const& arguments() const { return m_arguments; }
+    Vector<Value*> const& arguments() const { return m_arguments; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Register m_function;
+    Value* m_function;
     FunctionType const* m_function_type;
-    Vector<Operand> m_arguments;
+    Vector<Value*> m_arguments;
 };
 
 class Cast : public InstructionBase<Instruction::Cast> {
 public:
-    Cast(Register dst, Operand src, Type* type) : m_dst(dst), m_src(src), m_type(type) {}
+    Cast(Value* src, Type* type) : InstructionBase(type), m_src(src) {
+        m_src->add_user(this);
+    }
 
-    Register dst() const { return m_dst; }
-    Operand src() const { return m_src; }
-    Type* type() const { return m_type; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Operand m_src;
-    
-    Type* m_type;
+    Value* m_src;
 };
 
 class NewStruct : public InstructionBase<Instruction::NewStruct> {
 public:
-    NewStruct(Struct* structure) : m_structure(structure) {}
+    NewStruct(Struct* structure);
 
     Struct* structure() const { return m_structure; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
     Struct* m_structure;
@@ -554,126 +439,100 @@ private:
 
 class Construct : public InstructionBase<Instruction::Construct> {
 public:
-    Construct(Register dst, Struct* structure, Vector<Operand> arguments) : m_dst(dst), m_structure(structure), m_arguments(move(arguments)) {}
+    Construct(Struct* structure, Vector<Value*> arguments);
 
-    Register dst() const { return m_dst; }
     Struct* structure() const { return m_structure; }
-    Vector<Operand> const& arguments() const { return m_arguments; }
+    Vector<Value*> const& arguments() const { return m_arguments; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
     Struct* m_structure;
-    Vector<Operand> m_arguments;
+    Vector<Value*> m_arguments;
 };
 
 class Alloca : public InstructionBase<Instruction::Alloca> {
 public:
-    Alloca(Register dst, Type* type) : m_dst(dst), m_type(type) {}
+    Alloca(Type* type) : InstructionBase(type->get_pointer_to()) {}
 
-    Register dst() const { return m_dst; }
-    Type* type() const { return m_type; }
+    Type* get_allocated_type() const { return type()->get_pointee_type(); }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
-    Type* m_type;
+    void print(std::ostream&) const override;
 };
 
 class NewTuple : public InstructionBase<Instruction::NewTuple> {
 public:
-    NewTuple(Register dst, TupleType* type, Vector<Operand> elements) : m_dst(dst), m_type(type), m_elements(move(elements)) {}
+    NewTuple(TupleType* type, Vector<Value*> elements) : InstructionBase(type), m_elements(move(elements)) {
+        for (auto& value : m_elements) {
+            value->add_user(this);
+        }
+    }
 
-    Register dst() const { return m_dst; }
-    TupleType* type() const { return m_type; }
-    Vector<Operand> const& elements() const { return m_elements; }
+    Vector<Value*> const& elements() const { return m_elements; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    TupleType* m_type;
-    Vector<Operand> m_elements;
+    Vector<Value*> m_elements;
 };
 
 class Null : public InstructionBase<Instruction::Null> {
 public:
-    Null(Register dst, Type* type) : m_dst(dst), m_type(type) {}
+    Null(Type* type) : InstructionBase(type) {}
 
-    Register dst() const { return m_dst; }
-    Type* type() const { return m_type; }
-
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
-    Type* m_type;
+    void print(std::ostream&) const override;
 };
 
 class Boolean : public InstructionBase<Instruction::Boolean> {
 public:
-    Boolean(Register dst, bool value) : m_dst(dst), m_value(value) {}
+    Boolean(bool value);
 
-    Register dst() const { return m_dst; }
     bool value() const { return m_value; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
     bool m_value;
 };
 
 class Not : public InstructionBase<Instruction::Not> {
 public:
-    Not(Register dst, Operand src) : m_dst(dst), m_src(src) {}
+    Not(Value* src) : InstructionBase(src->type()), m_src(src) {
+        m_src->add_user(this);
+    }
 
-    Register dst() const { return m_dst; }
-    Operand src() const { return m_src; }
+    Value* src() const { return m_src; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Operand m_src;
+    Value* m_src;
 };
 
 class Memcpy : public InstructionBase<Instruction::Memcpy> {
 public:
-    Memcpy(Register dst, Register src, size_t size) : m_dst(dst), m_src(src), m_size(size) {}
+    Memcpy(Value* dst, Value* src, size_t size) : InstructionBase(dst->type()), m_dst(dst), m_src(src), m_size(size) {
+        m_src->add_user(this);
+        m_dst->add_user(this);
+    }
 
-    Register dst() const { return m_dst; }
-    Register src() const { return m_src; }
+    Value* dst() const { return m_dst; }
+    Value* src() const { return m_src; }
     size_t size() const { return m_size; }
 
-    void dump() const override;
-    void set_register_uses(Generator&) const override;
+    void print(std::ostream&) const override;
 
 private:
-    Register m_dst;
-    Register m_src;
+    Value* m_dst;
+    Value* m_src;
     size_t m_size;
 };
 
 class GetReturn : public InstructionBase<Instruction::GetReturn> {
 public:
-    GetReturn(Register dst) : m_dst(dst) {}
+    GetReturn(Type* type) : InstructionBase(type) {}
 
-    Register dst() const { return m_dst; }
-
-    void dump() const override;
-    void set_register_uses(Generator&) const override {}
-
-private:
-    Register m_dst;
+    void print(std::ostream&) const override;
 };
 
 }

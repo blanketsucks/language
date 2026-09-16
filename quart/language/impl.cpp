@@ -131,7 +131,7 @@ ErrorOr<RefPtr<Scope>> Impl::make(State& state, Type* type) {
     state.set_current_scope(scope);
 
     state.set_self_type(type);
-    TRY(m_body->generate(state, {}));
+    TRY(m_body->generate(state));
 
     state.set_current_scope(current_scope);
     state.switch_to(current_block);

@@ -6,289 +6,254 @@
 
 namespace quart::bytecode {
 
-String escape(const String& in) {
-    String out;
-    out.reserve(in.size()); // We reserve at least the size of the input string at first
+static inline String fmt(Constant* constant) {
+    std::stringstream stream;
+    constant->print(stream);
 
-    for (auto& c : in) {
-        if (std::isprint(c)) {
-            out.push_back(c);
-            continue;
+    return stream.str();
+}
+
+static inline String fmt(Value* value) {
+    switch (value->id()) {
+        case Value::InstructionID: {
+            return format("%{}", value->value_name());
         }
-
-        out.push_back('\\');
-        switch (c) {
-            case '"': out.push_back('"'); break;
-            case '\\': out.push_back('\\'); break;
-            case '\n': out.push_back('n'); break;
-            case '\r': out.push_back('r'); break;
-            case '\t': out.push_back('t'); break;
-            default:
-                // FIXME: Handle hex case
-                out.push_back(c);
+        case Value::FunctionID: {
+            auto* function = cast_unchecked<Function>(value);
+            return function->qualified_name();
+        }
+        case Value::ConstantID: {
+            return fmt(cast_unchecked<Constant>(value));
+        }
+        case Value::Unknown: {
+            return "???";
         }
     }
-
-    return out;
 }
 
-static inline String fmt(Register reg) {
-    return format("r{}", reg.index());
+static inline String fmt(const Vector<Value*>& values) {
+    return format_range(values, [](Value* v) { return fmt(v); });
 }
 
-static inline String fmt(Operand const& operand) {
-    if (operand.is_register()) {
-        return format("r{}", operand.value());
+static inline void print_prefix(const Instruction* instruction, std::ostream& stream) {
+    stream << '%' << instruction->value_name() << " = ";
+}
+
+NewArray::NewArray(Vector<Value*> elements, ArrayType* type) : InstructionBase(type), m_elements(move(elements)) {
+    for (auto& value : m_elements) {
+        value->add_user(this);
+    }
+}
+
+void NewArray::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("NewArray {}", fmt(m_elements));
+}
+
+NewLocalScope::NewLocalScope(Function* function, bool set) : InstructionBase(function->underlying_type()), m_function(function), m_set(set) {}
+
+void NewLocalScope::print(std::ostream& stream) const {
+    stream << "NewLocalScope";
+}
+
+void GetLocal::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetLocal {}", m_index);
+}
+
+void GetLocalRef::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetLocalRef {}", m_index);
+}
+
+SetLocal::SetLocal(u32 index, Value* src) : InstructionBase(src->type()), m_index(index), m_src(src) {
+    src->add_user(this);
+}
+
+void SetLocal::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    if (m_src) {
+        stream << format("SetLocal {}, {}", m_index, fmt(m_src));
     } else {
-        return format("{}", operand.value());
+        stream << format("SetLocal {}, {{}}", m_index);
     }
 }
 
-static String fmt(Vector<Operand> operands, char open = '[', char close = ']') {
-    String str = { open };
-    for (auto [index, operand] : llvm::enumerate(operands)) {
-        str.append(fmt(operand));
-        if (index == operands.size() - 1) {
-            continue;
-        }
-
-        str.append(", ");
-    }
-
-    str.push_back(close);
-    return str;
+void GetGlobal::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetGlobal {}", m_index);
 }
 
-static void set_register_use(Generator& gen, const Instruction* instruction, Register reg) {
-    // NOLINTNEXTLINE
-    gen.register_uses(reg).add(const_cast<Instruction*>(instruction));
+void GetGlobalRef::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetGlobalRef {}", m_index);
 }
 
-static void set_operand_use(Generator& gen, const Instruction* instruction, Operand op) {
-    if (op.is_value()) {
-        return;
-    }
-
-    // NOLINTNEXTLINE
-    set_register_use(gen, instruction, op.reg());
+SetGlobal::SetGlobal(u32 index, Constant* src) : InstructionBase(src->type()), m_index(index), m_src(src) {
+    src->add_user(this);
 }
 
-static void set_operands_use(Generator& gen, const Instruction* instruction, const Vector<Operand>& ops) {
-    for (auto& op : ops) {
-        set_operand_use(gen, instruction, op);
-    }
+void SetGlobal::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("SetGlobal {}, {}", m_index, fmt(m_src));
 }
 
-void Move::dump() const {
-    outln("Move {}, {}", fmt(m_dst), m_src);
+GetMember::GetMember(Type* type, Value* src, Value* index) : InstructionBase(type), m_src(src), m_index(index) {
+    m_src->add_user(this);
+    m_index->add_user(this);
 }
 
-void NewString::dump() const {
-    outln("NewString {}, \"{}\"", fmt(m_dst), escape(m_value));
+void GetMember::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetMember {}, {}", fmt(m_src), fmt(m_index));
 }
 
-void NewArray::dump() const {
-    outln("NewArray {}, {}", fmt(m_dst), fmt(m_elements));
+GetMemberRef::GetMemberRef(Type* type, Value* src, Value* index) : InstructionBase(type), m_src(src), m_index(index) {
+    m_src->add_user(this);
+    m_index->add_user(this);
 }
 
-void NewArray::set_register_uses(Generator& gen) const {
-    set_operands_use(gen, this, m_elements);
+void GetMemberRef::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << std::format("GetMemberRef {}, {}", fmt(m_src), fmt(m_index));
 }
 
-void NewLocalScope::dump() const {
-    outln("NewLocalScope");
+SetMember::SetMember(Value* dst, Value* index, Value* src) : InstructionBase(src->type()), m_dst(dst), m_index(index), m_src(src) {
+    dst->add_user(this);
+    index->add_user(this);
+    src->add_user(this);
 }
 
-void GetLocal::dump() const {
-    outln("GetLocal {}, {}", fmt(m_dst), m_index);
+void SetMember::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("SetMember {}, {}, {}", fmt(m_src), fmt(m_index), fmt(m_dst));
 }
 
-void GetLocalRef::dump() const {
-    outln("GetLocalRef {}, {}", fmt(m_dst), m_index);
+Read::Read(Value* src) : InstructionBase(src->type()->underlying_type()), m_src(src) {
+    src->add_user(this);
 }
 
-void SetLocal::dump() const {
-    if (m_src.has_value()) {
-        outln("SetLocal {}, {}", m_index, fmt(*m_src));
-    } else {
-        outln("SetLocal {}, {{}}", m_index);
-    }
+void Read::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Read {}", fmt(m_src));
 }
 
-void SetLocal::set_register_uses(Generator& gen) const {
-    if (m_src.has_value()) {
-        set_operand_use(gen, this, *m_src);
-    }
+Write::Write(Value* dst, Value* src) : InstructionBase(src->type()), m_dst(dst), m_src(src) {
+    dst->add_user(this);
+    src->add_user(this);
 }
 
-void GetGlobal::dump() const {
-    outln("GetGlobal {}, {}", fmt(m_dst), m_index);
-}
-
-void GetGlobalRef::dump() const {
-    outln("GetGlobalRef {}, {}", fmt(m_dst), m_index);
-}
-
-void SetGlobal::dump() const {
-    outln("SetGlobal {}, {}", m_index, "{}");
-}
-
-void GetMember::dump() const {
-    outln("GetMember {}, {}, {}", fmt(m_dst), fmt(m_src), fmt(m_index));
-}
-
-void GetMember::set_register_uses(Generator& gen) const {
-    set_register_use(gen, this, m_src);
-}
-
-void GetMemberRef::dump() const {
-    outln("GetMemberRef {}, {}, {}", fmt(m_dst), fmt(m_src), fmt(m_index));
-}
-
-void GetMemberRef::set_register_uses(Generator& gen) const {
-    set_register_use(gen, this, m_src);
-}
-
-void SetMember::dump() const {
-    outln("SetMember {}, {}, {}", fmt(m_src), fmt(m_dst), fmt(m_index));
-}
-
-void SetMember::set_register_uses(Generator& gen) const {
-    set_operand_use(gen, this, m_src);
-    set_operand_use(gen, this, m_index);
-}
-
-void Read::dump() const {
-    outln("Read {}, {}", fmt(m_dst), fmt(m_src));
-}
-
-void Read::set_register_uses(Generator& gen) const {
-    set_register_use(gen, this, m_src);
-}
-
-void Write::dump() const {
-    outln("Write {}, {}", fmt(m_dst), fmt(m_src));
-}
-
-void Write::set_register_uses(Generator& gen) const {
-    set_operand_use(gen, this, m_src);
+void Write::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Write {}, {}", fmt(m_dst), fmt(m_src));
 }
 
 // NOLINTNEXTLINE
-#define Op(x)                                                           \
-    void x::dump() const {                                              \
-        outln("{} {}, {}, {}", #x, fmt(m_dst), fmt(m_lhs), fmt(m_rhs)); \
-    }                                                                   \
-    void x::set_register_uses(Generator& gen) const {                   \
-        set_operand_use(gen, this, m_lhs);                              \
-        set_operand_use(gen, this, m_rhs);                              \
-    }
+#define Op(Inst)                                                            \
+    void Inst::print(std::ostream& stream) const {                          \
+        print_prefix(this, stream);                                         \
+        outln(#Inst " {}, {}", fmt(m_lhs), fmt(m_rhs));                     \
+    }                                                                       \
 
 ENUMERATE_BINARY_OPS(Op)
 
 #undef Op
 
-void Jump::dump() const {
-    outln("Jump {}", m_target->name());
+Jump::Jump(BasicBlock* block) : InstructionBase(nullptr), m_target(block) {}
+
+void Jump::print(std::ostream& stream) const {
+    stream << format("Jump {}", m_target->name());
 }
 
-void JumpIf::dump() const {
-    outln("JumpIf {}, {}, {}", fmt(m_condition), m_true_target->name(), m_false_target->name());
+JumpIf::JumpIf(
+    Value* condition, BasicBlock* true_target, BasicBlock* false_target
+) : InstructionBase(nullptr), m_condition(condition), m_true_target(true_target), m_false_target(false_target) {
+    condition->add_user(this);
 }
 
-void JumpIf::set_register_uses(Generator& gen) const {
-    set_operand_use(gen, this, m_condition);
+void JumpIf::print(std::ostream& stream) const {
+    stream << format("JumpIf {}, {}, {}", fmt(m_condition), m_true_target->name(), m_false_target->name());
 }
 
-void NewFunction::dump() const {
-    outln("NewFunction {}", m_function->qualified_name());
+NewFunction::NewFunction(Function* function) : InstructionBase(nullptr), m_function(function) {} 
+
+void NewFunction::print(std::ostream& stream) const {
+    stream << format("NewFunction {}", m_function->qualified_name());
 }
 
-void GetFunction::dump() const {
-    outln("GetFunction {}, {}", fmt(m_dst), m_function->qualified_name());
+Return::Return(Value* value) : InstructionBase(nullptr), m_value(value) {
+    if (value) {
+        value->add_user(this);
+    }
 }
 
-void Return::dump() const {
-    if (m_value.has_value()) {
-        outln("Return {}", fmt(m_value.value()));
+void Return::print(std::ostream& stream) const {
+    if (m_value) {
+        stream << format("Return {}", fmt(m_value));
     } else {
-        outln("Return");
+        stream << "Return";
     }
 }
 
-void Return::set_register_uses(Generator& gen) const {
-    if (m_value.has_value()) {
-        set_operand_use(gen, this, *m_value);
+void Call::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Call {}, {}", fmt(m_function), fmt(m_arguments));
+}
+
+void Cast::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Cast {}, {}", fmt(m_src), type()->str());
+}
+
+NewStruct::NewStruct(Struct* structure) : InstructionBase(nullptr), m_structure(structure) {}
+
+void NewStruct::print(std::ostream& stream) const {
+    stream << format("NewStruct {}", m_structure->qualified_name());
+}
+
+Construct::Construct(
+    Struct* structure, Vector<Value*> arguments
+) : InstructionBase(structure->underlying_type()), m_structure(structure), m_arguments(move(arguments)) {
+    for (auto* value : m_arguments) {
+        value->add_user(this);
     }
+} 
+
+void Construct::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Construct {}, {}", m_structure->qualified_name(), fmt(m_arguments));
 }
 
-void Call::dump() const {
-    outln("Call {}, {}, {}", fmt(m_dst), fmt(m_function), fmt(m_arguments));
+void Alloca::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Alloca {}", get_allocated_type()->str());
 }
 
-void Call::set_register_uses(Generator& gen) const {
-    set_register_use(gen, this, m_function);
-    set_operands_use(gen, this, m_arguments);
+void Null::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Null {}", type()->str());
 }
 
-void Cast::dump() const {
-    outln("Cast {}, {}, {}", fmt(m_dst), fmt(m_src), m_type->str());
+void Boolean::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Boolean {}", static_cast<i32>(m_value));
 }
 
-void Cast::set_register_uses(Generator& gen) const {
-    set_operand_use(gen, this, m_src);
+void Not::print(std::ostream& stream) const {
+    print_prefix(this, stream);
+    stream << format("Not {}", fmt(m_src));
 }
 
-void NewStruct::dump() const {
-    outln("NewStruct {}", m_structure->qualified_name());
+void Memcpy::print(std::ostream& stream) const {
+    stream << format("Memcpy {}, {}, {}", fmt(m_dst), fmt(m_src), m_size);
 }
 
-void Construct::dump() const {
-    outln("Construct {}, {}, {}", fmt(m_dst), m_structure->qualified_name(), fmt(m_arguments));
+void GetReturn::print(std::ostream& stream) const {
+    stream << "GetReturn";
 }
 
-void Construct::set_register_uses(Generator& gen) const {
-    set_operands_use(gen, this, m_arguments);
-}
-
-void Alloca::dump() const {
-    outln("Alloca {}, {}", fmt(m_dst), m_type->str());
-}
-
-void Null::dump() const {
-    outln("Null {}, {}", fmt(m_dst), m_type->str());
-}
-
-void Boolean::dump() const {
-    outln("Boolean {}, {}", fmt(m_dst), static_cast<i32>(m_value));
-}
-
-void Not::dump() const {
-    outln("Not {}, {}", fmt(m_dst), fmt(m_src));
-}
-
-void Not::set_register_uses(Generator& gen) const {
-    set_operand_use(gen, this, m_src);
-}
-
-void Memcpy::dump() const {
-    outln("Memcpy {}, {}, {}", fmt(m_dst), fmt(m_src), m_size);
-}
-
-void Memcpy::set_register_uses(Generator& gen) const {
-    set_register_use(gen, this, m_src);
-}
-
-void GetReturn::dump() const {
-    outln("GetReturn {}", fmt(m_dst));
-}
-
-void NewTuple::dump() const {
-    outln("NewTuple {}, {}", fmt(m_dst), fmt(m_elements, '(', ')'));
-}
-
-void NewTuple::set_register_uses(Generator& gen) const {
-    set_operands_use(gen, this, m_elements);
+void NewTuple::print(std::ostream& stream) const {
+    stream << format("NewTuple {}", fmt(m_elements));
 }
 
 }

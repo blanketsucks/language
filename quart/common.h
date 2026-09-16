@@ -104,6 +104,15 @@ inline OwnPtr<T> make(Args&&... args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
+template<typename T, typename F>
+constexpr auto opt_value_or(const Optional<T>& opt, F fn) {
+    if (opt.has_value()) {
+        return opt.value();
+    } else {
+        return fn();
+    }
+}
+
 enum class LinkageSpecifier : u8 {
     None,
     Unspecified,

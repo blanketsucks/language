@@ -58,18 +58,18 @@ public:
     ::llvm::Module& module() { return *m_module; }
 
 private:
-    ::llvm::Value* valueof(bytecode::Register);
-    ::llvm::Value* valueof(bytecode::Operand const&);
-
-    ::llvm::Value* valueof(Constant*);
+    ::llvm::Value* value_of(bytecode::Value*);
+    ::llvm::Value* value_of(bytecode::Constant*);
 
     ::llvm::Type* type_of(Type*);
 
     ::llvm::BasicBlock* create_block_from(bytecode::BasicBlock*);
 
-    ::llvm::Value* create_gep(bytecode::Register src, bytecode::Operand index);
+    ::llvm::Value* create_gep(bytecode::Value* src, bytecode::Value* index);
     
-    void set_register(bytecode::Register, ::llvm::Value*);
+    // Sets `a` to point to to the LLVM value `b`, so future references to `a` can point to a valid LLVM value.
+    // Does not set anything if `a` has no users.
+    void set_corresponding_value(bytecode::Value* a, ::llvm::Value* b);
 
 #define Op(x) void generate(bytecode::x*); // NOLINT
     ENUMERATE_BYTECODE_INSTRUCTIONS(Op)
@@ -84,7 +84,7 @@ private:
     OwnPtr<::llvm::Module> m_module;
     OwnPtr<::llvm::IRBuilder<>> m_ir_builder;
 
-    Vector<::llvm::Value*> m_registers;
+    HashMap<bytecode::Value*, ::llvm::Value*> m_value_map;
     Vector<::llvm::GlobalVariable*> m_globals;
 
     HashMap<TupleType*, ::llvm::StructType*> m_tuple_types;

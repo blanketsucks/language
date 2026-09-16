@@ -2,7 +2,7 @@
 
 #include <quart/common.h>
 #include <quart/language/types.h>
-#include <quart/language/constants.h>
+#include <quart/bytecode/constant.h>
 
 namespace quart {
 
@@ -12,7 +12,7 @@ using PointerTypeStorageKey = Pair<Type*, bool>;
 using ArrayTypeStorageKey = Pair<Type*, size_t>;
 using FunctionTypeStorageKey = Pair<Type*, Pair<Vector<Type*>, bool>>;
 
-template<typename T> requires(std::is_base_of_v<Constant, T>)
+template<typename T> requires(std::is_base_of_v<bytecode::Constant, T>)
 using ConstantMap = HashMap<Pair<Type*, typename T::value_type>, OwnPtr<T>>;
 
 class Context {
@@ -32,12 +32,12 @@ public:
     TraitType* create_trait_type(const String& name);
     EmptyType* create_empty_type(const String& name);
 
-    ConstantInt* create_int_constant(u64 value, Type* type);
-    ConstantFloat* create_float_constant(f64 value, Type* type);
-    ConstantString* create_string_constant(const String& value, Type* type);
-    ConstantArray* create_array_constant(const Vector<Constant*>& elements, Type* type);
-    ConstantStruct* create_struct_constant(const Vector<Constant*>& fields, Type* type);
-    ConstantNull* create_null_constant(Type* type);
+    bytecode::ConstantInt* create_int_constant(u64 value, Type* type);
+    bytecode::ConstantFloat* create_float_constant(f64 value, Type* type);
+    bytecode::ConstantString* create_string_constant(const String& value, Type* type);
+    bytecode::ConstantArray* create_array_constant(const Vector<bytecode::Constant*>& elements, Type* type);
+    bytecode::ConstantStruct* create_struct_constant(const Vector<bytecode::Constant*>& fields, Type* type);
+    bytecode::ConstantNull* create_null_constant(Type* type);
 
     Type* void_type() { return &m_void_type; }
 
@@ -82,14 +82,14 @@ private:
     TypeMap<String, OwnPtr<TraitType>> m_trait_types;
     TypeMap<String, OwnPtr<EmptyType>> m_empty_types;
 
-    ConstantMap<ConstantInt> m_int_constants;
-    ConstantMap<ConstantFloat> m_float_constants;
+    ConstantMap<bytecode::ConstantInt> m_int_constants;
+    ConstantMap<bytecode::ConstantFloat> m_float_constants;
     
-    ConstantMap<ConstantString> m_string_constants;
+    ConstantMap<bytecode::ConstantString> m_string_constants;
 
-    HashMap<Type*, OwnPtr<ConstantNull>> m_null_constants;
+    HashMap<Type*, OwnPtr<bytecode::ConstantNull>> m_null_constants;
 
-    HashMap<Pair<Type*, Vector<Constant*>>, OwnPtr<Constant>> m_aggregate_constants;
+    HashMap<Pair<Type*, Vector<bytecode::Constant*>>, OwnPtr<bytecode::Constant>> m_aggregate_constants;
 };
 
 }

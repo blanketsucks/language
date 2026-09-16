@@ -6,6 +6,8 @@
 #include <quart/language/impl.h>
 #include <quart/language/trait.h>
 #include <quart/language/type_checker.h>
+#include <quart/language/consteval.h>
+#include <quart/enums.h>
 
 namespace quart {
 
@@ -21,6 +23,15 @@ struct RegisterState {
 
     u8 flags = 0;
 };
+
+enum class ReferenceAccess {
+    None                       = 0,
+    Member                     = 1 << 0,
+    Mutable                    = 1 << 1,
+    PreserveOriginalMutability = 1 << 2,
+};
+
+MAKE_ENUM_BITWISE_OPS(ReferenceAccess)
 
 class State {
 public:
@@ -46,8 +57,11 @@ public:
     bytecode::Generator& generator() { return m_generator; }
     Context& context() { return *m_context; }
 
-    ConstantEvaluator& constant_evaluator() { return m_constant_evaluator; }
+    Type* i1() const { return m_context->i1(); }
+    Type* i32() const { return m_context->i32(); }
+
     TypeChecker& type_checker() { return m_type_checker; }
+    ConstantEvaluator& constant_evaluator() { return m_constant_evaluator; }
 
     Type* type_context() const { return m_type_context; }
     
@@ -66,8 +80,8 @@ public:
     size_t global_count() const { return m_global_count; }
     Vector<RefPtr<Variable>> const& globals() const { return m_globals; }
 
-    Optional<bytecode::Register> self() const { return m_self; }
-    Optional<bytecode::Register> return_register() const { return m_return; }
+    Optional<bytecode::Value*> self() const { return m_self; }
+    Optional<bytecode::Value*> return_register() const { return m_return; }
     
     void set_current_scope(RefPtr<Scope> scope) { m_current_scope = move(scope); }
     void set_current_function(Function* function) { m_current_function = function; }
@@ -85,22 +99,12 @@ public:
     bytecode::BasicBlock* create_block(String name = {}) { return m_generator.create_block(move(name)); }
     void switch_to(bytecode::BasicBlock* block);
 
-    bytecode::Register allocate_register();
-
-    void set_register_state(bytecode::Register reg, quart::Type* type, Function* function = nullptr, u8 flags = 0);
-    void set_register_flags(bytecode::Register reg, u8 flags) { m_registers[reg.index()].flags = flags; }
-
-    RegisterState const& register_state(bytecode::Register reg) const { return m_registers[reg.index()]; }
-
     size_t allocate_global() { return m_global_count++; }
 
-    Type* type(bytecode::Register) const;
-    Type* type(bytecode::Operand const&) const;
-
-    void inject_self(bytecode::Register reg) { m_self = reg; }
+    void inject_self(bytecode::Value* value) { m_self = value; }
     void reset_self() { m_self = {}; }
 
-    void inject_return(bytecode::Register reg) { m_return = reg; }
+    void inject_return(bytecode::Value* value) { m_return = value; }
     void reset_return() { m_return = {}; }
 
     template<typename T, typename... Args>
@@ -136,40 +140,16 @@ public:
         return nullptr;
     }
     
-    ErrorOr<bytecode::Register> resolve_reference(
-        ast::Expr const&, 
-        bool is_mutable = false, 
-        Optional<bytecode::Register> dst = {},
-        bool use_default_case = true,
-        bool override_mutability = false
-    );
-
-    ErrorOr<bytecode::Register> resolve_reference(
-        Scope&, Span,
-        const String& name,
-        bool is_mutable,
-        Optional<bytecode::Register> dst = {},
-        bool override_mutability = false
-    );
+    ErrorOr<bytecode::Value*> resolve_reference(ast::Expr const&, ReferenceAccess access, bool use_default_case = true);
+    ErrorOr<bytecode::Value*> resolve_reference(Scope&, Span, const String& name, ReferenceAccess access);
 
     ErrorOr<Symbol*> resolve_symbol(ast::Expr const&);
     ErrorOr<Struct*> resolve_struct(ast::Expr const&);
 
-    ErrorOr<bytecode::Operand> type_check_and_cast(Span, bytecode::Operand, Type* target, StringView error_message);
+    ErrorOr<bytecode::Value*> type_check_and_cast(Span, bytecode::Value*, Type* target, StringView error_message);
 
-    ErrorOr<bytecode::Register> generate_attribute_access(
-        ast::AttributeExpr const&,
-        bool as_reference,
-        bool as_mutable = false,
-        Optional<bytecode::Register> dst = {}
-    );
-
-    ErrorOr<bytecode::Register> generate_index_access(
-        ast::IndexExpr const&,
-        bool as_reference,
-        bool as_mutable = false,
-        Optional<bytecode::Register> dst = {}
-    );
+    ErrorOr<bytecode::Value*> generate_attribute_access(ast::AttributeExpr const&, ReferenceAccess access);
+    ErrorOr<bytecode::Value*> generate_index_access(ast::IndexExpr const&, ReferenceAccess access);
 
     fs::Path search_import_paths(const String& name);
 
@@ -207,8 +187,8 @@ private:
 
     Vector<RefPtr<Variable>> m_globals;
 
-    Optional<bytecode::Register> m_self;
-    Optional<bytecode::Register> m_return; // Used for constructor functions
+    Optional<bytecode::Value*> m_self;
+    Optional<bytecode::Value*> m_return; // Used for constructor functions
 
     HashMap<Type*, OwnPtr<Impl>> m_impls;
     Vector<OwnPtr<Impl>> m_generic_impls;
