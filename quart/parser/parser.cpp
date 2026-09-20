@@ -151,7 +151,7 @@ bool Parser::is_upcoming_constructor(ast::Expr const& previous) const {
         return false;
     }
 
-    return previous.is(ast::ExprKind::Identifier, ast::ExprKind::Path);
+    return isa<ast::IdentifierExpr>(previous) || isa<ast::PathExpr>(previous);
 }
 
 AttributeHandler::Result Parser::handle_expr_attributes(const ast::Attributes& attributes) {

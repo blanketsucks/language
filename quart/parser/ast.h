@@ -302,14 +302,7 @@ public:
     Attributes& attributes() { return m_attrs; }
     const Attributes& attributes() const { return m_attrs; }
 
-    bool is(ExprKind kind) const { return m_kind == kind; }
-
-    template<typename... Args> requires(of_type_v<ExprKind, Args...>)
-    bool is(ExprKind kind, Args... args) const {
-        return m_kind == kind || this->is(args...);
-    }
-
-    bool is_function_decl() const { return this->is(ExprKind::FunctionDecl); }
+    bool is_function_decl() const { return kind() == ExprKind::FunctionDecl; }
 
     virtual BytecodeResult generate(State&) const = 0;
 
@@ -319,6 +312,7 @@ protected:
 private:
     Span m_span;
     ExprKind m_kind;
+    Type* m_type;
 };
 
 template<ExprKind Kind>
