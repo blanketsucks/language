@@ -49,6 +49,13 @@ void Compiler::dump() const {
 
     stream << format("Optimization level: 'O{}'", (u32)m_options.opts.level) << '\n';
 
+    switch (m_options.backend) {
+        case Backend::Native:
+            stream << "Backend: Native" << '\n'; break;
+        case Backend::LLVM:
+            stream << "Backedn: LLVM" << '\n'; break;
+    }
+
     StringView fmt = OUTPUT_FORMATS_TO_STR.at(m_options.format);
     stream << format("Output format: '{}'", fmt) << '\n';
 
@@ -75,7 +82,7 @@ void Compiler::dump() const {
 
     if (!m_options.library_paths.empty()) {
         String libpaths = format_range(m_options.library_paths);
-        stream << "    - " << quart::format("Library paths: {}", libpaths) << '\n';
+        stream << "    - " << format("Library paths: {}", libpaths) << '\n';
     }
 
     stream << format("Linker: '{}'", m_options.linker) << '\n';
@@ -87,7 +94,7 @@ void Compiler::dump() const {
 
     }
 
-    std::cout << stream.str();
+    std::cout << stream.str() << '\n';
     return;
 }
 
@@ -165,24 +172,9 @@ int Compiler::compile() const {
 
     this->run_bytecode_passes(state);
 
-#if 0
-    llvm::LLVMCodeGen codegen(state, m_options.file.filename());
-    auto result = codegen.generate(m_options);
+    CodeGenType cg_type = m_options.backend == Backend::Native ? CodeGenType::x86_64 : CodeGenType::LLVM;
 
-    if (result.is_err()) {
-        auto& err = result.error();
-        errln("\x1b[1;37mquart: \x1b[1;31merror: \x1b[0m{}", err.message());
-
-        return 1;
-    }
-
-    Vector<String> arguments = this->get_linker_arguments();
-    String command = ::llvm::join(arguments, " ");
-
-    int retcode = std::system(command.c_str());
-    return retcode;
-#else
-    auto codegen = CodeGen::create(state, CodeGenType::x86_64, m_options.file.filename());
+    auto codegen = CodeGen::create(state, cg_type, m_options.file.filename());
     auto result = codegen->generate(m_options);
     if (result.is_err()) {
         auto& err = result.error();
@@ -191,7 +183,16 @@ int Compiler::compile() const {
         return 1;
     }
 
-#endif
+    switch (cg_type) {
+        case CodeGenType::LLVM: {
+            Vector<String> arguments = this->get_linker_arguments();
+            String command = ::llvm::join(arguments, " ");
+
+            int retcode = std::system(command.c_str());
+            return retcode;
+        }
+        case CodeGenType::x86_64: {}
+    }
 
     return 0;
 }

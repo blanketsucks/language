@@ -116,6 +116,17 @@ const llvm::cl::opt<bool> jit(
     llvm::cl::cat(category)
 );
 
+const llvm::cl::opt<Backend> backend(
+    "backend",
+    llvm::cl::desc("Choose what backend the compiler uses"), 
+    llvm::cl::init(Backend::Native), 
+    llvm::cl::values(
+        clEnumValN(Backend::Native, "native", "Native code generation (default)"),
+        clEnumValN(Backend::LLVM, "llvm", "Use LLVM for code generation")
+    ),
+    llvm::cl::cat(category)
+);
+
 const llvm::cl::list<String> files(llvm::cl::Positional, llvm::cl::desc("<files>"), llvm::cl::ZeroOrMore);
 
 ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
@@ -149,6 +160,7 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
     args.target = target.getValue();
     args.mangle_style = mangle_style;
     args.jit = jit;
+    args.backend = backend;
 
     args.library_names = std::set<String>(libraries.begin(), libraries.end());
 

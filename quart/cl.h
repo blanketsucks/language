@@ -25,6 +25,8 @@ struct Arguments {
     
     OptimizationLevel optimization_level;
 
+    Backend backend;
+
     bool verbose = false;
     bool no_libc = false;
     bool print_all_targets = false;

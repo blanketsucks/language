@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
             .level = args.optimization_level,
             .mangle_style = args.mangle_style
         },
+        .backend = args.backend,
         .verbose = args.verbose,
         .no_libc = args.no_libc,
         .object_files = {},

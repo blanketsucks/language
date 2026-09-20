@@ -21,6 +21,11 @@ enum class OutputFormat : u8 {
     SharedLibrary
 };
 
+enum class Backend : u8 {
+    LLVM,
+    Native
+};
+
 static const std::map<OutputFormat, StringView> OUTPUT_FORMATS_TO_STR = {
     {OutputFormat::Object, "Object"},
     {OutputFormat::LLVM, "LLVM IR"},
@@ -83,6 +88,7 @@ struct CompilerOptions {
 
     OutputFormat format = OutputFormat::Executable;
     OptimizationOptions opts;
+    Backend backend;
 
     bool verbose = false;
     bool no_libc = false;

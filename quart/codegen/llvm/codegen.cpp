@@ -234,7 +234,7 @@ void LLVMCodeGen::generate(bytecode::SetGlobal* inst) {
 
 ::llvm::Value* LLVMCodeGen::create_gep(bytecode::Value* src, bytecode::Value* index) {
     Vector<::llvm::Value*> indices = {
-        ::llvm::ConstantInt::get(::llvm::Type::getInt32Ty(*m_context),0),
+        ::llvm::ConstantInt::get(::llvm::Type::getInt32Ty(*m_context), 0),
         value_of(index)
     };
 
