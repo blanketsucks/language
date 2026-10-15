@@ -43,9 +43,10 @@ public:
     };
 
     static RefPtr<SourceCode> create(String code, String filename);
-    static RefPtr<SourceCode> from_path(fs::Path);
+    static RefPtr<SourceCode> from_path(const fs::Path&);
 
     static RefPtr<SourceCode> lookup(size_t index);
+    static RefPtr<SourceCode> lookup(const Span& span);
 
     u16 index() const { return m_index; }
     StringView code() const { return m_code; }
@@ -58,7 +59,7 @@ public:
 
     static String format_note(const Span&, StringView message);
     static String format_warning(const Span&, StringView message);
-    static String format_error(class Error&);
+    static String format_error(class Error const&);
 
     static String format_generic_message(const Span&, StringView message, MessageType);
 private:

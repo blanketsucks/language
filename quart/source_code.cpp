@@ -1,6 +1,7 @@
 #include <quart/source_code.h>
 #include <quart/errors.h>
 #include <algorithm>
+#include <fstream>
 
 #include <llvm/ADT/StringExtras.h>
 
@@ -32,16 +33,23 @@ RefPtr<SourceCode> SourceCode::lookup(size_t index) {
     return s_source_codes[index];
 }
 
+RefPtr<SourceCode> SourceCode::lookup(const Span& span) {
+    return lookup(span.source_code_index() - 1);
+}
+
 RefPtr<SourceCode> SourceCode::create(String code, String filename) {
-    auto source_code = RefPtr<SourceCode>(new SourceCode(move(code), move(filename), s_source_codes.size()));
+    auto source_code = RefPtr<SourceCode>(new SourceCode(move(code), move(filename), s_source_codes.size() + 1));
     s_source_codes.push_back(source_code);
 
     return source_code;
 }
 
-RefPtr<SourceCode> SourceCode::from_path(fs::Path path) {
-    auto ss = path.read();
-    return SourceCode::create(ss.str(), path);
+RefPtr<SourceCode> SourceCode::from_path(const fs::Path& path) {
+    std::ifstream file(path);
+    std::stringstream buffer;
+    
+    buffer << file.rdbuf(); 
+    return SourceCode::create(buffer.str(), path);
 }
 
 Line SourceCode::line_for(size_t offset) const {
@@ -57,8 +65,11 @@ size_t SourceCode::column_for(size_t offset) const {
 }
 
 StringView SourceCode::line(const Span& span) {
-    // FIXME: Check if the source code index is 0
-    auto source_code = SourceCode::lookup(span.source_code_index());
+    if (span.source_code_index() == 0) {
+        return {};
+    }
+
+    auto source_code = SourceCode::lookup(span);
     auto [line, start] = source_code->line_for(span.start());
 
     size_t next_line_offset = source_code->next_line_offset(line);
@@ -72,7 +83,13 @@ StringView SourceCode::line(const Span& span) {
 
 String SourceCode::format_generic_message(const Span& span, StringView message, MessageType type) {
     auto& [name, color] = MESSAGE_TYPES.at(type);
-    auto source_code = SourceCode::lookup(span.source_code_index());
+    if (span.source_code_index() == 0) {
+        return format(
+            "\x1b[1;37mquart: {}{}: \x1b[0m{}", color, name, message
+        );
+    }
+
+    auto source_code = SourceCode::lookup(span);
 
     auto [lineno, start] = source_code->line_for(span.start());
     auto column = span.start() - start;
@@ -98,7 +115,7 @@ String SourceCode::format_generic_message(const Span& span, StringView message, 
     );
 }
 
-String SourceCode::format_error(Error& error) {
+String SourceCode::format_error(Error const& error) {
     Vector<String> messages;
     messages.push_back(format_generic_message(error.span(), error.message(), MessageType::Error));
 
@@ -106,7 +123,7 @@ String SourceCode::format_error(Error& error) {
         messages.push_back(format_generic_message(note.span, note.note, MessageType::Note));
     }
 
-    return llvm::join(messages, "\n");
+    return join(messages, "\n");
 }
 
 String SourceCode::format_warning(const Span& span, StringView message) {
