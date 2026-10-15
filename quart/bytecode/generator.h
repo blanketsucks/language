@@ -44,9 +44,6 @@ public:
 
     BasicBlock* current_block() { return m_current_block; }
 
-    bytecode::Register allocate_register();
-    size_t register_count() const { return m_next_register_id; }
-
     template<typename T, typename... Args>
     T* emit(Args&&... args) {
         T* op = new T(std::forward<Args>(args)...);
@@ -59,9 +56,6 @@ public:
         return op;
     }
 
-    RegisterUse& register_uses(Register reg) { return m_register_uses[reg]; }
-    HashMap<Register, RegisterUse> const& all_register_uses() const { return m_register_uses; }
-
 private:
     BasicBlock* m_current_block = nullptr;
 
@@ -70,8 +64,6 @@ private:
     
     u32 m_next_block_id = 0;
     u32 m_next_register_id = 0;
-
-    HashMap<Register, RegisterUse> m_register_uses;
 };
 
 }
