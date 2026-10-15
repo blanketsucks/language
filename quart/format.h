@@ -12,6 +12,9 @@ namespace quart {
 template<typename Container>
 using ContainerIterator = decltype(std::declval<Container>().begin());
 
+template<typename Container>
+using IteratorValue = std::iterator_traits<ContainerIterator<Container>>::value_type;
+
 using std::format;
 
 template<typename ...Args>
@@ -20,7 +23,7 @@ String dyn_format(StringView fmt, Args&&... args) {
 }
 
 template<typename Container> requires std::is_same_v<typename std::iterator_traits<ContainerIterator<Container>>::value_type, String>
-String format_range(const Container& container) {
+String format_range(const Container& container, StringView sep = ", ") {
     String result;
     if (container.empty()) {
         return result;
@@ -32,7 +35,7 @@ String format_range(const Container& container) {
     ++it;
 
     for (; it != container.end(); ++it) {
-        result.append(", ");
+        result.append(sep);
         result.append(*it);
     }
 
@@ -40,7 +43,7 @@ String format_range(const Container& container) {
 }
 
 template<typename Container, typename F>
-String format_range(const Container& container, F&& formatter) {
+String format_range(const Container& container, F&& formatter, StringView sep = ", ") {
     String result;
 
     if (container.empty()) {
@@ -53,11 +56,16 @@ String format_range(const Container& container, F&& formatter) {
     ++it;
 
     for (; it != container.end(); ++it) {
-        result.append(", ");
+        result.append(sep);
         result.append(formatter(*it));
     }
 
     return result;
+}
+
+template<typename Container> requires(std::is_same_v<IteratorValue<Container>, String>)
+String join(const Container& c, StringView sep) {
+    return format_range(c, sep);
 }
 
 template<typename ...Args>
