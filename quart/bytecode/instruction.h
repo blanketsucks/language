@@ -2,7 +2,6 @@
 
 #include <quart/common.h>
 
-#include <quart/bytecode/register.h>
 #include <quart/bytecode/value.h>
 #include <quart/bytecode/constant.h>
 #include <quart/lexer/tokens.h>

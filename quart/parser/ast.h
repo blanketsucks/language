@@ -4,7 +4,6 @@
 #include <quart/attributes/attributes.h>
 
 #include <quart/errors.h>
-#include <quart/bytecode/register.h>
 #include <quart/bytecode/instruction.h>
 
 #include <quart/language/functions.h>

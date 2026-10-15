@@ -2,7 +2,6 @@
 
 #include <quart/language/types.h>
 #include <quart/language/symbol.h>
-#include <quart/bytecode/register.h>
 #include <quart/bytecode/constant.h>
 #include <quart/common.h>
 
