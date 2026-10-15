@@ -144,7 +144,7 @@ public:
 
     ErrorOr<ast::Attributes> parse_attributes();
 
-    ErrorOr<ExprList<>> parse();
+    ErrorOr<OwnPtr<ast::ParseModule>> parse();
     ErrorOr<ExprList<>> statements();
 
     ParseResult<ast::Expr> statement();
@@ -166,6 +166,8 @@ private:
     bool m_in_loop = false;
     bool m_in_struct = false;
     bool m_self_allowed = false;
+
+    Vector<ast::ImportExpr*> m_imports;
 
     HashMap<StringView, AttributeFunc> m_attributes;
 };

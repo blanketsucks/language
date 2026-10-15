@@ -1,17 +1,17 @@
 #include <quart/compiler.h>
 #include <quart/lexer/lexer.h>
 #include <quart/parser/parser.h>
+#include <quart/parser/analysis/pass.h>
+#include <quart/parser/imports.h>
 #include <quart/language/state.h>
 #include <quart/language/symbol.h>
 #include <quart/codegen/codegen.h>
 #include <quart/codegen/llvm/codegen.h>
 #include <quart/target.h>
 
+#include <quart/parser/analysis/name_resolution.h>
 #include <quart/bytecode/passes/eliminate_unreachable_blocks.h>
 
-#include <llvm/Passes/PassBuilder.h>
-#include <llvm/Support/Program.h>
-#include <llvm/ADT/StringExtras.h>
 #include <llvm/TargetParser/Host.h>
 
 #include <sstream>
@@ -153,6 +153,45 @@ void Compiler::run_bytecode_passes(State& state) const {
     }
 }
 
+static ErrorOr<void> ensure_no_errors(State& state) {
+    auto& diag = state.diagnostics();
+    if (diag.empty()) {
+        return {};
+    }
+
+    for (auto& err : diag.errors()) {
+        errln("{}", SourceCode::format_error(err));
+    }
+
+    for (auto& note : diag.notes()) {
+        errln("{}", SourceCode::format_note(note.span, note.note));
+    }
+
+    if (!diag.has_errors()) {
+        diag.clear();
+        return {};
+    }
+
+    return Error({}, "Compilation failed.");
+}
+
+int Compiler::run_ast_passes(OwnPtr<ast::ParseModule> module, State& state) const {
+    StaticSemanticsPassManager pm;
+    pm.set_after_pass_callback([&state]() -> ErrorOr<void> { return ensure_no_errors(state); });
+
+    ImportLoader loader(state);
+    Program program = TRY(loader.load_imports(*module));
+
+    program.add_module(move(module));
+    TRY(ensure_no_errors(state));
+    
+    pm.add<NameResolutionPass>();
+
+    TRY(pm.run(program, state));
+
+    return 0;
+}
+
 int Compiler::compile() const {
     String target = m_options.has_target() ? Target::normalize(m_options.target) : ::llvm::sys::getDefaultTargetTriple();
     Target::set_build_target(target);
@@ -163,11 +202,16 @@ int Compiler::compile() const {
     Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));
-    ExprList<> ast = TRY(parser.parse());
+    auto module = TRY(parser.parse());
 
     State state;
-    for (auto& expr : ast) {
-        TRY(expr->generate(state));
+    if (this->run_ast_passes(move(module), state)) {
+        return 1;
+    }
+
+#if 0
+    for (auto& stmt : prog->stmts()) {
+        TRY(stmt->generate(state));
     }
 
     this->run_bytecode_passes(state);
@@ -186,13 +230,14 @@ int Compiler::compile() const {
     switch (cg_type) {
         case CodeGenType::LLVM: {
             Vector<String> arguments = this->get_linker_arguments();
-            String command = ::llvm::join(arguments, " ");
+            String command = join(arguments, " ");
 
             int retcode = std::system(command.c_str());
             return retcode;
         }
         case CodeGenType::x86_64: {}
     }
+#endif
 
     return 0;
 }

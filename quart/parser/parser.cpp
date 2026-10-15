@@ -1199,8 +1199,9 @@ ErrorOr<Path> Parser::parse_path(Optional<String> name, ExprList<ast::TypeExpr> 
     return path;
 }
 
-ErrorOr<ExprList<>> Parser::parse() {
-    return this->statements();
+ErrorOr<OwnPtr<ast::ParseModule>> Parser::parse() {
+    auto block = TRY(this->statements());
+    return ast::ParseModule::create(move(block), move(m_imports));
 }
 
 ErrorOr<ExprList<>> Parser::statements() {
@@ -1396,8 +1397,10 @@ ParseResult<ast::Expr> Parser::statement() {
             Span end = TRY(this->expect(TokenKind::SemiColon)).span();
             Span span = { start, end };
             
-            // FIXME: Rather than an ImportExpr, we should just resolve the everything here and return ModuleExpr
-            return { make<ast::ImportExpr>(span, move(path), is_wildcard, is_relative, move(symbols)) };
+            auto import = make<ast::ImportExpr>(span, move(path), is_wildcard, is_relative, move(symbols));
+            m_imports.push_back(import.get());
+
+            return { move(import) };
         }
         case TokenKind::Module: {
             this->next();

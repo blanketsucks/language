@@ -28,6 +28,10 @@ public:
         return RefPtr<Variable>(new Variable(move(name), index, type, flags));
     }
 
+    static RefPtr<Variable> create(String name, u8 flags = None) {
+        return RefPtr<Variable>(new Variable(move(name), 0, nullptr, flags));
+    }
+
     u8 flags() const { return m_flags; }
 
     size_t index() const { return m_index; }

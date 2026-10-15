@@ -10,6 +10,10 @@
 
 namespace quart {
 
+namespace ast {
+    class ParseModule;
+}
+
 class State;
 
 enum class OutputFormat : u8 {
@@ -198,6 +202,7 @@ public:
 
 private:
     void run_bytecode_passes(State&) const;
+    int run_ast_passes(OwnPtr<ast::ParseModule>, State&) const;
 
     CompilerOptions m_options;
 };

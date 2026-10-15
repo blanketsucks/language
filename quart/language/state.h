@@ -7,6 +7,7 @@
 #include <quart/language/trait.h>
 #include <quart/language/type_checker.h>
 #include <quart/language/consteval.h>
+#include <quart/language/diagnostics.h>
 #include <quart/enums.h>
 
 namespace quart {
@@ -57,6 +58,13 @@ public:
 
     TypeChecker& type_checker() { return m_type_checker; }
     ConstantEvaluator& constant_evaluator() { return m_constant_evaluator; }
+
+    Diagnostics& diagnostics() { return *m_diag; }
+    Diagnostics const& diagnostics() const { return *m_diag; }
+
+    void add_error_diagnostic(const Error& err) {
+        return m_diag->add_error(err);
+    }
 
     Type* type_context() const { return m_type_context; }
     
@@ -157,6 +165,8 @@ public:
 private:
     bytecode::Generator m_generator;
     OwnPtr<Context> m_context;
+
+    OwnPtr<Diagnostics> m_diag;
 
     ConstantEvaluator m_constant_evaluator;
     TypeChecker m_type_checker;

@@ -287,6 +287,13 @@ struct MatchArm {
     bool is_wildcard() const { return this->pattern.is_wildcard; }
 };
 
+struct SemanticInfo {
+    Type* type = nullptr;
+    bytecode::Constant* constant = nullptr;
+
+    Scope* scope = nullptr;
+};
+
 class Expr {
 public:
     NO_COPY(Expr)
@@ -301,6 +308,8 @@ public:
     Attributes& attributes() { return m_attrs; }
     const Attributes& attributes() const { return m_attrs; }
 
+    SemanticInfo& semantic_info() const { return m_sem; }
+
     bool is_function_decl() const { return kind() == ExprKind::FunctionDecl; }
 
     virtual BytecodeResult generate(State&) const = 0;
@@ -311,7 +320,30 @@ protected:
 private:
     Span m_span;
     ExprKind m_kind;
-    Type* m_type;
+
+    mutable SemanticInfo m_sem;
+};
+
+class ImportExpr;
+
+class ParseModule {
+public:
+    static OwnPtr<ParseModule> create(ExprList<> stmts, Vector<ImportExpr*> imports) {
+        return OwnPtr<ParseModule>(new ParseModule(move(stmts), move(imports)));
+    }
+
+    ExprList<>& stmts() { return m_stmts; }
+    ExprList<> const& stmts() const { return m_stmts; }
+
+    Vector<ImportExpr*>& imports() { return m_imports; }
+    Vector<ImportExpr*> const& imports() const { return m_imports; }
+
+
+private:
+    ParseModule(ExprList<> stmts, Vector<ImportExpr*> imports) : m_stmts(move(stmts)), m_imports(move(imports)) {}
+
+    ExprList<> m_stmts;
+    Vector<ImportExpr*> m_imports;
 };
 
 template<ExprKind Kind>

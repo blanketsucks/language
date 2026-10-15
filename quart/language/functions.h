@@ -82,6 +82,7 @@ public:
 
     String const& qualified_name() const { return m_qualified_name; }
 
+    void set_scope(RefPtr<Scope> scope) { m_scope = move(scope); }
     RefPtr<Scope> scope() const { return m_scope; }
 
     bool is_decl() const { return m_is_decl; }
