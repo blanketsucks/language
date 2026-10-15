@@ -1,5 +1,5 @@
-#include <quart/compiler.h>
-#include <quart/cl.h>
+#include <quart/compiler/compiler.h>
+#include <quart/compiler/cl.h>
 
 #include <llvm/Support/ManagedStatic.h>
 #include <llvm/MC/TargetRegistry.h>

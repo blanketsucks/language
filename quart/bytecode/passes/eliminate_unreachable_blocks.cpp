@@ -1,5 +1,5 @@
 #include <quart/bytecode/passes/eliminate_unreachable_blocks.h>
-#include <quart/language/functions.h>
+#include <quart/symbols/functions.h>
 
 namespace quart::bytecode {
 

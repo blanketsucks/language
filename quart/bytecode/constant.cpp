@@ -1,5 +1,5 @@
 #include <quart/bytecode/constant.h>
-#include <quart/language/context.h>
+#include <quart/context.h>
 #include <quart/format.h>
 
 namespace quart::bytecode {

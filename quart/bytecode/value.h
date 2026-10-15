@@ -1,7 +1,7 @@
 #pragma once
 
 #include <quart/common.h>
-#include <quart/language/types.h>
+#include <quart/types.h>
 
 #include <ostream>
 

@@ -1,0 +1,652 @@
+#include <quart/consteval.h>
+#include <quart/state.h>
+#include <quart/temporary_change.h>
+
+#include <cmath>
+
+// These are expressions that are always not constant no matter what
+// NOTE: Call, Return, EmptyConstructor, Cast and Ternary could be implemented in the future.
+#define ENUMERATE_NON_CONSTANT_EXPR(Op)         \
+    Op(ExternBlock)                             \
+    Op(Assignment)                              \
+    Op(TupleAssignment)                         \
+    Op(Const)                                   \
+    Op(Reference)                               \
+    Op(Call)                                    \
+    Op(Return)                                  \
+    Op(FunctionDecl)                            \
+    Op(Function)                                \
+    Op(Defer)                                   \
+    Op(Struct)                                  \
+    Op(Cast)                                    \
+    Op(Using)                                   \
+    Op(Enum)                                    \
+    Op(Import)                                  \
+    Op(Ternary)                                 \
+    Op(ArrayFill)                               \
+    Op(TypeAlias)                               \
+    Op(StaticAssert)                            \
+    Op(Maybe)                                   \
+    Op(Module)                                  \
+    Op(Impl)                                    \
+    Op(Trait)                                   \
+    Op(ImplTrait)                               \
+    Op(Match)                                   \
+    Op(RangeFor)
+
+namespace quart {
+
+using bytecode::Constant;
+
+using bytecode::ConstantFloat, bytecode::ConstantInt, bytecode::ConstantString;
+using bytecode::ConstantNull, bytecode::ConstantArray, bytecode::ConstantStruct;
+
+static constexpr size_t MAX_LOOP_COUNT = 1'000'000;
+
+template<typename T>
+Optional<T> ConstantEvaluator::evaluate_binary_operation(BinaryOp op, T lhs, T rhs) const {
+    switch (op) {
+        case BinaryOp::Add:
+            return lhs + rhs;
+        case BinaryOp::Sub:
+            return lhs - rhs;
+        case BinaryOp::Mul:
+            return lhs * rhs;
+        case BinaryOp::Div:
+            return lhs / rhs;
+        case BinaryOp::Mod:
+            if constexpr (std::is_floating_point_v<T>) {
+                return std::fmod(lhs, rhs);
+            } else {
+                return lhs % rhs;
+            }
+        case BinaryOp::Or:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs | rhs;
+            }
+        case BinaryOp::And:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs & rhs;
+            }
+        case BinaryOp::LogicalOr:
+            return lhs || rhs;
+        case BinaryOp::LogicalAnd:
+            return lhs && rhs;
+        case BinaryOp::Xor:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs ^ rhs;
+            }
+        case BinaryOp::Rsh:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs >> rhs;
+            }
+        case BinaryOp::Lsh:
+            if constexpr (std::is_floating_point_v<T>) {
+                return {};
+            } else {
+                return lhs << rhs;
+            }
+        case BinaryOp::Eq:
+            return lhs == rhs;
+        case BinaryOp::Neq:
+            return lhs != rhs;
+        case BinaryOp::Gt:
+            return lhs > rhs;
+        case BinaryOp::Lt:
+            return lhs < rhs;
+        case BinaryOp::Gte:
+            return lhs >= rhs;
+        case BinaryOp::Lte:
+            return lhs <= rhs;
+        case BinaryOp::Assign:
+            __builtin_unreachable();
+    }
+
+    return {};
+}
+
+Constant* ConstantEvaluator::evaluate_binary_operation(BinaryOp op, Constant* lhs, Constant* rhs) const {
+    switch (lhs->kind()) {
+        using bytecode::ConstantKind;
+
+        case ConstantKind::Int: {
+            if (!isa<ConstantInt>(rhs)) {
+                return nullptr;
+            }
+
+            auto* c_lhs = cast_unchecked<ConstantInt>(lhs);
+            auto* c_rhs = cast_unchecked<ConstantInt>(rhs);
+
+            i64 result = static_cast<i64>(*this->evaluate_binary_operation(op, c_lhs->value(), c_rhs->value()));
+            if (is_comparison_operator(op)) {
+                return ConstantInt::get(m_state.context(), m_state.i1(), result);
+            }
+
+            return ConstantInt::get(m_state.context(), lhs->type(), result);
+        }
+        case ConstantKind::Float: {
+            if (!isa<ConstantFloat>(rhs)) {
+                return nullptr;
+            }
+
+            auto* c_lhs = cast_unchecked<ConstantFloat>(lhs);
+            auto* c_rhs = cast_unchecked<ConstantFloat>(rhs);
+
+            Optional<f64> result = this->evaluate_binary_operation(op, c_lhs->value(), c_rhs->value());
+            if (!result) {
+                return nullptr;
+            }
+
+            if (is_comparison_operator(op)) {
+                return ConstantInt::get(m_state.context(), m_state.context().i1(), static_cast<bool>(*result));
+            }
+
+            return ConstantFloat::get(m_state.context(), lhs->type(), *result);
+        }
+
+        default: break;
+    }
+
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::Expr const& expr) const {
+    switch (expr.kind()) {
+    // NOLINTNEXTLINE
+    #define Op(x) case ast::ExprKind::x: return is_constant_expression(static_cast<ast::x##Expr const&>(expr));
+        ENUMERATE_EXPR_KINDS(Op)
+    #undef Op
+    }
+
+    ASSERT(false, "Unreachable");
+    return false;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::Expr const& expr) {
+    switch (expr.kind()) {
+    // NOLINTNEXTLINE
+    #define Op(x) case ast::ExprKind::x: return evaluate(static_cast<ast::x##Expr const&>(expr));
+        ENUMERATE_EXPR_KINDS(Op)
+    #undef Op
+    }
+
+    ASSERT(false, "Unreachable");
+    return nullptr;
+}
+
+// NOLINTNEXTLINE
+#define Op(x) bool ConstantEvaluator::is_constant_expression(ast::x##Expr const&) const { return false; }
+    ENUMERATE_NON_CONSTANT_EXPR(Op)
+#undef Op
+
+// NOLINTNEXTLINE
+#define Op(x) ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::x##Expr const& expr) { return err(expr.span(), "Expression is not constant"); }
+    ENUMERATE_NON_CONSTANT_EXPR(Op)
+#undef Op
+
+bool ConstantEvaluator::is_constant_expression(ast::BlockExpr const& expr) const {
+    for (auto const& e : expr.block()) {
+        if (!this->is_constant_expression(*e)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BlockExpr const& expr) {
+    Constant* result = nullptr;
+    for (auto const& e : expr.block()) {
+        result = TRY(this->evaluate(*e));
+    }
+
+    return result;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::IntegerExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IntegerExpr const& expr) {
+    Type* context = m_state.type_context();
+
+    IntType* type = nullptr;
+    if (context && context->is_int()) {
+        type = cast_unchecked<IntType>(context);
+    } else if (expr.suffix().type != ast::BuiltinType::None) {
+        type = cast_unchecked<IntType>(m_state.get_type_from_builtin(expr.suffix().type));
+    } else {
+        type = m_state.context().i32();
+    }
+
+    return ConstantInt::get(m_state.context(), type, expr.value());
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::FloatExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::FloatExpr const& expr) {
+    Type* type = expr.is_double() ? m_state.context().f64() : m_state.context().f32();
+    return ConstantFloat::get(m_state.context(), type, expr.value());
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::StringExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::StringExpr const& expr) {
+    Type* type = m_state.context().cstr();
+    return ConstantString::get(m_state.context(), type, expr.value());
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::IdentifierExpr const& expr) const {
+    auto* variable = m_state.scope()->resolve<Variable>(expr.name());
+    if (!variable) {
+        return false;
+    }
+
+    return variable->is_constant();
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IdentifierExpr const& expr) {
+    // FIXME: Allow for functions too
+    auto* variable = m_state.scope()->resolve<Variable>(expr.name());
+    if (!variable) {
+        return err(expr.span(), "Unknown identifier '{}'", expr.name());
+    }
+
+    if (!variable->is_constant()) {
+        return err(expr.span(), "Variable '{}' is not constant", expr.name());
+    }
+
+    return variable->initializer();
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::ArrayExpr const& expr) const {
+    for (auto const& e : expr.elements()) {
+        if (!this->is_constant_expression(*e)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ArrayExpr const& expr) {
+    Vector<Constant*> elements;
+    // FIXME: Type checking
+    for (auto const& e : expr.elements()) {
+        auto element = TRY(this->evaluate(*e));
+        elements.push_back(element);
+    }
+
+    auto* type = ArrayType::get(m_state.context(), elements[0]->type(), elements.size());
+    return ConstantArray::get(m_state.context(), type, elements);
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::IndexExpr const& expr) const {
+    return this->is_constant_expression(expr.value()) && this->is_constant_expression(expr.index());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IndexExpr const& expr) {
+    Constant* value = TRY(this->evaluate(expr.value()));
+    if (!isa<ConstantArray>(value)) {
+        return err(expr.span(), "Cannot index a non-array value");
+    }
+
+    Constant* idx = TRY(this->evaluate(expr.index()));
+    if (!isa<ConstantInt>(idx)) {
+        return err(expr.span(), "Index must be an integer not {}", idx->type()->str());
+    }
+
+    auto* array = cast_unchecked<ConstantArray>(value);
+    u64 index = cast_unchecked<ConstantInt>(idx)->value();
+
+    if (index >= array->size()) {
+        return err(expr.span(), "Index out of bounds. Array has {} elements", array->size());
+    }
+
+    return array->at(index);
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::ConstructorExpr const& expr) const {
+    for (auto const& argument : expr.arguments()) {
+        if (!this->is_constant_expression(*argument.value)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ConstructorExpr const& expr) {
+    Struct* structure = TRY(m_state.resolve_struct(expr.parent()));
+    auto& fields = structure->fields();
+
+    Vector<Constant*> arguments;
+    arguments.resize(fields.size());
+
+    for (auto const& argument : expr.arguments()) {
+        Constant* value = TRY(this->evaluate(*argument.value));
+        auto iterator = fields.find(argument.name);
+
+        if (iterator == fields.end()) {
+            return err(argument.value->span(), "Unknown field '{}'", argument.name);
+        }
+
+        auto& field = iterator->second;
+        arguments[field.index] = value;
+    }
+
+    return ConstantStruct::get(m_state.context(), structure->underlying_type(), arguments);
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::AttributeExpr const& expr) const {
+    return this->is_constant_expression(expr.parent());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::AttributeExpr const& expr) {
+    Constant* parent = TRY(this->evaluate(expr.parent()));
+    if (!isa<ConstantStruct>(parent)) {
+        return err(expr.span(), "Cannot access attribute of a non-struct value");
+    }
+
+    auto* type = cast_unchecked<StructType>(parent->type());
+    auto* structure = type->decl();
+
+    auto& fields = structure->fields();
+
+    auto iterator = fields.find(expr.attribute());
+    if (iterator == fields.end()) {
+        return err(expr.span(), "Unknown attribute '{}'", expr.attribute());
+    }
+
+    auto& field = iterator->second;
+    auto* value = cast_unchecked<ConstantStruct>(parent);
+
+    return value->at(field.index);
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::UnaryOpExpr const& expr) const {
+    if (expr.op() == UnaryOp::DeRef || expr.op() == UnaryOp::Ref) {
+        return false;
+    }
+
+    return this->is_constant_expression(expr.value());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::UnaryOpExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::BinaryOpExpr const& expr) const {
+    return this->is_constant_expression(expr.lhs()) && this->is_constant_expression(expr.rhs());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BinaryOpExpr const& expr) {
+    if (expr.op() == BinaryOp::Assign) {
+        if (!isa<ast::IdentifierExpr>(expr.lhs())) {
+            return err(expr.lhs().span(), "Cannot assign to non-identifier");
+        }
+
+        auto scope = m_state.scope();
+        auto* ident = cast_unchecked<ast::IdentifierExpr>(expr.lhs());
+
+        auto* variable = scope->resolve<Variable>(ident->name());
+        if (!variable) {
+            return err(ident->span(), "Unknown identifier '{}'", ident->name());
+        }
+
+        Constant* value = TRY(this->evaluate(expr.rhs()));
+        variable->set_initializer(value);
+
+        return value;
+    }
+
+    Constant* lhs = TRY(this->evaluate(expr.lhs()));
+    Constant* rhs = TRY(this->evaluate(expr.rhs()));
+
+    Constant* result = this->evaluate_binary_operation(expr.op(), lhs, rhs);
+    if (!result) {
+        return err(expr.span(), "Cannot perform binary operation on operands of type '{}' and '{}'", lhs->type()->str(), rhs->type()->str());
+    }
+
+    return result;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::InplaceBinaryOpExpr const& expr) const {
+    return this->is_constant_expression(expr.lhs()) && this->is_constant_expression(expr.rhs());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::InplaceBinaryOpExpr const& expr) {
+    if (!isa<ast::IdentifierExpr>(expr.lhs())) {
+        return err(expr.lhs().span(), "Cannot assign to non-identifier");
+    }
+
+    auto scope = m_state.scope();
+    auto* ident = cast_unchecked<ast::IdentifierExpr>(expr.lhs());
+
+    auto* variable = scope->resolve<Variable>(ident->name());
+    if (!variable) {
+        return err(ident->span(), "Unknown identifier '{}'", ident->name());
+    }
+
+    Constant* lhs = variable->initializer();
+    Constant* rhs = TRY(this->evaluate(expr.rhs()));
+
+    Constant* result = this->evaluate_binary_operation(expr.op(), lhs, rhs);
+    if (!result) {
+        return err(expr.span(), "Cannot perform binary operation on operands of type '{}' and '{}'", lhs->type()->str(), rhs->type()->str());
+    }
+
+    variable->set_initializer(result);
+    return result;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::IfExpr const& expr) const {
+    bool is_condition_constant = this->is_constant_expression(expr.condition());
+    bool is_body_constant = this->is_constant_expression(expr.body());
+
+    if (!is_condition_constant || !is_body_constant) {
+        return false;
+    }
+
+    if (expr.else_body()) {
+        return this->is_constant_expression(*expr.else_body());
+    }
+
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::IfExpr const& expr) {
+    Constant* condition = TRY(this->evaluate(expr.condition()));
+    if (!isa<ConstantInt>(condition)) {
+        return err(expr.condition().span(), "Expected an integer");
+    }
+
+    auto* integer = cast_unchecked<ConstantInt>(condition);
+    u64 value = integer->value();
+
+    if (value) {
+        return TRY(this->evaluate(expr.body()));
+    } else if (expr.else_body()) {
+        return TRY(this->evaluate(*expr.else_body()));
+    }
+
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::WhileExpr const& expr) const {
+    return this->is_constant_expression(expr.condition()) && this->is_constant_expression(expr.body());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::WhileExpr const& expr) {
+    Constant* condition = TRY(this->evaluate(expr.condition()));
+    if (!isa<ConstantInt>(condition)) {
+        return err(expr.condition().span(), "Expected an integer");
+    }
+
+    auto* integer = cast_unchecked<ConstantInt>(condition);
+    u64 value = integer->value();
+
+    TemporaryChange<bool> change(m_in_loop, true);
+    size_t i = 0;
+
+    while (value) {
+        TRY(this->evaluate(expr.body()));
+
+        if (m_should_break) {
+            m_should_break = false;
+            break;
+        }
+
+        Constant* condition = TRY(this->evaluate(expr.condition()));
+        value = cast_unchecked<ConstantInt>(condition)->value();
+
+        i++;
+        if (i >= MAX_LOOP_COUNT) {
+            return err(expr.span(), "Max iteration count exceeded for constant loops");
+        }
+    }
+
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::ForExpr const& expr) const {
+    return this->is_constant_expression(expr.iterable()) && this->is_constant_expression(expr.body());
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ForExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::BreakExpr const&) const {
+    return m_in_loop;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BreakExpr const&) {
+    m_should_break = true;
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::ContinueExpr const&) const {
+    // TODO: Maybe if we are inside a constantly evaluated loop, this should be true?
+    return false;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ContinueExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::SizeofExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::SizeofExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::OffsetofExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::OffsetofExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::PathExpr const& expr) const {
+    auto& path = expr.path();
+
+    auto result = m_state.resolve_scope_path(expr.span(), path);
+    if (result.is_err()) {
+        return false;
+    }
+
+    auto scope = result.value();
+    auto* variable = scope->resolve<Variable>(path.name());
+
+    return variable && variable->is_constant();
+}
+  
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::PathExpr const& expr) {
+    auto& path = expr.path();
+
+    auto scope = TRY(m_state.resolve_scope_path(expr.span(), path));
+    auto* variable = scope->resolve<Variable>(path.name());
+
+    if (!variable) {
+        return err(expr.span(), "Unknown identifier '{}'", path.format());
+    }
+
+    if (!variable->is_constant()) {
+        return err(expr.span(), "Variable '{}' is not constant", path.name());
+    }
+
+    return variable->initializer();
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::TupleExpr const& expr) const {
+    for (auto const& e : expr.elements()) {
+        if (!this->is_constant_expression(*e)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::TupleExpr const&) {
+    ASSERT(false, "Not implemented");
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::BoolExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::BoolExpr const& expr) {
+    IntType* type = m_state.context().i1();
+    
+    switch (expr.value()) {
+        using ast::BoolExpr;
+
+        case BoolExpr::False:
+            return ConstantInt::get(m_state.context(), type, 0);
+        case BoolExpr::True:
+            return ConstantInt::get(m_state.context(), type, 1);
+        case BoolExpr::Null: {
+            auto* type = m_state.type_context();
+            if (!type) {
+                type = m_state.context().void_type()->get_pointer_to();
+            }
+
+            return ConstantNull::get(m_state.context(), type);
+        }
+    }
+
+    return nullptr;
+}
+
+bool ConstantEvaluator::is_constant_expression(ast::ConstEvalExpr const&) const {
+    return true;
+}
+
+ErrorOr<Constant*> ConstantEvaluator::evaluate(ast::ConstEvalExpr const&) {
+    return {};
+}
+
+}

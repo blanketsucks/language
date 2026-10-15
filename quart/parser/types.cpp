@@ -1,6 +1,6 @@
 #include <quart/parser/ast.h>
-#include <quart/language/state.h>
-#include <quart/target.h>
+#include <quart/state.h>
+#include <quart/compiler/target.h>
 
 #define MATCH_TYPE(Type, Func, ...) case ast::BuiltinType::Type: return context().Func(__VA_ARGS__);
 

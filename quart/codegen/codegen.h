@@ -1,7 +1,7 @@
 #pragma once
 
 #include <quart/common.h>
-#include <quart/compiler.h>
+#include <quart/compiler/compiler.h>
 #include <quart/errors.h>
 
 namespace quart {

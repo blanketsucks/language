@@ -5,7 +5,7 @@
 #include <quart/bytecode/value.h>
 #include <quart/bytecode/constant.h>
 #include <quart/lexer/tokens.h>
-#include <quart/language/types.h>
+#include <quart/types.h>
 
 #include <string>
 #include <vector>

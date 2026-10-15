@@ -2,7 +2,7 @@
 #include <quart/parser/parser.h>
 #include <quart/attributes/parser.h>
 #include <quart/common.h>
-#include <quart/target.h>
+#include <quart/compiler/target.h>
 
 #include <llvm/ADT/STLExtras.h>
 

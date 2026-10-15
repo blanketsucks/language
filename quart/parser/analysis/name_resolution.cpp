@@ -1,5 +1,5 @@
 #include <quart/parser/analysis/name_resolution.h>
-#include <quart/language/state.h>
+#include <quart/state.h>
 
 namespace quart {
 

@@ -1,7 +1,7 @@
 #include <quart/parser/parser.h>
 #include <quart/attributes/attributes.h>
 #include <quart/parser/ast.h>
-#include <quart/language/structs.h>
+#include <quart/symbols/structs.h>
 
 #include <llvm/ADT/StringRef.h>
 

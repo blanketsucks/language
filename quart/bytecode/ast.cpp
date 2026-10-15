@@ -1,10 +1,9 @@
-#include <quart/language/state.h>
+#include <quart/state.h>
 #include <quart/parser/parser.h>
 #include <quart/parser/ast.h>
 #include <quart/temporary_change.h>
 #include <quart/lexer/lexer.h>
-#include <quart/language/trait.h>
-#include <quart/stacktrace.h>
+#include <quart/symbols/trait.h>
 #include <quart/casting.h>
 
 #include <unordered_set>

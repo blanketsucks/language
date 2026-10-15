@@ -1,8 +1,8 @@
 #include <quart/bytecode/instruction.h>
 #include <quart/bytecode/basic_block.h>
-#include <quart/language/functions.h>
-#include <quart/language/structs.h>
-#include <quart/language/state.h>
+#include <quart/symbols/functions.h>
+#include <quart/symbols/structs.h>
+#include <quart/state.h>
 
 namespace quart::bytecode {
 

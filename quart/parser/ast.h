@@ -6,7 +6,7 @@
 #include <quart/errors.h>
 #include <quart/bytecode/instruction.h>
 
-#include <quart/language/functions.h>
+#include <quart/symbols/functions.h>
 
 #include <memory>
 #include <vector>

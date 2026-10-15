@@ -1,8 +1,8 @@
 #pragma once
 
 #include <quart/bytecode/instruction.h>
-#include <quart/language/state.h>
 #include <quart/codegen/codegen.h>
+#include <quart/state.h>
 
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>

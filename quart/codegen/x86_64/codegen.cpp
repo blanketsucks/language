@@ -1,5 +1,5 @@
 #include <quart/codegen/x86_64/codegen.h>
-#include <quart/language/state.h>
+#include <quart/state.h>
 
 #include <unordered_set>
 #include <fstream>

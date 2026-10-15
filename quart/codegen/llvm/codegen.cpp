@@ -1,5 +1,5 @@
 #include <quart/codegen/llvm/codegen.h>
-#include <quart/compiler.h>
+#include <quart/compiler/compiler.h>
 
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/LegacyPassManager.h>
