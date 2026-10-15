@@ -145,9 +145,9 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
     }
 
     args.file = files.front(); 
-    if (!args.file.exists()) {
+    if (!std::filesystem::exists(args.file)) {
         return err("File '{}' does not exist", args.file);
-    } else if (!args.file.is_regular_file()) {
+    } else if (!std::filesystem::is_regular_file(args.file)) {
         return err("'{}' is not a regular file", args.file);
     }
 
@@ -166,7 +166,7 @@ ErrorOr<Arguments> parse_arguments(int argc, char** argv) {
 
     if (output.empty()) {
         StringView extension = OUTPUT_FORMATS_TO_EXT.at(args.format);
-        args.output = args.file.with_extension(String(extension));
+        args.output = fs::with_extension(args.file, extension);
     } else {
         args.output = output.getValue();
     }
