@@ -2,6 +2,7 @@
 #include <quart/language/state.h>
 
 #include <unordered_set>
+#include <fstream>
 
 namespace quart::x86_64 {
 
@@ -204,7 +205,7 @@ ErrorOr<void> x86_64CodeGen::generate(const CompilerOptions& options) {
         }
     }
 
-    String output = options.file.with_extension("s");
+    String output = fs::with_extension(options.file, "s");
 
     std::ofstream stream(output, std::ios_base::out);
     

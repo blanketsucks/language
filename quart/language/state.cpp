@@ -480,7 +480,7 @@ fs::Path State::search_import_paths(const String& name) {
 
     for (auto& path : IMPORT_PATHS) {
         fs::Path fullpath = path / name;
-        if (fullpath.exists()) {
+        if (std::filesystem::exists(fullpath)) {
             return fullpath;
         }
     }

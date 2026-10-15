@@ -99,7 +99,7 @@ void Compiler::dump() const {
 }
 
 Vector<String> Compiler::get_linker_arguments() const {
-    String object = m_options.file.with_extension("o");
+    String object = fs::with_extension(m_options.file, ".o");
     Vector<String> args = {
         m_options.linker,
         "-o", m_options.output,

@@ -1353,7 +1353,7 @@ BytecodeResult ImportExpr::generate(State& state) const {
         fullpath.append(segment);
         fs::Path path(fullpath);
         
-        if (!path.exists()) {
+        if (!std::filesystem::exists(path)) {
             path = state.search_import_paths(fullpath);
 
             if (path.empty()) {
@@ -1363,7 +1363,7 @@ BytecodeResult ImportExpr::generate(State& state) const {
             fullpath = fullpath.substr(0, fullpath.size() - segment.size()) + String(path);
         }
 
-        if (!path.is_dir()) {
+        if (!std::filesystem::is_directory(path)) {
             return err(span(), "Expected a directory, got a file");
         }
 
@@ -1395,23 +1395,23 @@ BytecodeResult ImportExpr::generate(State& state) const {
     fs::Path path = fs::Path(fullpath + m_path.name() + FILE_EXTENSION);
     String name = path;
 
-    if (!path.exists()) {
-        fs::Path dir = path.with_extension();
-        if (!dir.exists()) {
+    if (!std::filesystem::exists(path)) {
+        fs::Path dir = fs::with_extension(path);
+        if (!std::filesystem::exists(dir)) {
             dir = state.search_import_paths(dir);
             if (dir.empty()) {
                 return err(span(), "Could not find module '{}'", m_path.name());
             }
         }
 
-        if (!dir.is_dir()) {
+        if (!std::filesystem::is_directory(dir)) {
             return err(span(), "Expected a directory, got a file");
         }
 
         name = dir;
-        path = dir.join("module.qr");
+        path = dir / "module.qr";
 
-        if (!path.exists()) {
+        if (!std::filesystem::exists(path)) {
             auto scope = Scope::create(m_path.name(), ScopeType::Module);
             auto module = Module::create(m_path.name(), qualified_name, path, scope);
 
@@ -1421,7 +1421,7 @@ BytecodeResult ImportExpr::generate(State& state) const {
             return {};
         }
 
-        if (!path.is_regular_file()) {
+        if (!std::filesystem::is_regular_file(path)) {
             err(span(), "Expected a file, got a directory");
         }
     }
@@ -1442,10 +1442,10 @@ BytecodeResult ImportExpr::generate(State& state) const {
     Vector<Token> tokens = TRY(lexer.lex());
 
     Parser parser(move(tokens));
-    auto ast = TRY(parser.parse());
+    auto prog = TRY(parser.parse());
 
-    for (auto& expr : ast) {
-        TRY(expr->generate(state));
+    for (auto& stmt : prog->stmts()) {
+        TRY(stmt->generate(state));
     }
 
     state.set_current_scope(prev_scope);

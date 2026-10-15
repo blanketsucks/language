@@ -573,6 +573,9 @@ void LLVMCodeGen::set_corresponding_value(Value* a, ::llvm::Value* b) {
 
         case Value::Unknown: __builtin_unreachable();
     }
+
+    ASSERT(false, "Unreachable");
+    __builtin_unreachable();
 }
 
 ::llvm::Value* LLVMCodeGen::value_of(Constant* constant) {
@@ -798,14 +801,14 @@ ErrorOr<void> LLVMCodeGen::generate(CompilerOptions const& options) {
     }
     
     {
-        String out = options.file.with_extension("ll");
+        String out = fs::with_extension(options.file, "ll");
         std::error_code ec;
     
         ::llvm::raw_fd_ostream stream(out, ec);
         m_module->print(stream, nullptr);
     }
 
-    String output = options.file.with_extension("o");
+    String output = fs::with_extension(options.file, "o");
 
     std::error_code ec;
     ::llvm::raw_fd_ostream stream(output, ec);

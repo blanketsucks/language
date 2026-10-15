@@ -29,6 +29,8 @@ static inline String fmt(Value* value) {
             return "???";
         }
     }
+
+    __builtin_unreachable();
 }
 
 static inline String fmt(const Vector<Value*>& values) {
