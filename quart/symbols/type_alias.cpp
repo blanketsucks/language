@@ -47,7 +47,7 @@ ErrorOr<Type*> TypeAlias::evaluate(State& state, const Vector<Type*>& args) {
         return iterator->second;
     }
 
-    auto scope = Scope::create({}, ScopeType::Anonymous, state.global_scope());
+    auto scope = Scope::create({}, ScopeType::Anonymous, state.global_scope().get());
     auto previous_scope = state.scope();
 
     state.set_current_scope(scope);

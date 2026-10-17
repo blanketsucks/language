@@ -144,7 +144,7 @@ void Compiler::run_bytecode_passes(State& state) const {
             continue;
         }
 
-        passes.run(function.get());
+        passes.run(function);
 
         if constexpr (DEBUG) {
             function->dump();
@@ -179,10 +179,14 @@ int Compiler::run_ast_passes(OwnPtr<ast::ParseModule> module, State& state) cons
     StaticSemanticsPassManager pm;
     pm.set_after_pass_callback([&state]() -> ErrorOr<void> { return ensure_no_errors(state); });
 
-    ImportLoader loader(state);
+    auto& loader = state.loader();
     Program program = TRY(loader.load_imports(*module));
 
+    module->set_path(m_options.file);
+    loader.insert_module(m_options.file, Module::create({}, {}, {}, state.global_scope()));
+
     program.add_module(move(module));
+
     TRY(ensure_no_errors(state));
     
     pm.add<NameResolutionPass>();

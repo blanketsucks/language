@@ -851,7 +851,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state) const {
 
     auto* underlying_type = FunctionType::get(state.context(), return_type, params, m_is_c_variadic);
 
-    auto scope = Scope::create(m_name, ScopeType::Function, state.scope());
+    auto scope = Scope::create(m_name, ScopeType::Function, state.scope().get());
 
     RefPtr<LinkInfo> link_info = nullptr;
     if (m_attrs.has(Attribute::Link)) {
@@ -880,7 +880,7 @@ BytecodeResult FunctionDeclExpr::generate(State& state) const {
     }
 
     state.scope()->add_symbol(function);
-    state.add_global_function(function);
+    state.insert_global_function(function);
 
     state.emit<bytecode::NewFunction>(&*function);
     return {};
@@ -1063,7 +1063,7 @@ static ErrorOr<void> generate_generic_struct(State& state, StructExpr const& exp
     Vector<GenericTypeParameter> generic_parameters;
     Set<String> names;
 
-    auto scope = Scope::create(expr.name(), ScopeType::Struct, state.scope());
+    auto scope = Scope::create(expr.name(), ScopeType::Struct, state.scope().get());
 
     for (auto& parameter : expr.parameters()) {
         generic_parameters.emplace_back(parameter.name, parameter.span);
@@ -1080,7 +1080,7 @@ static ErrorOr<void> generate_generic_struct(State& state, StructExpr const& exp
 
     auto* type = StructType::get(
         state.context(),
-        Symbol::parse_qualified_name(expr.name(), state.scope()),
+        Symbol::parse_qualified_name(expr.name(), state.scope().get()),
         {}
     );
 
@@ -1138,8 +1138,8 @@ static ErrorOr<void> generate_generic_struct(State& state, StructExpr const& exp
 
 BytecodeResult StructExpr::generate(State& state) const {
     if (m_opaque) {
-        auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope()), {});
-        auto structure = Struct::create(m_name, type, state.scope(), m_is_public);
+        auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope().get()), {});
+        auto structure = Struct::create(m_name, type, state.scope().get(), m_is_public);
 
         state.scope()->add_symbol(structure);
         state.emit<bytecode::NewStruct>(&*structure);
@@ -1153,8 +1153,8 @@ BytecodeResult StructExpr::generate(State& state) const {
         return {};
     }
 
-    auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope()), {});
-    auto scope = Scope::create(m_name, ScopeType::Struct, state.scope());
+    auto* type = StructType::get(state.context(), Symbol::parse_qualified_name(m_name, state.scope().get()), {});
+    auto scope = Scope::create(m_name, ScopeType::Struct, state.scope().get());
 
     auto structure = Struct::create(m_name, type, {}, scope, m_is_public);
     structure->set_module(state.module());
@@ -1505,7 +1505,7 @@ BytecodeResult ModuleExpr::generate(State& state) const {
         qualified_name = format("{}::{}", prev_module->qualified_name(), m_name);
     }
 
-    auto scope = Scope::create(m_name, ScopeType::Module, current_scope);
+    auto scope = Scope::create(m_name, ScopeType::Module, current_scope.get());
     auto module = Module::create(m_name, qualified_name, {}, scope);
 
     current_scope->add_symbol(module);
@@ -1773,7 +1773,7 @@ BytecodeResult MatchExpr::generate(State& state) const {
 BytecodeResult ImplExpr::generate(State& state) const {
     auto current_scope = state.scope();
     if (!m_parameters.empty()) {
-        auto scope = Scope::create({}, ScopeType::Impl, current_scope);
+        auto scope = Scope::create({}, ScopeType::Impl, current_scope.get());
 
         auto range = llvm::map_range(m_parameters, [](auto& param) { return param.name; });
         Set<String> parameters = { range.begin(), range.end() };
@@ -1825,7 +1825,7 @@ BytecodeResult ImplExpr::generate(State& state) const {
         return {};
     }
 
-    auto scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope);
+    auto scope = Scope::create(underlying_type->str(), ScopeType::Impl, current_scope.get());
 
     auto impl = Impl::create(underlying_type, scope);
     state.set_self_type(impl->underlying_type());
@@ -1843,8 +1843,8 @@ BytecodeResult ImplExpr::generate(State& state) const {
 BytecodeResult TraitExpr::generate(State& state) const {
     auto current_scope = state.scope();
 
-    auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, current_scope));
-    auto scope = Scope::create(type->name(), ScopeType::Namespace, current_scope);
+    auto* type = TraitType::get(state.context(), Symbol::parse_qualified_name(m_name, current_scope.get()));
+    auto scope = Scope::create(type->name(), ScopeType::Namespace, current_scope.get());
     
     auto trait = Trait::create(m_name, type, scope);
     for (auto& parameter : m_parameters) {

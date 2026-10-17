@@ -2,10 +2,10 @@
 
 namespace quart {
 
-RefPtr<Scope> Scope::create(String name, ScopeType type, RefPtr<Scope> parent) {
-    auto scope = RefPtr<Scope>(new Scope(move(name), type, move(parent)));
-    if (scope->parent()) {
-        scope->parent()->m_children.push_back(scope);
+RefPtr<Scope> Scope::create(String name, ScopeType type, Scope* parent) {
+    auto scope = RefPtr<Scope>(new Scope(move(name), type, parent));
+    if (parent) {
+        parent->add_child(scope);
     }
 
     return scope;

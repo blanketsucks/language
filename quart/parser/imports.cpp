@@ -29,13 +29,13 @@ fs::Path ImportLoader::search_import_paths(const fs::Path& path) const {
     return {};
 }
 
-RefPtr<Module> ImportLoader::lookup(const fs::Path& path) const {
+Module const* ImportLoader::lookup(const fs::Path& path) const {
     auto iterator = m_modules.find(path);
     if (iterator == m_modules.end()) {
         return nullptr;
     }
 
-    return iterator->second;
+    return iterator->second.get();
 }
 
 ErrorOr<fs::Path> ImportLoader::resolve_import_path(ast::ImportExpr const& import) {
@@ -154,10 +154,16 @@ ErrorOr<Program> ImportLoader::load_imports(ast::ParseModule const& module) {
         }
 
         m_parsed_modules.insert(path);
+
+        module->set_path(move(path));
         program.add_module(move(module));
     }
 
     return move(program);
+}
+
+void ImportLoader::insert_module(const fs::Path& path, RefPtr<Module> module) {
+    m_modules[path] = move(module);
 }
 
 }

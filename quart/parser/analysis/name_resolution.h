@@ -13,7 +13,7 @@ public:
 
     StringView name() const override { return "NameResolution"; }
 
-    ErrorOr<void> run(Program const& program, State&) override;
+    ErrorOr<void> run(Program const& program, State&, bool scope_aware = true) override;
 
 private:
     Mode m_mode = Declare;

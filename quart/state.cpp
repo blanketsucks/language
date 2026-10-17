@@ -7,11 +7,13 @@ namespace quart {
 using bytecode::Value;
 using bytecode::Constant, bytecode::ConstantInt;
 
-State::State() : m_constant_evaluator(*this), m_type_checker(*this) {
+State::State() : m_loader(*this), m_constant_evaluator(*this), m_type_checker(*this) {
     m_context = Context::create();
     m_current_scope = m_global_scope = Scope::create({}, ScopeType::Global, nullptr);
 
     m_diag = Diagnostics::create();
+
+    push_scope(m_global_scope.get());
 }
 
 void State::dump() const {}
@@ -20,18 +22,14 @@ void State::switch_to(bytecode::BasicBlock* block) {
     m_generator.switch_to(block);
 }
 
-bool State::has_global_function(const String& name) const {
-    return m_all_functions.contains(name);
-}
-
-void State::add_global_function(RefPtr<Function> function) {
-    m_all_functions[function->qualified_name()] = function;
+bool State::is_function_defined(const String& name) const {
+    return m_defined_functions.contains(name);
 }
 
 Function const* State::get_global_function(const String& name) const {
-    auto iterator = m_all_functions.find(name);
-    if (iterator != m_all_functions.end()) {
-        return iterator->second.get();
+    auto iterator = m_defined_functions.find(name);
+    if (iterator != m_defined_functions.end()) {
+        return iterator->second;
     }
 
     return nullptr;

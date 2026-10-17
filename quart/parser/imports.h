@@ -31,11 +31,13 @@ public:
     ErrorOr<fs::Path> resolve_import_path(ast::ImportExpr const& import);
     fs::Path search_import_paths(const fs::Path& path) const;
     
-    RefPtr<Module> lookup(const fs::Path&) const;
+    Module const* lookup(const fs::Path&) const;
 
     ErrorOr<OwnPtr<ast::ParseModule>> parse_file(const fs::Path&);
 
     ErrorOr<Program> load_imports(ast::ParseModule const& module);
+
+    void insert_module(const fs::Path&, RefPtr<Module>);
 
 private:
     using PathKey = Pair<String, Vector<String>>;

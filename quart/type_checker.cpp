@@ -641,7 +641,7 @@ ErrorOr<Type*> TypeChecker::type_check(ast::FunctionDeclExpr const& expr) {
     }
 
     auto* underlying_type = FunctionType::get(m_state.context(), return_type, types, expr.is_c_variadic());
-    auto scope = Scope::create(expr.name(), ScopeType::Function, m_state.scope());
+    auto scope = Scope::create(expr.name(), ScopeType::Function, m_state.scope().get());
 
     RefPtr<LinkInfo> link_info = nullptr;
 
@@ -741,18 +741,18 @@ ErrorOr<Type*> TypeChecker::type_check(ast::ContinueExpr const&) {
 ErrorOr<Type*> TypeChecker::type_check(ast::StructExpr const& expr) {
     if (expr.is_opaque()) {
         auto* type = StructType::get(
-            m_state.context(), Symbol::parse_qualified_name(expr.name(), m_state.scope()), {}
+            m_state.context(), Symbol::parse_qualified_name(expr.name(), m_state.scope().get()), {}
         );
 
-        auto structure = Struct::create(expr.name(), type, m_state.scope(), expr.is_public());
+        auto structure = Struct::create(expr.name(), type, m_state.scope().get(), expr.is_public());
         structure->set_module(m_state.module());
 
         m_state.scope()->add_symbol(structure);
         return {};
     }
 
-    auto* type = StructType::get(m_state.context(), Symbol::parse_qualified_name(expr.name(), m_state.scope()), {});
-    auto scope = Scope::create(expr.name(), ScopeType::Struct, m_state.scope());
+    auto* type = StructType::get(m_state.context(), Symbol::parse_qualified_name(expr.name(), m_state.scope().get()), {});
+    auto scope = Scope::create(expr.name(), ScopeType::Struct, m_state.scope().get());
 
     auto structure = Struct::create(expr.name(), type, {}, scope, expr.is_public());
     structure->set_module(m_state.module());

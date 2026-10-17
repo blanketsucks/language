@@ -45,8 +45,8 @@ class Struct : public Symbol {
 public:
     static bool classof(const Symbol* symbol) { return symbol->type() == Symbol::Struct; }
 
-    static RefPtr<Struct> create(String name, StructType* underlying_type, RefPtr<Scope> parent, bool is_public) {
-        return RefPtr<Struct>(new Struct(move(name), underlying_type, move(parent), is_public));
+    static RefPtr<Struct> create(String name, StructType* underlying_type, Scope* parent, bool is_public) {
+        return RefPtr<Struct>(new Struct(move(name), underlying_type, parent, is_public));
     }
 
     static RefPtr<Struct> create(String name, StructType* underlying_type, HashMap<String, StructField> fields, RefPtr<Scope> scope, bool is_public) {
@@ -84,15 +84,15 @@ public:
     }
 
 private:
-    void set_qualified_name(RefPtr<Scope> = nullptr);
+    void set_qualified_name(Scope* parent = nullptr);
 
     Struct(
         String name,
         StructType* underlying_type,
-        RefPtr<Scope> parent,
+        Scope* parent,
         bool is_public
     ) : Symbol(move(name), Symbol::Struct, is_public), m_underlying_type(underlying_type), m_opaque(true) {
-        this->set_qualified_name(move(parent));
+        this->set_qualified_name(parent);
     }
 
     Struct(

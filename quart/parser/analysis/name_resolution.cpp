@@ -3,14 +3,14 @@
 
 namespace quart {
 
-ErrorOr<void> NameResolutionPass::run(Program const& program, State& state) {
+ErrorOr<void> NameResolutionPass::run(Program const& program, State& state, bool) {
     m_state = &state;
 
     m_mode = Declare;
-    TRY(StaticSemanticsPass::run(program, state));
+    TRY(StaticSemanticsPass::run(program, state, true));
 
     m_mode = Resolve;
-    TRY(StaticSemanticsPass::run(program, state));
+    TRY(StaticSemanticsPass::run(program, state, true));
 
     return {};
 }
@@ -36,7 +36,7 @@ EMPTY_VISIT_IMPL(NameResolutionPass, Float);
 EMPTY_VISIT_IMPL(NameResolutionPass, String);
 
 ErrorOr<void> NameResolutionPass::visit(ast::IdentifierExpr const& expr) {
-    auto scope = m_state->scope();
+    auto scope = m_state->current_scope();
     auto* symbol = scope->resolve(expr.name());
 
     if (!symbol) {
@@ -53,12 +53,12 @@ ErrorOr<void> NameResolutionPass::visit(ast::IdentifierExpr const& expr) {
         return {};
     }
 
-    expr.semantic_info().scope = scope.get();
+    expr.semantic_info().symbol = symbol;
     return {};
 }
 
 ErrorOr<void> NameResolutionPass::visit(ast::AssignmentExpr const& expr) {
-    auto scope = m_state->scope();
+    auto scope = m_state->current_scope();
 
     auto& ident = expr.identifier();
     if (scope->resolve(ident.value)) {
@@ -82,9 +82,10 @@ ErrorOr<void> NameResolutionPass::visit(ast::AssignmentExpr const& expr) {
         flags |= Variable::Public;
     }
 
-    scope->add_symbol(Variable::create(ident.value, flags));
-    expr.semantic_info().scope = scope.get();
+    auto variable = Variable::create(ident.value, flags);
+    expr.semantic_info().symbol = variable.get();
 
+    scope->add_symbol(move(variable));
     return {};
 }
 
@@ -144,8 +145,8 @@ ErrorOr<void> NameResolutionPass::visit(ast::FunctionDeclExpr const& expr) {
         return {};
     }
 
-    auto current_scope = m_state->scope();
-    if (current_scope->resolve(expr.name())) {
+    auto scope = m_state->current_scope();
+    if (scope->resolve(expr.name())) {
         m_state->add_error_diagnostic(err(
             expr.span(), "'{}' is already defined", expr.name()
         ));
@@ -161,19 +162,29 @@ ErrorOr<void> NameResolutionPass::visit(ast::FunctionDeclExpr const& expr) {
         index++;
     }
 
-    auto scope = Scope::create({}, ScopeType::Function, current_scope);
     auto function = Function::create(
         expr.span(),
         expr.name(),
         parameters,
         nullptr,
-        scope,
+        Scope::create({}, ScopeType::Function, scope),
         expr.linkage(),
         nullptr,
         expr.is_public()
     );
 
-    current_scope->add_symbol(move(function));
+    if (auto* original = m_state->get_global_function(function->qualified_name())) {
+        auto error = err(expr.span(), "Function '{}' is already defined", function->qualified_name());
+        error.add_note(original->span(), "Previous definition is here");
+
+        return error;
+    }
+
+    expr.semantic_info().symbol = function.get();
+
+    m_state->insert_global_function(function);
+    scope->add_symbol(move(function));
+
     return {};
 }
 
@@ -183,16 +194,19 @@ ErrorOr<void> NameResolutionPass::visit(ast::FunctionExpr const& expr) {
         return {};
     }
 
-    auto current_scope = m_state->scope();
-    auto* function = current_scope->resolve<Function>(expr.decl().name());
+    auto scope = m_state->current_scope();
+    auto& name = expr.decl().name();
 
-    m_state->set_current_scope(function->scope());
+    auto* function = scope->resolve<Function>(name);
+    ASSERT(function, "Could not find function in current scope");
+
+    m_state->push_scope(function->scope());
     for (auto& p : function->parameters()) {
         function->scope()->add_symbol(Variable::create(p.name));
     }
 
     TRY(visit(expr.body()));
-    m_state->set_current_scope(current_scope);
+    m_state->pop_scope();
 
     return {};
 }

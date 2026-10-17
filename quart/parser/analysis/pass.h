@@ -23,7 +23,7 @@ public:
 
     virtual StringView name() const = 0;
 
-    virtual ErrorOr<void> run(Program const& program, State&);
+    virtual ErrorOr<void> run(Program const& program, State&, bool scope_aware = false);
 
 protected:
     ErrorOr<void> walk(ast::Expr const& expr);

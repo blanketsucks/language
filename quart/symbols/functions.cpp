@@ -148,7 +148,7 @@ ErrorOr<RefPtr<Function>> Function::specialize(State& state, Vector<FunctionPara
     state.set_current_function(previous_function);
     state.switch_to(previous_block);
 
-    state.add_global_function(function);
+    state.insert_global_function(function);
 
     return function;
 }

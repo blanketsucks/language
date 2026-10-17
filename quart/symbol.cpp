@@ -19,7 +19,7 @@ StringView Symbol::str() const {
     return {};
 }
 
-String Symbol::parse_qualified_name(const String& name, RefPtr<Scope> scope) {
+String Symbol::parse_qualified_name(const String& name, Scope* scope) {
     Vector<String> parts;
     parts.push_back(name);
 

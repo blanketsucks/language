@@ -1,12 +1,30 @@
 #include <quart/parser/analysis/pass.h>
+#include <quart/state.h>
 
 namespace quart {
 
-ErrorOr<void> StaticSemanticsPass::run(Program const& program, State&) {
-    for (auto& module : program.modules()) {
-        for (auto& stmt : module->stmts()) {
-            TRY(this->walk(*stmt));
+ErrorOr<void> StaticSemanticsPass::run(Program const& program, State& state, bool scope_aware) {
+    if (!scope_aware) {
+        for (auto& module : program.modules()) {
+            for (auto& stmt : module->stmts()) {
+                TRY(this->walk(*stmt));
+            }
         }
+
+        return {};
+    }
+
+    for (auto& module : program.modules()) {
+        auto& path = module->path();
+    
+        auto mod = state.loader().lookup(path);
+        state.push_scope(mod->scope());
+
+        for (auto& stmt : module->stmts()) {
+            TRY(walk(*stmt));
+        }
+
+        state.pop_scope();
     }
 
     return {};

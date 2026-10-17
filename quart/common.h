@@ -9,6 +9,7 @@
 #include <string>
 #include <deque>
 #include <set>
+#include <stack>
 
 #ifndef QUART_PATH
     #define QUART_PATH "lib"
@@ -80,6 +81,7 @@ template<typename K, typename V> using HashMap = std::map<K, V>;
 
 template<typename T> using Vector = std::vector<T>;
 template<typename T> using Deque = std::deque<T>;
+template<typename T> using Stack = std::stack<T>;
 
 template<typename T, size_t N> using Array = std::array<T, N>;
 

@@ -7,6 +7,7 @@
 #include <quart/symbols/trait.h>
 #include <quart/type_checker.h>
 #include <quart/consteval.h>
+#include <quart/parser/imports.h>
 #include <quart/diagnostics.h>
 #include <quart/enums.h>
 
@@ -62,6 +63,9 @@ public:
     Diagnostics& diagnostics() { return *m_diag; }
     Diagnostics const& diagnostics() const { return *m_diag; }
 
+    ImportLoader& loader() { return m_loader; }
+    ImportLoader const& loader() const { return m_loader; }
+
     void add_error_diagnostic(const Error& err) {
         return m_diag->add_error(err);
     }
@@ -75,7 +79,7 @@ public:
     
     Type* self_type() const { return m_self_type; }
 
-    HashMap<String, RefPtr<Function>> const& functions() const { return m_all_functions; }
+    HashMap<String, Function*> const& functions() const { return m_defined_functions; }
 
     HashMap<Type*, OwnPtr<Impl>> const& impls() const { return m_impls; }
     Vector<OwnPtr<Impl>> const& generic_impls() const { return m_generic_impls; }
@@ -85,6 +89,13 @@ public:
 
     Optional<bytecode::Value*> self() const { return m_self; }
     Optional<bytecode::Value*> return_register() const { return m_return; }
+
+    Scope* current_scope() const { return m_scope_stack.top(); }
+
+    void push_scope(Scope* scope) { m_scope_stack.push(scope); }
+    void push_scope(const RefPtr<Scope>& scope) { push_scope(scope.get()); }
+
+    void pop_scope() { m_scope_stack.pop(); }
     
     void set_current_scope(RefPtr<Scope> scope) { m_current_scope = move(scope); }
     void set_current_function(Function* function) { m_current_function = function; }
@@ -118,10 +129,14 @@ public:
     void add_global(RefPtr<Variable> variable) {
         m_globals.push_back(move(variable));
     }
+    
+    bool is_function_defined(const String& qualified_name) const;
+    Function const* get_global_function(const String& qualified_name) const;
 
-    bool has_global_function(const String& name) const;
-    void add_global_function(RefPtr<Function> function);
-    Function const* get_global_function(const String& name) const;
+    void insert_global_function(const RefPtr<Function>& function) { insert_global_function(function.get()); }
+    void insert_global_function(Function* function) {
+        m_defined_functions.insert_or_assign(function->qualified_name(), function);
+    }
 
     bool has_global_module(const String& name) const;
     RefPtr<Module> get_global_module(const String& name) const;
@@ -166,6 +181,7 @@ private:
     bytecode::Generator m_generator;
     OwnPtr<Context> m_context;
 
+    ImportLoader m_loader;
     OwnPtr<Diagnostics> m_diag;
 
     ConstantEvaluator m_constant_evaluator;
@@ -186,7 +202,9 @@ private:
 
     Type* m_self_type = nullptr;
 
-    HashMap<String, RefPtr<Function>> m_all_functions;
+    Stack<Scope*> m_scope_stack;
+
+    HashMap<String, Function*> m_defined_functions;
 
     HashMap<String, RefPtr<Module>> m_modules;
 

@@ -292,12 +292,13 @@ struct SemanticInfo {
     bytecode::Constant* constant = nullptr;
 
     Scope* scope = nullptr;
+    Symbol* symbol = nullptr;
 };
 
 class Expr {
 public:
-    NO_COPY(Expr)
-    DEFAULT_MOVE(Expr)
+    NO_COPY(Expr);
+    NO_MOVE(Expr);
 
     Expr(Span span, ExprKind kind) : m_span(span), m_kind(kind) {}
     virtual ~Expr() = default;
@@ -338,12 +339,16 @@ public:
     Vector<ImportExpr*>& imports() { return m_imports; }
     Vector<ImportExpr*> const& imports() const { return m_imports; }
 
+    fs::Path const& path() const { return m_path; }
+
+    void set_path(fs::Path path) { m_path = move(path); }
 
 private:
     ParseModule(ExprList<> stmts, Vector<ImportExpr*> imports) : m_stmts(move(stmts)), m_imports(move(imports)) {}
 
     ExprList<> m_stmts;
     Vector<ImportExpr*> m_imports;
+    fs::Path m_path;
 };
 
 template<ExprKind Kind>
